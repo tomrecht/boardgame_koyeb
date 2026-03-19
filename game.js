@@ -2514,7 +2514,11 @@ const config = {
     width: 1800,
     height: 1200,
     backgroundColor: '#ffffff',
-    scene:  [MainGameScene, InstructionsScene, EndGameScene], // Include the main game scene and the end game scene
+    scale: {
+        mode: Phaser.Scale.NONE, // Let the browser/CSS handle scaling
+        autoCenter: Phaser.Scale.CENTER_BOTH
+    },
+    scene: [MainGameScene, InstructionsScene, EndGameScene],
 };
 
 const gameInstance = new Phaser.Game(config);
