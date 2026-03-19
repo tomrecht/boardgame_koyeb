@@ -1870,11 +1870,16 @@ class MainGameScene extends Phaser.Scene {
 
     updateScoreText() {
         const averageScore = calculateAverageScore();
+        
+        // Determine the label based on the sign: Positive is Black, Negative is White
+        const leaderLabel = averageScore >= 0 ? "Black" : "White";
+        const displayValue = Math.abs(averageScore).toFixed(2);
+
         this.scoreText.setText(
             `Games Played: ${scoreTracker.games_played}\n` +
             `White Wins: ${scoreTracker.white_wins}\n` +
             `Black Wins: ${scoreTracker.black_wins}\n` +
-            `Average Score: ${averageScore.toFixed(2)}`
+            `Average Score: ${leaderLabel}: ${displayValue}`
         );
     }
 
