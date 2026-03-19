@@ -1879,8 +1879,8 @@ class MainGameScene extends Phaser.Scene {
                 // If the score is 0, just show the number
                 finalScoreLine = `Average Score: ${displayValue}`;
             } else {
-                // Otherwise, show the leader label (Positive = Black, Negative = White)
-                const leaderLabel = averageScore > 0 ? "Black" : "White";
+                // Otherwise, show the leader label
+                const leaderLabel = averageScore > 0 ? "White" : "Black";
                 finalScoreLine = `Average Score: ${leaderLabel}: ${displayValue}`;
             }
 
