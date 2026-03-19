@@ -1,0 +1,1066 @@
+{
+  "ring0_sector0": {
+    "type": "home",
+    "neighbors": [
+      {
+        "ring": 1,
+        "sector": 2
+      },
+      {
+        "ring": 1,
+        "sector": 3
+      },
+      {
+        "ring": 1,
+        "sector": 4
+      },
+      {
+        "ring": 1,
+        "sector": 6
+      },
+      {
+        "ring": 1,
+        "sector": 7
+      },
+      {
+        "ring": 1,
+        "sector": 8
+      },
+      {
+        "ring": 1,
+        "sector": 10
+      },
+      {
+        "ring": 1,
+        "sector": 11
+      },
+      {
+        "ring": 1,
+        "sector": 12
+      }
+    ]
+  },
+  "ring1_sector2": {
+    "type": "field",
+    "neighbors": [
+      {
+        "ring": 1,
+        "sector": 3
+      },
+      {
+        "ring": 2,
+        "sector": 2
+      }
+    ]
+  },
+  "ring1_sector3": {
+    "type": "field",
+    "neighbors": [
+      {
+        "ring": 1,
+        "sector": 2
+      },
+      {
+        "ring": 1,
+        "sector": 4
+      }
+    ]
+  },
+  "ring1_sector4": {
+    "type": "field",
+    "neighbors": [
+      {
+        "ring": 1,
+        "sector": 3
+      },
+      {
+        "ring": 2,
+        "sector": 4
+      }
+    ]
+  },
+  "ring1_sector6": {
+    "type": "field",
+    "neighbors": [
+      {
+        "ring": 1,
+        "sector": 7
+      },
+      {
+        "ring": 2,
+        "sector": 6
+      }
+    ]
+  },
+  "ring1_sector7": {
+    "type": "field",
+    "neighbors": [
+      {
+        "ring": 1,
+        "sector": 6
+      },
+      {
+        "ring": 1,
+        "sector": 8
+      }
+    ]
+  },
+  "ring1_sector8": {
+    "type": "field",
+    "neighbors": [
+      {
+        "ring": 1,
+        "sector": 7
+      },
+      {
+        "ring": 2,
+        "sector": 8
+      }
+    ]
+  },
+  "ring1_sector10": {
+    "type": "field",
+    "neighbors": [
+      {
+        "ring": 1,
+        "sector": 11
+      },
+      {
+        "ring": 2,
+        "sector": 10
+      }
+    ]
+  },
+  "ring1_sector11": {
+    "type": "field",
+    "neighbors": [
+      {
+        "ring": 1,
+        "sector": 10
+      },
+      {
+        "ring": 1,
+        "sector": 12
+      }
+    ]
+  },
+  "ring1_sector12": {
+    "type": "field",
+    "neighbors": [
+      {
+        "ring": 1,
+        "sector": 11
+      },
+      {
+        "ring": 2,
+        "sector": 12
+      }
+    ]
+  },
+  "ring2_sector1": {
+    "type": "field",
+    "neighbors": [
+      {
+        "ring": 2,
+        "sector": 2
+      },
+      {
+        "ring": 2,
+        "sector": 12
+      },
+      {
+        "ring": 3,
+        "sector": 1
+      }
+    ]
+  },
+  "ring2_sector2": {
+    "type": "field",
+    "neighbors": [
+      {
+        "ring": 2,
+        "sector": 1
+      },
+      {
+        "ring": 1,
+        "sector": 2
+      },
+      {
+        "ring": 3,
+        "sector": 2
+      }
+    ]
+  },
+  "ring2_sector4": {
+    "type": "field",
+    "neighbors": [
+      {
+        "ring": 2,
+        "sector": 5
+      },
+      {
+        "ring": 1,
+        "sector": 4
+      },
+      {
+        "ring": 3,
+        "sector": 4
+      }
+    ]
+  },
+  "ring2_sector5": {
+    "type": "field",
+    "neighbors": [
+      {
+        "ring": 2,
+        "sector": 4
+      },
+      {
+        "ring": 2,
+        "sector": 6
+      },
+      {
+        "ring": 3,
+        "sector": 5
+      }
+    ]
+  },
+  "ring2_sector6": {
+    "type": "field",
+    "neighbors": [
+      {
+        "ring": 2,
+        "sector": 5
+      },
+      {
+        "ring": 1,
+        "sector": 6
+      },
+      {
+        "ring": 3,
+        "sector": 6
+      }
+    ]
+  },
+  "ring2_sector8": {
+    "type": "field",
+    "neighbors": [
+      {
+        "ring": 2,
+        "sector": 9
+      },
+      {
+        "ring": 1,
+        "sector": 8
+      },
+      {
+        "ring": 3,
+        "sector": 8
+      }
+    ]
+  },
+  "ring2_sector9": {
+    "type": "field",
+    "neighbors": [
+      {
+        "ring": 2,
+        "sector": 8
+      },
+      {
+        "ring": 2,
+        "sector": 10
+      },
+      {
+        "ring": 3,
+        "sector": 9
+      }
+    ]
+  },
+  "ring2_sector10": {
+    "type": "field",
+    "neighbors": [
+      {
+        "ring": 2,
+        "sector": 9
+      },
+      {
+        "ring": 1,
+        "sector": 10
+      },
+      {
+        "ring": 3,
+        "sector": 10
+      }
+    ]
+  },
+  "ring2_sector12": {
+    "type": "field",
+    "neighbors": [
+      {
+        "ring": 2,
+        "sector": 1
+      },
+      {
+        "ring": 1,
+        "sector": 12
+      },
+      {
+        "ring": 3,
+        "sector": 12
+      }
+    ]
+  },
+  "ring3_sector1": {
+    "type": "field",
+    "neighbors": [
+      {
+        "ring": 3,
+        "sector": 2
+      },
+      {
+        "ring": 3,
+        "sector": 12
+      },
+      {
+        "ring": 2,
+        "sector": 1
+      }
+    ]
+  },
+  "ring3_sector2": {
+    "type": "field",
+    "neighbors": [
+      {
+        "ring": 3,
+        "sector": 1
+      },
+      {
+        "ring": 3,
+        "sector": 3
+      },
+      {
+        "ring": 2,
+        "sector": 2
+      },
+      {
+        "ring": 4,
+        "sector": 2
+      }
+    ]
+  },
+  "ring3_sector3": {
+    "type": "field",
+    "neighbors": [
+      {
+        "ring": 3,
+        "sector": 2
+      },
+      {
+        "ring": 3,
+        "sector": 4
+      }
+    ]
+  },
+  "ring3_sector4": {
+    "type": "field",
+    "neighbors": [
+      {
+        "ring": 3,
+        "sector": 3
+      },
+      {
+        "ring": 3,
+        "sector": 5
+      },
+      {
+        "ring": 2,
+        "sector": 4
+      },
+      {
+        "ring": 4,
+        "sector": 4
+      }
+    ]
+  },
+  "ring3_sector5": {
+    "type": "field",
+    "neighbors": [
+      {
+        "ring": 3,
+        "sector": 4
+      },
+      {
+        "ring": 3,
+        "sector": 6
+      },
+      {
+        "ring": 2,
+        "sector": 5
+      }
+    ]
+  },
+  "ring3_sector6": {
+    "type": "field",
+    "neighbors": [
+      {
+        "ring": 3,
+        "sector": 5
+      },
+      {
+        "ring": 3,
+        "sector": 7
+      },
+      {
+        "ring": 2,
+        "sector": 6
+      },
+      {
+        "ring": 4,
+        "sector": 6
+      }
+    ]
+  },
+  "ring3_sector7": {
+    "type": "field",
+    "neighbors": [
+      {
+        "ring": 3,
+        "sector": 6
+      },
+      {
+        "ring": 3,
+        "sector": 8
+      }
+    ]
+  },
+  "ring3_sector8": {
+    "type": "field",
+    "neighbors": [
+      {
+        "ring": 3,
+        "sector": 7
+      },
+      {
+        "ring": 3,
+        "sector": 9
+      },
+      {
+        "ring": 2,
+        "sector": 8
+      },
+      {
+        "ring": 4,
+        "sector": 8
+      }
+    ]
+  },
+  "ring3_sector9": {
+    "type": "field",
+    "neighbors": [
+      {
+        "ring": 3,
+        "sector": 8
+      },
+      {
+        "ring": 3,
+        "sector": 10
+      },
+      {
+        "ring": 2,
+        "sector": 9
+      }
+    ]
+  },
+  "ring3_sector10": {
+    "type": "field",
+    "neighbors": [
+      {
+        "ring": 3,
+        "sector": 9
+      },
+      {
+        "ring": 3,
+        "sector": 11
+      },
+      {
+        "ring": 2,
+        "sector": 10
+      },
+      {
+        "ring": 4,
+        "sector": 10
+      }
+    ]
+  },
+  "ring3_sector11": {
+    "type": "field",
+    "neighbors": [
+      {
+        "ring": 3,
+        "sector": 10
+      },
+      {
+        "ring": 3,
+        "sector": 12
+      }
+    ]
+  },
+  "ring3_sector12": {
+    "type": "field",
+    "neighbors": [
+      {
+        "ring": 3,
+        "sector": 1
+      },
+      {
+        "ring": 3,
+        "sector": 11
+      },
+      {
+        "ring": 2,
+        "sector": 12
+      },
+      {
+        "ring": 4,
+        "sector": 12
+      }
+    ]
+  },
+  "ring4_sector2": {
+    "type": "field",
+    "neighbors": [
+      {
+        "ring": 3,
+        "sector": 2
+      },
+      {
+        "ring": 5,
+        "sector": 2
+      }
+    ]
+  },
+  "ring4_sector4": {
+    "type": "field",
+    "neighbors": [
+      {
+        "ring": 3,
+        "sector": 4
+      },
+      {
+        "ring": 5,
+        "sector": 4
+      }
+    ]
+  },
+  "ring4_sector6": {
+    "type": "field",
+    "neighbors": [
+      {
+        "ring": 3,
+        "sector": 6
+      },
+      {
+        "ring": 5,
+        "sector": 6
+      }
+    ]
+  },
+  "ring4_sector8": {
+    "type": "field",
+    "neighbors": [
+      {
+        "ring": 3,
+        "sector": 8
+      },
+      {
+        "ring": 5,
+        "sector": 8
+      }
+    ]
+  },
+  "ring4_sector10": {
+    "type": "field",
+    "neighbors": [
+      {
+        "ring": 3,
+        "sector": 10
+      },
+      {
+        "ring": 5,
+        "sector": 10
+      }
+    ]
+  },
+  "ring4_sector12": {
+    "type": "field",
+    "neighbors": [
+      {
+        "ring": 3,
+        "sector": 12
+      },
+      {
+        "ring": 5,
+        "sector": 12
+      }
+    ]
+  },
+  "ring5_sector13": {
+    "type": "field",
+    "neighbors": [
+      {
+        "ring": 5,
+        "sector": 14
+      },
+      {
+        "ring": 5,
+        "sector": 12
+      }
+    ]
+  },
+  "ring5_sector14": {
+    "type": "field",
+    "neighbors": [
+      {
+        "ring": 5,
+        "sector": 13
+      },
+      {
+        "ring": 5,
+        "sector": 2
+      }
+    ]
+  },
+  "ring5_sector2": {
+    "type": "field",
+    "neighbors": [
+      {
+        "ring": 4,
+        "sector": 2
+      },
+      {
+        "ring": 6,
+        "sector": 2
+      },
+      {
+        "ring": 5,
+        "sector": 14
+      }
+    ]
+  },
+  "ring5_sector4": {
+    "type": "field",
+    "neighbors": [
+      {
+        "ring": 4,
+        "sector": 4
+      },
+      {
+        "ring": 6,
+        "sector": 4
+      },
+      {
+        "ring": 5,
+        "sector": 21
+      }
+    ]
+  },
+  "ring5_sector21": {
+    "type": "field",
+    "neighbors": [
+      {
+        "ring": 5,
+        "sector": 22
+      },
+      {
+        "ring": 5,
+        "sector": 4
+      }
+    ]
+  },
+  "ring5_sector22": {
+    "type": "field",
+    "neighbors": [
+      {
+        "ring": 5,
+        "sector": 21
+      },
+      {
+        "ring": 5,
+        "sector": 6
+      }
+    ]
+  },
+  "ring5_sector6": {
+    "type": "field",
+    "neighbors": [
+      {
+        "ring": 4,
+        "sector": 6
+      },
+      {
+        "ring": 6,
+        "sector": 6
+      },
+      {
+        "ring": 5,
+        "sector": 22
+      }
+    ]
+  },
+  "ring5_sector8": {
+    "type": "field",
+    "neighbors": [
+      {
+        "ring": 4,
+        "sector": 8
+      },
+      {
+        "ring": 6,
+        "sector": 8
+      },
+      {
+        "ring": 5,
+        "sector": 29
+      }
+    ]
+  },
+  "ring5_sector29": {
+    "type": "field",
+    "neighbors": [
+      {
+        "ring": 5,
+        "sector": 30
+      },
+      {
+        "ring": 5,
+        "sector": 8
+      }
+    ]
+  },
+  "ring5_sector30": {
+    "type": "field",
+    "neighbors": [
+      {
+        "ring": 5,
+        "sector": 29
+      },
+      {
+        "ring": 5,
+        "sector": 10
+      }
+    ]
+  },
+  "ring5_sector10": {
+    "type": "field",
+    "neighbors": [
+      {
+        "ring": 4,
+        "sector": 10
+      },
+      {
+        "ring": 6,
+        "sector": 10
+      },
+      {
+        "ring": 5,
+        "sector": 30
+      }
+    ]
+  },
+  "ring5_sector12": {
+    "type": "field",
+    "neighbors": [
+      {
+        "ring": 5,
+        "sector": 13
+      },
+      {
+        "ring": 4,
+        "sector": 12
+      },
+      {
+        "ring": 6,
+        "sector": 12
+      }
+    ]
+  },
+  "ring6_sector2": {
+    "type": "field",
+    "neighbors": [
+      {
+        "ring": 5,
+        "sector": 2
+      },
+      {
+        "ring": 7,
+        "sector": 2
+      }
+    ]
+  },
+  "ring6_sector4": {
+    "type": "field",
+    "neighbors": [
+      {
+        "ring": 5,
+        "sector": 4
+      },
+      {
+        "ring": 7,
+        "sector": 4
+      }
+    ]
+  },
+  "ring6_sector6": {
+    "type": "field",
+    "neighbors": [
+      {
+        "ring": 5,
+        "sector": 6
+      },
+      {
+        "ring": 7,
+        "sector": 6
+      }
+    ]
+  },
+  "ring6_sector8": {
+    "type": "field",
+    "neighbors": [
+      {
+        "ring": 5,
+        "sector": 8
+      },
+      {
+        "ring": 7,
+        "sector": 8
+      }
+    ]
+  },
+  "ring6_sector10": {
+    "type": "field",
+    "neighbors": [
+      {
+        "ring": 5,
+        "sector": 10
+      },
+      {
+        "ring": 7,
+        "sector": 10
+      }
+    ]
+  },
+  "ring6_sector12": {
+    "type": "field",
+    "neighbors": [
+      {
+        "ring": 5,
+        "sector": 12
+      },
+      {
+        "ring": 7,
+        "sector": 12
+      }
+    ]
+  },
+  "ring7_sector2": {
+    "type": "save",
+    "neighbors": [
+      {
+        "ring": 6,
+        "sector": 2
+      },
+      {
+        "ring": 7,
+        "sector": 19
+      }
+    ],
+    "number": 4
+  },
+  "ring7_sector19": {
+    "type": "field",
+    "neighbors": [
+      {
+        "ring": 7,
+        "sector": 20
+      },
+      {
+        "ring": 7,
+        "sector": 2
+      }
+    ]
+  },
+  "ring7_sector20": {
+    "type": "field",
+    "neighbors": [
+      {
+        "ring": 7,
+        "sector": 19
+      },
+      {
+        "ring": 7,
+        "sector": 21
+      }
+    ]
+  },
+  "ring7_sector21": {
+    "type": "field",
+    "neighbors": [
+      {
+        "ring": 7,
+        "sector": 20
+      },
+      {
+        "ring": 7,
+        "sector": 4
+      }
+    ]
+  },
+  "ring7_sector4": {
+    "type": "save",
+    "neighbors": [
+      {
+        "ring": 6,
+        "sector": 4
+      },
+      {
+        "ring": 7,
+        "sector": 21
+      }
+    ],
+    "number": 2
+  },
+  "ring7_sector6": {
+    "type": "save",
+    "neighbors": [
+      {
+        "ring": 6,
+        "sector": 6
+      },
+      {
+        "ring": 7,
+        "sector": 31
+      }
+    ],
+    "number": 5
+  },
+  "ring7_sector31": {
+    "type": "field",
+    "neighbors": [
+      {
+        "ring": 7,
+        "sector": 32
+      },
+      {
+        "ring": 7,
+        "sector": 6
+      }
+    ]
+  },
+  "ring7_sector32": {
+    "type": "field",
+    "neighbors": [
+      {
+        "ring": 7,
+        "sector": 31
+      },
+      {
+        "ring": 7,
+        "sector": 33
+      }
+    ]
+  },
+  "ring7_sector33": {
+    "type": "field",
+    "neighbors": [
+      {
+        "ring": 7,
+        "sector": 32
+      },
+      {
+        "ring": 7,
+        "sector": 8
+      }
+    ]
+  },
+  "ring7_sector8": {
+    "type": "save",
+    "neighbors": [
+      {
+        "ring": 6,
+        "sector": 8
+      },
+      {
+        "ring": 7,
+        "sector": 33
+      }
+    ],
+    "number": 3
+  },
+  "ring7_sector10": {
+    "type": "save",
+    "neighbors": [
+      {
+        "ring": 6,
+        "sector": 10
+      },
+      {
+        "ring": 7,
+        "sector": 43
+      }
+    ],
+    "number": 6
+  },
+  "ring7_sector43": {
+    "type": "field",
+    "neighbors": [
+      {
+        "ring": 7,
+        "sector": 44
+      },
+      {
+        "ring": 7,
+        "sector": 10
+      }
+    ]
+  },
+  "ring7_sector44": {
+    "type": "field",
+    "neighbors": [
+      {
+        "ring": 7,
+        "sector": 43
+      },
+      {
+        "ring": 7,
+        "sector": 45
+      }
+    ]
+  },
+  "ring7_sector45": {
+    "type": "field",
+    "neighbors": [
+      {
+        "ring": 7,
+        "sector": 44
+      },
+      {
+        "ring": 7,
+        "sector": 12
+      }
+    ]
+  },
+  "ring7_sector12": {
+    "type": "save",
+    "neighbors": [
+      {
+        "ring": 6,
+        "sector": 12
+      },
+      {
+        "ring": 7,
+        "sector": 45
+      }
+    ],
+    "number": 1
+  }
+}
