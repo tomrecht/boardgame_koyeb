@@ -1870,19 +1870,27 @@ class MainGameScene extends Phaser.Scene {
     }
 
     updateScoreText() {
-        const averageScore = calculateAverageScore();
-        
-        // Determine the label based on the sign: Positive is Black, Negative is White
-        const leaderLabel = averageScore >= 0 ? "Black" : "White";
-        const displayValue = Math.abs(averageScore).toFixed(2);
 
-        this.scoreText.setText(
-            `Games Played: ${scoreTracker.games_played}\n` +
-            `White Wins: ${scoreTracker.white_wins}\n` +
-            `Black Wins: ${scoreTracker.black_wins}\n` +
-            `Average Score: ${leaderLabel}: ${displayValue}`
-        );
-    }
+            const averageScore = calculateAverageScore();
+            const displayValue = Math.abs(averageScore).toFixed(2);
+
+            let finalScoreLine;
+            if (averageScore === 0) {
+                // If the score is 0, just show the number
+                finalScoreLine = `Average Score: ${displayValue}`;
+            } else {
+                // Otherwise, show the leader label (Positive = Black, Negative = White)
+                const leaderLabel = averageScore > 0 ? "Black" : "White";
+                finalScoreLine = `Average Score: ${leaderLabel}: ${displayValue}`;
+            }
+
+            this.scoreText.setText(
+                `Games Played: ${scoreTracker.games_played}\n` +
+                `White Wins: ${scoreTracker.white_wins}\n` +
+                `Black Wins: ${scoreTracker.black_wins}\n` +
+                finalScoreLine
+            );
+        }
 
     createRadioButton() {
         const circleX = this.sys.game.config.width - 350;
