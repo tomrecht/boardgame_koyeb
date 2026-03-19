@@ -1797,7 +1797,8 @@ class MainGameScene extends Phaser.Scene {
         this.game = new Game(this, this.startingPlayer, debugMode);
 
         this.createRadioButton();
-        this.createEvalButton();
+        if (DEBUG_MODE) { 
+            this.createEvalButton();}
 
         const iconSize = 192;
         const xPosition = this.sys.game.config.width - iconSize / 2 - 100; 
