@@ -1,17 +1,13 @@
-/* added for Koyeb deployment */
-const IS_LOCAL =
-    window.location.hostname === 'localhost' ||
-    window.location.hostname === '127.0.0.1';
-const LOCAL_URL = 'http://localhost:10000';
-const SERVER_URL = IS_LOCAL
-    ? LOCAL_URL
+/* Auto-detect environment for Koyeb or Localhost */
+const IS_LOCAL = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1';
+
+// This one variable now handles everything
+const SERVER_URL = IS_LOCAL 
+    ? 'http://localhost:10000' 
     : window.location.origin;
 
-
-
 const DEBUG_MODE = false; 
-const LOCAL_AI = true;
-
+// You don't need the LOCAL_AI constant anymore because IS_LOCAL handles it
 const WHITE_IS_AI = false;
 let BLACK_IS_AI = true;
 
@@ -29,15 +25,6 @@ const DIE_2_POSITION = 500;
 const colorFirstDie = 0x40E0D0; // Turquoise
 const colorSecondDie = 0xFFC0CB; 
 const colorSum = 0xFFFF00; // Yellow
-
-/* const CONFIG = {
-    AI_SERVER_URL: 'https://boardgame-tg08.onrender.com'
-}; */
-const CONFIG = {
-    AI_SERVER_URL: 'https://board-game-indol-sigma.vercel.app/'
-}; 
-
-SERVER_URL = LOCAL_AI ? 'http://localhost:10000' : CONFIG.AI_SERVER_URL;
 
 
 const scoreTracker = {
