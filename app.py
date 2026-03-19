@@ -2,7 +2,7 @@
 # python app.py
 # http://localhost:8000
 
-from flask import Flask, request, jsonify, send_from_status
+from flask import Flask, request, jsonify
 from flask_cors import CORS
 import os
 import copy
