@@ -2515,7 +2515,7 @@ const config = {
     height: 1200,
     backgroundColor: '#ffffff',
     scale: {
-        mode: Phaser.Scale.NONE, // Let the browser/CSS handle scaling
+        mode: Phaser.Scale.FIT, 
         autoCenter: Phaser.Scale.CENTER_BOTH
     },
     scene: [MainGameScene, InstructionsScene, EndGameScene],

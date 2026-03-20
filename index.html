@@ -13,11 +13,13 @@
         canvas {
             display: block;
             margin: 0 auto;
-            max-width: 100%; /* Allows it to shrink on small windows */
-            height: auto !important; /* Maintains aspect ratio */
-            touch-action: auto !important; /* Re-enables browser pinch-to-zoom */
+            /* This ensures it never overflows the screen height or width */
+            max-width: 100vw;
+            max-height: 100vh;
+            object-fit: contain;
+            /* Crucial: prevents the browser from blocking zoom gestures */
+            touch-action: auto !important;
         }
-
         /* Mobile-Specific Tweaks */
         @media (max-width: 768px) {
             canvas {
