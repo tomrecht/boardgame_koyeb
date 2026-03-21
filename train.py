@@ -32,10 +32,12 @@ def ttest_greater(data):
 # CONFIG
 # -------------------------
 
-MAX_PAIRS = 24          # pairs per evaluation (= MAX_PAIRS*2 games)
-MIN_PAIRS = 8          # minimum pairs before early stopping
-OPPONENT_POOL_SIZE = 6  # number of past champions to keep
+MAX_PAIRS = 24              # pairs per evaluation (= MAX_PAIRS*2 games)
+MIN_PAIRS = 6               # minimum pairs before early stopping
+OPPONENT_POOL_SIZE = 6      # number of past champions to keep
 MUTATION_SIGMA = 0.08
+EXPONENT_MUTATION_SIGMA = 0.02
+BASE_MUTATION_SIGMA = 0.08
 LARGE_MUTATION_PROB = 0.03
 CORES = max(1, os.cpu_count() - 1)
 SAVE_INTERVAL = 10
@@ -48,12 +50,11 @@ SAVE_INTERVAL = 10
 def load_weights(filename):
     with open(filename) as f:
         weights = json.load(f)
-    for key in ['saved_bonuses', 'goal_bonuses', 'near_goal_bonuses',
-                'captured_bonuses', 'loose_piece_penalties', 'blocked_piece_penalties']:
-        if key in weights:
-            weights[key] = {int(k): v for k, v in weights[key].items()}
+    for key, value in weights.items():
+        if isinstance(value, dict):
+            # Convert keys to int ONLY if they are numeric (1-6), leave 'a', 'b', 'midgame' as strings
+            weights[key] = {int(k) if k.isdigit() else k: v for k, v in value.items()}
     return weights
-
 
 def save_weights(weights, filename):
     with open(filename, 'w') as f:
@@ -209,7 +210,6 @@ def evaluate_challenger(challenger_weights, opponent_weights, gen_seed):
     challenger_wins = 0
     margins = []
     games_played = 0
-    early_stopped = False
 
     try:
         with Pool(processes=CORES) as pool:
@@ -248,14 +248,12 @@ def evaluate_challenger(challenger_weights, opponent_weights, gen_seed):
                                     if max_possible_wins / (MAX_PAIRS * 2) < 0.55:
                                         print(f"  Early stop: can't reach 55% ({challenger_wins}/{games_played})")
                                         pool.terminate()
-                                        early_stopped = True
                                         break
 
                                     # clearly losing
-                                    if win_rate < 0.42 and mean_margin < 0 and games_played >= MIN_PAIRS * 2:
+                                    if win_rate < 0.5 and mean_margin < 0:
                                         print(f"  Early stop: clearly losing ({challenger_wins}/{games_played})")
                                         pool.terminate()
-                                        early_stopped = True
                                         break
 
                                     # clearly winning
@@ -264,14 +262,12 @@ def evaluate_challenger(challenger_weights, opponent_weights, gen_seed):
                                         if p_value_check < 0.05:
                                             print(f"  Early stop: clearly winning ({challenger_wins}/{games_played})")
                                             pool.terminate()
-                                            early_stopped = True
                                         break
 
                                     # no significant signal
                                     if games_played >= MIN_PAIRS * 3 and p_value > 0.3:
                                         print(f"  Early stop: p={p_value:.3f} ({games_played} games)")
                                         pool.terminate()
-                                        early_stopped = True
                                         break
 
     except (BrokenPipeError, EOFError):
@@ -339,32 +335,53 @@ def get_evolution_path(weights):
             path[k] = 0.0
     return path
 
+# --- train.py ---
+
 def mutate_weights_with_momentum(weights, path, learning_rate=0.2):
-    """Mutates weights using random noise + the successful 'direction' from the path."""
     new = copy.deepcopy(weights)
     for key, value in new.items():
         if isinstance(value, dict):
             for k, v in value.items():
-                noise = random.gauss(0, MUTATION_SIGMA)
-                # Apply momentum (learning_rate * path) to the mutation
-                new[key][k] = v * math.exp(noise + learning_rate * path[key][k])
+                if k == 'b':
+                    current_sigma = EXPONENT_MUTATION_SIGMA  
+                elif k == 'a':
+                    current_sigma = BASE_MUTATION_SIGMA
+                else:
+                    current_sigma = MUTATION_SIGMA
+                
+                noise = random.gauss(0, current_sigma)
+                # Apply momentum as part of the exponent
+                mutated_val = v * math.exp(noise + (learning_rate * path[key][k]))
+                
+                if k == 'b':
+                    mutated_val = max(1.0, mutated_val)
+                new[key][k] = mutated_val
         elif isinstance(value, (int, float)):
             noise = random.gauss(0, MUTATION_SIGMA)
-            new[key] = value * math.exp(noise + learning_rate * path[key]) + random.gauss(0, 0.01)
+            # The extra random.gauss at the end is for the additive 'jitter'
+            new[key] = value * math.exp(noise + (learning_rate * path[key])) + random.gauss(0, 0.01)
     return new
 
 def update_evolution_path(current_path, old_weights, new_weights):
-    """Updates the path based on the difference between old and new champion."""
+    """Updates the path based on the log-ratio (percentage change) between old and new champion."""
     updated_path = copy.deepcopy(current_path)
     for key in old_weights:
         if isinstance(old_weights[key], dict):
             for k in old_weights[key]:
-                # 0.9 decay keeps the 'memory' of the direction while allowing it to shift
-                diff = (new_weights[key][k] - old_weights[key][k])
-                updated_path[key][k] = 0.9 * updated_path[key][k] + 0.1 * diff
+                # We use the log of the ratio to keep momentum scale-invariant
+                if old_weights[key][k] != 0 and new_weights[key][k] != 0:
+                    # abs() handles negative weights correctly
+                    ratio = abs(new_weights[key][k] / old_weights[key][k])
+                    diff = math.log(ratio)
+                    # Decay of 0.8 and clipping prevents runaway values
+                    updated_path[key][k] = 0.8 * updated_path[key][k] + 0.2 * diff
+                    updated_path[key][k] = max(-2.0, min(2.0, updated_path[key][k]))
         elif isinstance(old_weights[key], (int, float)):
-            diff = (new_weights[key] - old_weights[key])
-            updated_path[key] = 0.9 * updated_path[key] + 0.1 * diff
+            if old_weights[key] != 0 and new_weights[key] != 0:
+                ratio = abs(new_weights[key] / old_weights[key])
+                diff = math.log(ratio)
+                updated_path[key] = 0.8 * updated_path[key] + 0.2 * diff
+                updated_path[key] = max(-2.0, min(2.0, updated_path[key]))
     return updated_path
 
 # -------------------------

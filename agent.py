@@ -2,20 +2,21 @@
 # 
 import json
 import os
-
+import copy
+import math
 
 
 GAME_OVER_SCORE = 10000
 LOG_TO_FILE = True
 
 INITIAL_WEIGHTS = {
-    'saved_bonuses': {0:0, 1:18, 2:20, 3:22, 4:24, 5:26, 6:28},
-    'goal_bonuses': {0:0, 1:38, 2:40, 3:42, 4:44, 5:46, 6:48},
-    'near_goal_bonuses': {0:0, 1:18, 2:20, 3:22, 4:24, 5:26, 6:28},
+    'saved_bonuses': {'a': 18.0, 'b': 1.1}, # a = value for piece 1, b = exponent
+    'goal_bonuses': {'a': 38.0, 'b': 1.05},
+    'near_goal_bonuses': {'a': 18.0, 'b': 1.1},
+    'captured_bonuses': {'a': 4.0, 'b': 1.5},
+    'loose_piece_penalties': {'a': -18.0, 'b': 1.1},
+    'blocked_piece_penalties': {'a': -16.0, 'b': 1.1},
     'game_stage_bonuses': {'midgame': 50, 'endgame': 100},
-    'captured_bonuses': {0:0, 1:4, 2:6, 3:8, 4:10, 5:12, 6:14},
-    'loose_piece_penalties': {0:0, 1:-18, 2:-20, 3:-22, 4:-24, 5:-26, 6:-28},
-    'blocked_piece_penalties': {0:0, 1:-16, 2:-18, 3:-20, 4:-22, 5:-24, 6:-26},
     'saved_piece': 60,
     'goal_piece': 36,
     'near_goal_piece': 4,
@@ -37,8 +38,9 @@ def get_weights():
             weights = json.load(f)
         for key in ['saved_bonuses', 'goal_bonuses', 'near_goal_bonuses',
                     'captured_bonuses', 'loose_piece_penalties', 'blocked_piece_penalties']:
-            if key in weights:
-                weights[key] = {int(k): v for k, v in weights[key].items()}
+            if key in weights and isinstance(weights[key], dict):
+                # Use .isdigit() to safely check if the key is a number
+                weights[key] = {int(k) if k.isdigit() else k: v for k, v in weights[key].items()}
         print("Loaded best_weights.json")
         return weights
     return INITIAL_WEIGHTS
@@ -46,12 +48,30 @@ def get_weights():
 class Agent():
     def __init__(self, board=None, weights=INITIAL_WEIGHTS, log_file='game_log.json', log_to_file=False):
         self.board = board
-        self.weights = weights if weights is not None else get_weights()
+
+        raw_weights = weights if weights is not None else get_weights()
+        self.weights = self._expand_weights(raw_weights)
+
         self.log = []
         self.log_file = log_file
         self.log_to_file = log_to_file
 
-
+    def _expand_weights(self, raw):
+            expanded = copy.deepcopy(raw)
+            categories = [
+                'saved_bonuses', 'goal_bonuses', 'near_goal_bonuses',
+                'captured_bonuses', 'loose_piece_penalties', 'blocked_piece_penalties'
+            ]
+            
+            for cat in categories:
+                if isinstance(raw[cat], dict) and 'a' in raw[cat]:
+                    a = raw[cat]['a']
+                    b = raw[cat]['b']
+                    # Create the 1-6 lookup dictionary
+                    # Formula: y = a * (x^b)
+                    expanded[cat] = {n: a * (math.pow(n, b)) for n in range(1, 7)}
+                    expanded[cat][0] = 0.0  # Always 0 for non-existent piece 0
+            return expanded
 
     def evaluate(self, board, player):
         winner, score = board.check_game_over()

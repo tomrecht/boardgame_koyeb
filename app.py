@@ -1,3 +1,6 @@
+# python -m http.server 8000
+# python app.py
+
 from flask import Flask, request, jsonify
 from flask_cors import CORS
 import os
