@@ -72,11 +72,6 @@ class GNNAgent:
 
         # --- Pass move ---
         if (0, 0, 0) in moves:
-            winner, score = board.check_game_over()
-            if winner:
-                factor = 1 if winner == player else -1
-                # Return immediately — game is over
-                return ((0, 0, 0), (0, 0, 0))
             move_keys.append(((0, 0, 0), (0, 0, 0)))
             encoded_list.append(self.encoder.encode(board, player))
 

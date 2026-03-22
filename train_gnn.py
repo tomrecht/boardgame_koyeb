@@ -494,7 +494,7 @@ def train():
                 frozen_model.load_state_dict(copy.deepcopy(model.state_dict()))
                 save_model(model, SELFPLAY_WEIGHTS)
 
-                # Always save to Drive checkpoint dir
+                # Save to Drive
                 drive_best = os.path.join(CHECKPOINT_DIR, SELFPLAY_WEIGHTS)
                 save_model(model, drive_best)
 
@@ -505,6 +505,12 @@ def train():
                     print(f"  Checkpoint saved: {drive_ckpt}")
             else:
                 print(f"  ✗ Not promoted.")
+
+            # Periodic save regardless of promotion — guard against session timeout
+            if generation % CHECKPOINT_INTERVAL == 0:
+                periodic_path = os.path.join(CHECKPOINT_DIR, f'gnn_current_gen{generation}.pt')
+                save_model(model, periodic_path)
+                print(f"  Periodic save: {periodic_path}")
 
             gen_time = time.time() - gen_start
             total_time = time.time() - start
