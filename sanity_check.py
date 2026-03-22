@@ -167,12 +167,12 @@ def test_home_tile_has_neighbors():
 
 def test_home_not_traversable():
     home_idx = encoder.tile_index[(0, 0)]
-    feats = encoder._static_tile_feats
+    feats = encoder._tile_feats
     check("Home tile is_traversable_as_waypoint == 0",
           feats[home_idx, 3].item() == 0.0)
 
 def test_field_tiles_traversable():
-    feats = encoder._static_tile_feats
+    feats = encoder._tile_feats
     for (r, s), info in encoder.tile_info.items():
         if info['type'] == 'field':
             idx = encoder.tile_index[(r, s)]
@@ -202,14 +202,14 @@ run("field_tiles_traversable", test_field_tiles_traversable)
 section("2. Tile feature encoding")
 
 def test_tile_feat_shape():
-    feats = encoder._static_tile_feats
+    feats = encoder._tile_feats
     check("Tile feats shape [num_tiles, TILE_FEAT_DIM]",
           feats.shape == (encoder.num_tiles, TILE_FEAT_DIM),
           f"got {feats.shape}")
 
 def test_tile_type_onehot():
     """Each tile should have exactly one of is_home/is_field/is_save set."""
-    feats = encoder._static_tile_feats
+    feats = encoder._tile_feats
     type_bits = feats[:, 0:3]
     row_sums = type_bits.sum(dim=1)
     check("Each tile has exactly one type bit set",
@@ -218,7 +218,7 @@ def test_tile_type_onehot():
 
 def test_home_tile_features():
     idx = encoder.tile_index[(0, 0)]
-    feats = encoder._static_tile_feats[idx]
+    feats = encoder._tile_feats[idx]
     check("Home tile: is_home=1", feats[0].item() == 1.0)
     check("Home tile: is_field=0", feats[1].item() == 0.0)
     check("Home tile: is_save=0", feats[2].item() == 0.0)
@@ -230,7 +230,7 @@ def test_save_tile_features():
     for (r, s), info in encoder.tile_info.items():
         if info['type'] == 'save':
             idx = encoder.tile_index[(r, s)]
-            feats = encoder._static_tile_feats[idx]
+            feats = encoder._tile_feats[idx]
             num = info['number']
             check(f"Save tile ({r},{s}) num={num}: is_save=1", feats[2].item() == 1.0)
             check(f"Save tile ({r},{s}) num={num}: save_number correct",
@@ -239,7 +239,7 @@ def test_save_tile_features():
             check(f"Save tile ({r},{s}) num={num}: traversable=1", feats[3].item() == 1.0)
 
 def test_tile_feats_normalised():
-    feats = encoder._static_tile_feats
+    feats = encoder._tile_feats
     check("All tile features in [0,1]",
           feats.min().item() >= 0.0 and feats.max().item() <= 1.0,
           f"min={feats.min()}, max={feats.max()}")
@@ -527,7 +527,7 @@ section("6. Piece-tile edges")
 
 edge_board = play_n_moves(fresh_board(), 20, seed=3)
 edge_feats, edge_pieces = encode_piece_features(edge_board, encoder.tile_index, edge_board.current_player)
-p2t, t2p = encode_piece_tile_edges(edge_pieces, encoder.tile_index, edge_board)
+p2t, t2p = encode_piece_tile_edges(edge_pieces, encoder.tile_index)
 
 def test_edge_shapes():
     check("piece_to_tile has 2 rows", p2t.shape[0] == 2,
@@ -772,7 +772,7 @@ def test_multiple_pieces_same_tile():
     """
     board = play_n_moves(fresh_board(), 50, seed=13)
     _, all_pieces = encode_piece_features(board, encoder.tile_index, board.current_player)
-    p2t_enc, _ = encode_piece_tile_edges(all_pieces, encoder.tile_index, board)
+    p2t_enc, _ = encode_piece_tile_edges(all_pieces, encoder.tile_index)
 
     # Find tiles with multiple pieces
     from collections import Counter
@@ -835,12 +835,22 @@ def test_forward_fresh_board():
     print(f"        (fresh board score = {score.item():.4f})")
 
 def test_forward_different_players():
-    """Piece features should differ across perspectives even if scores happen to match."""
+    """
+    The network should be sensitive to piece features.
+    Verify by perturbing piece features and checking output changes.
+    """
     board = play_n_moves(fresh_board(), 30, seed=8)
-    feats_w, _ = encode_piece_features(board, encoder.tile_index, 'white')
-    feats_b, _ = encode_piece_features(board, encoder.tile_index, 'black')
-    check("White and black perspectives produce different piece features",
-          not torch.allclose(feats_w, feats_b))
+    encoded = encoder.encode(board, board.current_player)
+    model.eval()
+    with torch.no_grad():
+        score_original = model(encoded).item()
+        # Perturb piece features significantly
+        perturbed = {k: v.clone() for k, v in encoded.items()}
+        perturbed['piece_feats'] = torch.ones_like(perturbed['piece_feats'])
+        score_perturbed = model(perturbed).item()
+    check("Network is sensitive to piece features",
+          abs(score_original - score_perturbed) > 1e-4,
+          f"original={score_original:.6f}, perturbed={score_perturbed:.6f}")
 
 def test_gradients_flow():
     board = play_n_moves(fresh_board(), 25, seed=2)
@@ -891,18 +901,22 @@ def test_parameter_count():
           f"got {total}")
 
 def test_forward_batch():
-    """Batched forward pass should return [N] tensor."""
+    """Batched forward should return [N] tensor matching individual scores."""
     boards = [play_n_moves(fresh_board(), n, seed=s)
               for n, s in [(10,1),(20,2),(30,3)]]
     encoded_list = [encoder.encode(b, b.current_player) for b in boards]
     model.eval()
     with torch.no_grad():
-        scores = model(encoded_list)
+        # Batched
+        scores_batch = model(encoded_list)
+        # Individual
+        scores_single = torch.stack([model(e) for e in encoded_list])
     check("Batched forward returns [N] tensor",
-          scores.shape == torch.Size([3]),
-          f"got shape {scores.shape}")
-    check("Batched scores are floats",
-          scores.dtype in (torch.float32, torch.float64))
+          scores_batch.shape == torch.Size([3]),
+          f"got shape {scores_batch.shape}")
+    check("Batched scores match individual scores",
+          torch.allclose(scores_batch, scores_single, atol=1e-5),
+          f"batch={scores_batch.tolist()}, single={scores_single.tolist()}")
 
 run("forward_scalar", test_forward_scalar)
 run("forward_is_float", test_forward_is_float)

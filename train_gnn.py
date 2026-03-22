@@ -28,7 +28,7 @@ import torch.optim as optim
 
 from game import Board
 from agent_gnn import GNNAgent
-from network import BoardEncoder, BoardGNN, save_model, load_model, DEVICE
+from network import BoardEncoder, BoardGNN, collate_batch, save_model, load_model, DEVICE
 
 # Drive checkpoint directory — set by Colab notebook via env var
 # Falls back to current directory if not set
@@ -244,7 +244,7 @@ def label_positions(record, winner, outcome_score, total_turns):
 
 def training_step(model, optimizer, criterion, buffer, n_samples=GRAD_ACCUM_STEPS):
     """
-    Sample n_samples from buffer, accumulate gradients, do one optimizer step.
+    Sample n_samples from buffer, evaluate as a batch, do one optimizer step.
     Returns mean loss.
     """
     samples = buffer.sample(n_samples)
@@ -253,17 +253,17 @@ def training_step(model, optimizer, criterion, buffer, n_samples=GRAD_ACCUM_STEP
 
     model.train()
     optimizer.zero_grad()
-    total_loss = 0.0
 
-    for encoded, label in samples:
-        target = torch.tensor(label, dtype=torch.float32).to(DEVICE)
-        pred   = model(encoded)
-        loss   = criterion(pred, target) / len(samples)
-        loss.backward()
-        total_loss += loss.item()
+    encoded_list = [e for e, _ in samples]
+    targets = torch.tensor([l for _, l in samples],
+                           dtype=torch.float32, device=DEVICE)
 
+    preds = model(encoded_list)              # [n_samples] — true batched forward
+    loss  = criterion(preds, targets)
+    loss.backward()
     optimizer.step()
-    return total_loss * len(samples)   # return mean loss
+
+    return loss.item()
 
 
 # -------------------------

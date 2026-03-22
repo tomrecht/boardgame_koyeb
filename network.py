@@ -1,26 +1,23 @@
 """
-network.py — GNN position encoder and value network.
+network.py — GNN position encoder and value network with true GPU batching.
 
 Architecture:
-  - BoardEncoder: converts a Board object into a dict of tensors
-  - BoardGNN: heterogeneous GNN with global node, outputs expected score
-
-Node types:
-  - Tile nodes (70): board topology, features change each position
+  - Tile nodes (70): board topology, static structure, dynamic features
   - Piece nodes (24): one per piece, always present
-  - Global node (1): virtual node connected to all tiles, learns board summary
+  - Global node (1): virtual node connected to all tiles
+  - 6 message passing layers
+  - Hidden dim: 64
 
-Encoding is always from the current player's perspective:
-  - Current player's pieces → player_id = 0
-  - Opponent's pieces      → player_id = 1
-
-Global features (dice): [die1_val, die2_val, die1_used, die2_used]
+Encoding: always from current player's perspective.
+  Current player pieces -> player_id=0, opponent -> player_id=1.
 
 Batching:
-  BoardGNN.forward() accepts either:
-    - A single encoded dict       → returns scalar
-    - A list of encoded dicts     → returns [N] tensor
-  This allows efficient GPU utilisation during move selection.
+  BoardGNN.forward() accepts a list of encoded dicts and processes them
+  as a true GPU batch — all N positions in one set of matrix multiplications.
+
+  Tile-tile edges are shared (topology never changes) -> broadcast across batch.
+  Piece-tile edges vary per position -> block-diagonal construction.
+  Global node: one per batch item.
 """
 
 import json
@@ -28,57 +25,49 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
-# Device — automatically use GPU if available
 DEVICE = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
-
 
 # -------------------------
 # CONSTANTS
 # -------------------------
 
-NUM_PIECES      = 12       # per player
+NUM_PIECES      = 12
 TOTAL_PIECES    = 24
 HIDDEN_DIM      = 64
-NUM_MP_LAYERS   = 6        # message passing rounds
-
-# Feature dimensions
-TILE_FEAT_DIM   = 8        # see encode_tile_features()
-PIECE_FEAT_DIM  = 8        # see encode_piece_features()
-GLOBAL_FEAT_DIM = 4        # [die1_val, die2_val, die1_used, die2_used]
+NUM_MP_LAYERS   = 6
+TILE_FEAT_DIM   = 8
+PIECE_FEAT_DIM  = 8
+GLOBAL_FEAT_DIM = 4   # [die1_val, die2_val, die1_used, die2_used]
 
 
 # -------------------------
-# FIXED GRAPH STRUCTURE
+# TILE GRAPH  (built once)
 # -------------------------
 
 def build_tile_index(tile_neighbors_path='tile_neighbors.json'):
     """
-    Reads tile_neighbors.json and returns:
-      tile_index:      dict (ring, sector) -> int node index
-      tile_info:       dict (ring, sector) -> raw json entry
-      tile_edge_index: LongTensor [2, E] tile-tile edges (both directions)
-
-    Nogo tiles are excluded.
-    Called once at startup; results are reused every forward pass.
+    Returns:
+      tile_index:      dict (ring, sector) -> int
+      tile_info:       dict (ring, sector) -> json entry
+      tile_edge_index: LongTensor [2, E]  (both directions, on DEVICE)
+    Nogo tiles excluded.
     """
     with open(tile_neighbors_path) as f:
         raw = json.load(f)
 
-    tile_keys = []
-    tile_info = {}
+    tile_keys, tile_info = [], {}
     for key, val in raw.items():
         if val['type'] == 'nogo':
             continue
-        ring, sector = _parse_key(key)
-        tile_keys.append((ring, sector))
-        tile_info[(ring, sector)] = val
+        r, s = _parse_key(key)
+        tile_keys.append((r, s))
+        tile_info[(r, s)] = val
 
     tile_index = {coords: idx for idx, coords in enumerate(tile_keys)}
 
-    # Build undirected edge list
     edges = set()
-    for (ring, sector), val in tile_info.items():
-        i = tile_index[(ring, sector)]
+    for (r, s), val in tile_info.items():
+        i = tile_index[(r, s)]
         for nb in val['neighbors']:
             nb_coords = (nb['ring'], nb['sector'])
             if nb_coords in tile_index:
@@ -89,54 +78,42 @@ def build_tile_index(tile_neighbors_path='tile_neighbors.json'):
     src = [e[0] for e in edges]
     dst = [e[1] for e in edges]
     tile_edge_index = torch.tensor([src, dst], dtype=torch.long, device=DEVICE)
-
     return tile_index, tile_info, tile_edge_index
 
 
 def _parse_key(key):
-    """'ring3_sector7' -> (3, 7)"""
     parts = key.replace('ring', '').replace('sector', '').split('_')
     return int(parts[0]), int(parts[1])
 
 
 # -------------------------
-# TILE FEATURE ENCODING  (static)
+# TILE FEATURES  (static)
 # -------------------------
 
 def encode_tile_features(tile_index, tile_info):
     """
-    Build fixed [num_tiles, TILE_FEAT_DIM] tensor. Never changes between positions.
-
-    Features per tile:
-      [0]  is_home
-      [1]  is_field
-      [2]  is_save
-      [3]  is_traversable_as_waypoint  (False only for home tile)
-      [4]  ring           (normalised 0->1, max=7)
-      [5]  sector         (normalised 0->1, max=45)
-      [6]  save_number    (normalised 1->6, 0 if not save tile)
-      [7]  reserved
+    [num_tiles, TILE_FEAT_DIM] — never changes between positions.
+    [0] is_home  [1] is_field  [2] is_save
+    [3] traversable_as_waypoint (0 for home only)
+    [4] ring/7   [5] sector/45  [6] save_number/6  [7] reserved
     """
-    num_tiles = len(tile_index)
-    feats = torch.zeros(num_tiles, TILE_FEAT_DIM)
-
+    n = len(tile_index)
+    f = torch.zeros(n, TILE_FEAT_DIM)
     for (ring, sector), idx in tile_index.items():
         info = tile_info[(ring, sector)]
-        t    = info['type']
-        feats[idx, 0] = 1.0 if t == 'home'  else 0.0
-        feats[idx, 1] = 1.0 if t == 'field' else 0.0
-        feats[idx, 2] = 1.0 if t == 'save'  else 0.0
-        feats[idx, 3] = 0.0 if t == 'home'  else 1.0
-        feats[idx, 4] = ring   / 7.0
-        feats[idx, 5] = sector / 45.0
-        feats[idx, 6] = info.get('number', 0) / 6.0
-        feats[idx, 7] = 0.0
-
-    return feats.to(DEVICE)
+        t = info['type']
+        f[idx, 0] = float(t == 'home')
+        f[idx, 1] = float(t == 'field')
+        f[idx, 2] = float(t == 'save')
+        f[idx, 3] = 0.0 if t == 'home' else 1.0
+        f[idx, 4] = ring / 7.0
+        f[idx, 5] = sector / 45.0
+        f[idx, 6] = info.get('number', 0) / 6.0
+    return f.to(DEVICE)
 
 
 # -------------------------
-# PIECE FEATURE ENCODING  (position-dependent)
+# PIECE FEATURES  (per position)
 # -------------------------
 
 STATUS_UNENTERED    = 0
@@ -163,72 +140,55 @@ def _piece_status(piece, board):
 
 def encode_piece_features(board, tile_index, current_player):
     """
-    Build [TOTAL_PIECES, PIECE_FEAT_DIM] tensor, current player's perspective.
-
-    Features per piece:
-      [0]    player_id     (0=current, 1=opponent)
-      [1]    piece_number  (normalised 1->12)
-      [2..6] status one-hot (unentered, on_home, on_board, can_be_saved, saved)
-      [7]    rack_position (normalised 0->11, only for unentered pieces)
-
-    Ordering: current player pieces first (sorted by number), then opponent.
+    Returns ([TOTAL_PIECES, PIECE_FEAT_DIM] on DEVICE, ordered piece list).
+    Current player pieces first (sorted by number), then opponent.
+    Features: [player_id, number/12, status_onehot×5, rack_pos/11]
     """
     opponent = 'black' if current_player == 'white' else 'white'
+    cur_pieces = sorted([p for p in board.pieces if p.player == current_player],
+                        key=lambda p: p.number)
+    opp_pieces = sorted([p for p in board.pieces if p.player == opponent],
+                        key=lambda p: p.number)
+    all_pieces = cur_pieces + opp_pieces
 
-    current_pieces  = sorted([p for p in board.pieces if p.player == current_player],
-                              key=lambda p: p.number)
-    opponent_pieces = sorted([p for p in board.pieces if p.player == opponent],
-                              key=lambda p: p.number)
-    all_pieces = current_pieces + opponent_pieces
+    cur_un = board.white_unentered if current_player == 'white' else board.black_unentered
+    opp_un = board.black_unentered if current_player == 'white' else board.white_unentered
+    rack_pos = {p: i for i, p in enumerate(cur_un)}
+    rack_pos.update({p: i for i, p in enumerate(opp_un)})
 
-    cur_unentered = board.white_unentered if current_player == 'white' else board.black_unentered
-    opp_unentered = board.black_unentered if current_player == 'white' else board.white_unentered
-    rack_pos_map  = {p: i for i, p in enumerate(cur_unentered)}
-    rack_pos_map.update({p: i for i, p in enumerate(opp_unentered)})
-
-    feats = torch.zeros(TOTAL_PIECES, PIECE_FEAT_DIM)
-
+    f = torch.zeros(TOTAL_PIECES, PIECE_FEAT_DIM)
     for idx, piece in enumerate(all_pieces):
-        player_id = 0 if piece.player == current_player else 1
-        status    = _piece_status(piece, board)
-        rack_pos  = rack_pos_map.get(piece, 0)
-
-        feats[idx, 0] = float(player_id)
-        feats[idx, 1] = piece.number / 12.0
-        feats[idx, 2 + status] = 1.0
-        feats[idx, 7] = rack_pos / 11.0 if status == STATUS_UNENTERED else 0.0
-
-    return feats.to(DEVICE), all_pieces
+        status = _piece_status(piece, board)
+        f[idx, 0] = 0.0 if piece.player == current_player else 1.0
+        f[idx, 1] = piece.number / 12.0
+        f[idx, 2 + status] = 1.0
+        f[idx, 7] = rack_pos.get(piece, 0) / 11.0 if status == STATUS_UNENTERED else 0.0
+    return f.to(DEVICE), all_pieces
 
 
 # -------------------------
-# PIECE -> TILE EDGES  (position-dependent)
+# PIECE->TILE EDGES  (per position)
 # -------------------------
 
-def encode_piece_tile_edges(all_pieces, tile_index, board):
+def encode_piece_tile_edges(all_pieces, tile_index):
     """
-    Returns edges connecting on-board pieces to their current tile.
-    piece_to_tile: [2, N]  row0=piece_idx, row1=tile_idx
-    tile_to_piece: [2, N]  reverse
+    piece_to_tile: [2, N_onboard]  row0=piece_idx, row1=tile_idx
+    tile_to_piece: reverse
     """
-    piece_src, tile_dst = [], []
-
-    for piece_idx, piece in enumerate(all_pieces):
+    psrc, tdst = [], []
+    for pidx, piece in enumerate(all_pieces):
         if piece.tile is not None:
             coords = (piece.tile.ring, piece.tile.pos)
             if coords in tile_index:
-                tile_idx = tile_index[coords]
-                piece_src.append(piece_idx)
-                tile_dst.append(tile_idx)
-
-    if piece_src:
-        piece_to_tile = torch.tensor([piece_src, tile_dst], dtype=torch.long, device=DEVICE)
-        tile_to_piece = torch.tensor([tile_dst, piece_src], dtype=torch.long, device=DEVICE)
+                psrc.append(pidx)
+                tdst.append(tile_index[coords])
+    if psrc:
+        p2t = torch.tensor([psrc, tdst], dtype=torch.long, device=DEVICE)
+        t2p = torch.tensor([tdst, psrc], dtype=torch.long, device=DEVICE)
     else:
-        piece_to_tile = torch.zeros(2, 0, dtype=torch.long, device=DEVICE)
-        tile_to_piece = torch.zeros(2, 0, dtype=torch.long, device=DEVICE)
-
-    return piece_to_tile, tile_to_piece
+        p2t = torch.zeros(2, 0, dtype=torch.long, device=DEVICE)
+        t2p = torch.zeros(2, 0, dtype=torch.long, device=DEVICE)
+    return p2t, t2p
 
 
 # -------------------------
@@ -236,14 +196,9 @@ def encode_piece_tile_edges(all_pieces, tile_index, board):
 # -------------------------
 
 def encode_global_features(board):
-    """[die1_val, die2_val, die1_used, die2_used] normalised to [0,1]."""
     d1, d2 = board.dice[0], board.dice[1]
-    return torch.tensor([
-        d1.number / 6.0,
-        d2.number / 6.0,
-        float(d1.used),
-        float(d2.used),
-    ], device=DEVICE)
+    return torch.tensor([d1.number/6., d2.number/6.,
+                         float(d1.used), float(d2.used)], device=DEVICE)
 
 
 # -------------------------
@@ -252,127 +207,200 @@ def encode_global_features(board):
 
 class BoardEncoder:
     """
-    Converts a Board into a dict of tensors for BoardGNN.
-
-    Usage:
-        encoder = BoardEncoder()           # once at startup
-        encoded = encoder.encode(board, player)
+    Converts a Board into a dict of tensors.
+    Instantiate once; call encode() per position.
     """
-
     def __init__(self, tile_neighbors_path='tile_neighbors.json'):
         self.tile_index, self.tile_info, self.tile_edge_index = \
             build_tile_index(tile_neighbors_path)
         self.num_tiles = len(self.tile_index)
-        self._static_tile_feats = encode_tile_features(self.tile_index, self.tile_info)
+        self._tile_feats = encode_tile_features(self.tile_index, self.tile_info)
 
     def encode(self, board, current_player):
         piece_feats, all_pieces = encode_piece_features(
             board, self.tile_index, current_player)
-        piece_to_tile, tile_to_piece = encode_piece_tile_edges(
-            all_pieces, self.tile_index, board)
-        global_feats = encode_global_features(board)
-
+        p2t, t2p = encode_piece_tile_edges(all_pieces, self.tile_index)
         return {
-            'tile_feats':       self._static_tile_feats,
-            'piece_feats':      piece_feats,
-            'tile_edge_index':  self.tile_edge_index,
-            'piece_to_tile':    piece_to_tile,
-            'tile_to_piece':    tile_to_piece,
-            'global_feats':     global_feats,
+            'tile_feats':       self._tile_feats,           # [T, TF]
+            'piece_feats':      piece_feats,                # [P, PF]
+            'tile_edge_index':  self.tile_edge_index,       # [2, E]  shared
+            'piece_to_tile':    p2t,                        # [2, N]  per-pos
+            'tile_to_piece':    t2p,                        # [2, N]  per-pos
+            'global_feats':     encode_global_features(board),  # [GF]
         }
 
 
 # -------------------------
-# MEAN AGGREGATION HELPER
+# BATCH CONSTRUCTION
 # -------------------------
 
-def _mean_aggregate(messages, dst_indices, num_dst, dim):
+def collate_batch(encoded_list):
     """
-    Mean-pool messages into destination nodes.
-    messages:    [E, dim]
-    dst_indices: [E]
-    Returns:     [num_dst, dim]
+    Stack a list of encoded dicts into batch tensors.
+
+    Tile features: [B, T, TF]  — stack along new batch dim
+    Piece features:[B, P, PF]
+    Global features:[B, GF]
+
+    Tile-tile edges: shared — [2, E], used as-is for all batch items
+      (message passing broadcasts over batch dim)
+
+    Piece-tile edges: block-diagonal — offset each item's indices so
+      batch item b's piece indices are in [b*P, (b+1)*P) and
+      tile indices are in [b*T, (b+1)*T).
+      Combined: [2, sum(N_i)]
     """
-    agg   = torch.zeros(num_dst, dim, device=messages.device)
-    count = torch.zeros(num_dst, 1,   device=messages.device)
-    agg.scatter_add_(0, dst_indices.unsqueeze(1).expand_as(messages), messages)
-    count.scatter_add_(0, dst_indices.unsqueeze(1),
-                       torch.ones(dst_indices.size(0), 1, device=messages.device))
+    B = len(encoded_list)
+    T = encoded_list[0]['tile_feats'].size(0)
+    P = encoded_list[0]['piece_feats'].size(0)
+
+    tile_feats_b  = torch.stack([e['tile_feats']  for e in encoded_list])  # [B,T,TF]
+    piece_feats_b = torch.stack([e['piece_feats'] for e in encoded_list])  # [B,P,PF]
+    global_feats_b = torch.stack([e['global_feats'] for e in encoded_list]) # [B,GF]
+
+    # Tile-tile edges are shared — same for all batch items
+    tile_edge_index = encoded_list[0]['tile_edge_index']  # [2, E]
+
+    # Piece-tile edges: build block-diagonal
+    p2t_srcs, p2t_dsts = [], []
+    t2p_srcs, t2p_dsts = [], []
+    for b, e in enumerate(encoded_list):
+        p2t = e['piece_to_tile']   # [2, N]
+        t2p = e['tile_to_piece']   # [2, N]
+        if p2t.size(1) > 0:
+            p2t_srcs.append(p2t[0] + b * P)
+            p2t_dsts.append(p2t[1] + b * T)
+        if t2p.size(1) > 0:
+            t2p_srcs.append(t2p[0] + b * T)
+            t2p_dsts.append(t2p[1] + b * P)
+
+    if p2t_srcs:
+        p2t_b = torch.stack([torch.cat(p2t_srcs), torch.cat(p2t_dsts)])  # [2, sum_N]
+        t2p_b = torch.stack([torch.cat(t2p_srcs), torch.cat(t2p_dsts)])
+    else:
+        p2t_b = torch.zeros(2, 0, dtype=torch.long, device=DEVICE)
+        t2p_b = torch.zeros(2, 0, dtype=torch.long, device=DEVICE)
+
+    return {
+        'tile_feats':       tile_feats_b,       # [B, T, TF]
+        'piece_feats':      piece_feats_b,      # [B, P, PF]
+        'global_feats':     global_feats_b,     # [B, GF]
+        'tile_edge_index':  tile_edge_index,    # [2, E]  shared
+        'piece_to_tile':    p2t_b,              # [2, sum_N]  block-diag
+        'tile_to_piece':    t2p_b,              # [2, sum_N]  block-diag
+        'B': B, 'T': T, 'P': P,
+    }
+
+
+# -------------------------
+# MEAN AGGREGATION
+# -------------------------
+
+def _mean_agg(messages, dst, num_dst, dim, device):
+    """Mean-pool messages into destination nodes. [E,H] -> [num_dst, H]"""
+    agg   = torch.zeros(num_dst, dim, device=device)
+    count = torch.zeros(num_dst, 1,   device=device)
+    agg.scatter_add_(0, dst.unsqueeze(1).expand_as(messages), messages)
+    count.scatter_add_(0, dst.unsqueeze(1),
+                       torch.ones(dst.size(0), 1, device=device))
     return agg / count.clamp(min=1)
 
 
 # -------------------------
-# MESSAGE PASSING LAYER
+# MESSAGE PASSING LAYER  (batched)
 # -------------------------
 
 class MessagePassingLayer(nn.Module):
     """
-    One round of heterogeneous message passing:
-      1. tile  -> piece   (tiles inform pieces about location context)
-      2. piece -> tile    (tiles learn what's on them)
-      3. tile  -> tile    (spatial propagation through board topology)
-      4. tile  -> global  (global node aggregates whole board)
-      5. global -> tile   (global context broadcast back to all tiles)
+    One round of batched heterogeneous message passing.
+    All inputs are batched: tile_h [B,T,H], piece_h [B,P,H], global_h [B,1,H].
+    Edge indices use block-diagonal offsets for piece-tile, broadcast for tile-tile.
+
+    Steps:
+      1. tile  -> piece
+      2. piece -> tile
+      3. tile  -> tile   (shared edges, batched scatter)
+      4. tile  -> global (mean pool per batch item)
+      5. global -> tile  (broadcast per batch item)
     """
 
     def __init__(self, dim):
         super().__init__()
-        # tile <-> piece
         self.tile_to_piece_msg  = nn.Linear(dim, dim)
         self.piece_update       = nn.Linear(dim * 2, dim)
         self.piece_to_tile_msg  = nn.Linear(dim, dim)
         self.tile_update_pieces = nn.Linear(dim * 2, dim)
-        # tile <-> tile
         self.tile_to_tile_msg   = nn.Linear(dim, dim)
         self.tile_update_tiles  = nn.Linear(dim * 2, dim)
-        # tile <-> global
         self.tile_to_global_msg = nn.Linear(dim, dim)
         self.global_update      = nn.Linear(dim * 2, dim)
         self.global_to_tile_msg = nn.Linear(dim, dim)
         self.tile_update_global = nn.Linear(dim * 2, dim)
 
     def forward(self, tile_h, piece_h, global_h,
-                tile_edge_index, piece_to_tile, tile_to_piece):
+                tile_edge_index, p2t, t2p, B, T, P):
         """
-        tile_h:   [T, dim]
-        piece_h:  [P, dim]
-        global_h: [1, dim]
+        tile_h:   [B, T, H]
+        piece_h:  [B, P, H]
+        global_h: [B, 1, H]
+        tile_edge_index: [2, E]  shared (not block-diagonal)
+        p2t, t2p: [2, sum_N]  block-diagonal
         """
-        num_tiles  = tile_h.size(0)
-        num_pieces = piece_h.size(0)
-        dim        = tile_h.size(1)
+        H   = tile_h.size(2)
+        dev = tile_h.device
 
-        # 1. tile -> piece
-        if tile_to_piece.size(1) > 0:
-            msgs = self.tile_to_piece_msg(tile_h[tile_to_piece[0]])
-            agg  = _mean_aggregate(msgs, tile_to_piece[1], num_pieces, dim)
+        # Flatten batch for scatter operations
+        tile_flat  = tile_h.view(B * T, H)   # [B*T, H]
+        piece_flat = piece_h.view(B * P, H)  # [B*P, H]
+
+        # --- 1. tile -> piece  (block-diagonal) ---
+        if t2p.size(1) > 0:
+            msgs = self.tile_to_piece_msg(tile_flat[t2p[0]])   # [sum_N, H]
+            agg  = _mean_agg(msgs, t2p[1], B * P, H, dev)      # [B*P, H]
         else:
-            agg = torch.zeros(num_pieces, dim, device=tile_h.device)
-        piece_h = F.relu(self.piece_update(torch.cat([piece_h, agg], dim=1)))
+            agg = torch.zeros(B * P, H, device=dev)
+        piece_flat = F.relu(self.piece_update(
+            torch.cat([piece_flat, agg], dim=1)))               # [B*P, H]
 
-        # 2. piece -> tile
-        if piece_to_tile.size(1) > 0:
-            msgs = self.piece_to_tile_msg(piece_h[piece_to_tile[0]])
-            agg  = _mean_aggregate(msgs, piece_to_tile[1], num_tiles, dim)
+        # --- 2. piece -> tile  (block-diagonal) ---
+        if p2t.size(1) > 0:
+            msgs = self.piece_to_tile_msg(piece_flat[p2t[0]])  # [sum_N, H]
+            agg  = _mean_agg(msgs, p2t[1], B * T, H, dev)     # [B*T, H]
         else:
-            agg = torch.zeros(num_tiles, dim, device=tile_h.device)
-        tile_h = F.relu(self.tile_update_pieces(torch.cat([tile_h, agg], dim=1)))
+            agg = torch.zeros(B * T, H, device=dev)
+        tile_flat = F.relu(self.tile_update_pieces(
+            torch.cat([tile_flat, agg], dim=1)))                # [B*T, H]
 
-        # 3. tile -> tile
-        if tile_edge_index.size(1) > 0:
-            msgs = self.tile_to_tile_msg(tile_h[tile_edge_index[0]])
-            agg  = _mean_aggregate(msgs, tile_edge_index[1], num_tiles, dim)
-        else:
-            agg = torch.zeros(num_tiles, dim, device=tile_h.device)
-        tile_h = F.relu(self.tile_update_tiles(torch.cat([tile_h, agg], dim=1)))
+        # --- 3. tile -> tile  (shared edges, apply to each batch item) ---
+        # Reshape to [B, T, H], apply shared adjacency per item
+        tile_h = tile_flat.view(B, T, H)
+        src, dst = tile_edge_index[0], tile_edge_index[1]       # [E]
+        # Gather source tile features for all batch items: [B, E, H]
+        src_feats = tile_h[:, src, :]                           # [B, E, H]
+        msgs = self.tile_to_tile_msg(src_feats)                 # [B, E, H]
+        # Scatter into [B, T, H]
+        agg = torch.zeros(B, T, H, device=dev)
+        count = torch.zeros(B, T, 1, device=dev)
+        dst_exp = dst.view(1, -1, 1).expand(B, -1, H)
+        agg.scatter_add_(1, dst_exp, msgs)
+        count.scatter_add_(1, dst.view(1, -1, 1).expand(B, -1, 1),
+                           torch.ones(B, src.size(0), 1, device=dev))
+        agg = agg / count.clamp(min=1)
+        tile_h = F.relu(self.tile_update_tiles(
+            torch.cat([tile_h, agg], dim=2)))                   # [B, T, H]
 
-        # 4. tile -> global (mean pool all tile messages)
-        global_agg = self.tile_to_global_msg(tile_h).mean(dim=0, keepdim=True)  # [1, dim]
-        global_h   = F.relu(self.global_update(torch.cat([global_h, global_agg], dim=1)))
+        # --- 4. tile -> global  (mean pool per batch item) ---
+        global_agg = self.tile_to_global_msg(tile_h).mean(dim=1, keepdim=True)  # [B,1,H]
+        global_h   = F.relu(self.global_update(
+            torch.cat([global_h, global_agg], dim=2)))          # [B, 1, H]
 
-        # 5. global -> tile (broadcast same message to all tiles)
-        global_msg = self.global_to_tile_msg(global_h).expand(num_tiles, -1)    # [T, dim]
-        tile_h     = F.relu(self.tile_update_global(torch.cat([tile_h, global_msg], dim=1)))
+        # --- 5. global -> tile  (broadcast per batch item) ---
+        global_msg = self.global_to_tile_msg(global_h).expand(B, T, H)  # [B,T,H]
+        tile_h = F.relu(self.tile_update_global(
+            torch.cat([tile_h, global_msg], dim=2)))            # [B, T, H]
+
+        # Reshape piece back
+        piece_h = piece_flat.view(B, P, H)
 
         return tile_h, piece_h, global_h
 
@@ -383,14 +411,11 @@ class MessagePassingLayer(nn.Module):
 
 class BoardGNN(nn.Module):
     """
-    Heterogeneous GNN with global node for board evaluation.
+    Heterogeneous GNN with global node and true GPU batching.
 
-    Input:  single encoded dict OR list of encoded dicts (batch)
-    Output: scalar (single) or [N] tensor (batch)
-
-    Score: positive = good for current player, negative = bad.
-
-    Readout input: mean(tiles) + mean(pieces) + global_node + dice_features
+    Call with a single encoded dict -> scalar.
+    Call with a list of encoded dicts -> [N] tensor.
+    Both paths use the same batched forward pass internally.
     """
 
     def __init__(self,
@@ -400,65 +425,78 @@ class BoardGNN(nn.Module):
                  piece_feat_dim=PIECE_FEAT_DIM,
                  global_feat_dim=GLOBAL_FEAT_DIM):
         super().__init__()
-        self.hidden_dim = hidden_dim
+        H = hidden_dim
+        self.hidden_dim = H
 
-        # Input projections
-        self.tile_embed   = nn.Linear(tile_feat_dim,  hidden_dim)
-        self.piece_embed  = nn.Linear(piece_feat_dim, hidden_dim)
-        # Global node: learned embedding, no input features
-        self.global_embed = nn.Embedding(1, hidden_dim)
+        self.tile_embed   = nn.Linear(tile_feat_dim,  H)
+        self.piece_embed  = nn.Linear(piece_feat_dim, H)
+        # Global node: learned embedding, initialised to zero so it starts neutral
+        # and only learns what it needs from the data
+        self.global_embed = nn.Embedding(1, H)
+        nn.init.zeros_(self.global_embed.weight)
 
-        # Message passing layers
         self.mp_layers = nn.ModuleList([
-            MessagePassingLayer(hidden_dim)
-            for _ in range(num_mp_layers)
+            MessagePassingLayer(H) for _ in range(num_mp_layers)
         ])
 
-        # Readout: mean(tiles) + mean(pieces) + global + dice
-        readout_input_dim = hidden_dim * 3 + global_feat_dim
+        # mean(tiles) + mean(pieces) + global + dice
         self.readout = nn.Sequential(
-            nn.Linear(readout_input_dim, hidden_dim),
+            nn.Linear(H * 3 + global_feat_dim, H),
             nn.ReLU(),
-            nn.Linear(hidden_dim, 32),
+            nn.Linear(H, 32),
             nn.ReLU(),
             nn.Linear(32, 1),
         )
 
-    def _forward_single(self, encoded):
-        """Forward pass for one position. Returns scalar."""
-        tile_feats      = encoded['tile_feats']
-        piece_feats     = encoded['piece_feats']
-        tile_edge_index = encoded['tile_edge_index']
-        piece_to_tile   = encoded['piece_to_tile']
-        tile_to_piece   = encoded['tile_to_piece']
-        global_feats    = encoded['global_feats']
+    def _forward_batch(self, batch):
+        """
+        Core batched forward pass.
+        batch: dict from collate_batch()
+        Returns: [B] scores
+        """
+        B = batch['B']
+        T = batch['T']
+        P = batch['P']
+        dev = batch['tile_feats'].device
 
-        dev = tile_feats.device
+        # Initial embeddings  [B, *, H]
+        tile_h   = F.relu(self.tile_embed(batch['tile_feats']))    # [B, T, H]
+        piece_h  = F.relu(self.piece_embed(batch['piece_feats']))  # [B, P, H]
+        piece_h_init = piece_h                                     # save for skip connection
+        global_h = self.global_embed(                              # [B, 1, H]
+            torch.zeros(B, 1, dtype=torch.long, device=dev))
 
-        tile_h   = F.relu(self.tile_embed(tile_feats))
-        piece_h  = F.relu(self.piece_embed(piece_feats))
-        global_h = self.global_embed(torch.zeros(1, dtype=torch.long, device=dev))
-
-        for mp_layer in self.mp_layers:
-            tile_h, piece_h, global_h = mp_layer(
+        # Message passing
+        for mp in self.mp_layers:
+            tile_h, piece_h, global_h = mp(
                 tile_h, piece_h, global_h,
-                tile_edge_index, piece_to_tile, tile_to_piece)
+                batch['tile_edge_index'],
+                batch['piece_to_tile'],
+                batch['tile_to_piece'],
+                B, T, P)
 
-        tile_pooled   = tile_h.mean(dim=0)
-        piece_pooled  = piece_h.mean(dim=0)
-        global_pooled = global_h.squeeze(0)
+        # Readout — include initial piece embedding as skip connection
+        # so piece features always have a direct path to the output
+        tile_pooled   = tile_h.mean(dim=1)                        # [B, H]
+        piece_pooled  = (piece_h.mean(dim=1) +
+                         piece_h_init.mean(dim=1)) / 2            # [B, H]
+        global_pooled = global_h.squeeze(1)                       # [B, H]
+        combined = torch.cat(
+            [tile_pooled, piece_pooled, global_pooled, batch['global_feats']],
+            dim=1)                                                 # [B, 3H+GF]
 
-        combined = torch.cat([tile_pooled, piece_pooled, global_pooled, global_feats])
-        return self.readout(combined).squeeze()
+        return self.readout(combined).squeeze(1) # [B]
 
     def forward(self, encoded):
         """
         encoded: single dict or list of dicts.
-        Returns scalar (single) or [N] tensor (batch).
+        Returns scalar (single) or [N] tensor (list).
         """
-        if isinstance(encoded, list):
-            return torch.stack([self._forward_single(e) for e in encoded])
-        return self._forward_single(encoded)
+        if isinstance(encoded, dict):
+            batch = collate_batch([encoded])
+            return self._forward_batch(batch).squeeze(0)
+        batch = collate_batch(encoded)
+        return self._forward_batch(batch)
 
 
 # -------------------------
