@@ -151,7 +151,7 @@ def play_selfplay_game(agent, encoder, seed):
         if random.random() < EXPLORATION_RATE:
             chosen = _explore(agent, moves, board, current_player)
         else:
-            chosen = agent.select_move_pair(moves, board, current_player)
+            chosen = agent.select_move_pair_fast(moves, board, current_player)
 
         if chosen == ((0, 0, 0), (0, 0, 0)):
             consecutive_passes += 1
@@ -203,7 +203,7 @@ def _explore(agent, moves, board, player):
         if not next_moves:
             return (first, (0, 0, 0))
         return (first, random.choice(next_moves))
-    return agent.select_move_pair(moves, board, player)
+    return agent.select_move_pair_fast(moves, board, player)
 
 
 # -------------------------

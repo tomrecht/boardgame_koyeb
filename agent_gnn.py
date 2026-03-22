@@ -122,11 +122,94 @@ class GNNAgent:
         with torch.no_grad():
             scores = self.model(encoded_list)   # [N]
 
-        # Handle game-over scores (large constants) inline
-        # For any game-over positions, override with GAME_OVER_SCORE
         final_scores = scores * SCORE_SCALE
+        best_idx     = final_scores.argmax().item()
+        return move_keys[best_idx]
 
-        best_idx      = final_scores.argmax().item()
-        best_move_pair = move_keys[best_idx]
+    def select_move_pair_fast(self, moves, board, player):
+        """
+        1-ply move selection for self-play data generation.
+        Evaluates only after the first move, then greedily picks
+        the best second move given the best first move.
 
-        return best_move_pair
+        ~20x fewer forward passes than select_move_pair — suitable
+        for generating training data quickly. NOT used for interactive play.
+        """
+        if not isinstance(moves, (list, set)) or not all(isinstance(m, tuple) for m in moves):
+            raise ValueError('Invalid moves format.')
+
+        moves_set = set(moves)
+
+        # Handle pass-only case
+        if moves_set == {(0, 0, 0)}:
+            return ((0, 0, 0), (0, 0, 0))
+
+        moves_set.discard((0, 0, 0))
+
+        # Encode position after each first move
+        first_move_keys    = []
+        first_encoded_list = []
+
+        for move in moves_set:
+            if not isinstance(move, tuple) or len(move) != 3:
+                continue
+            initial = len(board.moves)
+            board.apply_move(move, switch_turn=False)
+            first_move_keys.append(move)
+            first_encoded_list.append(self.encoder.encode(board, player))
+            while len(board.moves) > initial:
+                board.undo_last_move()
+
+        if not first_move_keys:
+            return ((0, 0, 0), (0, 0, 0))
+
+        # Evaluate all first moves in one batch
+        with torch.no_grad():
+            first_scores = self.model(first_encoded_list) * SCORE_SCALE  # [N]
+
+        best_first_idx = first_scores.argmax().item()
+        best_first     = first_move_keys[best_first_idx]
+
+        # Apply best first move and find best second move
+        initial = len(board.moves)
+        board.apply_move(best_first, switch_turn=False)
+
+        if all(die.used for die in board.dice):
+            while len(board.moves) > initial:
+                board.undo_last_move()
+            return (best_first, (0, 0, 0))
+
+        next_moves = set(board.get_valid_moves()) - {(0, 0, 0)}
+
+        if not next_moves:
+            while len(board.moves) > initial:
+                board.undo_last_move()
+            return (best_first, (0, 0, 0))
+
+        # Encode position after each second move
+        second_move_keys    = []
+        second_encoded_list = []
+
+        for nm in next_moves:
+            if not isinstance(nm, tuple) or len(nm) != 3:
+                continue
+            nm_initial = len(board.moves)
+            board.apply_move(nm, switch_turn=False)
+            second_move_keys.append(nm)
+            second_encoded_list.append(self.encoder.encode(board, player))
+            while len(board.moves) > nm_initial:
+                board.undo_last_move()
+
+        while len(board.moves) > initial:
+            board.undo_last_move()
+
+        if not second_move_keys:
+            return (best_first, (0, 0, 0))
+
+        # Evaluate all second moves in one batch
+        with torch.no_grad():
+            second_scores = self.model(second_encoded_list) * SCORE_SCALE  # [M]
+
+        best_second = second_move_keys[second_scores.argmax().item()]
+        return (best_first, best_second)
+
