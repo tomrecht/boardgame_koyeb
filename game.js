@@ -22,6 +22,7 @@ const TOTAL_PIECES = 12;
 const DIE_1_POSITION= 400;
 const DIE_2_POSITION = 500;
 
+const BACKGROUND_COLOR = 0xfdf6e3; // Cream
 const colorFirstDie = 0x40E0D0; // Turquoise
 const colorSecondDie = 0xFFC0CB; 
 const colorSum = 0xFFFF00; // Yellow
@@ -421,8 +422,8 @@ class Tile {
                     this.fillColor = 0x00ff00;
                     break;
                 case "nogo":
-                    this.fillColor = ring === 7 ? 0xffffff : 0x000000; 
-                    this.lineColor = ring === 7 ? 0xffffff : 0x000000; // No border for 7th ring nogo tiles
+                    this.fillColor = ring === 7 ? BACKGROUND_COLOR : 0x000000; 
+                    this.lineColor = ring === 7 ? BACKGROUND_COLOR : 0x000000; // No border for 7th ring nogo tiles
                     break;
                 case "field":
                     this.fillColor = 0xffffff;
@@ -2553,7 +2554,7 @@ const config = {
     type: Phaser.AUTO,
     width: 1800,
     height: 1200,
-    backgroundColor: '#ffffff',
+    backgroundColor: BACKGROUND_COLOR,
     scale: {
         mode: Phaser.Scale.FIT, 
         autoCenter: Phaser.Scale.CENTER_BOTH
