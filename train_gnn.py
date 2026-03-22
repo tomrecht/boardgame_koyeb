@@ -44,35 +44,39 @@ parser.add_argument('--full', action='store_true', help='Full training mode for 
 args = parser.parse_args()
 
 if args.full:
-    GAMES_PER_EVAL      = 100       # self-play games between evaluations
-    EVAL_PAIRS          = 40        # paired games per evaluation
-    BUFFER_SIZE         = 100_000   # max positions in replay buffer
-    MIN_BUFFER          = 5_000     # don't train until buffer has this many
-    DISTILL_PREFILL     = 10_000    # positions to load from distill_data.pt
-    CHECKPOINT_INTERVAL = 10        # save checkpoint every N generations
-    EXPLORATION_RATE    = 0.10      # probability of picking from top-3 moves
+    GAMES_PER_EVAL      = 100       # ~22 min self-play per generation on T4
+    EVAL_PAIRS          = 40        # ~5 min eval per generation
+    BUFFER_SIZE         = 100_000
+    MIN_BUFFER          = 5_000     # don't train until buffer has this many positions
+    DISTILL_PREFILL     = 10_000    # distillation anchoring
+    CHECKPOINT_INTERVAL = 5
+    EXPLORATION_RATE    = 0.10
 else:
     GAMES_PER_EVAL      = 20
     EVAL_PAIRS          = 10
     BUFFER_SIZE         = 10_000
-    MIN_BUFFER          = 200      # ~3-4 games worth before training starts
-    DISTILL_PREFILL     = 1_000   # kept for reference but no longer used
+    MIN_BUFFER          = 500       # wait for meaningful buffer before training
+    DISTILL_PREFILL     = 2_000     # enough distillation to anchor early training
     CHECKPOINT_INTERVAL = 5
     EXPLORATION_RATE    = 0.10
 
 # Shared across POC and full
-DISCOUNT            = 0.97          # per remaining player-move
-OUTCOME_SCALE       = 100.0         # outcome * 100 / 1000 = outcome/10, range ~[-1.2, +1.2]
+DISCOUNT            = 0.97
+# OUTCOME_SCALE: scale game outcomes so labels match distillation label std (~0.92)
+# outcome (1-12) * OUTCOME_SCALE / SCORE_SCALE should have std ~0.92
+# With avg outcome ~3, avg discount ~0.4: 3 * 0.4 * X / 1000 = 0.92 -> X ≈ 767
+# Round to 800 for a slight conservative bias
+OUTCOME_SCALE       = 800.0
 SCORE_SCALE         = 1000.0        # must match train_distill.py
-LR                  = 1e-4          # lower than distillation — fine-tuning
-GRAD_ACCUM_STEPS    = 32            # accumulate gradients over N samples
+LR                  = 1e-5          # conservative — preserve distilled knowledge
+GRAD_ACCUM_STEPS    = 32
 PROMOTION_WINRATE   = 0.55
 PROMOTION_PVALUE    = 0.10
-COLLAPSE_PVALUE     = 0.50          # if p_value this high vs distilled, warn
+COLLAPSE_PVALUE     = 0.50
 MAX_TURNS           = 150
 MASTER_SEED         = 999
-GNN_WEIGHTS         = 'gnn_weights.pt'        # distilled starting point
-SELFPLAY_WEIGHTS    = 'gnn_selfplay.pt'       # best self-play weights
+GNN_WEIGHTS         = 'gnn_weights.pt'
+SELFPLAY_WEIGHTS    = 'gnn_selfplay.pt'
 DISTILL_DATA        = 'distill_data.pt'
 
 
@@ -392,9 +396,22 @@ def train():
     # Replay buffer
     buffer = ReplayBuffer(BUFFER_SIZE)
 
-    # Buffer starts empty — self-play samples only
-    # Distilled weights provide the starting point; buffer doesn't need anchoring
-    print(f"Buffer starts empty, min_buffer={MIN_BUFFER} before training begins")
+    # Pre-fill buffer with distillation samples to anchor early training.
+    # Labels are normalised to same scale as self-play labels (both ~std 0.9).
+    if os.path.exists(DISTILL_DATA):
+        print(f"Pre-filling buffer from {DISTILL_DATA}...")
+        distill_samples = torch.load(DISTILL_DATA, map_location='cpu')
+        indices = list(range(len(distill_samples)))
+        random.shuffle(indices)
+        for i in indices[:DISTILL_PREFILL]:
+            encoded, score = distill_samples[i]
+            encoded_device = {k: v.to(DEVICE) for k, v in encoded.items()}
+            label = score / SCORE_SCALE   # same normalisation as distillation training
+            buffer.add(encoded_device, label)
+        print(f"  Buffer pre-filled with {len(buffer)} distillation samples")
+    else:
+        print(f"  {DISTILL_DATA} not found, starting with empty buffer")
+    print(f"  MIN_BUFFER={MIN_BUFFER} — training starts once buffer reaches this size")
 
     # Seed generator for self-play and evaluation
     rng = random.Random(MASTER_SEED)
