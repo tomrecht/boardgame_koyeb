@@ -971,6 +971,25 @@ class Game {
         }
         this.assignNeighbors(numSegments);
         this.assignHardcodedNeighbors(); 
+
+        this.tiles.forEach(tile => {
+
+            /* make sure ring 6 nogo tiles that abut on outer border aren't black */
+        if (tile.type === 'nogo' && tile.ring === 6) {
+            const coveredByRing7 = this.tiles.some(t => 
+                t.ring === 7 && 
+                t.type !== 'nogo' &&
+                t.startAngle < tile.endAngle && 
+                t.endAngle > tile.startAngle
+            );
+            if (!coveredByRing7) {
+                tile.graphics.clear();
+                tile.fillColor = 0xffffff;
+                tile.lineColor = 0xffffff;
+            }
+        }
+        });
+        
     }
     
     assignNeighbors(numSegments) {
@@ -1045,6 +1064,8 @@ class Game {
             }
         });
     }
+
+
 
     isBlocked(tile) {
         const opponentPieces = tile.pieces.filter(p => p.player !== this.turn);
@@ -2528,6 +2549,5 @@ const gameInstance = new Phaser.Game(config);
 
 // should be able to make moves in either order when must move a piece
 // missing border for save tiles
-// make ring 6 nogo tiles that abut on the outer border invisible
 
 // when >1 captured piece don't allow moving on sum
