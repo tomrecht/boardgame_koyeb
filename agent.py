@@ -48,6 +48,8 @@ def get_weights():
 class Agent():
     def __init__(self, board=None, weights=INITIAL_WEIGHTS, log_file='game_log.json', log_to_file=False):
         self.board = board
+        if weights == INITIAL_WEIGHTS:
+            print("Using initial weights")
 
         raw_weights = weights if weights is not None else get_weights()
         self.weights = self._expand_weights(raw_weights)
@@ -251,8 +253,6 @@ class Agent():
 
             while len(board.moves) > initial_move_count:
                 board.undo_last_move()
-
-
 
         best_move_pair = max(move_scores, key=lambda k: move_scores[k][0])
         best_move_score, best_move_components = move_scores[best_move_pair]

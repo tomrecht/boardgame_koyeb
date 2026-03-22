@@ -458,6 +458,7 @@ class Board:
                 piece.rack = origin_rack
 
             if captured_piece:      # undo the capture
+                self.home_tile.pieces.remove(captured_piece)
                 new_tile.pieces.append(captured_piece)
                 captured_piece.tile = new_tile
 
@@ -576,7 +577,7 @@ class Board:
 
         # Switch to the next player if both dice are used
         if switch_turn and all(die.used for die in self.dice):
-            print('switching turn')
+         #   print('switching turn')
             self.switch_turn()
 
     def get_save_rack(self, player):
