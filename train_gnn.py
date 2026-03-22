@@ -279,7 +279,7 @@ def evaluate(challenger_agent, opponent_agent, encoder, seeds):
     total   = 0
     margins = []
 
-    for seed in seeds:
+    for pair_idx, seed in enumerate(seeds, 1):
         # Game 1: challenger=white
         random.seed(seed)
         board = Board()
@@ -307,6 +307,12 @@ def evaluate(challenger_agent, opponent_agent, encoder, seeds):
             margins.append(-s2)
         else:
             margins.append(0)
+
+        wr = wins / total if total else 0
+        print(f"\r    pair {pair_idx}/{len(seeds)}  {wins}/{total} ({wr:.0%})",
+              end='', flush=True)
+
+    print()  # newline after \r
 
     p_value = ttest_greater(margins) if len(margins) > 1 else 1.0
     return wins, total, margins, p_value
