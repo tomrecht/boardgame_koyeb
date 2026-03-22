@@ -26,6 +26,7 @@ const BACKGROUND_COLOR = 0xfdf6e3; // Cream
 const colorFirstDie = 0x40E0D0; // Turquoise
 const colorSecondDie = 0xFFC0CB; 
 const colorSum = 0xFFFF00; // Yellow
+const FONT_FAMILY = 'Crimson Text';
 
 
 const scoreTracker = {
@@ -1705,6 +1706,7 @@ class Game {
 
         const text = this.scene.add.text(CENTER_X, CENTER_Y - 40, 'End your turn without using both dice?', {
             fontSize: '22px',
+            fontFamily: FONT_FAMILY,
             color: '#000000',
             wordWrap: { width: modalWidth - 40 },
             align: 'center'
@@ -1713,6 +1715,7 @@ class Game {
 
         const confirmButton = this.scene.add.text(CENTER_X - 60, CENTER_Y + 40, 'Yes', {
             fontSize: '28px',
+            fontFamily: FONT_FAMILY,
             backgroundColor: '#00ff00',
             padding: { x: 20, y: 10 },
             borderColor: '#000',
@@ -1723,6 +1726,7 @@ class Game {
 
         const cancelButton = this.scene.add.text(CENTER_X + 60, CENTER_Y + 40, 'No', {
             fontSize: '28px',
+            fontFamily: FONT_FAMILY,
             backgroundColor: '#ff0000',
             padding: { x: 20, y: 10 },
             borderColor: '#000',
@@ -1853,6 +1857,7 @@ class MainGameScene extends Phaser.Scene {
         // Add instructions button
         const instructionsButton = this.add.text(150, 50, 'How to Play', {
             fontSize: '24px',
+            fontFamily: FONT_FAMILY,
             backgroundColor: '#87CEEB',
             padding: { x: 15, y: 7.5 },
             borderColor: '#000',
@@ -1867,6 +1872,7 @@ class MainGameScene extends Phaser.Scene {
                 // Add new game button under the instructions button
                 const newGameButton = this.add.text(150, 100, 'New Game', {
                     fontSize: '24px',
+                    fontFamily: FONT_FAMILY,
                     backgroundColor: '#87CEEB',
                     padding: { x: 15, y: 7.5 },
                     borderColor: '#000',
@@ -1882,6 +1888,7 @@ class MainGameScene extends Phaser.Scene {
         if(DEBUG_MODE) {
         const saveGameStateButton = this.add.text(300, 100, 'Save Game', {
             fontSize: '24px',
+            fontFamily: FONT_FAMILY,
             backgroundColor: '#87CEEB',
             padding: { x: 15, y: 7.5 },
             borderColor: '#000',
@@ -1897,6 +1904,7 @@ class MainGameScene extends Phaser.Scene {
             // Add score display text box
             this.scoreText = this.add.text(20, this.sys.game.config.height - 100, '', {
                 fontSize: '24px',
+                fontFamily: FONT_FAMILY,
                 color: '#000',
                 backgroundColor: '#ffffff',
                 padding: { x: 10, y: 5 },
@@ -1949,6 +1957,7 @@ class MainGameScene extends Phaser.Scene {
     
         const text = this.add.text(textX, textY, 'Play Computer', {
             fontSize: '24px',
+            fontFamily: FONT_FAMILY,
             color: '#000'
         }).setOrigin(0, 0.5);
     }
@@ -1968,6 +1977,7 @@ class MainGameScene extends Phaser.Scene {
     
         const text = this.add.text(textX, textY, 'Evaluate', {
             fontSize: '24px',
+            fontFamily: FONT_FAMILY,
             color: '#000'
         }).setOrigin(0, 0.5);
     }
@@ -2011,6 +2021,7 @@ class MainGameScene extends Phaser.Scene {
 
         const text = this.add.text(CENTER_X, CENTER_Y - 40, 'Start a new game?', {
             fontSize: '22px',
+            fontFamily: FONT_FAMILY,
             color: '#000000',
             wordWrap: { width: modalWidth - 40 },
             align: 'center'
@@ -2019,6 +2030,7 @@ class MainGameScene extends Phaser.Scene {
 
         const confirmButton = this.add.text(CENTER_X - 60, CENTER_Y + 40, 'Yes', {
             fontSize: '28px',
+            fontFamily: FONT_FAMILY,
             backgroundColor: '#00ff00',
             padding: { x: 20, y: 10 },
             borderColor: '#000',
@@ -2029,6 +2041,7 @@ class MainGameScene extends Phaser.Scene {
 
         const cancelButton = this.add.text(CENTER_X + 60, CENTER_Y + 40, 'No', {
             fontSize: '28px',
+            fontFamily: FONT_FAMILY,
             backgroundColor: '#ff0000',
             padding: { x: 20, y: 10 },
             borderColor: '#000',
@@ -2115,10 +2128,12 @@ class EndGameScene extends Phaser.Scene {
         }
         this.add.text(CENTER_X, CENTER_Y - 50, message, {
             fontSize: '48px',
+            fontFamily: FONT_FAMILY,
             color: '#ff0000'
         }).setOrigin(0.5);
         const restartButton = this.add.text(CENTER_X, CENTER_Y + 50, 'Restart', {
             fontSize: '32px',
+            fontFamily: FONT_FAMILY,
             backgroundColor: '#008000',
             padding: { x: 20, y: 10 }
         }).setOrigin(0.5).setInteractive();
@@ -2128,6 +2143,7 @@ class EndGameScene extends Phaser.Scene {
         });
         const quitButton = this.add.text(CENTER_X, CENTER_Y + 120, 'Quit', {
             fontSize: '32px',
+            fontFamily: FONT_FAMILY,
             backgroundColor: '#800000',
             padding: { x: 20, y: 10 }
         }).setOrigin(0.5).setInteractive();
@@ -2164,12 +2180,14 @@ class InstructionsScene extends Phaser.Scene {
         // Add instructions text
         this.add.text(CENTER_X, 50, 'How to Play', {
             fontSize: '48px',
+            fontFamily: FONT_FAMILY,
             color: '#000000'
         }).setOrigin(0.5);
 
         // Create a text box for the instructions
         const textBox = this.add.text(CENTER_X, 300, instructions, {
             fontSize: '26px',
+            fontFamily: FONT_FAMILY,
             color: '#000000',
             align: 'left',
             wordWrap: { width: config.width - 100 }
@@ -2187,6 +2205,7 @@ class InstructionsScene extends Phaser.Scene {
         // Add a button to go back to the main game
         const backButton = this.add.text(CENTER_X, config.height - 70, 'Back to Game', {
             fontSize: '32px',
+            fontFamily: FONT_FAMILY,
             backgroundColor: '#ffcc00',
             padding: { x: 20, y: 10 },
             borderColor: '#000',
