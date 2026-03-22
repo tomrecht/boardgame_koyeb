@@ -44,31 +44,27 @@ parser.add_argument('--full', action='store_true', help='Full training mode for 
 args = parser.parse_args()
 
 if args.full:
-    GAMES_PER_EVAL      = 100       # ~22 min self-play per generation on T4
-    EVAL_PAIRS          = 40        # ~5 min eval per generation
+    GAMES_PER_EVAL      = 100
+    EVAL_PAIRS          = 40
     BUFFER_SIZE         = 100_000
-    MIN_BUFFER          = 5_000     # don't train until buffer has this many positions
-    DISTILL_PREFILL     = 10_000    # distillation anchoring
+    MIN_BUFFER          = 6_000     # full generation before any training
+    DISTILL_PREFILL     = 0         # no distillation mixing
     CHECKPOINT_INTERVAL = 5
     EXPLORATION_RATE    = 0.10
 else:
     GAMES_PER_EVAL      = 20
     EVAL_PAIRS          = 10
     BUFFER_SIZE         = 10_000
-    MIN_BUFFER          = 500       # wait for meaningful buffer before training
-    DISTILL_PREFILL     = 2_000     # enough distillation to anchor early training
+    MIN_BUFFER          = 1_200     # full generation (20 games * ~60 pos) before training
+    DISTILL_PREFILL     = 0         # no distillation mixing
     CHECKPOINT_INTERVAL = 5
     EXPLORATION_RATE    = 0.10
 
-# Shared across POC and full
+# Shared
 DISCOUNT            = 0.97
-# OUTCOME_SCALE: scale game outcomes so labels match distillation label std (~0.92)
-# outcome (1-12) * OUTCOME_SCALE / SCORE_SCALE should have std ~0.92
-# With avg outcome ~3, avg discount ~0.4: 3 * 0.4 * X / 1000 = 0.92 -> X ≈ 767
-# Round to 800 for a slight conservative bias
-OUTCOME_SCALE       = 800.0
-SCORE_SCALE         = 1000.0        # must match train_distill.py
-LR                  = 1e-5          # conservative — preserve distilled knowledge
+OUTCOME_SCALE       = 800.0        # outcome * 800 / 1000, std ~0.9 matching distillation
+SCORE_SCALE         = 1000.0
+LR                  = 1e-4         # back to 1e-4 — fine-tuning with clean data
 GRAD_ACCUM_STEPS    = 32
 PROMOTION_WINRATE   = 0.55
 PROMOTION_PVALUE    = 0.10
@@ -393,25 +389,10 @@ def train():
     optimizer = optim.Adam(model.parameters(), lr=LR)
     criterion = nn.MSELoss()
 
-    # Replay buffer
+    # Replay buffer — self-play data only
+    # Distilled weights are the starting point; no mixing with distillation labels
     buffer = ReplayBuffer(BUFFER_SIZE)
-
-    # Pre-fill buffer with distillation samples to anchor early training.
-    # Labels are normalised to same scale as self-play labels (both ~std 0.9).
-    if os.path.exists(DISTILL_DATA):
-        print(f"Pre-filling buffer from {DISTILL_DATA}...")
-        distill_samples = torch.load(DISTILL_DATA, map_location='cpu')
-        indices = list(range(len(distill_samples)))
-        random.shuffle(indices)
-        for i in indices[:DISTILL_PREFILL]:
-            encoded, score = distill_samples[i]
-            encoded_device = {k: v.to(DEVICE) for k, v in encoded.items()}
-            label = score / SCORE_SCALE   # same normalisation as distillation training
-            buffer.add(encoded_device, label)
-        print(f"  Buffer pre-filled with {len(buffer)} distillation samples")
-    else:
-        print(f"  {DISTILL_DATA} not found, starting with empty buffer")
-    print(f"  MIN_BUFFER={MIN_BUFFER} — training starts once buffer reaches this size")
+    print(f"Buffer starts empty. Training begins after {MIN_BUFFER} positions accumulated.")
 
     # Seed generator for self-play and evaluation
     rng = random.Random(MASTER_SEED)
