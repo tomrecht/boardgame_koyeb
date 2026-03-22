@@ -29,19 +29,17 @@ print(f"Training on {DEVICE}")
 DATA_FILE       = 'distill_data.pt'
 OUTPUT_FILE     = 'gnn_weights.pt'
 VAL_FRACTION    = 0.1       # fraction of data held out for validation
-MAX_SAMPLES     = 2000      # set to None to use all data; 2000 for quick POC
-EPOCHS          = 10        # increase to 50 for full training
+MAX_SAMPLES     = None      # set to 2000 for quick POC, None for full training
+EPOCHS          = 50        # set to 10 for quick POC
 LR              = 1e-3
-LR_DECAY        = 0.5       # multiply LR by this when val loss plateaus
-PATIENCE        = 5         # epochs without improvement before LR decay
-MIN_LR          = 1e-5      # stop decaying below this
+LR_DECAY        = 0.5
+PATIENCE        = 5
+MIN_LR          = 1e-5
 SEED            = 42
 
-# Score normalisation: divide targets by this so scores are in ~[-1, 1] range.
-# Typical mid-game scores are in [-500, 500], so 500 is a reasonable scale.
-# The GNN output will be in normalised units; we denormalise when using it
-# for move selection in agent_gnn.py.
-SCORE_SCALE     = 500.0
+# Score normalisation: divide targets by this so they are in roughly [-1, 1].
+# Distill data has std ~916, so 1000 keeps targets in a sensible range.
+SCORE_SCALE     = 1000.0
 
 
 # -------------------------
@@ -54,7 +52,12 @@ def train():
 
     # Load data
     print(f"Loading data from {DATA_FILE}...")
-    all_samples = torch.load(DATA_FILE)
+    all_samples = torch.load(DATA_FILE, map_location=DEVICE)
+    # Move encoded tensors to device (saved on CPU by generate_distill_data.py)
+    all_samples = [
+        ({k: v.to(DEVICE) for k, v in encoded.items()}, score)
+        for encoded, score in all_samples
+    ]
     print(f"  {len(all_samples)} samples loaded")
 
     # Optionally truncate for quick POC
@@ -152,7 +155,7 @@ def train():
     print(f"Model saved to {OUTPUT_FILE}")
     print(f"\nNote: scores are normalised by SCORE_SCALE={SCORE_SCALE}")
     print(f"      agent_gnn.py must multiply GNN output by {SCORE_SCALE} "
-          f"to get comparable scores")
+          f"to get scores comparable to the weighted-sum agent")
 
 
 if __name__ == '__main__':
