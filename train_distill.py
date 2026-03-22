@@ -90,13 +90,17 @@ def train():
 
     for epoch in range(1, EPOCHS + 1):
         epoch_start = time.time()
+        print(f"Epoch {epoch}/{EPOCHS}: shuffling indices...", flush=True)
 
         # --- TRAIN ---
         model.train()
-        random.shuffle(train_data)
+        indices = list(range(len(train_data)))
+        random.shuffle(indices)
         train_loss_sum = 0.0
+        print(f"Epoch {epoch}/{EPOCHS}: training on {len(indices)} samples...", flush=True)
 
-        for encoded, score in train_data:
+        for step, i in enumerate(indices):
+            encoded, score = train_data[i]
             encoded_dev = {k: v.to(DEVICE) for k, v in encoded.items()}
             target = torch.tensor(score / SCORE_SCALE).to(DEVICE)
 
@@ -108,7 +112,13 @@ def train():
 
             train_loss_sum += loss.item()
 
+            if step == 0:
+                print(f"  First sample done in {time.time()-epoch_start:.1f}s", flush=True)
+            elif step == 99:
+                print(f"  100 samples done in {time.time()-epoch_start:.1f}s", flush=True)
+
         train_loss = train_loss_sum / len(train_data)
+        print(f"Epoch {epoch}/{EPOCHS}: train done, starting validation...", flush=True)
 
         # --- VALIDATE ---
         model.eval()

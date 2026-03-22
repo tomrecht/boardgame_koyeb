@@ -180,36 +180,30 @@ def play_selfplay_game(agent, encoder, seed):
 
 
 def _explore(agent, moves, board, player):
-    """Pick randomly from top-3 moves instead of always the best."""
-    # Score all moves
-    move_scores = {}
-    moves_set = set(moves)
-    if (0, 0, 0) in moves_set:
-        move_scores[((0,0,0),(0,0,0))] = agent.evaluate(board, player)[0]
-    moves_set.discard((0, 0, 0))
-
-    for move in moves_set:
+    """
+    Exploration: with probability EXPLORATION_RATE pick a random legal move pair,
+    otherwise use the agent's batched select_move_pair.
+    Simpler than re-implementing move scoring and avoids non-batched evaluate() calls.
+    """
+    if random.random() < EXPLORATION_RATE:
+        # Pick a random first move, then a random second move
+        moves_list = [m for m in moves if m != (0, 0, 0)]
+        if not moves_list:
+            return ((0, 0, 0), (0, 0, 0))
+        first = random.choice(moves_list)
         initial = len(board.moves)
-        board.apply_move(move, switch_turn=False)
-        remaining_captured = [p for p in board.home_tile.pieces
-                               if p.player == board.current_player]
-        if not remaining_captured:
-            move_scores[(move, (0,0,0))] = agent.evaluate(board, player)[0]
-        if not all(die.used for die in board.dice):
-            next_moves = set(board.get_valid_moves())
-            next_moves.discard((0,0,0))
-            for nm in next_moves:
-                board.apply_move(nm, switch_turn=False)
-                move_scores[(move, nm)] = agent.evaluate(board, player)[0]
+        board.apply_move(first, switch_turn=False)
+        if all(die.used for die in board.dice):
+            while len(board.moves) > initial:
                 board.undo_last_move()
+            return (first, (0, 0, 0))
+        next_moves = list(set(board.get_valid_moves()) - {(0, 0, 0)})
         while len(board.moves) > initial:
             board.undo_last_move()
-
-    if not move_scores:
-        return ((0,0,0),(0,0,0))
-
-    top3 = sorted(move_scores, key=lambda k: move_scores[k], reverse=True)[:3]
-    return random.choice(top3)
+        if not next_moves:
+            return (first, (0, 0, 0))
+        return (first, random.choice(next_moves))
+    return agent.select_move_pair(moves, board, player)
 
 
 # -------------------------
@@ -393,8 +387,11 @@ def train():
     if os.path.exists(DISTILL_DATA):
         print(f"Pre-filling buffer from {DISTILL_DATA}...")
         distill_samples = torch.load(DISTILL_DATA, map_location='cpu')
-        random.shuffle(distill_samples)
-        for encoded, score in distill_samples[:DISTILL_PREFILL]:
+        # Shuffle indices only — don't move large list in memory
+        indices = list(range(len(distill_samples)))
+        random.shuffle(indices)
+        for i in indices[:DISTILL_PREFILL]:
+            encoded, score = distill_samples[i]
             encoded_device = {k: v.to(DEVICE) for k, v in encoded.items()}
             label = score / SCORE_SCALE
             buffer.add(encoded_device, label)
