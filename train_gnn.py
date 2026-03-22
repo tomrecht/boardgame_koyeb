@@ -44,7 +44,7 @@ parser.add_argument('--full', action='store_true', help='Full training mode for 
 args = parser.parse_args()
 
 if args.full:
-    GAMES_PER_EVAL      = 500       # self-play games between evaluations
+    GAMES_PER_EVAL      = 100       # self-play games between evaluations
     EVAL_PAIRS          = 40        # paired games per evaluation
     BUFFER_SIZE         = 100_000   # max positions in replay buffer
     MIN_BUFFER          = 5_000     # don't train until buffer has this many
