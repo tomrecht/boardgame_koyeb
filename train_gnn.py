@@ -62,7 +62,7 @@ else:
 
 # Shared across POC and full
 DISCOUNT            = 0.97          # per remaining player-move
-OUTCOME_SCALE       = 1000.0        # scale outcome before /SCORE_SCALE
+OUTCOME_SCALE       = 100.0         # outcome * 100 / 1000 = outcome/10, range ~[-1.2, +1.2]
 SCORE_SCALE         = 1000.0        # must match train_distill.py
 LR                  = 1e-4          # lower than distillation — fine-tuning
 GRAD_ACCUM_STEPS    = 32            # accumulate gradients over N samples
@@ -278,8 +278,10 @@ def evaluate(challenger_agent, opponent_agent, encoder, seeds):
     wins    = 0
     total   = 0
     margins = []
+    eval_start = time.time()
 
     for pair_idx, seed in enumerate(seeds, 1):
+        pair_start = time.time()
         # Game 1: challenger=white
         random.seed(seed)
         board = Board()
@@ -309,7 +311,8 @@ def evaluate(challenger_agent, opponent_agent, encoder, seeds):
             margins.append(0)
 
         wr = wins / total if total else 0
-        print(f"\r    pair {pair_idx}/{len(seeds)}  {wins}/{total} ({wr:.0%})",
+        pair_time = time.time() - pair_start
+        print(f"\r    pair {pair_idx}/{len(seeds)}  {wins}/{total} ({wr:.0%})  {pair_time:.0f}s/pair",
               end='', flush=True)
 
     print()  # newline after \r
@@ -334,7 +337,7 @@ def _play_eval_game(board, agents):
         if not moves:
             break
 
-        chosen = current_agent.select_move_pair(moves, board, current_player)
+        chosen = current_agent.select_move_pair_fast(moves, board, current_player)
 
         if chosen == ((0,0,0),(0,0,0)):
             consecutive_passes += 1
