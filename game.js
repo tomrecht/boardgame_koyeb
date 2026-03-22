@@ -973,46 +973,45 @@ class Game {
         }
         this.assignNeighbors(numSegments);
         this.assignHardcodedNeighbors(); 
-
-        this.tiles.forEach(tile => {
-
-            /* make sure ring 6 nogo tiles that abut on outer border aren't black */
-        if (tile.type === 'nogo' && tile.ring === 6) {
-            const coveredByRing7 = this.tiles.some(t => 
-                t.ring === 7 && 
-                t.type !== 'nogo' &&
-                t.startAngle < tile.endAngle && 
-                t.endAngle > tile.startAngle
-            );
-        if (!coveredByRing7) {
-            tile.graphics.clear();
-            tile.fillColor = 0xffffff;
-            tile.lineColor = 0xffffff;
-
-            // Find adjacent ring 7 field tiles and re-stroke their border with this tile
-            this.tiles.forEach(t => {
-                if (t.ring === 7 && t.type !== 'nogo' &&
-                    t.startAngle < tile.endAngle &&
-                    t.endAngle > tile.startAngle) {
-                    // Re-stroke the inner arc of the ring 7 tile
-                    t.graphics.lineStyle(1, 0x000000, 1);
-                    t.graphics.beginPath();
-                    const step = Math.PI / 180;
-                    for (let angle = t.startAngle; angle <= t.endAngle; angle += step) {
-                        const x = CENTER_X + t.innerRadius * Math.cos(angle);
-                        const y = CENTER_Y + t.innerRadius * Math.sin(angle);
-                        if (angle === t.startAngle) t.graphics.moveTo(x, y);
-                        else t.graphics.lineTo(x, y);
-                    }
-                    t.graphics.strokePath();
-                }
-            });
-        }
-        }
-        });
+        this.hideOuterNogoTiles()
         
     }
     
+    hideOuterNogoTiles() {
+        this.tiles.forEach(tile => {
+            if (tile.type === 'nogo' && tile.ring === 6) {
+                const coveredByRing7 = this.tiles.some(t => 
+                    t.ring === 7 && 
+                    t.type !== 'nogo' &&
+                    t.startAngle < tile.endAngle && 
+                    t.endAngle > tile.startAngle
+                );
+                if (!coveredByRing7) {
+                    tile.graphics.clear();
+                    tile.fillColor = BACKGROUND_COLOR;
+                    tile.lineColor = BACKGROUND_COLOR;
+
+                    this.tiles.forEach(t => {
+                        if (t.ring === 7 && t.type !== 'nogo' &&
+                            t.startAngle < tile.endAngle &&
+                            t.endAngle > tile.startAngle) {
+                            t.graphics.lineStyle(1, 0x000000, 1);
+                            t.graphics.beginPath();
+                            const step = Math.PI / 180;
+                            for (let angle = t.startAngle; angle <= t.endAngle; angle += step) {
+                                const x = CENTER_X + t.innerRadius * Math.cos(angle);
+                                const y = CENTER_Y + t.innerRadius * Math.sin(angle);
+                                if (angle === t.startAngle) t.graphics.moveTo(x, y);
+                                else t.graphics.lineTo(x, y);
+                            }
+                            t.graphics.strokePath();
+                        }
+                    });
+                }
+            }
+        });
+    }
+
     assignNeighbors(numSegments) {
 
         this.tiles.forEach(tile => {
@@ -1627,6 +1626,7 @@ class Game {
         this.pieces.forEach(piece => piece.reachableTiles = null);
         this.updateDiceColors();
         this.unhighlightAllTiles();
+        this.hideOuterNogoTiles()
         this.selectedPiece = null;
         console.log('Game state restored.');
     }
