@@ -436,7 +436,7 @@ def train():
 
             # --- SELF-PLAY PHASE ---
             for game_idx in range(GAMES_PER_EVAL):
-            game_start = time.time()
+                game_start = time.time()
                 record, winner, score = play_selfplay_game(
                     challenger_agent, encoder, seed)
                 print(f"  game {game_idx+1} took {time.time()-game_start:.1f}s, {len(record)} positions, winner={winner}", flush=True)
