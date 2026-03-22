@@ -84,7 +84,7 @@ def train():
     criterion = nn.MSELoss()
     scheduler = optim.lr_scheduler.ReduceLROnPlateau(
         optimizer, mode='min', factor=LR_DECAY,
-        patience=PATIENCE, min_lr=MIN_LR, verbose=False)
+        patience=PATIENCE, min_lr=MIN_LR)
 
     total_params = sum(p.numel() for p in model.parameters())
     print(f"\nModel: {total_params:,} parameters")
