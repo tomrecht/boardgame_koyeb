@@ -55,8 +55,8 @@ else:
     GAMES_PER_EVAL      = 20
     EVAL_PAIRS          = 10
     BUFFER_SIZE         = 10_000
-    MIN_BUFFER          = 500
-    DISTILL_PREFILL     = 1_000
+    MIN_BUFFER          = 200      # ~3-4 games worth before training starts
+    DISTILL_PREFILL     = 1_000   # kept for reference but no longer used
     CHECKPOINT_INTERVAL = 5
     EXPLORATION_RATE    = 0.10
 
@@ -383,21 +383,9 @@ def train():
     # Replay buffer
     buffer = ReplayBuffer(BUFFER_SIZE)
 
-    # Pre-fill buffer with distillation data if available
-    if os.path.exists(DISTILL_DATA):
-        print(f"Pre-filling buffer from {DISTILL_DATA}...")
-        distill_samples = torch.load(DISTILL_DATA, map_location='cpu')
-        # Shuffle indices only — don't move large list in memory
-        indices = list(range(len(distill_samples)))
-        random.shuffle(indices)
-        for i in indices[:DISTILL_PREFILL]:
-            encoded, score = distill_samples[i]
-            encoded_device = {k: v.to(DEVICE) for k, v in encoded.items()}
-            label = score / SCORE_SCALE
-            buffer.add(encoded_device, label)
-        print(f"  Buffer pre-filled with {len(buffer)} distillation samples")
-    else:
-        print(f"  {DISTILL_DATA} not found, starting with empty buffer")
+    # Buffer starts empty — self-play samples only
+    # Distilled weights provide the starting point; buffer doesn't need anchoring
+    print(f"Buffer starts empty, min_buffer={MIN_BUFFER} before training begins")
 
     # Seed generator for self-play and evaluation
     rng = random.Random(MASTER_SEED)
