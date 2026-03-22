@@ -62,9 +62,9 @@ else:
 
 # Shared
 DISCOUNT            = 0.97
-OUTCOME_SCALE       = 800.0        # outcome * 800 / 1000, std ~0.9 matching distillation
+OUTCOME_SCALE       = 200.0        # winning by 6, discount 0.5 -> label = 0.6
 SCORE_SCALE         = 1000.0
-LR                  = 1e-4         # back to 1e-4 — fine-tuning with clean data
+LR                  = 1e-5         # conservative to prevent forgetting
 GRAD_ACCUM_STEPS    = 32
 PROMOTION_WINRATE   = 0.55
 PROMOTION_PVALUE    = 0.10
