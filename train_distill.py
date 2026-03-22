@@ -52,12 +52,7 @@ def train():
 
     # Load data
     print(f"Loading data from {DATA_FILE}...")
-    all_samples = torch.load(DATA_FILE, map_location=DEVICE)
-    # Move encoded tensors to device (saved on CPU by generate_distill_data.py)
-    all_samples = [
-        ({k: v.to(DEVICE) for k, v in encoded.items()}, score)
-        for encoded, score in all_samples
-    ]
+    all_samples = torch.load(DATA_FILE, map_location='cpu')
     print(f"  {len(all_samples)} samples loaded")
 
     # Optionally truncate for quick POC
@@ -102,10 +97,11 @@ def train():
         train_loss_sum = 0.0
 
         for encoded, score in train_data:
+            encoded_dev = {k: v.to(DEVICE) for k, v in encoded.items()}
             target = torch.tensor(score / SCORE_SCALE).to(DEVICE)
 
             optimizer.zero_grad()
-            pred   = model(encoded)
+            pred   = model(encoded_dev)
             loss   = criterion(pred, target)
             loss.backward()
             optimizer.step()
@@ -120,8 +116,9 @@ def train():
 
         with torch.no_grad():
             for encoded, score in val_data:
+                encoded_dev = {k: v.to(DEVICE) for k, v in encoded.items()}
                 target = torch.tensor(score / SCORE_SCALE).to(DEVICE)
-                pred   = model(encoded)
+                pred   = model(encoded_dev)
                 loss   = criterion(pred, target)
                 val_loss_sum += loss.item()
 

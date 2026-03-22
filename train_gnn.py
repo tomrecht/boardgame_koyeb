@@ -392,7 +392,7 @@ def train():
     # Pre-fill buffer with distillation data if available
     if os.path.exists(DISTILL_DATA):
         print(f"Pre-filling buffer from {DISTILL_DATA}...")
-        distill_samples = torch.load(DISTILL_DATA, map_location=DEVICE)
+        distill_samples = torch.load(DISTILL_DATA, map_location='cpu')
         random.shuffle(distill_samples)
         for encoded, score in distill_samples[:DISTILL_PREFILL]:
             encoded_device = {k: v.to(DEVICE) for k, v in encoded.items()}
@@ -437,10 +437,8 @@ def train():
             # --- SELF-PLAY PHASE ---
             for game_idx in range(GAMES_PER_EVAL):
                 seed = rng.randint(0, 2**31)
-                game_start = time.time()
                 record, winner, score = play_selfplay_game(
                     challenger_agent, encoder, seed)
-                print(f"  game {game_idx+1} took {time.time()-game_start:.1f}s, {len(record)} positions, winner={winner}", flush=True)
 
                 total_turns = len(record)
                 labeled = label_positions(record, winner, score, total_turns)
