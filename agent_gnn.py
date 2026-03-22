@@ -31,7 +31,8 @@ class GNNAgent:
     def __init__(self, weights_path=GNN_WEIGHTS):
         self.encoder = BoardEncoder()
         self.model   = load_model(weights_path)
-        self.model.eval()   # inference mode — no dropout etc.
+        self.model.eval()
+        print(f"GNNAgent ready on {next(self.model.parameters()).device}")
 
     def evaluate(self, board, player):
         """

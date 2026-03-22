@@ -28,7 +28,11 @@ import torch.optim as optim
 
 from game import Board
 from agent_gnn import GNNAgent
-from network import BoardEncoder, BoardGNN, save_model, load_model
+from network import BoardEncoder, BoardGNN, save_model, load_model, DEVICE
+
+# Drive checkpoint directory — set by Colab notebook via env var
+# Falls back to current directory if not set
+CHECKPOINT_DIR = os.environ.get('CHECKPOINT_DIR', '.')
 
 
 # -------------------------
@@ -258,7 +262,7 @@ def training_step(model, optimizer, criterion, buffer, n_samples=GRAD_ACCUM_STEP
     total_loss = 0.0
 
     for encoded, label in samples:
-        target = torch.tensor(label, dtype=torch.float32)
+        target = torch.tensor(label, dtype=torch.float32).to(DEVICE)
         pred   = model(encoded)
         loss   = criterion(pred, target) / len(samples)
         loss.backward()
@@ -492,10 +496,15 @@ def train():
                 frozen_model.load_state_dict(copy.deepcopy(model.state_dict()))
                 save_model(model, SELFPLAY_WEIGHTS)
 
+                # Always save to Drive checkpoint dir
+                drive_best = os.path.join(CHECKPOINT_DIR, SELFPLAY_WEIGHTS)
+                save_model(model, drive_best)
+
                 if generation % CHECKPOINT_INTERVAL == 0:
-                    ckpt = SELFPLAY_WEIGHTS.replace('.pt', f'_gen{generation}.pt')
-                    save_model(model, ckpt)
-                    print(f"  Checkpoint saved: {ckpt}")
+                    ckpt_name  = SELFPLAY_WEIGHTS.replace('.pt', f'_gen{generation}.pt')
+                    drive_ckpt = os.path.join(CHECKPOINT_DIR, ckpt_name)
+                    save_model(model, drive_ckpt)
+                    print(f"  Checkpoint saved: {drive_ckpt}")
             else:
                 print(f"  ✗ Not promoted.")
 
@@ -508,7 +517,10 @@ def train():
     except KeyboardInterrupt:
         print("\nTraining stopped.")
         save_model(model, SELFPLAY_WEIGHTS)
-        print(f"Weights saved to {SELFPLAY_WEIGHTS}")
+        # Save final weights to Drive
+        drive_final = os.path.join(CHECKPOINT_DIR, SELFPLAY_WEIGHTS)
+        save_model(model, drive_final)
+        print(f"Weights saved to {SELFPLAY_WEIGHTS} and {drive_final}")
 
 
 if __name__ == '__main__':

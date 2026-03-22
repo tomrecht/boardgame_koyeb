@@ -22,6 +22,9 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
+# Device — automatically use GPU if available
+DEVICE = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+
 
 # -------------------------
 # CONSTANTS
@@ -85,7 +88,7 @@ def build_tile_index(tile_neighbors_path='tile_neighbors.json'):
     src = [e[0] for e in edge_pairs]
     dst = [e[1] for e in edge_pairs]
 
-    edge_index = torch.tensor([src, dst], dtype=torch.long)
+    edge_index = torch.tensor([src, dst], dtype=torch.long).to(DEVICE)
 
     return tile_index, tile_info, edge_index
 
@@ -131,7 +134,7 @@ def encode_tile_features(tile_index, tile_info):
         feats[idx, 6] = info.get('number', 0) / 6.0    # 0 if no number
         feats[idx, 7] = 0.0   # reserved
 
-    return feats
+    return feats.to(DEVICE)
 
 
 # -------------------------
@@ -219,7 +222,7 @@ def encode_piece_features(board, tile_index, current_player):
         # Rack position (only meaningful for unentered pieces)
         feats[piece_idx, 7] = rack_pos / 11.0 if status == STATUS_UNENTERED else 0.0
 
-    return feats, all_pieces
+    return feats.to(DEVICE), all_pieces
 
 
 # -------------------------
@@ -248,11 +251,11 @@ def encode_piece_tile_edges(all_pieces, tile_index, board):
                 tile_dst.append(tile_idx)
 
     if piece_src:
-        piece_to_tile = torch.tensor([piece_src, tile_dst], dtype=torch.long)
-        tile_to_piece = torch.tensor([tile_dst, piece_src], dtype=torch.long)
+        piece_to_tile = torch.tensor([piece_src, tile_dst], dtype=torch.long).to(DEVICE)
+        tile_to_piece = torch.tensor([tile_dst, piece_src], dtype=torch.long).to(DEVICE)
     else:
-        piece_to_tile = torch.zeros(2, 0, dtype=torch.long)
-        tile_to_piece = torch.zeros(2, 0, dtype=torch.long)
+        piece_to_tile = torch.zeros(2, 0, dtype=torch.long).to(DEVICE)
+        tile_to_piece = torch.zeros(2, 0, dtype=torch.long).to(DEVICE)
 
     return piece_to_tile, tile_to_piece
 
@@ -273,7 +276,7 @@ def encode_global_features(board):
         d2.number / 6.0,
         float(d1.used),
         float(d2.used),
-    ])
+    ]).to(DEVICE)
 
 
 # -------------------------
@@ -369,23 +372,23 @@ class MessagePassingLayer(nn.Module):
 
         # --- 1. tile → piece ---
         if tile_to_piece.size(1) > 0:
-            tile_src   = tile_to_piece[0]   # tile indices
-            piece_dst  = tile_to_piece[1]   # piece indices
-            msgs       = self.tile_to_piece_msg(tile_h[tile_src])   # [E, dim]
+            tile_src   = tile_to_piece[0]
+            piece_dst  = tile_to_piece[1]
+            msgs       = self.tile_to_piece_msg(tile_h[tile_src])
             agg        = _mean_aggregate(msgs, piece_dst, num_pieces, dim)
         else:
-            agg = torch.zeros(num_pieces, dim)
+            agg = torch.zeros(num_pieces, dim, device=tile_h.device)
 
         piece_h = F.relu(self.piece_update(torch.cat([piece_h, agg], dim=1)))
 
         # --- 2. piece → tile ---
         if piece_to_tile.size(1) > 0:
-            piece_src  = piece_to_tile[0]   # piece indices
-            tile_dst   = piece_to_tile[1]   # tile indices
+            piece_src  = piece_to_tile[0]
+            tile_dst   = piece_to_tile[1]
             msgs       = self.piece_to_tile_msg(piece_h[piece_src])
             agg        = _mean_aggregate(msgs, tile_dst, num_tiles, dim)
         else:
-            agg = torch.zeros(num_tiles, dim)
+            agg = torch.zeros(num_tiles, dim, device=tile_h.device)
 
         tile_h = F.relu(self.tile_update_pieces(torch.cat([tile_h, agg], dim=1)))
 
@@ -396,7 +399,7 @@ class MessagePassingLayer(nn.Module):
             msgs  = self.tile_to_tile_msg(tile_h[t_src])
             agg   = _mean_aggregate(msgs, t_dst, num_tiles, dim)
         else:
-            agg = torch.zeros(num_tiles, dim)
+            agg = torch.zeros(num_tiles, dim, device=tile_h.device)
 
         tile_h = F.relu(self.tile_update_tiles(torch.cat([tile_h, agg], dim=1)))
 
@@ -410,12 +413,12 @@ def _mean_aggregate(messages, dst_indices, num_dst, dim):
     dst_indices: [num_edges]  — which destination node each message goes to
     Returns:     [num_dst, dim]
     """
-    agg   = torch.zeros(num_dst, dim)
-    count = torch.zeros(num_dst, 1)
+    agg   = torch.zeros(num_dst, dim, device=messages.device)
+    count = torch.zeros(num_dst, 1,   device=messages.device)
     agg.scatter_add_(0, dst_indices.unsqueeze(1).expand_as(messages), messages)
     count.scatter_add_(0, dst_indices.unsqueeze(1),
-                       torch.ones(dst_indices.size(0), 1))
-    count = count.clamp(min=1)   # avoid divide by zero
+                       torch.ones(dst_indices.size(0), 1, device=messages.device))
+    count = count.clamp(min=1)
     return agg / count
 
 
@@ -513,7 +516,8 @@ def save_model(model, path='gnn_weights.pt'):
 
 def load_model(path='gnn_weights.pt', **kwargs):
     model = BoardGNN(**kwargs)
-    model.load_state_dict(torch.load(path, map_location='cpu'))
+    model.load_state_dict(torch.load(path, map_location=DEVICE))
+    model.to(DEVICE)
     model.eval()
-    print(f"Model loaded from {path}")
+    print(f"Model loaded from {path} on {DEVICE}")
     return model
