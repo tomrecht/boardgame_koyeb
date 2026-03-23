@@ -46,7 +46,7 @@ def get_weights():
     return INITIAL_WEIGHTS
 
 class Agent():
-    def __init__(self, board=None, weights=INITIAL_WEIGHTS, log_file='game_log.json', log_to_file=False):
+    def __init__(self, board=None, weights=INITIAL_WEIGHTS, log_file='game_log.json', log_to_file=LOG_TO_FILE):
         self.board = board
         if weights == INITIAL_WEIGHTS:
             print("Using initial weights")
@@ -274,9 +274,18 @@ class Agent():
         # rank all move pairs by score
         all_moves_ranked = sorted(move_scores.items(), key=lambda x: x[1][0], reverse=True)
 
+        def serialize_first_move(fm):
+            if fm is None:
+                return None
+            tile = fm['origin_tile']
+            return {
+                'piece': (fm['piece'].player, fm['piece'].number),
+                'origin_tile': {'type': tile.type, 'ring': tile.ring, 'pos': tile.pos} if tile else None,
+            }
+
         def snapshot(board):
             return {
-                'firstMove': board.firstMove,
+                'firstMove': serialize_first_move(board.firstMove),
                 'dice': [{'number': d.number, 'used': d.used} for d in board.dice],
             }
 
@@ -286,11 +295,15 @@ class Agent():
             after = snapshot(board)
             board.undo_last_move()
             restored = snapshot(board)
+            undo_mismatch = restored != before
+            if undo_mismatch:
+                print(f"[UNDO MISMATCH] move={move} before={before} restored={restored}")
             return {
                 'move': move,
                 'before': before,
                 'after': after,
                 'restored': restored,
+                'undo_mismatch': undo_mismatch,
             }
 
         self.log = [
