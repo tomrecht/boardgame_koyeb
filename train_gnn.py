@@ -75,6 +75,11 @@ GNN_WEIGHTS         = 'gnn_weights.pt'
 SELFPLAY_WEIGHTS    = 'gnn_selfplay.pt'
 DISTILL_DATA        = 'distill_data.pt'
 
+# Unique session ID — incorporated into checkpoint names so resuming
+# a new run never overwrites checkpoints from a previous session
+import time as _time
+SESSION = int(_time.time())
+
 
 # -------------------------
 # STATS HELPERS  (from train.py)
@@ -371,6 +376,7 @@ def train():
     print(f"{'POC' if not args.full else 'FULL'} mode: "
           f"games_per_eval={GAMES_PER_EVAL}, eval_pairs={EVAL_PAIRS}, "
           f"buffer={BUFFER_SIZE}, min_buffer={MIN_BUFFER}")
+    print(f"Session ID: {SESSION}  (checkpoints will be named *_s{SESSION}_*)")
 
     # Load starting network (distilled)
     print(f"\nLoading distilled weights from {GNN_WEIGHTS}...")
@@ -489,21 +495,22 @@ def train():
                 frozen_model.load_state_dict(copy.deepcopy(model.state_dict()))
                 save_model(model, SELFPLAY_WEIGHTS)
 
-                # Save to Drive
+                # Save to Drive — session-stamped so it never overwrites previous sessions
                 drive_best = os.path.join(CHECKPOINT_DIR, SELFPLAY_WEIGHTS)
                 save_model(model, drive_best)
 
                 if generation % CHECKPOINT_INTERVAL == 0:
-                    ckpt_name  = SELFPLAY_WEIGHTS.replace('.pt', f'_gen{generation}.pt')
+                    ckpt_name  = f'gnn_selfplay_s{SESSION}_gen{generation}.pt'
                     drive_ckpt = os.path.join(CHECKPOINT_DIR, ckpt_name)
                     save_model(model, drive_ckpt)
                     print(f"  Checkpoint saved: {drive_ckpt}")
             else:
                 print(f"  ✗ Not promoted.")
 
-            # Periodic save regardless of promotion — guard against session timeout
+            # Periodic save — session-stamped
             if generation % CHECKPOINT_INTERVAL == 0:
-                periodic_path = os.path.join(CHECKPOINT_DIR, f'gnn_current_gen{generation}.pt')
+                periodic_path = os.path.join(CHECKPOINT_DIR,
+                                             f'gnn_current_s{SESSION}_gen{generation}.pt')
                 save_model(model, periodic_path)
                 print(f"  Periodic save: {periodic_path}")
 
