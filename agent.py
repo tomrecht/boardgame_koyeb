@@ -48,6 +48,8 @@ def get_weights():
 class Agent():
     def __init__(self, board=None, weights=INITIAL_WEIGHTS, log_file='game_log.json', log_to_file=False):
         self.board = board
+        if weights == INITIAL_WEIGHTS:
+            print("Using initial weights")
 
         raw_weights = weights if weights is not None else get_weights()
         self.weights = self._expand_weights(raw_weights)
@@ -252,8 +254,6 @@ class Agent():
             while len(board.moves) > initial_move_count:
                 board.undo_last_move()
 
-
-
         best_move_pair = max(move_scores, key=lambda k: move_scores[k][0])
         best_move_score, best_move_components = move_scores[best_move_pair]
 
@@ -271,34 +271,43 @@ class Agent():
           #      print("Chose pass as second move, no non-pass pairs")
 
 
-        # get top 4 move pairs by score
-        top_moves = sorted(move_scores.items(), key=lambda x: x[1][0], reverse=True)[:4]
+        # rank all move pairs by score
+        all_moves_ranked = sorted(move_scores.items(), key=lambda x: x[1][0], reverse=True)
 
-        log_entry = {
-            'move': best_move_pair,
-            'score': best_move_score,
-            'components': best_move_components,
-            'competitors': [
-                {
-                    'move': move_pair,
-                    'score': score,
-                    'components': components
-                }
-                for move_pair, (score, components) in top_moves[1:]  # skip best, already logged
-            ]
-        }
+        def snapshot(board):
+            return {
+                'firstMove': board.firstMove,
+                'dice': [{'number': d.number, 'used': d.used} for d in board.dice],
+            }
 
-        self.log.append(log_entry)
+        def move_with_first(move):
+            before = snapshot(board)
+            board.apply_move(move, switch_turn=False)
+            after = snapshot(board)
+            board.undo_last_move()
+            restored = snapshot(board)
+            return {
+                'move': move,
+                'before': before,
+                'after': after,
+                'restored': restored,
+            }
 
-        # keep only last N entries
-        MAX_LOG_ENTRIES = 10
-        if len(self.log) > MAX_LOG_ENTRIES:
-            self.log = self.log[-MAX_LOG_ENTRIES:]
+        self.log = [
+            {
+                'move_pair': {
+                    'first': move_with_first(move_pair[0]),
+                    'second': move_with_first(move_pair[1]),
+                },
+                'score': score,
+                'components': components
+            }
+            for move_pair, (score, components) in all_moves_ranked
+        ]
 
         if self.log_to_file:
             with open(self.log_file, 'w') as file:
                 file.write(json.dumps(self.log, indent=4))
-            #print(f"Log updated with move: {best_move_pair}")
 
 
         return best_move_pair
