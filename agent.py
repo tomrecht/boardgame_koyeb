@@ -227,8 +227,6 @@ class Agent():
             remaining_captured = [p for p in board.home_tile.pieces if p.player == board.current_player]
             if not remaining_captured:
                 move_scores[(move, (0, 0, 0))] = self.evaluate(board, player)
-     #       print(f"After {move}: dice={[(d.number, d.used) for d in board.dice]}, next_moves count={len(set(board.get_valid_moves()))}")
-
 
             if all(die.used for die in board.dice):
                 while len(board.moves) > initial_move_count:
@@ -256,20 +254,6 @@ class Agent():
 
         best_move_pair = max(move_scores, key=lambda k: move_scores[k][0])
         best_move_score, best_move_components = move_scores[best_move_pair]
-
-        # debug: check if we chose pass as second move when better options existed
-#        if best_move_pair[1] == (0, 0, 0):
- #           non_pass_pairs = {k: v for k, v in move_scores.items() if k[1] != (0, 0, 0)}
-  #          if non_pass_pairs:
-   #             best_non_pass = max(non_pass_pairs, key=lambda k: non_pass_pairs[k][0])
-    #            best_non_pass_score = non_pass_pairs[best_non_pass][0]
-     #           print(f"Chose pass as second move (score={best_move_score:.1f}) over {best_non_pass} (score={best_non_pass_score:.1f})")
-      #          print(f"First move: {best_move_pair[0]}, dice: {[(d.number, d.used) for d in board.dice]}")
-       #         print(f"Chosen components: {best_move_components}")
-        #        print(f"Best non-pass components: {non_pass_pairs[best_non_pass][1]}")
-         #   else:
-          #      print("Chose pass as second move, no non-pass pairs")
-
 
         # get top 4 move pairs by score
         top_moves = sorted(move_scores.items(), key=lambda x: x[1][0], reverse=True)[:4]
