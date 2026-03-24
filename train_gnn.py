@@ -335,15 +335,26 @@ def main():
     criterion = nn.MSELoss()
 
     # Agents wrapping the live models (no weight file I/O needed)
-    # GNNAgent accepts model= kwarg after the agent_gnn.py fix
-    challenger_agent  = GNNAgent(model=model)
-    frozen_agent      = GNNAgent(model=frozen_model)
-    distilled_agent   = GNNAgent(model=distilled_model)
+    challenger_agent = GNNAgent(model=model)
+    frozen_agent     = GNNAgent(model=frozen_model)
+    distilled_agent  = GNNAgent(model=distilled_model)
 
     # Replay buffer
-    replay_buffer = collections.deque(maxlen=BUFFER_SIZE)
+    replay_buffer    = collections.deque(maxlen=BUFFER_SIZE)
+    buffer_disk_path = os.path.join(CHECKPOINT_DIR, 'replay_buffer_latest.pt')
 
-    # Sanity check — catches collate/training bugs before burning Colab time
+    # Resume buffer if available (e.g. after Colab timeout)
+    if os.path.exists(buffer_disk_path):
+        try:
+            loaded = torch.load(buffer_disk_path)
+            replay_buffer.extend(loaded)
+            print(f"Resumed buffer with {len(replay_buffer)} positions.")
+        except Exception as e:
+            print(f"Could not load buffer: {e}")
+    else:
+        print(f"Buffer starts empty. Training begins after {MIN_BUFFER} positions.")
+
+    # Sanity check — catches bugs before burning Colab time
     print("\nRunning sanity check...")
     _sanity_check(model, encoder, criterion)
     print("Sanity check passed.\n")
@@ -355,12 +366,12 @@ def main():
 
     try:
         while True:
-            gen_start = time.time()
+            gen_start     = time.time()
+            gen_positions = 0
             print(f"Generation {generation}:")
 
             # ---- A. SELF-PLAY ----
             model.eval()
-            gen_positions = 0
 
             for g in range(GAMES_PER_EVAL):
                 seed = random.randint(0, 2**31)
@@ -401,10 +412,8 @@ def main():
             # ---- C. EVALUATION ----
             model.eval()
 
-            # vs frozen champion
             print(f"  Evaluating vs frozen champion ({EVAL_PAIRS} pairs)...")
-            wins, total = evaluate_vs_agent(
-                challenger_agent, frozen_agent, EVAL_PAIRS)
+            wins, total = evaluate_vs_agent(challenger_agent, frozen_agent, EVAL_PAIRS)
             win_rate = wins / total if total else 0
             p_value  = binomial_p_value(wins, total, target_p=PROMOTION_WINRATE)
             print(f"  vs frozen:    {wins}/{total} ({win_rate:.1%})  p={p_value:.3f}")
@@ -412,7 +421,7 @@ def main():
             # ---- D. PROMOTION ----
             promoted = (win_rate >= PROMOTION_WINRATE and p_value <= PROMOTION_PVALUE)
 
-            # vs distilled baseline (collapse detection) — only if about to promote
+            # Collapse detection — only worth checking if about to promote
             if promoted:
                 print(f"  Evaluating vs distilled baseline ({EVAL_PAIRS} pairs)...")
                 wins_d, total_d = evaluate_vs_agent(
@@ -423,19 +432,7 @@ def main():
                 if p_d > COLLAPSE_PVALUE:
                     print(f"  ⚠️  WARNING: not reliably beating distilled baseline — "
                           f"possible catastrophic forgetting!")
-                    promoted = False  # block promotion if collapsing
-
-            if promoted:
-                print(f"  ⭐ PROMOTED! ({win_rate:.1%}). Updating frozen opponent.")
-                frozen_model.load_state_dict(copy.deepcopy(model.state_dict()))
-                save_model(model, SELFPLAY_WEIGHTS)
-                drive_best = os.path.join(CHECKPOINT_DIR, SELFPLAY_WEIGHTS)
-                save_model(model, drive_best)
-            else:
-                print(f"  ✗ Not promoted. ({win_rate:.1%})")
-
-            # ---- D. PROMOTION ----
-            promoted = (win_rate >= PROMOTION_WINRATE and p_value <= PROMOTION_PVALUE)
+                    promoted = False
 
             if promoted:
                 print(f"  ⭐ PROMOTED! ({win_rate:.1%}). Updating frozen opponent.")
@@ -453,6 +450,13 @@ def main():
                 save_model(model, ckpt_path)
                 print(f"  Periodic save: {ckpt_path}")
 
+            # Save buffer to Drive so we can resume after timeout
+            try:
+                torch.save(list(replay_buffer), buffer_disk_path)
+                print(f"  Buffer saved ({len(replay_buffer)} positions).")
+            except Exception as e:
+                print(f"  ⚠️  Warning: failed to save buffer: {e}")
+
             model.train()
             scheduler.step()
 
@@ -469,7 +473,11 @@ def main():
         save_model(model, SELFPLAY_WEIGHTS)
         drive_final = os.path.join(CHECKPOINT_DIR, SELFPLAY_WEIGHTS)
         save_model(model, drive_final)
-        print(f"Weights saved.")
+        try:
+            torch.save(list(replay_buffer), buffer_disk_path)
+        except Exception:
+            pass
+        print("Weights and buffer saved.")
 
 
 def _sanity_check(model, encoder, criterion):
@@ -478,6 +486,7 @@ def _sanity_check(model, encoder, criterion):
     Verifies that training step works end-to-end with the correct data format.
     """
     board = Board()
+    board.roll_dice()
     enc  = encoder.encode(board, board.current_player)
     fake_batch   = [(enc, 0.5)] * 4
     encoded_list = [item[0] for item in fake_batch]
