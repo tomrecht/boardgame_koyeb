@@ -182,7 +182,7 @@ def play_single_game(p1_agent, p2_agent, seed):
         moves = board.get_valid_moves()
         if not moves: break
         
-        agent = p1_agent if board.current_player == 1 else p2_agent
+        agent = p1_agent if board.current_player == 'white' else p2_agent
         chosen = agent.select_move_pair_fast(moves, board, board.current_player)
         
         for move in chosen:
