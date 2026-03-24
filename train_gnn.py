@@ -47,7 +47,7 @@ if args.full:
     GAMES_PER_EVAL      = 60
     EVAL_PAIRS          = 30
     BUFFER_SIZE         = 100_000
-    MIN_BUFFER          = 6_000     # full generation before any training
+    MIN_BUFFER          = 4_000     # full generation before any training
     DISTILL_PREFILL     = 0         # no distillation mixing
     CHECKPOINT_INTERVAL = 5
     EXPLORATION_RATE    = 0.10
@@ -57,7 +57,7 @@ else:
     BUFFER_SIZE         = 10_000
     MIN_BUFFER          = 1_200     # full generation (20 games * ~60 pos) before training
     DISTILL_PREFILL     = 0         # no distillation mixing
-    CHECKPOINT_INTERVAL = 5
+    CHECKPOINT_INTERVAL = 1
     EXPLORATION_RATE    = 0.10
 
 # Shared
@@ -67,8 +67,8 @@ SCORE_SCALE         = 1000.0
 LR                  = 1e-4         # Increased for L4 GPU efficiency
 MAX_GENERATIONS     = 100        # For LR Scheduler
 GRAD_ACCUM_STEPS    = 32
-PROMOTION_WINRATE   = 0.55
-PROMOTION_PVALUE    = 0.10
+PROMOTION_WINRATE   = 0.58
+PROMOTION_PVALUE    = 0.05
 COLLAPSE_PVALUE     = 0.50
 MAX_TURNS           = 150
 MASTER_SEED         = 999
