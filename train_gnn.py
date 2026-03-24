@@ -404,21 +404,35 @@ def main():
             # vs frozen champion
             print(f"  Evaluating vs frozen champion ({EVAL_PAIRS} pairs)...")
             wins, total = evaluate_vs_agent(
-                challenger_agent, frozen_agent, EVAL_PAIRS, label='frozen')
+                challenger_agent, frozen_agent, EVAL_PAIRS)
             win_rate = wins / total if total else 0
             p_value  = binomial_p_value(wins, total, target_p=PROMOTION_WINRATE)
             print(f"  vs frozen:    {wins}/{total} ({win_rate:.1%})  p={p_value:.3f}")
 
-            # vs distilled baseline (collapse detection)
-            print(f"  Evaluating vs distilled baseline ({EVAL_PAIRS} pairs)...")
-            wins_d, total_d = evaluate_vs_agent(
-                challenger_agent, distilled_agent, EVAL_PAIRS, label='distilled')
-            wr_d   = wins_d / total_d if total_d else 0
-            p_d    = binomial_p_value(wins_d, total_d, target_p=PROMOTION_WINRATE)
-            print(f"  vs distilled: {wins_d}/{total_d} ({wr_d:.1%})  p={p_d:.3f}")
-            if p_d > COLLAPSE_PVALUE and generation > 2:
-                print(f"  ⚠️  WARNING: not reliably beating distilled baseline — "
-                      f"possible catastrophic forgetting!")
+            # ---- D. PROMOTION ----
+            promoted = (win_rate >= PROMOTION_WINRATE and p_value <= PROMOTION_PVALUE)
+
+            # vs distilled baseline (collapse detection) — only if about to promote
+            if promoted:
+                print(f"  Evaluating vs distilled baseline ({EVAL_PAIRS} pairs)...")
+                wins_d, total_d = evaluate_vs_agent(
+                    challenger_agent, distilled_agent, EVAL_PAIRS)
+                wr_d = wins_d / total_d if total_d else 0
+                p_d  = binomial_p_value(wins_d, total_d, target_p=PROMOTION_WINRATE)
+                print(f"  vs distilled: {wins_d}/{total_d} ({wr_d:.1%})  p={p_d:.3f}")
+                if p_d > COLLAPSE_PVALUE:
+                    print(f"  ⚠️  WARNING: not reliably beating distilled baseline — "
+                          f"possible catastrophic forgetting!")
+                    promoted = False  # block promotion if collapsing
+
+            if promoted:
+                print(f"  ⭐ PROMOTED! ({win_rate:.1%}). Updating frozen opponent.")
+                frozen_model.load_state_dict(copy.deepcopy(model.state_dict()))
+                save_model(model, SELFPLAY_WEIGHTS)
+                drive_best = os.path.join(CHECKPOINT_DIR, SELFPLAY_WEIGHTS)
+                save_model(model, drive_best)
+            else:
+                print(f"  ✗ Not promoted. ({win_rate:.1%})")
 
             # ---- D. PROMOTION ----
             promoted = (win_rate >= PROMOTION_WINRATE and p_value <= PROMOTION_PVALUE)
