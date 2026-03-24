@@ -409,6 +409,13 @@ def main():
             avg_loss = total_loss / TRAINING_STEPS
             print(f"  Training loss: {avg_loss:.4f}")
 
+            # Label stats for the current generation's data
+            recent = list(replay_buffer)[-gen_positions:]
+            labels = [item[1] for item in recent]
+            print(f"  label stats: mean={sum(labels)/len(labels):.3f}  "
+                  f"std={torch.tensor(labels).std().item():.3f}  "
+                  f"min={min(labels):.3f}  max={max(labels):.3f}")
+
             # ---- C. EVALUATION ----
             model.eval()
 
