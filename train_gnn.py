@@ -44,8 +44,8 @@ parser.add_argument('--full', action='store_true', help='Full training mode for 
 args = parser.parse_args()
 
 if args.full:
-    GAMES_PER_EVAL      = 100
-    EVAL_PAIRS          = 40
+    GAMES_PER_EVAL      = 60
+    EVAL_PAIRS          = 30
     BUFFER_SIZE         = 100_000
     MIN_BUFFER          = 6_000     # full generation before any training
     DISTILL_PREFILL     = 0         # no distillation mixing
