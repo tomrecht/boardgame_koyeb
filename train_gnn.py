@@ -331,7 +331,7 @@ def main():
     distilled_model.eval()
 
     optimizer = optim.Adam(model.parameters(), lr=LR)
-    scheduler = optim.ExponentialLR(optimizer, gamma=LR_DECAY)
+    scheduler = optim.lr_scheduler.ExponentialLR(optimizer, gamma=LR_DECAY)
     criterion = nn.MSELoss()
 
     # Agents wrapping the live models (no weight file I/O needed)
