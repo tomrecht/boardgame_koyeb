@@ -29,10 +29,13 @@ class GNNAgent:
     Encoder and model are instantiated once and reused across calls.
     """
 
-    def __init__(self, weights_path=GNN_WEIGHTS):
+    def __init__(self, weights_path=GNN_WEIGHTS, model=None):
         self.encoder = BoardEncoder()
-        self.model   = load_model(weights_path)
-        self.model.eval()
+        if model is not None:
+            self.model = model
+            self.model.eval()
+        else:
+            self.model = load_model(weights_path)
         print(f"GNNAgent ready on {next(self.model.parameters()).device}")
 
     def evaluate(self, board, player):
