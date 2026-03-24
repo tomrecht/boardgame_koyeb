@@ -64,7 +64,8 @@ else:
 DISCOUNT            = 0.97
 OUTCOME_SCALE       = 200.0        # winning by 6, discount 0.5 -> label = 0.6
 SCORE_SCALE         = 1000.0
-LR                  = 1e-5         # conservative to prevent forgetting
+LR                  = 1e-4         # Increased for L4 GPU efficiency
+MAX_GENERATIONS     = 100        # For LR Scheduler
 GRAD_ACCUM_STEPS    = 32
 PROMOTION_WINRATE   = 0.55
 PROMOTION_PVALUE    = 0.10
@@ -284,6 +285,8 @@ def evaluate(challenger_agent, opponent_agent, encoder, seeds):
     total   = 0
     margins = []
     eval_start = time.time()
+    total_games = len(seeds) * 2
+    needed_to_promote = math.ceil(total_games * PROMOTION_WINRATE)
 
     for pair_idx, seed in enumerate(seeds, 1):
         pair_start = time.time()
@@ -314,6 +317,12 @@ def evaluate(challenger_agent, opponent_agent, encoder, seeds):
             margins.append(-s2)
         else:
             margins.append(0)
+
+        # Early Exit Check: Can we still mathematically reach the promotion winrate?
+        remaining_games = total_games - total
+        if (wins + remaining_games) < needed_to_promote:
+            print(f"\r    [Early Exit] pair {pair_idx}/{len(seeds)}  {wins}/{total}. Cannot reach {needed_to_promote} wins.", flush=True)
+            return wins, total, margins, 1.0
 
         wr = wins / total if total else 0
         pair_time = time.time() - pair_start
@@ -393,6 +402,11 @@ def train():
     distilled_model.eval()
 
     optimizer = optim.Adam(model.parameters(), lr=LR)
+    
+    # Linear LR Decay
+    lr_lambda = lambda gen: max(0.1, 1.0 - (gen / MAX_GENERATIONS))
+    scheduler = optim.lr_scheduler.LambdaLR(optimizer, lr_lambda=lr_lambda)
+
     criterion = nn.MSELoss()
 
     # Replay buffer — self-play data only
@@ -461,36 +475,34 @@ def train():
                           f"positions={gen_positions}")
 
             # --- EVALUATION PHASE ---
-            print(f"\n  Evaluating vs frozen opponent ({EVAL_PAIRS} pairs)...")
             model.eval()
             eval_seeds = [rng.randint(0, 2**31) for _ in range(EVAL_PAIRS)]
 
+            # 1. Evaluate against Frozen Opponent (Primary gatekeeper)
+            print(f"\n  Evaluating vs frozen champion ({EVAL_PAIRS} pairs)...")
             wins, games, margins, p_value = evaluate(
                 challenger_agent, frozen_agent, encoder, eval_seeds)
 
             win_rate    = wins / games if games else 0
             mean_margin = sum(margins) / len(margins) if margins else 0
-            model.train()
-
-            print(f"  vs frozen:    {wins}/{games} ({win_rate:.1%})  "
-                  f"margin={mean_margin:+.2f}  p={p_value:.3f}")
-
-            # Check against distilled baseline (collapse detection)
-            wins_d, games_d, margins_d, p_d = evaluate(
-                challenger_agent, distilled_agent, encoder, eval_seeds)
-            wr_d = wins_d / games_d if games_d else 0
-            print(f"  vs distilled: {wins_d}/{games_d} ({wr_d:.1%})  "
-                  f"p={p_d:.3f}")
-
-            if p_d > COLLAPSE_PVALUE and generation > 2:
-                print(f"  ⚠️  WARNING: not beating distilled baseline (p={p_d:.3f})")
-
-            # --- PROMOTION ---
+            
+            # --- PROMOTION LOGIC ---
             promoted = (win_rate >= PROMOTION_WINRATE and
                         p_value  <= PROMOTION_PVALUE  and
                         mean_margin > 0)
 
             if promoted:
+                # 2. Check against distilled baseline only if it passed the champion
+                print(f"  Evaluating vs distilled baseline (collapse detection)...")
+                wins_d, games_d, margins_d, p_d = evaluate(
+                    challenger_agent, distilled_agent, encoder, eval_seeds)
+                
+                wr_d = wins_d / games_d if games_d else 0
+                print(f"  vs distilled: {wins_d}/{games_d} ({wr_d:.1%})  p={p_d:.3f}")
+
+                if p_d > COLLAPSE_PVALUE and generation > 2:
+                    print(f"  ⚠️  WARNING: not beating distilled baseline (p={p_d:.3f})")
+
                 print(f"  ✓ New champion! Updating frozen opponent.")
                 frozen_model.load_state_dict(copy.deepcopy(model.state_dict()))
                 save_model(model, SELFPLAY_WEIGHTS)
@@ -514,9 +526,12 @@ def train():
                 save_model(model, periodic_path)
                 print(f"  Periodic save: {periodic_path}")
 
+            model.train()
+            scheduler.step() # Step LR Decay
+            
             gen_time = time.time() - gen_start
             total_time = time.time() - start
-            print(f"  Gen time: {gen_time:.0f}s  Total: {total_time/3600:.1f}h\n")
+            print(f"  Gen time: {gen_time:.0f}s  Total: {total_time/3600:.1f}h  LR: {optimizer.param_groups[0]['lr']:.2e}\n")
 
             generation += 1
 
