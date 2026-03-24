@@ -52,7 +52,7 @@ if args.full:
     MIN_BUFFER          = 4_000
     BATCH_SIZE          = 512
     TRAINING_STEPS      = 200       # per generation
-    LR                  = 1e-5      # conservative — prevents forgetting distilled knowledge
+    LR                  = 1e-4      
     LR_DECAY            = 0.99
     CHECKPOINT_INTERVAL = 5
     MAX_TURNS           = 150
@@ -69,7 +69,7 @@ else:
     MAX_TURNS           = 50
 
 # Shared
-GAMMA               = 0.98          # outcome discount per turn
+GAMMA               = 0.99          # outcome discount per turn
 OUTCOME_SCALE       = 200.0         # keeps self-play labels in ~[-0.6, +0.6]
 SCORE_SCALE         = 1000.0        # must match agent_gnn.py and train_distill.py
 PROMOTION_WINRATE   = 0.55
