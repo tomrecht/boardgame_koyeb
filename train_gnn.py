@@ -493,7 +493,6 @@ def _sanity_check(model, encoder, criterion):
     Verifies that training step works end-to-end with the correct data format.
     """
     board = Board()
-    board.roll_dice()
     enc  = encoder.encode(board, board.current_player)
     fake_batch   = [(enc, 0.5)] * 4
     encoded_list = [item[0] for item in fake_batch]
