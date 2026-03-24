@@ -132,16 +132,16 @@ def collect_selfplay_games(num_games, agent, encoder, start_seed=0):
             
     return data
 
+def binomial_p_value(successes, trials, target_p=0.58):
+    """Probability of getting 'successes' or more wins if true win rate is target_p."""
+    p_val = 0
+    for k in range(successes, trials + 1):
+        p_val += math.comb(trials, k) * (target_p**k) * ((1 - target_p)**(trials - k))
+    return p_val
+
 def evaluate_vs_frozen(challenger_agent, frozen_weights_path, num_pairs=10):
-    """
-    Evaluates agent vs a frozen version of itself.
-    Uses 'pairs' with same seeds: 
-      Game 1: challenger plays White
-      Game 2: challenger plays Black (same seed/dice)
-    Returns win_count, total_games
-    """
     if not os.path.exists(frozen_weights_path):
-        return num_pairs, num_pairs * 2 # First time, just pass
+        return num_pairs, num_pairs * 2 
     
     frozen_agent = GNNAgent(weights_path=frozen_weights_path)
     wins = 0
@@ -149,25 +149,25 @@ def evaluate_vs_frozen(challenger_agent, frozen_weights_path, num_pairs=10):
     
     for i in range(num_pairs):
         seed = random.randint(0, 1000000)
-        
-        # Challenger as Player 1
-        w1 = play_single_game(challenger_agent, frozen_agent, seed)
-        if w1 == 1: wins += 1
+        wins += 1 if play_single_game(challenger_agent, frozen_agent, seed) == 1 else 0
+        total += 1
+        wins += 1 if play_single_game(frozen_agent, challenger_agent, seed) == 2 else 0
         total += 1
         
-        # Challenger as Player 2
-        w2 = play_single_game(frozen_agent, challenger_agent, seed)
-        if w2 == 2: wins += 1
-        total += 1
-        
-        # Early exit check: if win rate is hopeless, stop evaluation
-        # (Need 55% to promote, i.e., wins > total * 0.55)
+        # Hard Math Check
         remaining = (num_pairs * 2) - total
-        if wins + remaining < (num_pairs * 2 * 0.58): # using 58% buffer for promotion
-             print(f"    [Early Exit] pair {i+1}/{num_pairs}  {wins}/{total}. Cannot reach 35 wins.")
+        if wins + remaining < (num_pairs * 2 * 0.58):
+             print(f"    [Early Exit] pair {i+1}/{num_pairs}  {wins}/{total}. Impossible to promote.")
              return wins, total
+
+        # Statistical P-Value Check (The "Failing Student" rule)
+        if total >= 12:
+            p_val = binomial_p_value(wins, total, target_p=0.58)
+            if p_val > 0.30: # 70% chance this model is NOT a champion
+                print(f"    [Stat Exit] pair {i+1}/{num_pairs}  {wins}/{total} (p={p_val:.3f}). Unlikely to promote.")
+                return wins, total
              
-        print(f"    pair {i+1}/{num_pairs}  {wins}/{total} ({wins/total:.0%})  10s/pair")
+        print(f"    pair {i+1}/{num_pairs}  {wins}/{total} ({wins/total:.0%})")
         
     return wins, total
 
