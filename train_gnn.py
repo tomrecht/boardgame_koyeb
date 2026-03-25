@@ -245,12 +245,12 @@ def evaluate_vs_agent(challenger_agent, opponent_agent, num_pairs, label=''):
             return wins, total
 
         # Statistical early exit — unlikely to promote
-        if total >= 20:
-            p_val = binomial_p_value(wins, total, target_p=PROMOTION_WINRATE)
-            if p_val > 0.5:
-                print(f"    [Stat Exit] pair {i+1}/{num_pairs}  {wins}/{total} "
-                      f"(p={p_val:.3f}). Unlikely to promote.")
-                return wins, total
+    #    if total >= 20:
+     #       p_val = binomial_p_value(wins, total, target_p=PROMOTION_WINRATE)
+      #      if p_val > 0.5:
+       #         print(f"    [Stat Exit] pair {i+1}/{num_pairs}  {wins}/{total} "
+        #              f"(p={p_val:.3f}). Unlikely to promote.")
+         #       return wins, total
 
         print(f"    pair {i+1}/{num_pairs}  {wins}/{total} ({wins/total:.0%})")
 
