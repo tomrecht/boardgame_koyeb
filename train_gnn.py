@@ -49,7 +49,7 @@ if args.full:
     GAMES_PER_EVAL      = 60
     EVAL_PAIRS          = 50
     BUFFER_SIZE         = 50_000
-    MIN_BUFFER          = 4_000
+    MIN_BUFFER          = 6_000
     BATCH_SIZE          = 512
     TRAINING_STEPS      = 400       
     LR                  = 1e-4      
@@ -371,6 +371,23 @@ def main():
 
     generation = 0
     start      = time.time()
+
+    if len(replay_buffer) == 0:
+    # run seeding block
+        print("Seeding buffer with distilled self-play...")
+
+        for i in range(200):  # 150–300 is good
+            seed = random.randint(0, 2**31)
+            record, winner, score = play_selfplay_game(distilled_agent, encoder, seed)
+
+            for item in record:
+                replay_buffer.append(item)
+
+            if (i + 1) % 20 == 0:
+                print(f"  seed game {i+1}/200  buffer={len(replay_buffer)}")
+
+        print("Seeding complete.")
+
 
     print(f"Starting self-play training. Press Ctrl+C to stop.\n")
 
