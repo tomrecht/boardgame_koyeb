@@ -139,11 +139,6 @@ def _piece_status(piece, board):
 
 
 def encode_piece_features(board, tile_index, current_player):
-    """
-    Returns ([TOTAL_PIECES, PIECE_FEAT_DIM] on DEVICE, ordered piece list).
-    Current player pieces first (sorted by number), then opponent.
-    Features: [player_id, number/12, status_onehot×5, rack_pos/11]
-    """
     opponent = 'black' if current_player == 'white' else 'white'
     cur_pieces = sorted([p for p in board.pieces if p.player == current_player],
                         key=lambda p: p.number)
@@ -156,15 +151,22 @@ def encode_piece_features(board, tile_index, current_player):
     rack_pos = {p: i for i, p in enumerate(cur_un)}
     rack_pos.update({p: i for i, p in enumerate(opp_un)})
 
-    f = torch.zeros(TOTAL_PIECES, PIECE_FEAT_DIM)
-    for idx, piece in enumerate(all_pieces):
-        status = _piece_status(piece, board)
-        f[idx, 0] = 0.0 if piece.player == current_player else 1.0
-        f[idx, 1] = piece.number / 12.0
-        f[idx, 2 + status] = 1.0
-        f[idx, 7] = rack_pos.get(piece, 0) / 11.0 if status == STATUS_UNENTERED else 0.0
-    return f.to(DEVICE), all_pieces
+    statuses = [_piece_status(p, board) for p in all_pieces]
 
+    # Build rows as Python lists, then construct tensor in one call
+    rows = []
+    for piece, status in zip(all_pieces, statuses):
+        onehot = [0.0] * 5
+        onehot[status] = 1.0
+        rows.append([
+            0.0 if piece.player == current_player else 1.0,
+            piece.number / 12.0,
+            *onehot,
+            rack_pos.get(piece, 0) / 11.0 if status == STATUS_UNENTERED else 0.0,
+        ])
+
+    f = torch.tensor(rows, dtype=torch.float32, device=DEVICE)
+    return f, all_pieces
 
 # -------------------------
 # PIECE->TILE EDGES  (per position)
