@@ -380,8 +380,19 @@ def main():
             seed = random.randint(0, 2**31)
             record, winner, score = play_selfplay_game(distilled_agent, encoder, seed)
 
-            for item in record:
-                replay_buffer.append(item)
+            for encoded, player, turns in record:
+                if winner == "draw":
+                    value = 0.0
+                else:
+                    value = 1.0 if player == winner else -1.0
+
+                # optional: discount by turns remaining
+                value = value * (0.99 ** turns)
+
+                # clamp (important)
+                value = max(-1.0, min(1.0, value))
+
+                replay_buffer.append((encoded, value))
 
             if (i + 1) % 20 == 0:
                 print(f"  seed game {i+1}/200  buffer={len(replay_buffer)}")
