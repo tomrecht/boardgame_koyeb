@@ -47,7 +47,7 @@ args = parser.parse_args()
 
 if args.full:
     GAMES_PER_EVAL      = 60
-    EVAL_PAIRS          = 30
+    EVAL_PAIRS          = 50
     BUFFER_SIZE         = 100_000
     MIN_BUFFER          = 4_000
     BATCH_SIZE          = 512
@@ -243,14 +243,21 @@ def evaluate_vs_agent(challenger_agent, opponent_agent, num_pairs, label=''):
             print(f"    [Early Exit] pair {i+1}/{num_pairs}  {wins}/{total}. "
                   f"Impossible to reach {PROMOTION_WINRATE:.0%}.")
             return wins, total
+        
+        # Early success exit — already statistically certain to promote
+        if total >= 12:
+            p_val_success = binomial_p_value(wins, total, target_p=PROMOTION_WINRATE)
+            if p_val_success <= PROMOTION_PVALUE and wins / total >= PROMOTION_WINRATE:
+                print(f"    [Early Promote] pair {i+1}/{num_pairs}  {wins}/{total} (p={p_val_success:.3f}). Certain to promote.")
+                return wins, total
 
         # Statistical early exit — unlikely to promote
-    #    if total >= 20:
-     #       p_val = binomial_p_value(wins, total, target_p=PROMOTION_WINRATE)
-      #      if p_val > 0.5:
-       #         print(f"    [Stat Exit] pair {i+1}/{num_pairs}  {wins}/{total} "
-        #              f"(p={p_val:.3f}). Unlikely to promote.")
-         #       return wins, total
+        if total >= 20:
+            p_val = binomial_p_value(wins, total, target_p=PROMOTION_WINRATE)
+            if p_val > 0.50:
+                print(f"    [Stat Exit] pair {i+1}/{num_pairs}  {wins}/{total} "
+                      f"(p={p_val:.3f}). Unlikely to promote.")
+                return wins, total
 
         print(f"    pair {i+1}/{num_pairs}  {wins}/{total} ({wins/total:.0%})")
 
@@ -350,7 +357,8 @@ def main():
             replay_buffer.extend(loaded)
             print(f"Resumed buffer with {len(replay_buffer)} positions.")
         except Exception as e:
-            print(f"Could not load buffer: {e}")
+            print(f"Buffer corrupted, starting fresh: {e}")
+            os.remove(buffer_disk_path)
     else:
         print(f"Buffer starts empty. Training begins after {MIN_BUFFER} positions.")
 
@@ -459,7 +467,9 @@ def main():
 
             # Save buffer to Drive so we can resume after timeout
             try:
-                torch.save(list(replay_buffer), buffer_disk_path)
+                tmp_path = buffer_disk_path + '.tmp'
+                torch.save(list(replay_buffer), tmp_path)
+                os.replace(tmp_path, buffer_disk_path)
                 print(f"  Buffer saved ({len(replay_buffer)} positions).")
             except Exception as e:
                 print(f"  ⚠️  Warning: failed to save buffer: {e}")
@@ -481,7 +491,9 @@ def main():
         drive_final = os.path.join(CHECKPOINT_DIR, SELFPLAY_WEIGHTS)
         save_model(model, drive_final)
         try:
-            torch.save(list(replay_buffer), buffer_disk_path)
+            tmp_path = buffer_disk_path + '.tmp'
+            torch.save(list(replay_buffer), tmp_path)
+            os.replace(tmp_path, buffer_disk_path)
         except Exception:
             pass
         print("Weights and buffer saved.")
