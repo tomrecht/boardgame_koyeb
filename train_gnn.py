@@ -48,10 +48,10 @@ args = parser.parse_args()
 if args.full:
     GAMES_PER_EVAL      = 60
     EVAL_PAIRS          = 50
-    BUFFER_SIZE         = 50_000
+    BUFFER_SIZE         = 100_000
     MIN_BUFFER          = 4_000
     BATCH_SIZE          = 512
-    TRAINING_STEPS      = 400       
+    TRAINING_STEPS      = 200       # per generation
     LR                  = 1e-4      
     LR_DECAY            = 0.99
     CHECKPOINT_INTERVAL = 5
