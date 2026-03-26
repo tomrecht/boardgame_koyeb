@@ -198,6 +198,7 @@ def label_positions(record, winner, outcome_score):
             score = -float(outcome_score)
 
         label = (score * OUTCOME_SCALE * discount) / SCORE_SCALE
+        label = max(-1.0, min(1.0, label))
         labeled.append((encoded, label))
 
     return labeled
