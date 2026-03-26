@@ -382,18 +382,24 @@ def main():
 
             # ---- A. SELF-PLAY ----
             model.eval()
+            game_times = []
 
             for g in range(GAMES_PER_EVAL):
                 seed = random.randint(0, 2**31)
+                t_game = time.time()
                 record, winner, score = play_selfplay_game(challenger_agent, encoder, seed)
+                game_times.append(time.time() - t_game)
                 labeled = label_positions(record, winner, score)
                 replay_buffer.extend(labeled)
                 gen_positions += len(labeled)
 
                 if (g + 1) % 5 == 0 or g == GAMES_PER_EVAL - 1:
+                    avg_t = sum(game_times) / len(game_times)
+                    avg_pos = gen_positions / (g + 1)
                     print(f"  game {g+1}/{GAMES_PER_EVAL}  "
                           f"buffer={len(replay_buffer)}  "
-                          f"positions={gen_positions}")
+                          f"positions={gen_positions}  "
+                          f"{avg_t:.1f}s/game  {avg_pos:.0f}pos/game")
 
             # ---- B. TRAINING ----
             if len(replay_buffer) < MIN_BUFFER:
