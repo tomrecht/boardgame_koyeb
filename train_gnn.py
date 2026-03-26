@@ -48,10 +48,10 @@ args = parser.parse_args()
 if args.full:
     GAMES_PER_EVAL      = 60
     EVAL_PAIRS          = 50
-    BUFFER_SIZE         = 100_000
+    BUFFER_SIZE         = 50_000
     MIN_BUFFER          = 4_000
     BATCH_SIZE          = 512
-    TRAINING_STEPS      = 200       # per generation
+    TRAINING_STEPS      = 400       
     LR                  = 1e-4      
     LR_DECAY            = 0.99
     CHECKPOINT_INTERVAL = 5
@@ -461,7 +461,7 @@ def main():
                 print(f"  ✗ Not promoted. ({win_rate:.1%})")
 
             # Periodic checkpoint
-            if generation % CHECKPOINT_INTERVAL == 0:
+            if generation > 0 and generation % CHECKPOINT_INTERVAL == 0:
                 ckpt_name = f'gnn_current_s{SESSION}_gen{generation}.pt'
                 ckpt_path = os.path.join(CHECKPOINT_DIR, ckpt_name)
                 save_model(model, ckpt_path)
