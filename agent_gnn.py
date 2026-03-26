@@ -237,7 +237,7 @@ class GNNAgent:
                 while len(board.moves) > initial_len:
                     board.undo_last_move()
 
-            values = self.model(first_states).squeeze()
+            values = self.model(first_states).view(-1)
             topk = torch.topk(values, min(K, len(values))).indices.tolist()
 
             best_pair = None
@@ -284,7 +284,7 @@ class GNNAgent:
                     while len(board.moves) > mid_len:
                         board.undo_last_move()
 
-                vals2 = self.model(second_states).squeeze()
+                vals2 = self.model(second_states).view(-1)
 
                 best_idx = torch.argmax(vals2).item()
                 val = vals2[best_idx].item()
