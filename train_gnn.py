@@ -72,8 +72,8 @@ else:
 GAMMA               = 0.99          # outcome discount per turn
 OUTCOME_SCALE       = 200.0         # keeps self-play labels in ~[-0.6, +0.6]
 SCORE_SCALE         = 1000.0        # must match agent_gnn.py and train_distill.py
-PROMOTION_WINRATE   = 0.52
-PROMOTION_PVALUE    = 0.10
+PROMOTION_WINRATE   = 0.55
+PROMOTION_PVALUE    = 0.05
 COLLAPSE_PVALUE     = 0.50          # warn if challenger can't beat distilled baseline
 EXPLORATION_RATE    = 0.10          # fraction of moves chosen randomly during self-play
 
@@ -245,7 +245,7 @@ def evaluate_vs_agent(challenger_agent, opponent_agent, num_pairs, label=''):
             return wins, total
         
         # Early success exit — already statistically certain to promote
-        if total >= 12:
+        if total >= 20:
             p_val_success = binomial_p_value(wins, total, target_p=PROMOTION_WINRATE)
             if p_val_success <= PROMOTION_PVALUE and wins / total >= PROMOTION_WINRATE:
                 print(f"    [Early Promote] pair {i+1}/{num_pairs}  {wins}/{total} (p={p_val_success:.3f}). Certain to promote.")
