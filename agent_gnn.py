@@ -216,3 +216,84 @@ class GNNAgent:
         best_second = second_move_keys[second_scores.argmax().item()]
         return (best_first, best_second)
 
+    def select_move_pair_beam(self, moves, board, player, K=2):
+
+        valid_moves = [m for m in moves if m != (0, 0, 0)]
+        if not valid_moves:
+            return ((0, 0, 0), (0, 0, 0))
+
+        with torch.no_grad():
+            # ---- 1. Evaluate first moves ----
+            first_states = []
+            first_meta   = []
+
+            initial_len = len(board.moves)
+
+            for m1 in valid_moves:
+                board.apply_move(m1, switch_turn=False)
+                enc = self.encoder.encode(board, player)
+                first_states.append(enc)
+                first_meta.append(m1)
+                while len(board.moves) > initial_len:
+                    board.undo_last_move()
+
+            values = self.model(first_states).squeeze()
+            topk = torch.topk(values, min(K, len(values))).indices.tolist()
+
+            best_pair = None
+            best_value = -1e9
+
+            # ---- 2. For each top-K first move ----
+            for idx in topk:
+                m1 = first_meta[idx]
+
+                board.apply_move(m1, switch_turn=False)
+
+                # If no second move
+                if all(die.used for die in board.dice):
+                    val = values[idx].item()
+                    if val > best_value:
+                        best_value = val
+                        best_pair = (m1, (0, 0, 0))
+                    while len(board.moves) > initial_len:
+                        board.undo_last_move()
+                    continue
+
+                second_moves = list(set(board.get_valid_moves()) - {(0, 0, 0)})
+
+                if not second_moves:
+                    val = values[idx].item()
+                    if val > best_value:
+                        best_value = val
+                        best_pair = (m1, (0, 0, 0))
+                    while len(board.moves) > initial_len:
+                        board.undo_last_move()
+                    continue
+
+                # ---- 3. Evaluate second moves ----
+                second_states = []
+                second_meta   = []
+
+                mid_len = len(board.moves)
+
+                for m2 in second_moves:
+                    board.apply_move(m2, switch_turn=False)
+                    enc = self.encoder.encode(board, player)
+                    second_states.append(enc)
+                    second_meta.append(m2)
+                    while len(board.moves) > mid_len:
+                        board.undo_last_move()
+
+                vals2 = self.model(second_states).squeeze()
+
+                best_idx = torch.argmax(vals2).item()
+                val = vals2[best_idx].item()
+
+                if val > best_value:
+                    best_value = val
+                    best_pair = (m1, second_meta[best_idx])
+
+                while len(board.moves) > initial_len:
+                    board.undo_last_move()
+
+            return best_pair if best_pair else ((0,0,0),(0,0,0))
