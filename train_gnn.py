@@ -124,8 +124,7 @@ def play_selfplay_game(agent, encoder, seed):
         if random.random() < EXPLORATION_RATE:
             chosen = _random_move_pair(moves, board)
         else:
-            chosen = agent.select_move_pair_fast(moves, board, current_player)
-            #chosen = agent.select_move_pair_beam(moves, board, current_player, K=2)
+            chosen = agent.select_move_pair_fast(moves, board, current_player)   # use 1-ply search for speed
 
         if chosen == ((0, 0, 0), (0, 0, 0)):
             consecutive_passes += 1
@@ -289,8 +288,8 @@ def play_eval_game(white_agent, black_agent, seed):
         if not moves:
             break
 
-        chosen = agent.select_move_pair_fast(moves, board, current_player)
-        #chosen = agent.select_move_pair_beam(moves, board, current_player, K=2)
+        # evaluate with 2-ply search
+        chosen = agent.select_move_pair(moves, board, current_player)
 
         if chosen == ((0, 0, 0), (0, 0, 0)):
             consecutive_passes += 1
