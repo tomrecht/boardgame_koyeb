@@ -288,8 +288,8 @@ def play_eval_game(white_agent, black_agent, seed):
         if not moves:
             break
 
-        # evaluate with 2-ply search
-        chosen = agent.select_move_pair(moves, board, current_player)
+        # evaluate with 1-ply search
+        chosen = agent.select_move_pair_fast(moves, board, current_player)
 
         if chosen == ((0, 0, 0), (0, 0, 0)):
             consecutive_passes += 1
