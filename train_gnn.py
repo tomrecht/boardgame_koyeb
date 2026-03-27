@@ -51,8 +51,8 @@ if args.full:
     BUFFER_SIZE         = 50_000
     MIN_BUFFER          = 10_000
     BATCH_SIZE          = 512
-    TRAINING_STEPS      = 150       
-    LR                  = 1e-4      
+    TRAINING_STEPS      = 300       
+    LR                  = 2e-4      
     LR_DECAY            = 0.99
     CHECKPOINT_INTERVAL = 5
     MAX_TURNS           = 150
