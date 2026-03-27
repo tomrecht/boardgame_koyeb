@@ -49,9 +49,9 @@ if args.full:
     GAMES_PER_EVAL      = 60
     EVAL_PAIRS          = 50
     BUFFER_SIZE         = 50_000
-    MIN_BUFFER          = 6_000
+    MIN_BUFFER          = 10_000
     BATCH_SIZE          = 512
-    TRAINING_STEPS      = 400       
+    TRAINING_STEPS      = 150       
     LR                  = 1e-4      
     LR_DECAY            = 0.99
     CHECKPOINT_INTERVAL = 5
@@ -70,12 +70,12 @@ else:
 
 # Shared
 GAMMA               = 0.99          # outcome discount per turn
-OUTCOME_SCALE       = 200.0         # keeps self-play labels in ~[-0.6, +0.6]
+OUTCOME_SCALE       = 100.0         # keeps self-play labels in ~[-0.6, +0.6]
 SCORE_SCALE         = 1000.0        # must match agent_gnn.py and train_distill.py
 PROMOTION_WINRATE   = 0.55
 PROMOTION_PVALUE    = 0.05
 COLLAPSE_PVALUE     = 0.50          # warn if challenger can't beat distilled baseline
-EXPLORATION_RATE    = 0.10          # fraction of moves chosen randomly during self-play
+EXPLORATION_RATE    = 0.04          # fraction of moves chosen randomly during self-play
 
 DISTILL_WEIGHTS     = 'gnn_weights.pt'
 SELFPLAY_WEIGHTS    = 'gnn_selfplay.pt'
