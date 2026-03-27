@@ -220,56 +220,60 @@ def evaluate_vs_agent(challenger_agent, opponent_agent, num_pairs, label=''):
     Play num_pairs paired games (challenger as white + challenger as black).
     Uses early exit if promotion is mathematically impossible or statistically unlikely.
     board.current_player is 'white' or 'black'.
-    Returns (wins, total).
+    Returns (wins, total, margins).
     """
-    wins  = 0
-    total = 0
+    wins    = 0
+    total   = 0
+    margins = []
 
     for i in range(num_pairs):
         seed = random.randint(0, 1_000_000)
 
-        # Game 1: challenger = white (player 1 — wins if check_game_over returns 'white')
-        result1 = play_eval_game(challenger_agent, opponent_agent, seed)
+        # Game 1: challenger = white
+        result1, score1, turns1 = play_eval_game(challenger_agent, opponent_agent, seed)
         wins  += 1 if result1 == 'white' else 0
         total += 1
+        margins.append(score1 if result1 == 'white' else -score1)
 
-        # Game 2: challenger = black (player 2 — wins if check_game_over returns 'black')
-        result2 = play_eval_game(opponent_agent, challenger_agent, seed)
+        # Game 2: challenger = black
+        result2, score2, turns2 = play_eval_game(opponent_agent, challenger_agent, seed)
         wins  += 1 if result2 == 'black' else 0
         total += 1
+        margins.append(score2 if result2 == 'black' else -score2)
 
-        # Hard math early exit — can't possibly reach promotion threshold
+        # Hard math early exit
         remaining = (num_pairs * 2) - total
         if wins + remaining < num_pairs * 2 * PROMOTION_WINRATE:
             print(f"    [Early Exit] pair {i+1}/{num_pairs}  {wins}/{total}. "
                   f"Impossible to reach {PROMOTION_WINRATE:.0%}.")
-            return wins, total
-        
-        # Early success exit — already statistically certain to promote
+            return wins, total, margins
+
+        # Early success exit
         if total >= 20:
             p_val_success = binomial_p_value(wins, total, target_p=PROMOTION_WINRATE)
             if p_val_success <= PROMOTION_PVALUE and wins / total >= PROMOTION_WINRATE:
                 print(f"    [Early Promote] pair {i+1}/{num_pairs}  {wins}/{total} (p={p_val_success:.3f}). Certain to promote.")
-                return wins, total
+                return wins, total, margins
 
-        # Statistical early exit — unlikely to promote
+        # Statistical early exit
         if total >= 20:
             p_val = binomial_p_value(wins, total, target_p=PROMOTION_WINRATE)
             if p_val > 0.50:
                 print(f"    [Stat Exit] pair {i+1}/{num_pairs}  {wins}/{total} "
                       f"(p={p_val:.3f}). Unlikely to promote.")
-                return wins, total
+                return wins, total, margins
 
-        print(f"    pair {i+1}/{num_pairs}  {wins}/{total} ({wins/total:.0%})")
+        print(f"    pair {i+1}/{num_pairs}  {wins}/{total} ({wins/total:.0%})  "
+              f"turns={turns1},{turns2}  margin={score1 if result1=='white' else -score1:+d},{score2 if result2=='black' else -score2:+d}")
 
-    return wins, total
+    return wins, total, margins
 
 
 def play_eval_game(white_agent, black_agent, seed):
     """
     Play one evaluation game. No exploration, no recording.
     white_agent plays as 'white', black_agent plays as 'black'.
-    Returns 'white', 'black', or None.
+    Returns (winner, score, turns) where winner is 'white', 'black', or None.
     """
     random.seed(seed)
     board = Board()
@@ -279,16 +283,14 @@ def play_eval_game(white_agent, black_agent, seed):
     while turns < MAX_TURNS:
         winner, score = board.check_game_over()
         if winner:
-            return winner
+            return winner, score, turns
 
         current_player = board.current_player
-        # board.current_player is 'white' or 'black'
         agent  = white_agent if current_player == 'white' else black_agent
         moves  = board.get_valid_moves()
         if not moves:
             break
 
-        # evaluate with 1-ply search
         chosen = agent.select_move_pair_fast(moves, board, current_player)
 
         if chosen == ((0, 0, 0), (0, 0, 0)):
@@ -296,9 +298,9 @@ def play_eval_game(white_agent, black_agent, seed):
             if consecutive_passes >= 6:
                 ws = len(board.white_saved)
                 bs = len(board.black_saved)
-                if ws > bs: return 'white'
-                if bs > ws: return 'black'
-                return None
+                if ws > bs: return 'white', ws - bs, turns
+                if bs > ws: return 'black', bs - ws, turns
+                return None, 0, turns
         else:
             consecutive_passes = 0
 
@@ -310,9 +312,9 @@ def play_eval_game(white_agent, black_agent, seed):
 
     ws = len(board.white_saved)
     bs = len(board.black_saved)
-    if ws > bs: return 'white'
-    if bs > ws: return 'black'
-    return None
+    if ws > bs: return 'white', ws - bs, turns
+    if bs > ws: return 'black', bs - ws, turns
+    return None, 0, turns
 
 
 # -------------------------
@@ -382,7 +384,11 @@ def main():
 
             # ---- A. SELF-PLAY ----
             model.eval()
-            game_times = []
+            game_times    = []
+            white_wins    = 0
+            black_wins    = 0
+            draws_sp      = 0
+            max_turn_hits = 0
 
             for g in range(GAMES_PER_EVAL):
                 seed = random.randint(0, 2**31)
@@ -393,13 +399,24 @@ def main():
                 replay_buffer.extend(labeled)
                 gen_positions += len(labeled)
 
+                # Track game quality
+                if len(record) >= MAX_TURNS - 1: max_turn_hits += 1
+                if winner == 'white':   white_wins += 1
+                elif winner == 'black': black_wins += 1
+                else:                   draws_sp   += 1
+
                 if (g + 1) % 5 == 0 or g == GAMES_PER_EVAL - 1:
-                    avg_t = sum(game_times) / len(game_times)
+                    avg_t   = sum(game_times) / len(game_times)
                     avg_pos = gen_positions / (g + 1)
                     print(f"  game {g+1}/{GAMES_PER_EVAL}  "
                           f"buffer={len(replay_buffer)}  "
                           f"positions={gen_positions}  "
                           f"{avg_t:.1f}s/game  {avg_pos:.0f}pos/game")
+
+            n = GAMES_PER_EVAL
+            print(f"  self-play: white={white_wins}/{n} ({white_wins/n:.0%})  "
+                  f"black={black_wins}/{n} ({black_wins/n:.0%})  "
+                  f"draws={draws_sp}  max_turns_hit={max_turn_hits}/{n}")
 
             # ---- B. TRAINING ----
             if len(replay_buffer) < MIN_BUFFER:
@@ -432,14 +449,40 @@ def main():
                   f"std={torch.tensor(labels).std().item():.3f}  "
                   f"min={min(labels):.3f}  max={max(labels):.3f}")
 
+            # Weight drift — how far has the challenger moved?
+            with torch.no_grad():
+                frozen_params    = dict(frozen_model.named_parameters())
+                distilled_params = dict(distilled_model.named_parameters())
+                n_params = len(frozen_params)
+                drift_frozen    = sum((p - frozen_params[n]).abs().mean().item()
+                                      for n, p in model.named_parameters()) / n_params
+                drift_distilled = sum((p - distilled_params[n]).abs().mean().item()
+                                      for n, p in model.named_parameters()) / n_params
+
+                # Fixed board output — tracks whether model output is stable
+                _board = Board()
+                _enc   = encoder.encode(_board, 'white')
+                model.eval()
+                _out_chal = model(_enc).item()
+                _out_froz = frozen_model(_enc).item()
+                _out_dist = distilled_model(_enc).item()
+                model.train()
+
+            print(f"  weight drift: from_frozen={drift_frozen:.5f}  "
+                  f"from_distilled={drift_distilled:.5f}")
+            print(f"  fixed board output: challenger={_out_chal:.4f}  "
+                  f"frozen={_out_froz:.4f}  distilled={_out_dist:.4f}")
+
             # ---- C. EVALUATION ----
             model.eval()
 
             print(f"  Evaluating vs frozen champion ({EVAL_PAIRS} pairs)...")
-            wins, total = evaluate_vs_agent(challenger_agent, frozen_agent, EVAL_PAIRS)
-            win_rate = wins / total if total else 0
-            p_value  = binomial_p_value(wins, total, target_p=PROMOTION_WINRATE)
-            print(f"  vs frozen:    {wins}/{total} ({win_rate:.1%})  p={p_value:.3f}")
+            wins, total, margins = evaluate_vs_agent(challenger_agent, frozen_agent, EVAL_PAIRS)
+            win_rate   = wins / total if total else 0
+            p_value    = binomial_p_value(wins, total, target_p=PROMOTION_WINRATE)
+            avg_margin = sum(margins) / len(margins) if margins else 0
+            print(f"  vs frozen:    {wins}/{total} ({win_rate:.1%})  "
+                  f"p={p_value:.3f}  avg_margin={avg_margin:+.2f}")
 
             # ---- D. PROMOTION ----
             promoted = (win_rate >= PROMOTION_WINRATE and p_value <= PROMOTION_PVALUE)
@@ -447,11 +490,13 @@ def main():
             # Collapse detection — only worth checking if about to promote
             if promoted:
                 print(f"  Evaluating vs distilled baseline ({EVAL_PAIRS} pairs)...")
-                wins_d, total_d = evaluate_vs_agent(
+                wins_d, total_d, margins_d = evaluate_vs_agent(
                     challenger_agent, distilled_agent, EVAL_PAIRS)
-                wr_d = wins_d / total_d if total_d else 0
-                p_d  = binomial_p_value(wins_d, total_d, target_p=PROMOTION_WINRATE)
-                print(f"  vs distilled: {wins_d}/{total_d} ({wr_d:.1%})  p={p_d:.3f}")
+                wr_d   = wins_d / total_d if total_d else 0
+                p_d    = binomial_p_value(wins_d, total_d, target_p=PROMOTION_WINRATE)
+                avg_m_d = sum(margins_d) / len(margins_d) if margins_d else 0
+                print(f"  vs distilled: {wins_d}/{total_d} ({wr_d:.1%})  "
+                      f"p={p_d:.3f}  avg_margin={avg_m_d:+.2f}")
                 if p_d > COLLAPSE_PVALUE:
                     print(f"  ⚠️  WARNING: not reliably beating distilled baseline — "
                           f"possible catastrophic forgetting!")
