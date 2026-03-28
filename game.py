@@ -280,6 +280,7 @@ class Board:
         if self.game_stages[piece.player] == 'opening':
             return False  # can't save pieces in the opening
 
+        valid_dice = []
         current_tile = piece.tile
         if current_tile and current_tile.type == 'save' and (piece.number > 6 or piece.number == current_tile.number):
             if self.game_stages[piece.player] == 'endgame':
@@ -296,15 +297,10 @@ class Board:
             else:
                 valid_dice = [die for die in self.dice if (not die.used) and die.number == current_tile.number]
 
-            if valid_dice:
-                matching_die = next((die for die in valid_dice if die.number == current_tile.number), None)
-                if matching_die:
-                    die = matching_die
-                else:
-                    die = max(valid_dice, key=lambda die: die.number)
-                return die.number
-            else:
-                return False  # The piece cannot be saved with the current dice rolls
+        if valid_dice:
+            return [die.number for die in valid_dice]
+        else:
+            return []
 
     def get_reachable_tiles(self, start_tile, steps):
         cache_key = (start_tile.index, steps, self._get_blocked_key(self.current_player))
@@ -359,9 +355,10 @@ class Board:
 
 
         if piece.tile and piece.tile.type == 'save' and self.game_stages[piece.player] != 'opening':
-            save_roll = self.get_saving_die(piece)
-            if save_roll:             
-                reachable_tiles[save_roll].append('save') 
+            save_rolls = self.get_saving_die(piece)
+            for roll in save_rolls:
+                if roll in reachable_tiles:
+                    reachable_tiles[roll].append('save')
 
         piece.reachable_tiles = reachable_tiles
 
