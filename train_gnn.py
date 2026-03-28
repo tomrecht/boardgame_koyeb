@@ -437,7 +437,7 @@ def play_eval_game(agent_white, agent_black, seed, heuristic_white=False,
                    heuristic_black=False, heuristic_agent=None):
     """
     Play one evaluation game. Returns (winner, margin, turns).
-    Uses 2-ply search (select_move_pair) for GNN agents for stronger play.
+    (Uses 2-ply search (select_move_pair) for GNN agents for stronger play.) -- changed this to 1-ply for speed
     """
     random.seed(seed)
     board  = Board()
@@ -458,12 +458,12 @@ def play_eval_game(agent_white, agent_black, seed, heuristic_white=False,
             if heuristic_white:
                 chosen = heuristic_agent.select_move_pair(moves, board, 'white')
             else:
-                chosen = agent_white.select_move_pair(moves, board, 'white')
+                chosen = agent_white.select_move_pair_fast(moves, board, 'white')
         else:
             if heuristic_black:
                 chosen = heuristic_agent.select_move_pair(moves, board, 'black')
             else:
-                chosen = agent_black.select_move_pair(moves, board, 'black')
+                chosen = agent_black.select_move_pair_fast(moves, board, 'black')
 
         if chosen == ((0, 0, 0), (0, 0, 0)):
             consecutive_passes += 1
