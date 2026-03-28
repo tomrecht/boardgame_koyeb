@@ -1,5 +1,3 @@
-# "best_weights copy.json" is backup for a seemingly good set of weights
-# 
 import json
 import os
 import copy
@@ -306,7 +304,8 @@ class Agent():
                 'undo_mismatch': undo_mismatch,
             }
 
-        self.log = [
+        if self.log_to_file:
+            self.log = [
             {
                 'move_pair': {
                     'first': move_with_first(move_pair[0]),
@@ -318,17 +317,8 @@ class Agent():
             for move_pair, (score, components) in all_moves_ranked
         ]
 
-        if self.log_to_file:
             with open(self.log_file, 'w') as file:
                 file.write(json.dumps(self.log, indent=4))
 
 
         return best_move_pair
-
-
-
-
-# agent tried to save a numbered piece when it wasn't in the midgame (but was one piece away from midgame)
-# agent doesn't bring out its second captured piece but passes instead
-# in endgame agent tries to save a piece that can't be saved when it can save a piece on a lower goal
-# add "distance from endgame bonus"

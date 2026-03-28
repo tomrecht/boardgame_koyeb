@@ -77,6 +77,7 @@ class Board:
         self.initialize_pieces()
         self.firstMove = None
         self.moves = []
+        self._distance_cache = {}
 
         self.endgame_reward_applied = {'white': False, 'black': False}
         self.offgoals = {'white': 0, 'black': 0}
@@ -586,12 +587,23 @@ class Board:
         return self.white_unentered if player == 'white' else self.black_unentered
 
     def shortest_route_to_goal(self, piece):
-        start_tile = piece.tile if piece.tile else self.home_tile  # Use home tile if the piece has no tile
-
         if piece.can_be_saved():
             return 0
 
-        queue = deque([(start_tile, 0)])  # (current tile, distance)
+        start_tile = piece.tile if piece.tile else self.home_tile
+
+        blocked_tiles = frozenset(
+            t.index for t in self.tiles
+            if t.type == 'field'
+            and len(t.pieces) > 1
+            and t.pieces[0].player != piece.player
+        )
+        cache_key = (start_tile.index, piece.player, piece.number if piece.number <= 6 else 'any', blocked_tiles)
+
+        if cache_key in self._distance_cache:
+            return self._distance_cache[cache_key]
+
+        queue = deque([(start_tile, 0)])
         visited = set([start_tile])
 
         while queue:
@@ -600,11 +612,13 @@ class Board:
                 if neighbor not in visited:
                     visited.add(neighbor)
                     if neighbor.type == 'save' and (piece.number > 6 or piece.number == neighbor.number):
-                        return distance + 1  # Found a goal tile from which the piece can be saved
+                        self._distance_cache[cache_key] = distance + 1
+                        return distance + 1
                     if neighbor.type not in ['nogo', 'home'] and not neighbor.is_blocked(piece.player):
                         queue.append((neighbor, distance + 1))
 
-        return float('inf')  # No path found to a goal tile
+        self._distance_cache[cache_key] = float('inf')
+        return float('inf')
     
     def count_pieces_reaching_goals(self):
         # Initialize counters for each possible die roll (1-6)

@@ -17,8 +17,6 @@ logger = logging.getLogger(__name__)
 app = Flask(__name__, static_folder='', static_url_path='')
 CORS(app)
 
-# Initialize the Agent once globally with weights to save CPU/Memory
-# This is thread-safe because weights are read-only during inference
 current_weights = get_weights()
 agent = Agent(weights=current_weights, log_to_file=False)
 
@@ -30,14 +28,13 @@ def index():
 def select_moves():
     try:
         state = request.json
-        # Create a FRESH board for this specific request/user
+
         local_board = Board()
         local_board.update_state(state)
         
         moves = local_board.get_valid_moves()
         
         if moves:
-            # Agent calculates moves based on the specific board state provided
             chosen_moves = agent.select_move_pair(moves, local_board, local_board.current_player)
             return jsonify({"message": "Success", "move": chosen_moves}), 200
         else:
@@ -53,7 +50,6 @@ def evaluate_board():
         local_board = Board()
         local_board.update_state(state)
         
-        # Calculate evaluation for this specific board state
         _, eval_data = agent.evaluate(local_board, local_board.current_player)
         
         if eval_data:
