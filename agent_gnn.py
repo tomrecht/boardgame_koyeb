@@ -28,6 +28,8 @@ class GNNAgent:
     Drop-in replacement for Agent using the GNN evaluator.
     Encoder and model are instantiated once and reused across calls.
     """
+    
+    _printed_ready = False  # class-level flag
 
     def __init__(self, weights_path=GNN_WEIGHTS, model=None):
         self.encoder = BoardEncoder()
@@ -36,7 +38,9 @@ class GNNAgent:
             self.model.eval()
         else:
             self.model = load_model(weights_path)
-        print(f"GNNAgent ready on {next(self.model.parameters()).device}")
+        if not GNNAgent._printed_ready:
+            print(f"GNNAgent ready on {next(self.model.parameters()).device}")
+            GNNAgent._printed_ready = True
 
     def evaluate(self, board, player):
         """
