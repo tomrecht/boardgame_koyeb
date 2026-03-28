@@ -342,19 +342,17 @@ def main():
     print(f"Model loaded on {DEVICE} ({sum(p.numel() for p in model.parameters()):,} params)")
 
     # 2. Load the Anchor Dataset (Gold Standard)
-    # This prevents the model from forgetting how to play "rationally"
     distill_buffer = load_distill_data('distill_data.pt')
     if not distill_buffer:
-        print("❌ CRITICAL: distill_data.pt is empty or missing. Stratification disabled.")
+        print("❌ Warning: distill_data.pt not found. Running without stratification.")
     else:
         print(f"Loaded {len(distill_buffer)} anchor positions for stratification.")
 
-    # Frozen opponent — starts as same weights, updated only on promotion
+    # Frozen opponent & Distilled baseline
     frozen_model = BoardGNN().to(DEVICE)
     frozen_model.load_state_dict(copy.deepcopy(model.state_dict()))
     frozen_model.eval()
 
-    # Distilled baseline — never updated, used for collapse detection
     distilled_model = load_model(DISTILL_WEIGHTS)
     distilled_model.eval()
 
@@ -362,12 +360,10 @@ def main():
     scheduler = optim.lr_scheduler.ExponentialLR(optimizer, gamma=LR_DECAY)
     criterion = nn.MSELoss()
 
-    # Agents wrapping the live models
     challenger_agent = GNNAgent(model=model)
     frozen_agent     = GNNAgent(model=frozen_model)
     distilled_agent  = GNNAgent(model=distilled_model)
 
-    # Replay buffer for Self-Play
     replay_buffer    = collections.deque(maxlen=BUFFER_SIZE)
     buffer_disk_path = os.path.join(CHECKPOINT_DIR, 'replay_buffer_latest.pt')
 
@@ -377,33 +373,48 @@ def main():
             replay_buffer.extend(loaded)
             print(f"Resumed buffer with {len(replay_buffer)} positions.")
         except Exception as e:
-            print(f"Buffer corrupted, starting fresh: {e}")
-            os.remove(buffer_disk_path)
+            print(f"Buffer error: {e}")
 
     print("\nRunning sanity check...")
     _sanity_check(model, encoder, criterion)
     print("Sanity check passed.\n")
 
     generation = 0
-    start      = time.time()
+    start_time = time.time()
 
     try:
         while True:
-            gen_start     = time.time()
-            gen_positions = 0
+            gen_start_time = time.time()
+            gen_positions  = 0
+            stats = {'white': 0, 'black': 0, 'draw': 0, 'max_turns': 0}
             print(f"Generation {generation}:")
 
             # ---- A. SELF-PLAY ----
             model.eval()
             for g in range(GAMES_PER_EVAL):
+                game_start = time.time()
                 seed = random.randint(0, 2**31)
+                
                 record, winner, score = play_selfplay_game(challenger_agent, encoder, seed)
+                
+                # Stats tracking
+                if winner == 1: stats['white'] += 1
+                elif winner == -1: stats['black'] += 1
+                else: stats['draw'] += 1
+                
+                if len(record) >= MAX_TURNS: stats['max_turns'] += 1
+                
                 labeled = label_positions(record, winner, score)
                 replay_buffer.extend(labeled)
                 gen_positions += len(labeled)
                 
-                if (g + 1) % 5 == 0 or g == GAMES_PER_EVAL - 1:
-                    print(f"  game {g+1}/{GAMES_PER_EVAL} buffer={len(replay_buffer)}")
+                duration = time.time() - game_start
+                if (g + 1) % 10 == 0 or g == GAMES_PER_EVAL - 1:
+                    print(f"  game {g+1}/{GAMES_PER_EVAL} buffer={len(replay_buffer)} "
+                          f"({duration:.1f}s/game, {len(labeled)} pos/game)")
+
+            print(f"  self-play: white={stats['white']} black={stats['black']} "
+                  f"draws={stats['draw']} max_turns_hit={stats['max_turns']}")
 
             # ---- B. STRATIFIED TRAINING ----
             if len(replay_buffer) < MIN_BUFFER:
@@ -413,18 +424,12 @@ def main():
 
             model.train()
             total_loss = 0.0
+            SP_RATIO = 0.7
             
-            # Ratio: 70% Self-Play, 30% Gold Standard
-            SP_BATCH_SIZE = int(BATCH_SIZE * 0.7)
-            DS_BATCH_SIZE = BATCH_SIZE - SP_BATCH_SIZE
-
             for _ in range(TRAINING_STEPS):
-                # Sample from both sources
-                batch_sp = random.sample(replay_buffer, SP_BATCH_SIZE)
-                
-                # If distill_buffer is missing, fallback to 100% self-play
+                batch_sp = random.sample(replay_buffer, int(BATCH_SIZE * SP_RATIO))
                 if distill_buffer:
-                    batch_ds = random.sample(distill_buffer, DS_BATCH_SIZE)
+                    batch_ds = random.sample(distill_buffer, int(BATCH_SIZE * (1-SP_RATIO)))
                     batch = batch_sp + batch_ds
                 else:
                     batch = random.sample(replay_buffer, BATCH_SIZE)
@@ -432,55 +437,47 @@ def main():
                 random.shuffle(batch)
                 
                 encoded_list = [item[0] for item in batch]
-                targets      = torch.tensor([item[1] for item in batch],
-                                            dtype=torch.float32, device=DEVICE)
+                targets = torch.tensor([item[1] for item in batch], dtype=torch.float32, device=DEVICE)
                 
                 optimizer.zero_grad()
-                outputs = model(encoded_list)
-                loss    = criterion(outputs.squeeze(), targets)
+                loss = criterion(model(encoded_list).squeeze(), targets)
                 loss.backward()
-                
-                # Gradient clipping to prevent collapse from volatile self-play
-                torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=1.0)
-                
+                torch.nn.utils.clip_grad_norm_(model.parameters(), 1.0)
                 optimizer.step()
                 total_loss += loss.item()
 
             print(f"  Training loss: {total_loss / TRAINING_STEPS:.4f}")
 
-            # ---- C. EVALUATION ----
+            # ---- C. EVALUATION & PROMOTION ----
             model.eval()
             print(f"  Evaluating vs frozen champion...")
-            wins, total, margins = evaluate_vs_agent(challenger_agent, frozen_agent, EVAL_PAIRS)
+            wins, total, _ = evaluate_vs_agent(challenger_agent, frozen_agent, EVAL_PAIRS)
             win_rate = wins / total if total else 0
-            p_value  = binomial_p_value(wins, total, target_p=PROMOTION_WINRATE)
+            p_val = binomial_p_value(wins, total, target_p=PROMOTION_WINRATE)
 
-            # ---- D. PROMOTION ----
-            promoted = (win_rate >= PROMOTION_WINRATE and p_value <= PROMOTION_PVALUE)
-
-            if promoted:
-                # Secondary check: Must still beat the distilled baseline
+            if win_rate >= PROMOTION_WINRATE and p_val <= PROMOTION_PVALUE:
+                # Baseline sanity check before promoting
                 wins_d, total_d, _ = evaluate_vs_agent(challenger_agent, distilled_agent, EVAL_PAIRS)
-                if (wins_d / total_d) < 0.45: # Strict floor
-                    print(f"  ⚠️  Promotion BLOCKED: Failed distilled baseline.")
-                    promoted = False
+                if (wins_d / total_d) >= 0.45:
+                    print(f"  ⭐ PROMOTED! Winrate: {win_rate:.1%} vs frozen, {wins_d/total_d:.1%} vs distilled.")
+                    frozen_model.load_state_dict(copy.deepcopy(model.state_dict()))
+                    save_model(model, SELFPLAY_WEIGHTS)
+                else:
+                    print(f"  ✗ Promotion blocked: Failed distilled baseline ({wins_d/total_d:.1%})")
+            else:
+                print(f"  ✗ Not promoted ({win_rate:.1%}, p={p_val:.3f})")
 
-            if promoted:
-                print(f"  ⭐ PROMOTED! Winrate: {win_rate:.1%}")
-                frozen_model.load_state_dict(copy.deepcopy(model.state_dict()))
-                save_model(model, SELFPLAY_WEIGHTS)
-            
-            # Checkpoint and Scheduler
-            if generation % CHECKPOINT_INTERVAL == 0:
-                save_model(model, os.path.join(CHECKPOINT_DIR, f'gen_{generation}.pt'))
+            gen_time = time.time() - gen_start_time
+            total_time = time.time() - start_time
+            print(f"  Gen time: {gen_time:.0f}s  Total: {total_time/3600:.1f}h  LR: {optimizer.param_groups[0]['lr']:.2e}\n")
             
             scheduler.step()
             generation += 1
 
     except KeyboardInterrupt:
-        print("\nStopping...")
+        print("\nStopping and saving...")
         save_model(model, SELFPLAY_WEIGHTS)
-
+        
 def _sanity_check(model, encoder, criterion):
     """
     Quick forward + backward pass to catch bugs before the main loop.
