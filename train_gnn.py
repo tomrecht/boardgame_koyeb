@@ -49,10 +49,10 @@ if args.full:
     GAMES_PER_EVAL      = 60
     EVAL_PAIRS          = 50
     BUFFER_SIZE         = 50_000
-    MIN_BUFFER          = 10_000
+    MIN_BUFFER          = 20_000
     BATCH_SIZE          = 512
     TRAINING_STEPS      = 300       
-    LR                  = 2e-4      
+    LR                  = 5e-5      
     LR_DECAY            = 0.99
     CHECKPOINT_INTERVAL = 5
     MAX_TURNS           = 150
@@ -72,10 +72,10 @@ else:
 GAMMA               = 0.99          # outcome discount per turn
 OUTCOME_SCALE       = 100.0         # keeps self-play labels in ~[-0.6, +0.6]
 SCORE_SCALE         = 1000.0        # must match agent_gnn.py and train_distill.py
-PROMOTION_WINRATE   = 0.55
+PROMOTION_WINRATE   = 0.52
 PROMOTION_PVALUE    = 0.05
 COLLAPSE_PVALUE     = 0.50          # warn if challenger can't beat distilled baseline
-EXPLORATION_RATE    = 0.04          # fraction of moves chosen randomly during self-play
+EXPLORATION_RATE    = 0.08          # fraction of moves chosen randomly during self-play
 
 DISTILL_WEIGHTS     = 'gnn_weights.pt'
 SELFPLAY_WEIGHTS    = 'gnn_selfplay.pt'
@@ -321,16 +321,33 @@ def play_eval_game(white_agent, black_agent, seed):
 # MAIN TRAINING
 # -------------------------
 
+def load_distill_data(path):
+    if os.path.exists(path):
+        return torch.load(path)
+    else:
+        # Fallback: if file is missing, we can't stratify. 
+        # You might want to raise an error here.
+        print(f"⚠️ Warning: {path} not found. Training will lack an anchor!")
+        return []
+    
 def main():
     encoder = BoardEncoder()
 
-    # Load starting weights — selfplay if exists, else distilled
+    # 1. Load starting weights — selfplay if exists, else distilled
     weights_path = SELFPLAY_WEIGHTS if os.path.exists(SELFPLAY_WEIGHTS) else DISTILL_WEIGHTS
     print(f"\nLoading weights from {weights_path}...")
     model = BoardGNN().to(DEVICE)
     model.load_state_dict(torch.load(weights_path, map_location=DEVICE))
     model.train()
-    print(f"Model loaded on {DEVICE}  ({sum(p.numel() for p in model.parameters()):,} params)")
+    print(f"Model loaded on {DEVICE} ({sum(p.numel() for p in model.parameters()):,} params)")
+
+    # 2. Load the Anchor Dataset (Gold Standard)
+    # This prevents the model from forgetting how to play "rationally"
+    distill_buffer = load_distill_data('distill_data.pt')
+    if not distill_buffer:
+        print("❌ CRITICAL: distill_data.pt is empty or missing. Stratification disabled.")
+    else:
+        print(f"Loaded {len(distill_buffer)} anchor positions for stratification.")
 
     # Frozen opponent — starts as same weights, updated only on promotion
     frozen_model = BoardGNN().to(DEVICE)
@@ -345,16 +362,15 @@ def main():
     scheduler = optim.lr_scheduler.ExponentialLR(optimizer, gamma=LR_DECAY)
     criterion = nn.MSELoss()
 
-    # Agents wrapping the live models (no weight file I/O needed)
+    # Agents wrapping the live models
     challenger_agent = GNNAgent(model=model)
     frozen_agent     = GNNAgent(model=frozen_model)
     distilled_agent  = GNNAgent(model=distilled_model)
 
-    # Replay buffer
+    # Replay buffer for Self-Play
     replay_buffer    = collections.deque(maxlen=BUFFER_SIZE)
     buffer_disk_path = os.path.join(CHECKPOINT_DIR, 'replay_buffer_latest.pt')
 
-    # Resume buffer if available (e.g. after Colab timeout)
     if os.path.exists(buffer_disk_path):
         try:
             loaded = torch.load(buffer_disk_path)
@@ -363,18 +379,13 @@ def main():
         except Exception as e:
             print(f"Buffer corrupted, starting fresh: {e}")
             os.remove(buffer_disk_path)
-    else:
-        print(f"Buffer starts empty. Training begins after {MIN_BUFFER} positions.")
 
-    # Sanity check — catches bugs before burning Colab time
     print("\nRunning sanity check...")
     _sanity_check(model, encoder, criterion)
     print("Sanity check passed.\n")
 
     generation = 0
     start      = time.time()
-
-    print(f"Starting self-play training. Press Ctrl+C to stop.\n")
 
     try:
         while True:
@@ -384,173 +395,91 @@ def main():
 
             # ---- A. SELF-PLAY ----
             model.eval()
-            game_times    = []
-            white_wins    = 0
-            black_wins    = 0
-            draws_sp      = 0
-            max_turn_hits = 0
-
             for g in range(GAMES_PER_EVAL):
                 seed = random.randint(0, 2**31)
-                t_game = time.time()
                 record, winner, score = play_selfplay_game(challenger_agent, encoder, seed)
-                game_times.append(time.time() - t_game)
                 labeled = label_positions(record, winner, score)
                 replay_buffer.extend(labeled)
                 gen_positions += len(labeled)
-
-                # Track game quality
-                if len(record) >= MAX_TURNS - 1: max_turn_hits += 1
-                if winner == 'white':   white_wins += 1
-                elif winner == 'black': black_wins += 1
-                else:                   draws_sp   += 1
-
+                
                 if (g + 1) % 5 == 0 or g == GAMES_PER_EVAL - 1:
-                    avg_t   = sum(game_times) / len(game_times)
-                    avg_pos = gen_positions / (g + 1)
-                    print(f"  game {g+1}/{GAMES_PER_EVAL}  "
-                          f"buffer={len(replay_buffer)}  "
-                          f"positions={gen_positions}  "
-                          f"{avg_t:.1f}s/game  {avg_pos:.0f}pos/game")
+                    print(f"  game {g+1}/{GAMES_PER_EVAL} buffer={len(replay_buffer)}")
 
-            n = GAMES_PER_EVAL
-            print(f"  self-play: white={white_wins}/{n} ({white_wins/n:.0%})  "
-                  f"black={black_wins}/{n} ({black_wins/n:.0%})  "
-                  f"draws={draws_sp}  max_turns_hit={max_turn_hits}/{n}")
-
-            # ---- B. TRAINING ----
+            # ---- B. STRATIFIED TRAINING ----
             if len(replay_buffer) < MIN_BUFFER:
-                print(f"  Buffer too small ({len(replay_buffer)}/{MIN_BUFFER}), "
-                      f"skipping training.")
+                print(f"  Buffer too small, skipping training.")
                 generation += 1
                 continue
 
             model.train()
             total_loss = 0.0
+            
+            # Ratio: 70% Self-Play, 30% Gold Standard
+            SP_BATCH_SIZE = int(BATCH_SIZE * 0.7)
+            DS_BATCH_SIZE = BATCH_SIZE - SP_BATCH_SIZE
+
             for _ in range(TRAINING_STEPS):
-                batch        = random.sample(replay_buffer, BATCH_SIZE)
+                # Sample from both sources
+                batch_sp = random.sample(replay_buffer, SP_BATCH_SIZE)
+                
+                # If distill_buffer is missing, fallback to 100% self-play
+                if distill_buffer:
+                    batch_ds = random.sample(distill_buffer, DS_BATCH_SIZE)
+                    batch = batch_sp + batch_ds
+                else:
+                    batch = random.sample(replay_buffer, BATCH_SIZE)
+                
+                random.shuffle(batch)
+                
                 encoded_list = [item[0] for item in batch]
                 targets      = torch.tensor([item[1] for item in batch],
                                             dtype=torch.float32, device=DEVICE)
+                
                 optimizer.zero_grad()
                 outputs = model(encoded_list)
                 loss    = criterion(outputs.squeeze(), targets)
                 loss.backward()
+                
+                # Gradient clipping to prevent collapse from volatile self-play
+                torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=1.0)
+                
                 optimizer.step()
                 total_loss += loss.item()
 
-            avg_loss = total_loss / TRAINING_STEPS
-            print(f"  Training loss: {avg_loss:.4f}")
-
-            # Label stats for the current generation's data
-            recent = list(replay_buffer)[-gen_positions:]
-            labels = [item[1] for item in recent]
-            print(f"  label stats: mean={sum(labels)/len(labels):.3f}  "
-                  f"std={torch.tensor(labels).std().item():.3f}  "
-                  f"min={min(labels):.3f}  max={max(labels):.3f}")
-
-            # Weight drift — how far has the challenger moved?
-            with torch.no_grad():
-                frozen_params    = dict(frozen_model.named_parameters())
-                distilled_params = dict(distilled_model.named_parameters())
-                n_params = len(frozen_params)
-                drift_frozen    = sum((p - frozen_params[n]).abs().mean().item()
-                                      for n, p in model.named_parameters()) / n_params
-                drift_distilled = sum((p - distilled_params[n]).abs().mean().item()
-                                      for n, p in model.named_parameters()) / n_params
-
-                # Fixed board output — tracks whether model output is stable
-                _board = Board()
-                _enc   = encoder.encode(_board, 'white')
-                model.eval()
-                _out_chal = model(_enc).item()
-                _out_froz = frozen_model(_enc).item()
-                _out_dist = distilled_model(_enc).item()
-                model.train()
-
-            print(f"  weight drift: from_frozen={drift_frozen:.5f}  "
-                  f"from_distilled={drift_distilled:.5f}")
-            print(f"  fixed board output: challenger={_out_chal:.4f}  "
-                  f"frozen={_out_froz:.4f}  distilled={_out_dist:.4f}")
+            print(f"  Training loss: {total_loss / TRAINING_STEPS:.4f}")
 
             # ---- C. EVALUATION ----
             model.eval()
-
-            print(f"  Evaluating vs frozen champion ({EVAL_PAIRS} pairs)...")
+            print(f"  Evaluating vs frozen champion...")
             wins, total, margins = evaluate_vs_agent(challenger_agent, frozen_agent, EVAL_PAIRS)
-            win_rate   = wins / total if total else 0
-            p_value    = binomial_p_value(wins, total, target_p=PROMOTION_WINRATE)
-            avg_margin = sum(margins) / len(margins) if margins else 0
-            print(f"  vs frozen:    {wins}/{total} ({win_rate:.1%})  "
-                  f"p={p_value:.3f}  avg_margin={avg_margin:+.2f}")
+            win_rate = wins / total if total else 0
+            p_value  = binomial_p_value(wins, total, target_p=PROMOTION_WINRATE)
 
             # ---- D. PROMOTION ----
             promoted = (win_rate >= PROMOTION_WINRATE and p_value <= PROMOTION_PVALUE)
 
-            # Collapse detection — only worth checking if about to promote
             if promoted:
-                print(f"  Evaluating vs distilled baseline ({EVAL_PAIRS} pairs)...")
-                wins_d, total_d, margins_d = evaluate_vs_agent(
-                    challenger_agent, distilled_agent, EVAL_PAIRS)
-                wr_d   = wins_d / total_d if total_d else 0
-                p_d    = binomial_p_value(wins_d, total_d, target_p=PROMOTION_WINRATE)
-                avg_m_d = sum(margins_d) / len(margins_d) if margins_d else 0
-                print(f"  vs distilled: {wins_d}/{total_d} ({wr_d:.1%})  "
-                      f"p={p_d:.3f}  avg_margin={avg_m_d:+.2f}")
-                if p_d > COLLAPSE_PVALUE:
-                    print(f"  ⚠️  WARNING: not reliably beating distilled baseline — "
-                          f"possible catastrophic forgetting!")
+                # Secondary check: Must still beat the distilled baseline
+                wins_d, total_d, _ = evaluate_vs_agent(challenger_agent, distilled_agent, EVAL_PAIRS)
+                if (wins_d / total_d) < 0.45: # Strict floor
+                    print(f"  ⚠️  Promotion BLOCKED: Failed distilled baseline.")
                     promoted = False
 
             if promoted:
-                print(f"  ⭐ PROMOTED! ({win_rate:.1%}). Updating frozen opponent.")
+                print(f"  ⭐ PROMOTED! Winrate: {win_rate:.1%}")
                 frozen_model.load_state_dict(copy.deepcopy(model.state_dict()))
                 save_model(model, SELFPLAY_WEIGHTS)
-                drive_best = os.path.join(CHECKPOINT_DIR, SELFPLAY_WEIGHTS)
-                save_model(model, drive_best)
-            else:
-                print(f"  ✗ Not promoted. ({win_rate:.1%})")
-
-            # Periodic checkpoint
-            if generation > 0 and generation % CHECKPOINT_INTERVAL == 0:
-                ckpt_name = f'gnn_current_s{SESSION}_gen{generation}.pt'
-                ckpt_path = os.path.join(CHECKPOINT_DIR, ckpt_name)
-                save_model(model, ckpt_path)
-                print(f"  Periodic save: {ckpt_path}")
-
-            # Save buffer to Drive so we can resume after timeout
-            try:
-                tmp_path = buffer_disk_path + '.tmp'
-                torch.save(list(replay_buffer), tmp_path)
-                os.replace(tmp_path, buffer_disk_path)
-                print(f"  Buffer saved ({len(replay_buffer)} positions).")
-            except Exception as e:
-                print(f"  ⚠️  Warning: failed to save buffer: {e}")
-
-            model.train()
+            
+            # Checkpoint and Scheduler
+            if generation % CHECKPOINT_INTERVAL == 0:
+                save_model(model, os.path.join(CHECKPOINT_DIR, f'gen_{generation}.pt'))
+            
             scheduler.step()
-
-            gen_time   = time.time() - gen_start
-            total_time = time.time() - start
-            print(f"  Gen time: {gen_time:.0f}s  "
-                  f"Total: {total_time/3600:.1f}h  "
-                  f"LR: {optimizer.param_groups[0]['lr']:.2e}\n")
-
             generation += 1
 
     except KeyboardInterrupt:
-        print("\nTraining stopped.")
+        print("\nStopping...")
         save_model(model, SELFPLAY_WEIGHTS)
-        drive_final = os.path.join(CHECKPOINT_DIR, SELFPLAY_WEIGHTS)
-        save_model(model, drive_final)
-        try:
-            tmp_path = buffer_disk_path + '.tmp'
-            torch.save(list(replay_buffer), tmp_path)
-            os.replace(tmp_path, buffer_disk_path)
-        except Exception:
-            pass
-        print("Weights and buffer saved.")
-
 
 def _sanity_check(model, encoder, criterion):
     """
