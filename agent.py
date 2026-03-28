@@ -79,12 +79,20 @@ class Agent():
             factor = 1 if winner == player else -1
             return factor * score * GAME_OVER_SCORE, {}
 
-        # precompute distances once for both players
-        distances = {piece: board.shortest_route_to_goal(piece) for piece in board.pieces}
-
         opponent = 'white' if player == 'black' else 'black'
-        player_eval, player_components = self.evaluate_player(board, player, distances)
-        opponent_eval, opponent_components = self.evaluate_player(board, opponent, distances)
+
+        # split once here instead of repeatedly inside evaluate_player
+        pieces_by_player = {
+            player:   [p for p in board.pieces if p.player == player],
+            opponent: [p for p in board.pieces if p.player == opponent],
+        }
+
+        distances = {piece: board.shortest_route_to_goal(piece) 
+                    for pieces in pieces_by_player.values() 
+                    for piece in pieces}
+
+        player_eval, player_components = self.evaluate_player(board, player, distances, pieces_by_player)
+        opponent_eval, opponent_components = self.evaluate_player(board, opponent, distances, pieces_by_player)
 
         total_score = player_eval - opponent_eval
         score_components = {
@@ -92,19 +100,18 @@ class Agent():
             'opponent': opponent_components,
             'total_score': f'{player}: {player_eval} - {opponent_eval} = {total_score}'
         }
-
         return total_score, score_components
 
 
-    def evaluate_player(self, board, player, distances):
+    def evaluate_player(self, board, player, distances, pieces_by_player):
         opponent = 'white' if player == 'black' else 'black'
         save_rack = board.get_save_rack(player)
         unentered_rack = board.get_unentered_rack(player)
         opponent_unentered = board.get_unentered_rack(opponent)
 
         # Build piece subsets once
-        player_pieces = [p for p in board.pieces if p.player == player]
-        opponent_pieces = [p for p in board.pieces if p.player == opponent]
+        player_pieces = pieces_by_player[player]
+        opponent_pieces = pieces_by_player[opponent]
         player_board_pieces = [p for p in player_pieces if p.tile]
         opponent_board_pieces_list = [p for p in opponent_pieces if p.tile]
 
@@ -322,3 +329,6 @@ class Agent():
 
 
         return best_move_pair
+
+
+# in endgame agent tried to save a numbered piee with a lower roll
