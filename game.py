@@ -80,6 +80,7 @@ class Board:
         self.moves = []
         self._distance_cache = {}
         self._reachable_cache = {}
+        self._blocked_key_cache = {}  # keyed by player string
 
         self.endgame_reward_applied = {'white': False, 'black': False}
         self.offgoals = {'white': 0, 'black': 0}
@@ -148,6 +149,16 @@ class Board:
                     neighbor_tile = self.get_tile(neighbor['ring'], neighbor['sector'])
                     if neighbor_tile:
                         tile.neighbors.append(neighbor_tile)
+
+    def _get_blocked_key(self, player):
+        if player not in self._blocked_key_cache:
+            self._blocked_key_cache[player] = frozenset(
+                t.index for t in self.tiles
+                if t.type == 'field'
+                and len(t.pieces) > 1
+                and t.pieces[0].player != player
+            )
+        return self._blocked_key_cache[player]
 
     def update_state(self, game_state_details):
         # Set the current turn
@@ -226,6 +237,7 @@ class Board:
     def switch_turn(self):
         self._distance_cache = {}
         self._reachable_cache = {}
+        self._blocked_key_cache = {}
         self.firstMove = None  
         for die in self.dice:
             die.roll()
@@ -295,12 +307,7 @@ class Board:
                 return False  # The piece cannot be saved with the current dice rolls
 
     def get_reachable_tiles(self, start_tile, steps):
-        blocked_tiles = frozenset(
-            t.index for t in self.tiles
-            if t.type == 'field'
-            and len(t.pieces) > 1
-        )
-        cache_key = (start_tile.index, steps, blocked_tiles)
+        cache_key = (start_tile.index, steps, self._get_blocked_key(self.current_player))
 
         if cache_key in self._reachable_cache:
             return self._reachable_cache[cache_key]
@@ -443,6 +450,7 @@ class Board:
             return
 
         last_move = self.moves.pop()
+        self._blocked_key_cache = {}
         piece = last_move['piece']
         origin_tile = last_move['origin_tile']
         origin_rack = last_move['origin_rack']
@@ -496,7 +504,7 @@ class Board:
         if destination == 'save' or origin_rack is not None:
             self.game_stages[self.current_player] = self.get_game_stage(self.current_player)
 
-        self.check_game_over()
+      #  self.check_game_over()
     
     def apply_move(self, move, switch_turn = True):
         piece_id, destination, roll = move
@@ -512,7 +520,7 @@ class Board:
                 self.current_player = 'white' if self.current_player == 'black' else 'black'
             return
 
-        # Find the piece object
+        self._blocked_key_cache = {}
         piece = self.piece_lookup.get(piece_id)
         if not piece:
             print(f"No piece found for {piece_id}")
@@ -609,13 +617,9 @@ class Board:
 
         start_tile = piece.tile if piece.tile else self.home_tile
 
-        blocked_tiles = frozenset(
-            t.index for t in self.tiles
-            if t.type == 'field'
-            and len(t.pieces) > 1
-            and t.pieces[0].player != piece.player
-        )
-        cache_key = (start_tile.index, piece.player, piece.number if piece.number <= 6 else 'any', blocked_tiles)
+        cache_key = (start_tile.index, piece.player, 
+             piece.number if piece.number <= 6 else 'any',
+             self._get_blocked_key(piece.player))
 
         if cache_key in self._distance_cache:
             return self._distance_cache[cache_key]
