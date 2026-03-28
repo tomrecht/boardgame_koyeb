@@ -18,6 +18,12 @@ Batching:
   Tile-tile edges are shared (topology never changes) -> broadcast across batch.
   Piece-tile edges vary per position -> block-diagonal construction.
   Global node: one per batch item.
+
+Auxiliary head:
+  Predicts (my_saved - opponent_saved) / 12, computed directly from board state.
+  Provides grounded supervision signal every step, prevents embedding drift.
+  Weight: 0.2 relative to main value loss.
+  Only used during training; forward() returns value only for move selection.
 """
 
 import json
@@ -38,6 +44,7 @@ NUM_MP_LAYERS   = 6
 TILE_FEAT_DIM   = 8
 PIECE_FEAT_DIM  = 8
 GLOBAL_FEAT_DIM = 4   # [die1_val, die2_val, die1_used, die2_used]
+AUX_LOSS_WEIGHT = 0.2
 
 
 # -------------------------
@@ -168,6 +175,7 @@ def encode_piece_features(board, tile_index, current_player):
     f = torch.tensor(rows, dtype=torch.float32, device=DEVICE)
     return f, all_pieces
 
+
 # -------------------------
 # PIECE->TILE EDGES  (per position)
 # -------------------------
@@ -204,6 +212,20 @@ def encode_global_features(board):
 
 
 # -------------------------
+# AUXILIARY TARGET
+# -------------------------
+
+def compute_aux_target(board, current_player):
+    """
+    Auxiliary supervision: (my_saved - opponent_saved) / 12.
+    Range [-1, 1]. Computed directly from board state — always correct.
+    """
+    my_saved  = len(board.white_saved if current_player == 'white' else board.black_saved)
+    opp_saved = len(board.black_saved if current_player == 'white' else board.white_saved)
+    return (my_saved - opp_saved) / float(NUM_PIECES)
+
+
+# -------------------------
 # BOARD ENCODER
 # -------------------------
 
@@ -211,6 +233,7 @@ class BoardEncoder:
     """
     Converts a Board into a dict of tensors.
     Instantiate once; call encode() per position.
+    encode() optionally returns aux_target for training.
     """
     def __init__(self, tile_neighbors_path='tile_neighbors.json'):
         self.tile_index, self.tile_info, self.tile_edge_index = \
@@ -218,18 +241,21 @@ class BoardEncoder:
         self.num_tiles = len(self.tile_index)
         self._tile_feats = encode_tile_features(self.tile_index, self.tile_info)
 
-    def encode(self, board, current_player):
+    def encode(self, board, current_player, include_aux_target=False):
         piece_feats, all_pieces = encode_piece_features(
             board, self.tile_index, current_player)
         p2t, t2p = encode_piece_tile_edges(all_pieces, self.tile_index)
-        return {
-            'tile_feats':       self._tile_feats,           # [T, TF]
-            'piece_feats':      piece_feats,                # [P, PF]
-            'tile_edge_index':  self.tile_edge_index,       # [2, E]  shared
-            'piece_to_tile':    p2t,                        # [2, N]  per-pos
-            'tile_to_piece':    t2p,                        # [2, N]  per-pos
-            'global_feats':     encode_global_features(board),  # [GF]
+        encoded = {
+            'tile_feats':       self._tile_feats,
+            'piece_feats':      piece_feats,
+            'tile_edge_index':  self.tile_edge_index,
+            'piece_to_tile':    p2t,
+            'tile_to_piece':    t2p,
+            'global_feats':     encode_global_features(board),
         }
+        if include_aux_target:
+            return encoded, compute_aux_target(board, current_player)
+        return encoded
 
 
 # -------------------------
@@ -256,9 +282,9 @@ def collate_batch(encoded_list):
     T = encoded_list[0]['tile_feats'].size(0)
     P = encoded_list[0]['piece_feats'].size(0)
 
-    tile_feats_b  = torch.stack([e['tile_feats']  for e in encoded_list])  # [B,T,TF]
-    piece_feats_b = torch.stack([e['piece_feats'] for e in encoded_list])  # [B,P,PF]
-    global_feats_b = torch.stack([e['global_feats'] for e in encoded_list]) # [B,GF]
+    tile_feats_b   = torch.stack([e['tile_feats']   for e in encoded_list])  # [B,T,TF]
+    piece_feats_b  = torch.stack([e['piece_feats']  for e in encoded_list])  # [B,P,PF]
+    global_feats_b = torch.stack([e['global_feats'] for e in encoded_list])  # [B,GF]
 
     # Tile-tile edges are shared — same for all batch items
     tile_edge_index = encoded_list[0]['tile_edge_index']  # [2, E]
@@ -267,8 +293,8 @@ def collate_batch(encoded_list):
     p2t_srcs, p2t_dsts = [], []
     t2p_srcs, t2p_dsts = [], []
     for b, e in enumerate(encoded_list):
-        p2t = e['piece_to_tile']   # [2, N]
-        t2p = e['tile_to_piece']   # [2, N]
+        p2t = e['piece_to_tile']
+        t2p = e['tile_to_piece']
         if p2t.size(1) > 0:
             p2t_srcs.append(p2t[0] + b * P)
             p2t_dsts.append(p2t[1] + b * T)
@@ -277,19 +303,19 @@ def collate_batch(encoded_list):
             t2p_dsts.append(t2p[1] + b * P)
 
     if p2t_srcs:
-        p2t_b = torch.stack([torch.cat(p2t_srcs), torch.cat(p2t_dsts)])  # [2, sum_N]
+        p2t_b = torch.stack([torch.cat(p2t_srcs), torch.cat(p2t_dsts)])
         t2p_b = torch.stack([torch.cat(t2p_srcs), torch.cat(t2p_dsts)])
     else:
         p2t_b = torch.zeros(2, 0, dtype=torch.long, device=DEVICE)
         t2p_b = torch.zeros(2, 0, dtype=torch.long, device=DEVICE)
 
     return {
-        'tile_feats':       tile_feats_b,       # [B, T, TF]
-        'piece_feats':      piece_feats_b,      # [B, P, PF]
-        'global_feats':     global_feats_b,     # [B, GF]
-        'tile_edge_index':  tile_edge_index,    # [2, E]  shared
-        'piece_to_tile':    p2t_b,              # [2, sum_N]  block-diag
-        'tile_to_piece':    t2p_b,              # [2, sum_N]  block-diag
+        'tile_feats':       tile_feats_b,
+        'piece_feats':      piece_feats_b,
+        'global_feats':     global_feats_b,
+        'tile_edge_index':  tile_edge_index,
+        'piece_to_tile':    p2t_b,
+        'tile_to_piece':    t2p_b,
         'B': B, 'T': T, 'P': P,
     }
 
@@ -352,35 +378,32 @@ class MessagePassingLayer(nn.Module):
         dev = tile_h.device
 
         # Flatten batch for scatter operations
-        tile_flat  = tile_h.view(B * T, H)   # [B*T, H]
-        piece_flat = piece_h.view(B * P, H)  # [B*P, H]
+        tile_flat  = tile_h.view(B * T, H)
+        piece_flat = piece_h.view(B * P, H)
 
         # --- 1. tile -> piece  (block-diagonal) ---
         if t2p.size(1) > 0:
-            msgs = self.tile_to_piece_msg(tile_flat[t2p[0]])   # [sum_N, H]
-            agg  = _mean_agg(msgs, t2p[1], B * P, H, dev)      # [B*P, H]
+            msgs = self.tile_to_piece_msg(tile_flat[t2p[0]])
+            agg  = _mean_agg(msgs, t2p[1], B * P, H, dev)
         else:
             agg = torch.zeros(B * P, H, device=dev)
         piece_flat = F.relu(self.piece_update(
-            torch.cat([piece_flat, agg], dim=1)))               # [B*P, H]
+            torch.cat([piece_flat, agg], dim=1)))
 
         # --- 2. piece -> tile  (block-diagonal) ---
         if p2t.size(1) > 0:
-            msgs = self.piece_to_tile_msg(piece_flat[p2t[0]])  # [sum_N, H]
-            agg  = _mean_agg(msgs, p2t[1], B * T, H, dev)     # [B*T, H]
+            msgs = self.piece_to_tile_msg(piece_flat[p2t[0]])
+            agg  = _mean_agg(msgs, p2t[1], B * T, H, dev)
         else:
             agg = torch.zeros(B * T, H, device=dev)
         tile_flat = F.relu(self.tile_update_pieces(
-            torch.cat([tile_flat, agg], dim=1)))                # [B*T, H]
+            torch.cat([tile_flat, agg], dim=1)))
 
         # --- 3. tile -> tile  (shared edges, apply to each batch item) ---
-        # Reshape to [B, T, H], apply shared adjacency per item
         tile_h = tile_flat.view(B, T, H)
-        src, dst = tile_edge_index[0], tile_edge_index[1]       # [E]
-        # Gather source tile features for all batch items: [B, E, H]
-        src_feats = tile_h[:, src, :]                           # [B, E, H]
-        msgs = self.tile_to_tile_msg(src_feats)                 # [B, E, H]
-        # Scatter into [B, T, H]
+        src, dst = tile_edge_index[0], tile_edge_index[1]
+        src_feats = tile_h[:, src, :]
+        msgs = self.tile_to_tile_msg(src_feats)
         agg = torch.zeros(B, T, H, device=dev)
         count = torch.zeros(B, T, 1, device=dev)
         dst_exp = dst.view(1, -1, 1).expand(B, -1, H)
@@ -389,21 +412,19 @@ class MessagePassingLayer(nn.Module):
                            torch.ones(B, src.size(0), 1, device=dev))
         agg = agg / count.clamp(min=1)
         tile_h = F.relu(self.tile_update_tiles(
-            torch.cat([tile_h, agg], dim=2)))                   # [B, T, H]
+            torch.cat([tile_h, agg], dim=2)))
 
         # --- 4. tile -> global  (mean pool per batch item) ---
-        global_agg = self.tile_to_global_msg(tile_h).mean(dim=1, keepdim=True)  # [B,1,H]
+        global_agg = self.tile_to_global_msg(tile_h).mean(dim=1, keepdim=True)
         global_h   = F.relu(self.global_update(
-            torch.cat([global_h, global_agg], dim=2)))          # [B, 1, H]
+            torch.cat([global_h, global_agg], dim=2)))
 
         # --- 5. global -> tile  (broadcast per batch item) ---
-        global_msg = self.global_to_tile_msg(global_h).expand(B, T, H)  # [B,T,H]
+        global_msg = self.global_to_tile_msg(global_h).expand(B, T, H)
         tile_h = F.relu(self.tile_update_global(
-            torch.cat([tile_h, global_msg], dim=2)))            # [B, T, H]
+            torch.cat([tile_h, global_msg], dim=2)))
 
-        # Reshape piece back
         piece_h = piece_flat.view(B, P, H)
-
         return tile_h, piece_h, global_h
 
 
@@ -413,11 +434,14 @@ class MessagePassingLayer(nn.Module):
 
 class BoardGNN(nn.Module):
     """
-    Heterogeneous GNN with global node and true GPU batching.
+    Heterogeneous GNN with global node, true GPU batching, and auxiliary head.
 
-    Call with a single encoded dict -> scalar.
-    Call with a list of encoded dicts -> [N] tensor.
-    Both paths use the same batched forward pass internally.
+    Value head:     predicts position value in [-1, 1]
+    Auxiliary head: predicts (my_saved - opp_saved) / 12  in [-1, 1]
+                    only used during training, weight AUX_LOSS_WEIGHT=0.2
+
+    forward() returns value only — drop-in compatible with agent_gnn.py.
+    forward_with_aux() returns (value, aux) for training.
     """
 
     def __init__(self,
@@ -432,8 +456,6 @@ class BoardGNN(nn.Module):
 
         self.tile_embed   = nn.Linear(tile_feat_dim,  H)
         self.piece_embed  = nn.Linear(piece_feat_dim, H)
-        # Global node: learned embedding, initialised to zero so it starts neutral
-        # and only learns what it needs from the data
         self.global_embed = nn.Embedding(1, H)
         nn.init.zeros_(self.global_embed.weight)
 
@@ -441,34 +463,42 @@ class BoardGNN(nn.Module):
             MessagePassingLayer(H) for _ in range(num_mp_layers)
         ])
 
-        # mean(tiles) + mean(pieces) + global + dice
+        # Shared trunk input size: mean(tiles) + mean(pieces) + global + dice
+        trunk_dim = H * 3 + global_feat_dim
+
+        # Value head (unchanged from original)
         self.readout = nn.Sequential(
-            nn.Linear(H * 3 + global_feat_dim, H),
+            nn.Linear(trunk_dim, H),
             nn.ReLU(),
             nn.Linear(H, 32),
             nn.ReLU(),
             nn.Linear(32, 1),
         )
 
+        # Auxiliary head — lightweight, branches off same combined vector
+        self.aux_head = nn.Sequential(
+            nn.Linear(trunk_dim, 32),
+            nn.ReLU(),
+            nn.Linear(32, 1),
+            nn.Tanh(),   # output in [-1, 1] matching aux target range
+        )
+
     def _forward_batch(self, batch):
         """
         Core batched forward pass.
-        batch: dict from collate_batch()
-        Returns: [B] scores
+        Returns: (value [B], aux [B])
         """
         B = batch['B']
         T = batch['T']
         P = batch['P']
         dev = batch['tile_feats'].device
 
-        # Initial embeddings  [B, *, H]
-        tile_h   = F.relu(self.tile_embed(batch['tile_feats']))    # [B, T, H]
-        piece_h  = F.relu(self.piece_embed(batch['piece_feats']))  # [B, P, H]
-        piece_h_init = piece_h                                     # save for skip connection
-        global_h = self.global_embed(                              # [B, 1, H]
+        tile_h   = F.relu(self.tile_embed(batch['tile_feats']))
+        piece_h  = F.relu(self.piece_embed(batch['piece_feats']))
+        piece_h_init = piece_h
+        global_h = self.global_embed(
             torch.zeros(B, 1, dtype=torch.long, device=dev))
 
-        # Message passing
         for mp in self.mp_layers:
             tile_h, piece_h, global_h = mp(
                 tile_h, piece_h, global_h,
@@ -477,27 +507,37 @@ class BoardGNN(nn.Module):
                 batch['tile_to_piece'],
                 B, T, P)
 
-        # Readout — include initial piece embedding as skip connection
-        # so piece features always have a direct path to the output
-        tile_pooled   = tile_h.mean(dim=1)                        # [B, H]
-        piece_pooled  = (piece_h.mean(dim=1) +
-                         piece_h_init.mean(dim=1)) / 2            # [B, H]
-        global_pooled = global_h.squeeze(1)                       # [B, H]
+        tile_pooled   = tile_h.mean(dim=1)
+        piece_pooled  = (piece_h.mean(dim=1) + piece_h_init.mean(dim=1)) / 2
+        global_pooled = global_h.squeeze(1)
         combined = torch.cat(
             [tile_pooled, piece_pooled, global_pooled, batch['global_feats']],
-            dim=1)                                                 # [B, 3H+GF]
+            dim=1)
 
-        return self.readout(combined).squeeze(1) # [B]
+        value = self.readout(combined).squeeze(1)   # [B]
+        aux   = self.aux_head(combined).squeeze(1)  # [B]
+        return value, aux
 
     def forward(self, encoded):
         """
+        Value only — drop-in compatible with agent_gnn.py.
         encoded: single dict or list of dicts.
         Returns scalar (single) or [N] tensor (list).
         """
         if isinstance(encoded, dict):
             batch = collate_batch([encoded])
-            return self._forward_batch(batch).squeeze(0)
+            value, _ = self._forward_batch(batch)
+            return value.squeeze(0)
         batch = collate_batch(encoded)
+        value, _ = self._forward_batch(batch)
+        return value
+
+    def forward_with_aux(self, encoded_list):
+        """
+        Returns (value [B], aux [B]) — used during training only.
+        encoded_list: list of encoded dicts.
+        """
+        batch = collate_batch(encoded_list)
         return self._forward_batch(batch)
 
 
