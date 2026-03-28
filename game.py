@@ -78,6 +78,7 @@ class Board:
         self.firstMove = None
         self.moves = []
         self._distance_cache = {}
+        self._reachable_cache = {}
 
         self.endgame_reward_applied = {'white': False, 'black': False}
         self.offgoals = {'white': 0, 'black': 0}
@@ -221,6 +222,8 @@ class Board:
     
     
     def switch_turn(self):
+        self._distance_cache = {}
+        self._reachable_cache = {}
         self.firstMove = None  
         for die in self.dice:
             die.roll()
@@ -290,16 +293,25 @@ class Board:
                 return False  # The piece cannot be saved with the current dice rolls
 
     def get_reachable_tiles(self, start_tile, steps):
-        queue = deque([(start_tile, 0)])  # Start with the current tile and 0 steps taken
+        blocked_tiles = frozenset(
+            t.index for t in self.tiles
+            if t.type == 'field'
+            and len(t.pieces) > 1
+        )
+        cache_key = (start_tile.index, steps, blocked_tiles)
+
+        if cache_key in self._reachable_cache:
+            return self._reachable_cache[cache_key]
+
+        queue = deque([(start_tile, 0)])
         visited = set([start_tile])
         reachable_tiles = []
-        
+
         while queue:
             current_tile, current_steps = queue.popleft()
-            
-            if current_steps < steps:   
-                for neighbor in current_tile.neighbors:
 
+            if current_steps < steps:
+                for neighbor in current_tile.neighbors:
                     if neighbor not in visited and neighbor.type not in ['nogo', 'home'] and not neighbor.is_blocked():
                         queue.append((neighbor, current_steps + 1))
                         visited.add(neighbor)
@@ -308,7 +320,9 @@ class Board:
             elif current_steps == steps:
                 reachable_tiles.append(current_tile)
 
-        return list(set(reachable_tiles))
+        result = list(set(reachable_tiles))
+        self._reachable_cache[cache_key] = result
+        return result
 
     def get_reachable_tiles_by_dice(self, piece):   
         reachable_tiles = {self.dice[0].number: [], self.dice[1].number: []}
