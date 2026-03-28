@@ -407,9 +407,12 @@ def main():
                 record, winner, score = play_selfplay_game(challenger_agent, encoder, seed)
                 
                 # Stats tracking
-                if winner == 1: stats['white'] += 1
-                elif winner == -1: stats['black'] += 1
-                else: stats['draw'] += 1
+                if winner == 'white':
+                    stats['white'] += 1
+                elif winner == 'black':
+                    stats['black'] += 1
+                else:
+                    stats['draw'] += 1
                 
                 if len(record) >= MAX_TURNS: stats['max_turns'] += 1
                 
