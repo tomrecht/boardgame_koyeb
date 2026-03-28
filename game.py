@@ -75,6 +75,7 @@ class Board:
         self.assign_tile_indices()
         self.game_stages = {'white': 'opening', 'black': 'opening'}
         self.initialize_pieces()
+        self.piece_lookup = {(p.player, p.number): p for p in self.pieces}
         self.firstMove = None
         self.moves = []
         self._distance_cache = {}
@@ -195,6 +196,7 @@ class Board:
                 self.firstMove = {'piece': piece, 'origin_tile': tile}
 
         self.assign_piece_indices()
+        self.piece_lookup = {(p.player, p.number): p for p in self.pieces}
         self.game_stages['white'] = self.get_game_stage('white')
         self.game_stages['black'] = self.get_game_stage('black')
         self.apply_last_piece_rule()
@@ -426,7 +428,7 @@ class Board:
         piece_id, destination, roll = move
 
         move_to_save = dict()
-        move_to_save['piece'] = next((p for p in self.pieces if (p.player, p.number) == piece_id), None)
+        move_to_save['piece'] = self.piece_lookup.get(piece_id)
         move_to_save['origin_tile'] = origin_tile
         move_to_save['origin_rack'] = origin_rack
         move_to_save['destination'] = destination
@@ -510,7 +512,7 @@ class Board:
             return
 
         # Find the piece object
-        piece = next((p for p in self.pieces if (p.player, p.number) == piece_id), None)
+        piece = self.piece_lookup.get(piece_id)
         if not piece:
             print(f"No piece found for {piece_id}")
             return
@@ -680,8 +682,9 @@ class Board:
             save_rack = self.get_save_rack(player)
             unsaved = [p for p in self.pieces if p.player == player and p.rack != save_rack]
             if len(unsaved) == 1 and unsaved[0].number <= 6:
-        #        print(f"Applying last piece rule to {unsaved[0]}")
+                old_key = (unsaved[0].player, unsaved[0].number)
                 unsaved[0].number = NUM_PIECES + 1
+                new_key = (unsaved[0].player, unsaved[0].number)
 
 
     def get_all_possible_moves(self):
