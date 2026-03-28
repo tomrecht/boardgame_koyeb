@@ -4,3 +4,4 @@ __pycache__/
 .DS_Store
 .codegptdistill_data.pt
 gnn_selfplay*.pt
+distill_data.pt
