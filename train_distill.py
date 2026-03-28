@@ -97,7 +97,7 @@ def train():
     print(f"\nScore stats: mean={scores_t.mean():.1f}  std={scores_t.std():.1f}  "
           f"min={scores_t.min():.1f}  max={scores_t.max():.1f}")
 
-    # Pre-compute aux targets for entire dataset (cheap, do once)
+    # Pre-compute aux targets
     print("Pre-computing aux targets...")
     train_aux = [aux_target_from_encoded(enc) for enc, _ in train_data]
     val_aux   = [aux_target_from_encoded(enc) for enc, _ in val_data]
@@ -116,22 +116,23 @@ def train():
     print(f"\nModel: {n_params:,} parameters")
     print(f"Training: {EPOCHS} epochs, batch_size={BATCH_SIZE}\n")
 
-    best_val_loss = float('inf')
-    best_epoch    = 0
-    indices       = list(range(n_train))
+    best_val_loss     = float('inf')
+    best_epoch        = 0
+    epochs_since_best = 0
+    PATIENCE_ES       = 2
+    train_indices     = list(range(n_train))
 
     for epoch in range(1, EPOCHS + 1):
         t0 = time.time()
-
-        # --- TRAIN ---
         model.train()
-        random.shuffle(indices)
+        random.shuffle(train_indices)
+
         train_value_loss = 0.0
         train_aux_loss   = 0.0
         n_batches        = 0
 
         for batch_start in range(0, n_train, BATCH_SIZE):
-            batch_idx    = indices[batch_start: batch_start + BATCH_SIZE]
+            batch_idx    = train_indices[batch_start: batch_start + BATCH_SIZE]
             encoded_list = []
             value_targets = []
             aux_targets   = []
@@ -139,7 +140,7 @@ def train():
             for i in batch_idx:
                 encoded, score = train_data[i]
                 encoded_list.append({k: v.to(DEVICE) for k, v in encoded.items()})
-                value_targets.append(score / SCORE_SCALE)
+                value_targets.append(score / scores_t.std().item())
                 aux_targets.append(train_aux[i])
 
             value_t = torch.tensor(value_targets, dtype=torch.float32, device=DEVICE)
@@ -153,6 +154,7 @@ def train():
             loss       = value_loss + AUX_LOSS_WEIGHT * aux_loss
 
             loss.backward()
+            torch.nn.utils.clip_grad_norm_(model.parameters(), 1.0)
             optimizer.step()
 
             train_value_loss += value_loss.item()
@@ -179,7 +181,7 @@ def train():
                 for i in batch_idx:
                     encoded, score = val_data[i]
                     encoded_list.append({k: v.to(DEVICE) for k, v in encoded.items()})
-                    value_targets.append(score / SCORE_SCALE)
+                    value_targets.append(score / scores_t.std().item())
                     aux_targets.append(val_aux[i])
 
                 value_t = torch.tensor(value_targets, dtype=torch.float32, device=DEVICE)
@@ -193,32 +195,31 @@ def train():
         val_value_loss /= val_batches
         val_aux_loss   /= val_batches
 
-        # Combined val loss for scheduler and best-model tracking
         val_combined = val_value_loss + AUX_LOSS_WEIGHT * val_aux_loss
         scheduler.step(val_combined)
 
         if val_combined < best_val_loss:
-            best_val_loss = val_combined
-            best_epoch    = epoch
+            best_val_loss     = val_combined
+            best_epoch        = epoch
+            epochs_since_best = 0
             save_model(model, OUTPUT_FILE)
             marker = " <- best"
         else:
+            epochs_since_best += 1
             marker = ""
 
         lr = optimizer.param_groups[0]['lr']
         print(f"Epoch {epoch:3d}/{EPOCHS}  "
               f"train_val={train_value_loss:.4f} train_aux={train_aux_loss:.4f}  "
               f"val_val={val_value_loss:.4f} val_aux={val_aux_loss:.4f}  "
-              f"lr={lr:.2e}  {time.time()-t0:.1f}s{marker}",
-              flush=True)
+              f"lr={lr:.2e}  {time.time()-t0:.1f}s{marker}", flush=True)
 
-        if lr <= MIN_LR and epoch > best_epoch + PATIENCE * 2:
+        if epochs_since_best >= PATIENCE_ES:
             print(f"Early stopping at epoch {epoch}")
             break
 
     print(f"\nBest combined val loss: {best_val_loss:.4f} at epoch {best_epoch}")
     print(f"Saved to {OUTPUT_FILE}  (SCORE_SCALE={SCORE_SCALE})")
-
-
+    
 if __name__ == '__main__':
     train()
