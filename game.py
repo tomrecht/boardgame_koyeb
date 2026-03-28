@@ -359,7 +359,8 @@ class Board:
         piece.reachable_tiles = reachable_tiles
 
     def get_valid_moves(self, mask_offgoals = False):
-        self.game_stages[self.current_player] = self.get_game_stage(self.current_player)  
+        if self.game_stages[self.current_player] != 'endgame':
+            self.game_stages[self.current_player] = self.get_game_stage(self.current_player)  
         if self.dice[0].used and self.dice[1].used:
             return []
 
