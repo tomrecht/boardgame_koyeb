@@ -491,11 +491,6 @@ def play_eval_game(agent_white, agent_black, seed, heuristic_white=False,
 
 def evaluate_vs_opponent(challenger, opponent_agent, num_pairs, seed_offset,
                          heuristic=False, heuristic_agent=None, label=''):
-    """
-    Play num_pairs paired games (challenger as white + challenger as black).
-    Returns (wins, total_games, avg_margin).
-    Margin is from challenger's perspective (positive = challenger winning).
-    """
     wins   = 0
     total  = 0
     margin_sum = 0.0
@@ -504,7 +499,7 @@ def evaluate_vs_opponent(challenger, opponent_agent, num_pairs, seed_offset,
         seed = seed_offset + i * 2
 
         # Game 1: challenger = white
-        winner, margin, _ = play_eval_game(
+        winner, margin, turns = play_eval_game(
             challenger, opponent_agent, seed,
             heuristic_black=heuristic, heuristic_agent=heuristic_agent)
         total += 1
@@ -513,10 +508,10 @@ def evaluate_vs_opponent(challenger, opponent_agent, num_pairs, seed_offset,
             margin_sum += margin
         elif winner == 'black':
             margin_sum -= margin
-        # draw: margin_sum unchanged
+        print(f"    Game {i*2+1}: winner={winner} margin={margin} turns={turns}")
 
         # Game 2: challenger = black
-        winner, margin, _ = play_eval_game(
+        winner, margin, turns = play_eval_game(
             opponent_agent, challenger, seed + 1,
             heuristic_white=heuristic, heuristic_agent=heuristic_agent)
         total += 1
@@ -525,14 +520,13 @@ def evaluate_vs_opponent(challenger, opponent_agent, num_pairs, seed_offset,
             margin_sum += margin
         elif winner == 'white':
             margin_sum -= margin
+        print(f"    Game {i*2+2}: winner={winner} margin={-margin} turns={turns}")  # negate margin so it's from challenger
 
     avg_margin = margin_sum / total if total > 0 else 0.0
     win_rate   = wins / total if total > 0 else 0.0
     if label:
-        print(f"    vs {label}: {wins}/{total} ({win_rate:.1%}) | "
-              f"avg margin {avg_margin:+.2f}")
+        print(f"  vs {label}: {wins}/{total} ({win_rate:.1%}) | avg margin {avg_margin:+.2f}")
     return wins, total, avg_margin
-
 
 # -------------------------
 # ROLLING STATS
@@ -657,6 +651,13 @@ def main():
                         heuristic_agent=None)
 
                 elapsed = time.time() - t0
+
+                    # --- GAME LOGGING ---
+                num_turns = len(record)
+                print(f"    Game {g+1}/{GAMES_PER_GEN} done | "
+                    f"winner={winner} | margin={margin:+.2f} | "
+                    f"turns={num_turns} | elapsed={elapsed:.2f}s")
+                    # -------------------
 
                 # Convert to TD samples
                 samples = compute_td_targets(
@@ -845,44 +846,45 @@ def main():
 # POOL EVALUATION
 # -------------------------
 
-def _eval_vs_pool(challenger, pool, num_pairs, seed_offset, label=''):
-    """
-    Evaluate challenger vs frozen pool.
-    Each pair randomly selects an opponent from the pool.
-    Returns aggregated (wins, total, avg_margin).
-    """
-    wins = 0
-    total = 0
+def _eval_vs_pool(challenger, frozen_pool, num_pairs, seed_offset, label=''):
+    wins   = 0
+    total  = 0
     margin_sum = 0.0
+    heuristic_agent = None  # not used here
 
     for i in range(num_pairs):
         seed = seed_offset + i * 2
-        opp_model = random.choice(pool)
+        # pick a random frozen opponent
+        opp_model = random.choice(frozen_pool)
         opp_agent = GNNAgent(model=opp_model)
 
-        # Game 1: challenger white
-        winner, margin, _ = play_eval_game(challenger, opp_agent, seed)
+        # Game 1: challenger = white
+        winner, margin, turns = play_eval_game(
+            challenger, opp_agent, seed)
         total += 1
         if winner == 'white':
-            wins += 1; margin_sum += margin
+            wins += 1
+            margin_sum += margin
         elif winner == 'black':
             margin_sum -= margin
+        print(f"    Game {i*2+1} vs pool: winner={winner} margin={margin} turns={turns}")
 
-        # Game 2: challenger black
-        winner, margin, _ = play_eval_game(opp_agent, challenger, seed + 1)
+        # Game 2: challenger = black
+        winner, margin, turns = play_eval_game(
+            opp_agent, challenger, seed + 1)
         total += 1
         if winner == 'black':
-            wins += 1; margin_sum += margin
+            wins += 1
+            margin_sum += margin
         elif winner == 'white':
             margin_sum -= margin
+        print(f"    Game {i*2+2} vs pool: winner={winner} margin={-margin} turns={turns}")  # negate for challenger
 
-    avg_margin = margin_sum / total if total else 0.0
-    win_rate   = wins / total if total else 0.0
+    avg_margin = margin_sum / total if total > 0 else 0.0
+    win_rate   = wins / total if total > 0 else 0.0
     if label:
-        print(f"    vs {label}: {wins}/{total} ({win_rate:.1%}) | "
-              f"avg margin {avg_margin:+.2f}")
+        print(f"  vs {label}: {wins}/{total} ({win_rate:.1%}) | avg margin {avg_margin:+.2f}")
     return wins, total, avg_margin
-
 
 # -------------------------
 # GAME STATS PRINTER
