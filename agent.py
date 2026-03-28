@@ -7,7 +7,7 @@ import math
 
 
 GAME_OVER_SCORE = 10000
-LOG_TO_FILE = True
+LOG_TO_FILE = False
 
 INITIAL_WEIGHTS = {
     'saved_bonuses': {'a': 18.0, 'b': 1.1}, # a = value for piece 1, b = exponent
