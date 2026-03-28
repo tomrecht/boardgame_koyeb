@@ -82,8 +82,14 @@ def train():
     # Train / val split
     n_val      = max(1, int(len(all_samples) * VAL_FRACTION))
     n_train    = len(all_samples) - n_val
-    train_data = all_samples[:n_train]
-    val_data   = all_samples[n_train:]
+    indices = list(range(len(all_samples)))
+    random.shuffle(indices)
+
+    train_idx = indices[:n_train]
+    val_idx   = indices[n_train:]
+
+    train_data = [all_samples[i] for i in train_idx]
+    val_data   = [all_samples[i] for i in val_idx]
     print(f"  {n_train} train, {n_val} val")
 
     scores   = [s for _, s in train_data]
