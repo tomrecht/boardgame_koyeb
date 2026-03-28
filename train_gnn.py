@@ -322,13 +322,22 @@ def play_eval_game(white_agent, black_agent, seed):
 # -------------------------
 
 def load_distill_data(path):
-    if os.path.exists(path):
-        return torch.load(path)
-    else:
-        # Fallback: if file is missing, we can't stratify. 
-        # You might want to raise an error here.
-        print(f"⚠️ Warning: {path} not found. Training will lack an anchor!")
+    if not os.path.exists(path):
+        print(f"⚠️ Warning: {path} not found.")
         return []
+    
+    print(f"Loading anchor data from {path}...")
+    data = torch.load(path, map_location='cpu') # Load to CPU first to avoid OOM
+    
+    # Explicitly move tensors to the active DEVICE (cuda:0)
+    for item in data:
+        encoded_dict = item[0]
+        for key in encoded_dict:
+            if isinstance(encoded_dict[key], torch.Tensor):
+                encoded_dict[key] = encoded_dict[key].to(DEVICE)
+                
+    print(f"Successfully moved {len(data)} anchor positions to {DEVICE}")
+    return data
     
 def main():
     encoder = BoardEncoder()
@@ -477,7 +486,7 @@ def main():
     except KeyboardInterrupt:
         print("\nStopping and saving...")
         save_model(model, SELFPLAY_WEIGHTS)
-        
+
 def _sanity_check(model, encoder, criterion):
     """
     Quick forward + backward pass to catch bugs before the main loop.
