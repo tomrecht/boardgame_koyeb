@@ -75,12 +75,8 @@ class Board:
         self.assign_tile_indices()
         self.game_stages = {'white': 'opening', 'black': 'opening'}
         self.initialize_pieces()
-        self.piece_lookup = {(p.player, p.number): p for p in self.pieces}
         self.firstMove = None
         self.moves = []
-        self._distance_cache = {}
-        self._reachable_cache = {}
-        self._blocked_key_cache = {}  # keyed by player string
 
         self.endgame_reward_applied = {'white': False, 'black': False}
         self.offgoals = {'white': 0, 'black': 0}
@@ -150,16 +146,6 @@ class Board:
                     if neighbor_tile:
                         tile.neighbors.append(neighbor_tile)
 
-    def _get_blocked_key(self, player):
-        if player not in self._blocked_key_cache:
-            self._blocked_key_cache[player] = frozenset(
-                t.index for t in self.tiles
-                if t.type == 'field'
-                and len(t.pieces) > 1
-                and t.pieces[0].player != player
-            )
-        return self._blocked_key_cache[player]
-
     def update_state(self, game_state_details):
         # Set the current turn
         self.current_player = game_state_details['currentTurn']
@@ -207,7 +193,6 @@ class Board:
                 self.firstMove = {'piece': piece, 'origin_tile': tile}
 
         self.assign_piece_indices()
-        self.piece_lookup = {(p.player, p.number): p for p in self.pieces}
         self.game_stages['white'] = self.get_game_stage('white')
         self.game_stages['black'] = self.get_game_stage('black')
         self.apply_last_piece_rule()
@@ -235,9 +220,6 @@ class Board:
     
     
     def switch_turn(self):
-        self._distance_cache = {}
-        self._reachable_cache = {}
-        self._blocked_key_cache = {}
         self.firstMove = None  
         for die in self.dice:
             die.roll()
@@ -280,7 +262,6 @@ class Board:
         if self.game_stages[piece.player] == 'opening':
             return False  # can't save pieces in the opening
 
-        valid_dice = []
         current_tile = piece.tile
         if current_tile and current_tile.type == 'save' and (piece.number > 6 or piece.number == current_tile.number):
             if self.game_stages[piece.player] == 'endgame':
@@ -297,26 +278,27 @@ class Board:
             else:
                 valid_dice = [die for die in self.dice if (not die.used) and die.number == current_tile.number]
 
-        if valid_dice:
-            return [die.number for die in valid_dice]
-        else:
-            return []
+            if valid_dice:
+                matching_die = next((die for die in valid_dice if die.number == current_tile.number), None)
+                if matching_die:
+                    die = matching_die
+                else:
+                    die = max(valid_dice, key=lambda die: die.number)
+                return die.number
+            else:
+                return False  # The piece cannot be saved with the current dice rolls
 
     def get_reachable_tiles(self, start_tile, steps):
-        cache_key = (start_tile.index, steps, self._get_blocked_key(self.current_player))
-
-        if cache_key in self._reachable_cache:
-            return self._reachable_cache[cache_key]
-
-        queue = deque([(start_tile, 0)])
+        queue = deque([(start_tile, 0)])  # Start with the current tile and 0 steps taken
         visited = set([start_tile])
         reachable_tiles = []
-
+        
         while queue:
             current_tile, current_steps = queue.popleft()
-
-            if current_steps < steps:
+            
+            if current_steps < steps:   
                 for neighbor in current_tile.neighbors:
+
                     if neighbor not in visited and neighbor.type not in ['nogo', 'home'] and not neighbor.is_blocked():
                         queue.append((neighbor, current_steps + 1))
                         visited.add(neighbor)
@@ -325,9 +307,7 @@ class Board:
             elif current_steps == steps:
                 reachable_tiles.append(current_tile)
 
-        result = list(set(reachable_tiles))
-        self._reachable_cache[cache_key] = result
-        return result
+        return list(set(reachable_tiles))
 
     def get_reachable_tiles_by_dice(self, piece):   
         reachable_tiles = {self.dice[0].number: [], self.dice[1].number: []}
@@ -355,16 +335,14 @@ class Board:
 
 
         if piece.tile and piece.tile.type == 'save' and self.game_stages[piece.player] != 'opening':
-            save_rolls = self.get_saving_die(piece)
-            for roll in save_rolls:
-                if roll in reachable_tiles:
-                    reachable_tiles[roll].append('save')
+            save_roll = self.get_saving_die(piece)
+            if save_roll:             
+                reachable_tiles[save_roll].append('save') 
 
         piece.reachable_tiles = reachable_tiles
 
     def get_valid_moves(self, mask_offgoals = False):
-        if self.game_stages[self.current_player] != 'endgame':
-            self.game_stages[self.current_player] = self.get_game_stage(self.current_player)  
+        self.game_stages[self.current_player] = self.get_game_stage(self.current_player)  
         if self.dice[0].used and self.dice[1].used:
             return []
 
@@ -433,7 +411,7 @@ class Board:
         piece_id, destination, roll = move
 
         move_to_save = dict()
-        move_to_save['piece'] = self.piece_lookup.get(piece_id)
+        move_to_save['piece'] = next((p for p in self.pieces if (p.player, p.number) == piece_id), None)
         move_to_save['origin_tile'] = origin_tile
         move_to_save['origin_rack'] = origin_rack
         move_to_save['destination'] = destination
@@ -447,7 +425,6 @@ class Board:
             return
 
         last_move = self.moves.pop()
-        self._blocked_key_cache = {}
         piece = last_move['piece']
         origin_tile = last_move['origin_tile']
         origin_rack = last_move['origin_rack']
@@ -481,6 +458,7 @@ class Board:
                 piece.rack = origin_rack
 
             if captured_piece:      # undo the capture
+                self.home_tile.pieces.remove(captured_piece)
                 new_tile.pieces.append(captured_piece)
                 captured_piece.tile = new_tile
 
@@ -501,7 +479,7 @@ class Board:
         if destination == 'save' or origin_rack is not None:
             self.game_stages[self.current_player] = self.get_game_stage(self.current_player)
 
-      #  self.check_game_over()
+        self.check_game_over()
     
     def apply_move(self, move, switch_turn = True):
         piece_id, destination, roll = move
@@ -517,8 +495,8 @@ class Board:
                 self.current_player = 'white' if self.current_player == 'black' else 'black'
             return
 
-        self._blocked_key_cache = {}
-        piece = self.piece_lookup.get(piece_id)
+        # Find the piece object
+        piece = next((p for p in self.pieces if (p.player, p.number) == piece_id), None)
         if not piece:
             print(f"No piece found for {piece_id}")
             return
@@ -599,7 +577,7 @@ class Board:
 
         # Switch to the next player if both dice are used
         if switch_turn and all(die.used for die in self.dice):
-            print('switching turn')
+         #   print('switching turn')
             self.switch_turn()
 
     def get_save_rack(self, player):
@@ -609,19 +587,12 @@ class Board:
         return self.white_unentered if player == 'white' else self.black_unentered
 
     def shortest_route_to_goal(self, piece):
+        start_tile = piece.tile if piece.tile else self.home_tile  # Use home tile if the piece has no tile
+
         if piece.can_be_saved():
             return 0
 
-        start_tile = piece.tile if piece.tile else self.home_tile
-
-        cache_key = (start_tile.index, piece.player, 
-             piece.number if piece.number <= 6 else 'any',
-             self._get_blocked_key(piece.player))
-
-        if cache_key in self._distance_cache:
-            return self._distance_cache[cache_key]
-
-        queue = deque([(start_tile, 0)])
+        queue = deque([(start_tile, 0)])  # (current tile, distance)
         visited = set([start_tile])
 
         while queue:
@@ -630,13 +601,11 @@ class Board:
                 if neighbor not in visited:
                     visited.add(neighbor)
                     if neighbor.type == 'save' and (piece.number > 6 or piece.number == neighbor.number):
-                        self._distance_cache[cache_key] = distance + 1
-                        return distance + 1
+                        return distance + 1  # Found a goal tile from which the piece can be saved
                     if neighbor.type not in ['nogo', 'home'] and not neighbor.is_blocked(piece.player):
                         queue.append((neighbor, distance + 1))
 
-        self._distance_cache[cache_key] = float('inf')
-        return float('inf')
+        return float('inf')  # No path found to a goal tile
     
     def count_pieces_reaching_goals(self):
         # Initialize counters for each possible die roll (1-6)
@@ -684,9 +653,8 @@ class Board:
             save_rack = self.get_save_rack(player)
             unsaved = [p for p in self.pieces if p.player == player and p.rack != save_rack]
             if len(unsaved) == 1 and unsaved[0].number <= 6:
-                old_key = (unsaved[0].player, unsaved[0].number)
+        #        print(f"Applying last piece rule to {unsaved[0]}")
                 unsaved[0].number = NUM_PIECES + 1
-                new_key = (unsaved[0].player, unsaved[0].number)
 
 
     def get_all_possible_moves(self):
