@@ -574,6 +574,7 @@ def main():
     encoder         = BoardEncoder()
     heuristic_agent = HeuristicAgent()
 
+    # Load starting weights
     weights_path = SELFPLAY_WEIGHTS if os.path.exists(SELFPLAY_WEIGHTS) else DISTILL_WEIGHTS
     print(f"\nLoading weights from {weights_path}...")
     model = BoardGNN().to(DEVICE)
@@ -596,6 +597,7 @@ def main():
     criterion = nn.MSELoss()
 
     challenger_agent = GNNAgent(model=model)
+
     replay_buffer = collections.deque(maxlen=BUFFER_SIZE)
 
     rolling_vs_heuristic  = RollingStats(PROMOTION_ROLLING_GENS)
@@ -621,8 +623,9 @@ def main():
             print(f"  [Data generation] {GAMES_PER_GEN} games...")
 
             game_stats = {'turns': [], 'draws': 0, 'max_turns_hit': 0,
-                          'white_wins': 0, 'black_wins': 0, 'positions': 0,
-                          'times': []}
+                          'white_wins': 0, 'black_wins': 0,
+                          'positions': 0, 'times': [],
+                          'final_saved_my': [], 'final_saved_opp': []}
 
             for g in range(GAMES_PER_GEN):
                 t0 = time.time()
@@ -648,14 +651,11 @@ def main():
                         heuristic_agent=None)
 
                 elapsed = time.time() - t0
-                num_turns = len(record)
-                print(f"    Game {g+1}/{GAMES_PER_GEN} done | "
-                      f"winner={winner} | margin={margin:+.2f} | "
-                      f"turns={num_turns} | elapsed={elapsed:.2f}s")
 
                 samples = compute_td_targets(record, target_model, encoder, GAMMA, N_STEPS)
                 replay_buffer.extend(samples)
 
+                num_turns = len(record)
                 game_stats['turns'].append(num_turns)
                 game_stats['times'].append(elapsed)
                 game_stats['positions'] += len(samples)
@@ -704,19 +704,18 @@ def main():
             avg_value_loss = total_value_loss / TRAINING_STEPS
             avg_aux_loss   = total_aux_loss   / TRAINING_STEPS
             avg_grad_norm  = total_grad_norm  / TRAINING_STEPS
+
             with torch.no_grad():
                 sample_encoded = [{k: v.to(DEVICE) for k, v in random.choice(replay_buffer)[0].items()}]
                 sample_out = model(sample_encoded).abs().item()
 
-            print(f"  [Training] value_loss={avg_value_loss:.4f} "
-                  f"aux_loss={avg_aux_loss:.4f} grad_norm={avg_grad_norm:.3f} "
-                  f"mean_abs_output={sample_out:.3f} buffer={len(replay_buffer)} "
-                  f"lr={optimizer.param_groups[0]['lr']:.2e}")
+            print(f"  [Training] value_loss={avg_value_loss:.4f} aux_loss={avg_aux_loss:.4f} "
+                  f"grad_norm={avg_grad_norm:.3f} mean_abs_output={sample_out:.3f} "
+                  f"buffer={len(replay_buffer)} lr={optimizer.param_groups[0]['lr']:.2e}")
 
             model.eval()
-            print(f"  [Evaluation]")
-            eval_seed = generation * 1000
 
+            eval_seed = generation * 1000
             wins_h, total_h, margin_h = evaluate_vs_opponent(
                 challenger_agent, None, EVAL_PAIRS, eval_seed,
                 heuristic=True, heuristic_agent=heuristic_agent, label='heuristic')
@@ -730,17 +729,15 @@ def main():
                 challenger_agent, distilled_agent, EVAL_PAIRS, eval_seed + 1000, label='distilled')
             rolling_vs_distilled.update(wins_d / total_d, margin_d)
 
-            print(f"  [Rolling {PROMOTION_ROLLING_GENS}-gen avg] "
-                  f"vs_heuristic={rolling_vs_heuristic.avg_win_rate():.1%} "
-                  f"margin={rolling_vs_heuristic.avg_margin():+.2f} | "
-                  f"vs_frozen={rolling_vs_frozen.avg_win_rate():.1%} "
-                  f"margin={rolling_vs_frozen.avg_margin():+.2f} | "
-                  f"vs_distilled={rolling_vs_distilled.avg_win_rate():.1%} "
+            print(f"  [Rolling {PROMOTION_ROLLING_GENS}-gen avg] vs_heuristic={rolling_vs_heuristic.avg_win_rate():.1%} "
+                  f"margin={rolling_vs_heuristic.avg_margin():+.2f} | vs_frozen={rolling_vs_frozen.avg_win_rate():.1%} "
+                  f"margin={rolling_vs_frozen.avg_margin():+.2f} | vs_distilled={rolling_vs_distilled.avg_win_rate():.1%} "
                   f"margin={rolling_vs_distilled.avg_margin():+.2f}")
 
             promoted = False
             if rolling_vs_frozen.full():
-                avg_wr, avg_margin = rolling_vs_frozen.avg_win_rate(), rolling_vs_frozen.avg_margin()
+                avg_wr = rolling_vs_frozen.avg_win_rate()
+                avg_margin = rolling_vs_frozen.avg_margin()
                 if avg_wr >= PROMOTION_WINRATE and avg_margin > best_frozen_margin:
                     print(f"  ⭐ PROMOTED! rolling win_rate={avg_wr:.1%} margin={avg_margin:+.2f} > best={best_frozen_margin:+.2f}")
                     best_frozen_margin = avg_margin
@@ -783,6 +780,15 @@ def main():
             generation += 1
             scheduler.step()
 
+            gen_time   = time.time() - gen_start
+            total_time = time.time() - start_time
+            print(f"  Gen {generation-1} done in {gen_time:.0f}s | Total {total_time/3600:.1f}h")
+
+    except KeyboardInterrupt:
+        print("\nTraining interrupted. Saving current model and buffer...")
+        save_model_and_buffer(model, SELFPLAY_WEIGHTS, replay_buffer)
+        print("Done.")
+        
 # -------------------------
 # POOL EVALUATION
 # -------------------------
