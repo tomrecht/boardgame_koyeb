@@ -103,8 +103,8 @@ MIN_LR                   = 1e-5
 FROZEN_POOL_SIZE         = 3
 PROMOTION_WINRATE        = 0.52
 PROMOTION_ROLLING_GENS   = 3       # rolling average window for promotion
-COLLAPSE_MARGIN_THRESHOLD = -0.5   # avg margin vs distilled below this = danger
-COLLAPSE_CONSECUTIVE     = 2       # consecutive evals below threshold = collapse
+COLLAPSE_MARGIN_THRESHOLD = -1   # avg margin vs distilled below this = danger
+COLLAPSE_CONSECUTIVE     = 5       # consecutive evals below threshold = collapse
 
 DISTILL_WEIGHTS          = 'gnn_weights.pt'
 SELFPLAY_WEIGHTS         = 'gnn_selfplay.pt'
@@ -753,25 +753,23 @@ def main():
                     print(f"  ✗ No promotion: win_rate={avg_wr:.1%} margin={avg_margin:+.2f} "
                           f"(need >{PROMOTION_WINRATE:.0%} and margin>{best_frozen_margin:+.2f})")
 
-            if rolling_vs_distilled.full():
-                avg_margin_d = rolling_vs_distilled.avg_margin()
-                if avg_margin_d < COLLAPSE_MARGIN_THRESHOLD:
-                    collapse_strikes += 1
-                    print(f"  ⚠️  Collapse warning {collapse_strikes}/{COLLAPSE_CONSECUTIVE}: avg margin vs distilled = {avg_margin_d:+.2f}")
-                    if collapse_strikes >= COLLAPSE_CONSECUTIVE:
-                        print(f"  🔴 COLLAPSE DETECTED — reloading distilled weights")
-                        model.load_state_dict(torch.load(DISTILL_WEIGHTS, map_location=DEVICE))
-                        target_model.load_state_dict(copy.deepcopy(model.state_dict()))
-                        frozen_pool.clear()
-                        frozen_pool.append(copy.deepcopy(distilled_model))
-                        replay_buffer.clear()
-                        rolling_vs_heuristic  = RollingStats(PROMOTION_ROLLING_GENS)
-                        rolling_vs_frozen     = RollingStats(PROMOTION_ROLLING_GENS)
-                        rolling_vs_distilled  = RollingStats(PROMOTION_ROLLING_GENS)
-                        collapse_strikes      = 0
-                        best_frozen_margin    = -999.0
+            if collapse_strikes >= COLLAPSE_CONSECUTIVE:
+                print(f"  🔴 COLLAPSE DETECTED — reloading recent champion or distilled weights")
+                if os.path.exists(SELFPLAY_WEIGHTS):
+                    print(f"  ⬅️ Reverting to last champion: {SELFPLAY_WEIGHTS}")
+                    model.load_state_dict(torch.load(SELFPLAY_WEIGHTS, map_location=DEVICE))
                 else:
-                    collapse_strikes = 0
+                    print(f"  ⬅️ No champion yet, reverting to distilled weights")
+                    model.load_state_dict(torch.load(DISTILL_WEIGHTS, map_location=DEVICE))
+                target_model.load_state_dict(copy.deepcopy(model.state_dict()))
+                frozen_pool.clear()
+                frozen_pool.append(copy.deepcopy(model))
+                replay_buffer.clear()
+                rolling_vs_heuristic  = RollingStats(PROMOTION_ROLLING_GENS)
+                rolling_vs_frozen     = RollingStats(PROMOTION_ROLLING_GENS)
+                rolling_vs_distilled  = RollingStats(PROMOTION_ROLLING_GENS)
+                collapse_strikes      = 0
+                best_frozen_margin    = -999.0
 
             if generation % CHECKPOINT_INTERVAL == 0:
                 ckpt_path = os.path.join(CHECKPOINT_DIR, f'gnn_s{SESSION}_g{generation}.pt')
@@ -788,7 +786,7 @@ def main():
         print("\nTraining interrupted. Saving current model and buffer...")
         save_model_and_buffer(model, SELFPLAY_WEIGHTS, replay_buffer)
         print("Done.")
-        
+
 # -------------------------
 # POOL EVALUATION
 # -------------------------
