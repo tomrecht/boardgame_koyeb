@@ -518,10 +518,14 @@ def evaluate_vs_opponent(challenger, opponent_agent, num_pairs, seed_offset,
         total += 1
         if winner == 'white':
             wins += 1
+            result = 'Won by'
             margin_sum += margin
         elif winner == 'black':
             margin_sum -= margin
-        print(f"    Game {i*2+1}: winner={winner} margin={margin} turns={turns}")
+            result = 'Lost by'
+        else:
+            result = 'Draw'
+        print(f"    Game {i*2+1}: {result} {margin} turns={turns}")
 
         # Game 2: challenger = black
         winner, margin, turns = play_eval_game(
@@ -530,10 +534,14 @@ def evaluate_vs_opponent(challenger, opponent_agent, num_pairs, seed_offset,
         total += 1
         if winner == 'black':
             wins += 1
+            result = 'Won by'
             margin_sum += margin
         elif winner == 'white':
             margin_sum -= margin
-        print(f"    Game {i*2+2}: winner={winner} margin={-margin} turns={turns}")  # negate margin so it's from challenger
+            result = 'Lost by'
+        else:
+            result = 'Draw'
+        print(f"    Game {i*2+2}: {result} {margin} turns={turns}") 
 
     avg_margin = margin_sum / total if total > 0 else 0.0
     win_rate   = wins / total if total > 0 else 0.0
@@ -815,9 +823,13 @@ def _eval_vs_pool(challenger, frozen_pool, num_pairs, seed_offset, label=''):
         if winner == 'white':
             wins += 1
             margin_sum += margin
+            result = 'Won by'
         elif winner == 'black':
             margin_sum -= margin
-        print(f"    Game {i*2+1} vs pool: winner={winner} margin={margin} turns={turns}")
+            result = 'Lost by'
+        else:  
+            result = 'Draw'
+        print(f"    Game {i*2+1} vs pool: {result} {margin} turns={turns}")
 
         # Game 2: challenger = black
         winner, margin, turns = play_eval_game(
@@ -826,9 +838,13 @@ def _eval_vs_pool(challenger, frozen_pool, num_pairs, seed_offset, label=''):
         if winner == 'black':
             wins += 1
             margin_sum += margin
+            result = 'Won by'
         elif winner == 'white':
             margin_sum -= margin
-        print(f"    Game {i*2+2} vs pool: winner={winner} margin={-margin} turns={turns}")  # negate for challenger
+            result = 'Lost by'
+        else:  
+            result = 'Draw'
+        print(f"    Game {i*2+2} vs pool: {result} {margin} turns={turns}") 
 
     avg_margin = margin_sum / total if total > 0 else 0.0
     win_rate   = wins / total if total > 0 else 0.0
