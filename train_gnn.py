@@ -345,6 +345,7 @@ def play_game(agent, encoder, opponent_agent, current_player_is_agent,
                 if board.game_stages[p] == 'endgame':
                     endgame_entered[p] = True
 
+            print(f"DEBUG recording: turn={turns} current={current_player} training_player={current_player_is_agent}")
             record.append((encoded_stored, reward, aux_target))
 
         turns += 1
