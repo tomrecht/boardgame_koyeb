@@ -101,10 +101,10 @@ LR_DECAY                 = 0.995   # per generation
 MIN_LR                   = 1e-5
 
 FROZEN_POOL_SIZE         = 3
-PROMOTION_WINRATE        = 0.52
+PROMOTION_WINRATE        = 0.5
 PROMOTION_ROLLING_GENS   = 3       # rolling average window for promotion
-COLLAPSE_MARGIN_THRESHOLD = -2   # avg margin vs distilled below this = danger
-COLLAPSE_CONSECUTIVE     = 5       # consecutive evals below threshold = collapse
+COLLAPSE_MARGIN_THRESHOLD = -1.5   # avg margin vs distilled below this = danger
+COLLAPSE_CONSECUTIVE     = 3       # consecutive evals below threshold = collapse
 
 DISTILL_WEIGHTS          = 'gnn_weights.pt'
 SELFPLAY_WEIGHTS         = 'gnn_selfplay.pt'
@@ -511,6 +511,14 @@ def evaluate_vs_opponent(challenger, opponent_agent, num_pairs, seed_offset,
     for i in range(num_pairs):
         seed = seed_offset + i * 2
 
+        # Early exit: if mathematically impossible to reach PROMOTION_WINRATE
+        # with remaining games, stop early
+        remaining = (num_pairs - i) * 2
+        if total > 0 and (wins + remaining) / (total + remaining) < PROMOTION_WINRATE - 0.05:
+            print(f"    Early exit: max possible win rate "
+                  f"{(wins + remaining)/(total + remaining):.1%} < threshold")
+            break
+
         # Game 1: challenger = white
         winner, margin, turns = play_eval_game(
             challenger, opponent_agent, seed,
@@ -518,14 +526,14 @@ def evaluate_vs_opponent(challenger, opponent_agent, num_pairs, seed_offset,
         total += 1
         if winner == 'white':
             wins += 1
-            result = 'Won by'
             margin_sum += margin
+            result = 'Won by'
         elif winner == 'black':
             margin_sum -= margin
             result = 'Lost by'
         else:
             result = 'Draw'
-        print(f"    Game {i*2+1}: {result} {margin} turns={turns}")
+        print(f"    Game {i*2+1}: {result} {margin}, turns={turns}")
 
         # Game 2: challenger = black
         winner, margin, turns = play_eval_game(
@@ -534,21 +542,21 @@ def evaluate_vs_opponent(challenger, opponent_agent, num_pairs, seed_offset,
         total += 1
         if winner == 'black':
             wins += 1
-            result = 'Won by'
             margin_sum += margin
+            result = 'Won by'
         elif winner == 'white':
             margin_sum -= margin
             result = 'Lost by'
         else:
             result = 'Draw'
-        print(f"    Game {i*2+2}: {result} {margin} turns={turns}") 
+        print(f"    Game {i*2+2}: {result} {margin}, turns={turns}")
 
     avg_margin = margin_sum / total if total > 0 else 0.0
     win_rate   = wins / total if total > 0 else 0.0
     if label:
-        print(f"  vs {label}: {wins}/{total} ({win_rate:.1%}) | avg margin {avg_margin:+.2f}")
+        print(f"  vs {label}: {wins}/{total} ({win_rate:.1%}) | "
+              f"avg margin {avg_margin:+.2f}")
     return wins, total, avg_margin
-
 # -------------------------
 # ROLLING STATS
 # -------------------------
@@ -723,7 +731,7 @@ def main():
 
             model.eval()
 
-            eval_seed = generation * 1000
+            eval_seed = generation * 1000 + random.randint(0, 999)
             wins_h, total_h, margin_h = evaluate_vs_opponent(
                 challenger_agent, None, EVAL_PAIRS, eval_seed,
                 heuristic=True, heuristic_agent=heuristic_agent, label='heuristic')
@@ -810,48 +818,45 @@ def _eval_vs_pool(challenger, frozen_pool, num_pairs, seed_offset, label=''):
     wins   = 0
     total  = 0
     margin_sum = 0.0
-    heuristic_agent = None  # not used here
 
     for i in range(num_pairs):
         seed = seed_offset + i * 2
-        # pick a random frozen opponent
+
+        # Early exit
+        remaining = (num_pairs - i) * 2
+        if total > 0 and (wins + remaining) / (total + remaining) < PROMOTION_WINRATE - 0.05:
+            print(f"    Early exit: max possible win rate "
+                  f"{(wins + remaining)/(total + remaining):.1%} < threshold")
+            break
+
         opp_model = random.choice(frozen_pool)
         opp_agent = GNNAgent(model=opp_model)
 
-        # Game 1: challenger = white
-        winner, margin, turns = play_eval_game(
-            challenger, opp_agent, seed)
+        winner, margin, turns = play_eval_game(challenger, opp_agent, seed)
         total += 1
         if winner == 'white':
-            wins += 1
-            margin_sum += margin
-            result = 'Won by'
+            wins += 1; margin_sum += margin; result = 'Won by'
         elif winner == 'black':
-            margin_sum -= margin
-            result = 'Lost by'
-        else:  
+            margin_sum -= margin; result = 'Lost by'
+        else:
             result = 'Draw'
-        print(f"    Game {i*2+1} vs pool: {result} {margin} turns={turns}")
+        print(f"    Game {i*2+1} vs pool: {result} {margin}, turns={turns}")
 
-        # Game 2: challenger = black
-        winner, margin, turns = play_eval_game(
-            opp_agent, challenger, seed + 1)
+        winner, margin, turns = play_eval_game(opp_agent, challenger, seed + 1)
         total += 1
         if winner == 'black':
-            wins += 1
-            margin_sum += margin
-            result = 'Won by'
+            wins += 1; margin_sum += margin; result = 'Won by'
         elif winner == 'white':
-            margin_sum -= margin
-            result = 'Lost by'
-        else:  
+            margin_sum -= margin; result = 'Lost by'
+        else:
             result = 'Draw'
-        print(f"    Game {i*2+2} vs pool: {result} {margin} turns={turns}") 
+        print(f"    Game {i*2+2} vs pool: {result} {margin}, turns={turns}")
 
-    avg_margin = margin_sum / total if total > 0 else 0.0
-    win_rate   = wins / total if total > 0 else 0.0
+    avg_margin = margin_sum / total if total else 0.0
+    win_rate   = wins / total if total else 0.0
     if label:
-        print(f"  vs {label}: {wins}/{total} ({win_rate:.1%}) | avg margin {avg_margin:+.2f}")
+        print(f"  vs {label}: {wins}/{total} ({win_rate:.1%}) | "
+              f"avg margin {avg_margin:+.2f}")
     return wins, total, avg_margin
 
 # -------------------------
