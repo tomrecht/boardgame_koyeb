@@ -47,6 +47,7 @@ import time
 import torch
 import torch.nn as nn
 import torch.optim as optim
+import pickle
 
 from game import Board
 from agent_gnn import GNNAgent
@@ -55,8 +56,11 @@ from network import (BoardEncoder, BoardGNN, collate_batch,
                      save_model, load_model, DEVICE,
                      AUX_LOSS_WEIGHT, NUM_PIECES)
 
+
 CHECKPOINT_DIR  = os.environ.get('CHECKPOINT_DIR', 'checkpoints')
 SESSION         = int(time.time())
+BUFFER_FILE = os.path.join(CHECKPOINT_DIR, f'replay_buffer_s{SESSION}.pkl')
+
 os.makedirs(CHECKPOINT_DIR, exist_ok=True)
 
 # -------------------------
@@ -116,6 +120,15 @@ print(f"{'FULL' if args.full else 'POC'} mode | "
       f"buffer={BUFFER_SIZE} min_buffer={MIN_BUFFER}")
 print(f"Session {SESSION} | checkpoints -> {CHECKPOINT_DIR}/")
 
+
+BUFFER_FILE = os.path.join(CHECKPOINT_DIR, f'buffer_s{SESSION}.pkl')
+
+def save_model_and_buffer(model, path, buffer, checkpoint_dir=CHECKPOINT_DIR, session=SESSION):
+    save_model(model, path)
+    buffer_file = os.path.join(checkpoint_dir, f'buffer_s{session}.pkl')
+    with open(buffer_file, 'wb') as f:
+        pickle.dump(list(buffer), f)
+    print(f"Saved replay buffer ({len(buffer)} positions) to {buffer_file}")
 
 # -------------------------
 # SHAPED REWARDS
@@ -561,24 +574,20 @@ def main():
     encoder         = BoardEncoder()
     heuristic_agent = HeuristicAgent()
 
-    # Load starting weights
     weights_path = SELFPLAY_WEIGHTS if os.path.exists(SELFPLAY_WEIGHTS) else DISTILL_WEIGHTS
     print(f"\nLoading weights from {weights_path}...")
     model = BoardGNN().to(DEVICE)
     model.load_state_dict(torch.load(weights_path, map_location=DEVICE))
     print(f"Loaded on {DEVICE} ({sum(p.numel() for p in model.parameters()):,} params)")
 
-    # Target network — hard-copied every TARGET_UPDATE_INTERVAL training steps
     target_model = BoardGNN().to(DEVICE)
     target_model.load_state_dict(copy.deepcopy(model.state_dict()))
     target_model.eval()
 
-    # Distilled baseline — never updated
     distilled_model = load_model(DISTILL_WEIGHTS)
     distilled_model.eval()
     distilled_agent = GNNAgent(model=distilled_model)
 
-    # Frozen champion pool — starts with distilled model
     frozen_pool = [copy.deepcopy(distilled_model)]
     frozen_pool[0].eval()
 
@@ -587,19 +596,13 @@ def main():
     criterion = nn.MSELoss()
 
     challenger_agent = GNNAgent(model=model)
-
     replay_buffer = collections.deque(maxlen=BUFFER_SIZE)
 
-    # Rolling stats trackers
     rolling_vs_heuristic  = RollingStats(PROMOTION_ROLLING_GENS)
     rolling_vs_frozen     = RollingStats(PROMOTION_ROLLING_GENS)
     rolling_vs_distilled  = RollingStats(PROMOTION_ROLLING_GENS)
-
-    # Collapse detection state
-    collapse_strikes = 0
-
-    # Best frozen champion margin (for promotion gate)
-    best_frozen_margin = -999.0
+    collapse_strikes      = 0
+    best_frozen_margin    = -999.0
 
     generation   = 0
     total_steps  = 0
@@ -614,22 +617,16 @@ def main():
             gen_start = time.time()
             model.eval()
 
-            # ---- A. DATA GENERATION ----
             print(f"=== Generation {generation} ===")
             print(f"  [Data generation] {GAMES_PER_GEN} games...")
 
-            game_stats = {
-                'turns': [], 'draws': 0, 'max_turns_hit': 0,
-                'white_wins': 0, 'black_wins': 0,
-                'positions': 0, 'times': [],
-                'final_saved_my': [], 'final_saved_opp': [],
-            }
+            game_stats = {'turns': [], 'draws': 0, 'max_turns_hit': 0,
+                          'white_wins': 0, 'black_wins': 0, 'positions': 0,
+                          'times': []}
 
             for g in range(GAMES_PER_GEN):
                 t0 = time.time()
                 seed = random.randint(0, 2**31)
-
-                # 50/50 split: frozen pool vs heuristic
                 use_heuristic = (g % 2 == 0)
                 training_player = random.choice(['white', 'black'])
 
@@ -651,21 +648,14 @@ def main():
                         heuristic_agent=None)
 
                 elapsed = time.time() - t0
-
-                    # --- GAME LOGGING ---
                 num_turns = len(record)
                 print(f"    Game {g+1}/{GAMES_PER_GEN} done | "
-                    f"winner={winner} | margin={margin:+.2f} | "
-                    f"turns={num_turns} | elapsed={elapsed:.2f}s")
-                    # -------------------
+                      f"winner={winner} | margin={margin:+.2f} | "
+                      f"turns={num_turns} | elapsed={elapsed:.2f}s")
 
-                # Convert to TD samples
-                samples = compute_td_targets(
-                    record, target_model, encoder, GAMMA, N_STEPS)
+                samples = compute_td_targets(record, target_model, encoder, GAMMA, N_STEPS)
                 replay_buffer.extend(samples)
 
-                # Stats
-                num_turns = len(record)
                 game_stats['turns'].append(num_turns)
                 game_stats['times'].append(elapsed)
                 game_stats['positions'] += len(samples)
@@ -676,10 +666,8 @@ def main():
 
             _print_game_stats(game_stats, GAMES_PER_GEN)
 
-            # ---- B. TRAINING ----
             if len(replay_buffer) < MIN_BUFFER:
-                print(f"  [Training] Buffer too small "
-                      f"({len(replay_buffer)}/{MIN_BUFFER}), skipping.")
+                print(f"  [Training] Buffer too small ({len(replay_buffer)}/{MIN_BUFFER}), skipping.")
                 generation += 1
                 scheduler.step()
                 continue
@@ -691,23 +679,17 @@ def main():
 
             for step in range(TRAINING_STEPS):
                 batch = random.sample(replay_buffer, min(BATCH_SIZE, len(replay_buffer)))
-                encoded_list  = [{k: v.to(DEVICE) for k, v in item[0].items()}
-                                 for item in batch]
-                value_targets = torch.tensor([item[1] for item in batch],
-                                             dtype=torch.float32, device=DEVICE)
-                aux_targets   = torch.tensor([item[2] for item in batch],
-                                             dtype=torch.float32, device=DEVICE)
+                encoded_list  = [{k: v.to(DEVICE) for k, v in item[0].items()} for item in batch]
+                value_targets = torch.tensor([item[1] for item in batch], dtype=torch.float32, device=DEVICE)
+                aux_targets   = torch.tensor([item[2] for item in batch], dtype=torch.float32, device=DEVICE)
 
                 optimizer.zero_grad()
                 value_preds, aux_preds = model.forward_with_aux(encoded_list)
-
                 value_loss = criterion(value_preds, value_targets)
                 aux_loss   = criterion(aux_preds, aux_targets)
                 loss       = value_loss + AUX_LOSS_WEIGHT * aux_loss
-
                 loss.backward()
-                grad_norm = torch.nn.utils.clip_grad_norm_(
-                    model.parameters(), 1.0).item()
+                grad_norm = torch.nn.utils.clip_grad_norm_(model.parameters(), 1.0).item()
                 optimizer.step()
 
                 total_value_loss += value_loss.item()
@@ -715,55 +697,39 @@ def main():
                 total_grad_norm  += grad_norm
                 total_steps      += 1
 
-                # Hard-copy target network
                 if total_steps % TARGET_UPDATE_INTERVAL == 0:
-                    target_model.load_state_dict(
-                        copy.deepcopy(model.state_dict()))
+                    target_model.load_state_dict(copy.deepcopy(model.state_dict()))
                     target_model.eval()
 
             avg_value_loss = total_value_loss / TRAINING_STEPS
             avg_aux_loss   = total_aux_loss   / TRAINING_STEPS
             avg_grad_norm  = total_grad_norm  / TRAINING_STEPS
-
-            # Mean absolute output (scale monitor)
             with torch.no_grad():
-                sample_encoded = [{k: v.to(DEVICE) for k, v in
-                                   random.choice(replay_buffer)[0].items()}]
+                sample_encoded = [{k: v.to(DEVICE) for k, v in random.choice(replay_buffer)[0].items()}]
                 sample_out = model(sample_encoded).abs().item()
 
             print(f"  [Training] value_loss={avg_value_loss:.4f} "
-                  f"aux_loss={avg_aux_loss:.4f} "
-                  f"grad_norm={avg_grad_norm:.3f} "
-                  f"mean_abs_output={sample_out:.3f} "
-                  f"buffer={len(replay_buffer)} "
+                  f"aux_loss={avg_aux_loss:.4f} grad_norm={avg_grad_norm:.3f} "
+                  f"mean_abs_output={sample_out:.3f} buffer={len(replay_buffer)} "
                   f"lr={optimizer.param_groups[0]['lr']:.2e}")
 
             model.eval()
-
-            # ---- C. EVALUATION ----
             print(f"  [Evaluation]")
-            eval_seed = generation * 1000  # deterministic per generation
+            eval_seed = generation * 1000
 
-            # vs heuristic
             wins_h, total_h, margin_h = evaluate_vs_opponent(
                 challenger_agent, None, EVAL_PAIRS, eval_seed,
-                heuristic=True, heuristic_agent=heuristic_agent,
-                label='heuristic')
+                heuristic=True, heuristic_agent=heuristic_agent, label='heuristic')
             rolling_vs_heuristic.update(wins_h / total_h, margin_h)
 
-            # vs frozen pool (random opponent from pool each pair)
             wins_f, total_f, margin_f = _eval_vs_pool(
-                challenger_agent, frozen_pool, EVAL_PAIRS,
-                eval_seed + 500, label='frozen pool')
+                challenger_agent, frozen_pool, EVAL_PAIRS, eval_seed + 500, label='frozen pool')
             rolling_vs_frozen.update(wins_f / total_f, margin_f)
 
-            # vs distilled baseline
             wins_d, total_d, margin_d = evaluate_vs_opponent(
-                challenger_agent, distilled_agent, EVAL_PAIRS,
-                eval_seed + 1000, label='distilled')
+                challenger_agent, distilled_agent, EVAL_PAIRS, eval_seed + 1000, label='distilled')
             rolling_vs_distilled.update(wins_d / total_d, margin_d)
 
-            # Print rolling averages
             print(f"  [Rolling {PROMOTION_ROLLING_GENS}-gen avg] "
                   f"vs_heuristic={rolling_vs_heuristic.avg_win_rate():.1%} "
                   f"margin={rolling_vs_heuristic.avg_margin():+.2f} | "
@@ -772,15 +738,11 @@ def main():
                   f"vs_distilled={rolling_vs_distilled.avg_win_rate():.1%} "
                   f"margin={rolling_vs_distilled.avg_margin():+.2f}")
 
-            # ---- D. PROMOTION ----
             promoted = False
             if rolling_vs_frozen.full():
-                avg_wr     = rolling_vs_frozen.avg_win_rate()
-                avg_margin = rolling_vs_frozen.avg_margin()
+                avg_wr, avg_margin = rolling_vs_frozen.avg_win_rate(), rolling_vs_frozen.avg_margin()
                 if avg_wr >= PROMOTION_WINRATE and avg_margin > best_frozen_margin:
-                    print(f"  ⭐ PROMOTED! "
-                          f"rolling win_rate={avg_wr:.1%} "
-                          f"margin={avg_margin:+.2f} > best={best_frozen_margin:+.2f}")
+                    print(f"  ⭐ PROMOTED! rolling win_rate={avg_wr:.1%} margin={avg_margin:+.2f} > best={best_frozen_margin:+.2f}")
                     best_frozen_margin = avg_margin
                     new_champion = BoardGNN().to(DEVICE)
                     new_champion.load_state_dict(copy.deepcopy(model.state_dict()))
@@ -788,28 +750,21 @@ def main():
                     frozen_pool.append(new_champion)
                     if len(frozen_pool) > FROZEN_POOL_SIZE:
                         frozen_pool.pop(0)
-                    save_model(model, SELFPLAY_WEIGHTS)
+                    save_model_and_buffer(model, SELFPLAY_WEIGHTS, replay_buffer)
                     promoted = True
                 else:
-                    print(f"  ✗ No promotion: "
-                          f"win_rate={avg_wr:.1%} margin={avg_margin:+.2f} "
-                          f"(need >{PROMOTION_WINRATE:.0%} and "
-                          f"margin>{best_frozen_margin:+.2f})")
+                    print(f"  ✗ No promotion: win_rate={avg_wr:.1%} margin={avg_margin:+.2f} "
+                          f"(need >{PROMOTION_WINRATE:.0%} and margin>{best_frozen_margin:+.2f})")
 
-            # ---- E. COLLAPSE DETECTION ----
             if rolling_vs_distilled.full():
                 avg_margin_d = rolling_vs_distilled.avg_margin()
                 if avg_margin_d < COLLAPSE_MARGIN_THRESHOLD:
                     collapse_strikes += 1
-                    print(f"  ⚠️  Collapse warning {collapse_strikes}/"
-                          f"{COLLAPSE_CONSECUTIVE}: "
-                          f"avg margin vs distilled = {avg_margin_d:+.2f}")
+                    print(f"  ⚠️  Collapse warning {collapse_strikes}/{COLLAPSE_CONSECUTIVE}: avg margin vs distilled = {avg_margin_d:+.2f}")
                     if collapse_strikes >= COLLAPSE_CONSECUTIVE:
                         print(f"  🔴 COLLAPSE DETECTED — reloading distilled weights")
-                        model.load_state_dict(
-                            torch.load(DISTILL_WEIGHTS, map_location=DEVICE))
-                        target_model.load_state_dict(
-                            copy.deepcopy(model.state_dict()))
+                        model.load_state_dict(torch.load(DISTILL_WEIGHTS, map_location=DEVICE))
+                        target_model.load_state_dict(copy.deepcopy(model.state_dict()))
                         frozen_pool.clear()
                         frozen_pool.append(copy.deepcopy(distilled_model))
                         replay_buffer.clear()
@@ -821,26 +776,12 @@ def main():
                 else:
                     collapse_strikes = 0
 
-            # ---- F. CHECKPOINT ----
             if generation % CHECKPOINT_INTERVAL == 0:
-                ckpt_path = os.path.join(
-                    CHECKPOINT_DIR, f'gnn_s{SESSION}_g{generation}.pt')
-                save_model(model, ckpt_path)
+                ckpt_path = os.path.join(CHECKPOINT_DIR, f'gnn_s{SESSION}_g{generation}.pt')
+                save_model_and_buffer(model, ckpt_path, replay_buffer)
 
-            gen_time   = time.time() - gen_start
-            total_time = time.time() - start_time
-            print(f"  Gen {generation} done in {gen_time:.0f}s | "
-                  f"Total {total_time/3600:.2f}h | "
-                  f"Steps {total_steps}\n")
-
-            scheduler.step()
             generation += 1
-
-    except KeyboardInterrupt:
-        print("\nInterrupted — saving current weights...")
-        save_model(model, SELFPLAY_WEIGHTS)
-        print("Done.")
-
+            scheduler.step()
 
 # -------------------------
 # POOL EVALUATION
