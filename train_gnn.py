@@ -80,7 +80,7 @@ if args.full:
     TRAINING_STEPS       = 100
     LR                   = 3e-4
     CHECKPOINT_INTERVAL  = 5
-    MAX_TURNS            = 200
+    MAX_TURNS            = 300
 else:
     GAMES_PER_GEN        = 6
     EVAL_PAIRS           = 4
@@ -783,6 +783,8 @@ def main():
                         rolling_vs_distilled  = RollingStats(PROMOTION_ROLLING_GENS)
                         collapse_strikes      = 0
                         best_frozen_margin    = -999.0
+                else:
+                    collapse_strikes = 0  # reset on recovery
 
             if generation % CHECKPOINT_INTERVAL == 0:
                 ckpt_path = os.path.join(CHECKPOINT_DIR, f'gnn_s{SESSION}_g{generation}.pt')
