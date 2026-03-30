@@ -78,7 +78,7 @@ if args.full:
     MIN_BUFFER           = 1_000
     BATCH_SIZE           = 256
     TRAINING_STEPS       = 100
-    LR                   = 3e-4
+    LR                   = 1e-5
     CHECKPOINT_INTERVAL  = 5
     MAX_TURNS            = 300
 else:
@@ -345,7 +345,7 @@ def play_game(agent, encoder, opponent_agent, current_player_is_agent,
                 if board.game_stages[p] == 'endgame':
                     endgame_entered[p] = True
 
-            print(f"DEBUG recording: turn={turns} current={current_player} training_player={current_player_is_agent}")
+         #   print(f"DEBUG recording: turn={turns} current={current_player} training_player={current_player_is_agent}")
             record.append((encoded_stored, reward, aux_target))
 
         turns += 1
@@ -436,7 +436,7 @@ def compute_td_targets(record, target_model, encoder, gamma, n_steps):
             target = discounted_reward
 
         # Clip to reasonable range
-        target = max(-2.0, min(2.0, target))
+        target = max(-0.5, min(0.5, target))
 
         samples.append((encoded, target, aux_target))
 
@@ -670,6 +670,10 @@ def main():
                 elapsed = time.time() - t0
 
                 samples = compute_td_targets(record, target_model, encoder, GAMMA, N_STEPS)
+                if samples:
+                    tvals = [s[1] for s in samples]
+                    print(f"    TD targets: mean={sum(tvals)/len(tvals):.3f} min={min(tvals):.3f} max={max(tvals):.3f}")
+
                 replay_buffer.extend(samples)
 
                 num_turns = len(record)
@@ -706,7 +710,7 @@ def main():
                 aux_loss   = criterion(aux_preds, aux_targets)
                 loss       = value_loss + AUX_LOSS_WEIGHT * aux_loss
                 loss.backward()
-                grad_norm = torch.nn.utils.clip_grad_norm_(model.parameters(), 1.0).item()
+                grad_norm = torch.nn.utils.clip_grad_norm_(model.parameters(), 0.5).item()
                 optimizer.step()
 
                 total_value_loss += value_loss.item()
