@@ -93,10 +93,10 @@ else:
     MAX_TURNS            = 100
 
 # Shared
-N_STEPS                  = 5       # TD n-step
+N_STEPS                  = 1       # TD n-step
 GAMMA                    = 0.99
 EXPLORATION_RATE         = 0.10
-TARGET_UPDATE_INTERVAL   = 50      # hard-copy target network every N training steps
+TARGET_UPDATE_INTERVAL   = 200      # hard-copy target network every N training steps
 LR_DECAY                 = 0.995   # per generation
 MIN_LR                   = 1e-5
 
@@ -110,10 +110,10 @@ DISTILL_WEIGHTS          = 'gnn_weights.pt'
 SELFPLAY_WEIGHTS         = 'gnn_selfplay.pt'
 
 # Shaped reward constants (in GNN output scale ~[-1, 1])
-R_SAVE_BASE              = 0.05
-R_SAVE_NUMBER_SCALE      = 0.005   # additional per piece number (max 0.03 for piece 6)
-R_CAPTURE                = 0.02
-R_ENDGAME                = 0.10
+R_SAVE_BASE         = 0.02
+R_SAVE_NUMBER_SCALE = 0.002
+R_CAPTURE           = 0.01
+R_ENDGAME           = 0.05
 
 print(f"{'FULL' if args.full else 'POC'} mode | "
       f"games={GAMES_PER_GEN} eval_pairs={EVAL_PAIRS} "
@@ -690,7 +690,6 @@ def main():
             if len(replay_buffer) < MIN_BUFFER:
                 print(f"  [Training] Buffer too small ({len(replay_buffer)}/{MIN_BUFFER}), skipping.")
                 generation += 1
-                scheduler.step()
                 continue
 
             model.train()
