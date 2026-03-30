@@ -698,7 +698,8 @@ def main():
             total_aux_loss   = 0.0
             total_grad_norm  = 0.0
 
-            for step in range(TRAINING_STEPS):
+            actual_steps = min(TRAINING_STEPS, max(1, len(replay_buffer) // BATCH_SIZE))
+            for step in range(actual_steps):
                 batch = random.sample(replay_buffer, min(BATCH_SIZE, len(replay_buffer)))
                 encoded_list  = [{k: v.to(DEVICE) for k, v in item[0].items()} for item in batch]
                 value_targets = torch.tensor([item[1] for item in batch], dtype=torch.float32, device=DEVICE)
@@ -722,15 +723,15 @@ def main():
                     target_model.load_state_dict(copy.deepcopy(model.state_dict()))
                     target_model.eval()
 
-            avg_value_loss = total_value_loss / TRAINING_STEPS
-            avg_aux_loss   = total_aux_loss   / TRAINING_STEPS
-            avg_grad_norm  = total_grad_norm  / TRAINING_STEPS
+            avg_value_loss = total_value_loss / actual_steps
+            avg_aux_loss   = total_aux_loss   / actual_steps
+            avg_grad_norm  = total_grad_norm  / actual_steps
 
             with torch.no_grad():
                 sample_encoded = [{k: v.to(DEVICE) for k, v in random.choice(replay_buffer)[0].items()}]
                 sample_out = model(sample_encoded).abs().item()
 
-            print(f"  [Training] value_loss={avg_value_loss:.4f} aux_loss={avg_aux_loss:.4f} "
+            print(f"  [Training] steps={actual_steps} value_loss={avg_value_loss:.4f} aux_loss={avg_aux_loss:.4f} "
                   f"grad_norm={avg_grad_norm:.3f} mean_abs_output={sample_out:.3f} "
                   f"buffer={len(replay_buffer)} lr={optimizer.param_groups[0]['lr']:.2e}")
 
