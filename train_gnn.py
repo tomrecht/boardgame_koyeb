@@ -78,7 +78,7 @@ if args.full:
     MIN_BUFFER           = 1_000
     BATCH_SIZE           = 256
     TRAINING_STEPS       = 100
-    LR                   = 1e-5
+    LR                   = 1e-4
     CHECKPOINT_INTERVAL  = 5
     MAX_TURNS            = 300
 else:
@@ -436,7 +436,7 @@ def compute_td_targets(record, target_model, encoder, gamma, n_steps):
             target = discounted_reward
 
         # Clip to reasonable range
-        target = max(-0.5, min(0.5, target))
+        target = max(-1, min(1, target))
 
         samples.append((encoded, target, aux_target))
 
