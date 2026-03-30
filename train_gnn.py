@@ -698,7 +698,8 @@ def main():
             total_aux_loss   = 0.0
             total_grad_norm  = 0.0
 
-            actual_steps = min(TRAINING_STEPS, max(1, len(replay_buffer) // BATCH_SIZE))
+            REUSE_FACTOR = 4
+            actual_steps = min(TRAINING_STEPS, max(1, REUSE_FACTOR * len(replay_buffer) // BATCH_SIZE))
             for step in range(actual_steps):
                 batch = random.sample(replay_buffer, min(BATCH_SIZE, len(replay_buffer)))
                 encoded_list  = [{k: v.to(DEVICE) for k, v in item[0].items()} for item in batch]
