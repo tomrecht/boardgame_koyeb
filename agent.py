@@ -5,7 +5,7 @@ import math
 
 
 GAME_OVER_SCORE = 10000
-LOG_TO_FILE = True
+LOG_TO_FILE = False
 
 INITIAL_WEIGHTS = {
     'saved_bonuses': {'a': 18.0, 'b': 1.1}, # a = value for piece 1, b = exponent
@@ -46,8 +46,6 @@ def get_weights():
 class Agent():
     def __init__(self, board=None, weights=INITIAL_WEIGHTS, log_file='game_log.json', log_to_file=LOG_TO_FILE):
         self.board = board
-        if weights == INITIAL_WEIGHTS:
-            print("Using initial weights")
 
         raw_weights = weights if weights is not None else get_weights()
         self.weights = self._expand_weights(raw_weights)
@@ -148,7 +146,7 @@ class Agent():
         near_goal_bonus = sum(self.weights['near_goal_bonuses'].get(p.number, 0) for p in pieces_near_goal if p.number <= 6)
 
         # Off-goal and far-from-goal penalties
-        numbered_off_goal = [p for p in player_pieces if p.number <= 6 and not p.can_be_saved()]
+        numbered_off_goal = [p for p in player_pieces if p.number <= 6 and not p.can_be_saved() and not (p.rack is save_rack)]
         off_goal_penalty = -sum(self.weights['goal_bonuses'].get(p.number, 0) for p in numbered_off_goal)
         numbered_far_from_goal = [p for p in numbered_off_goal if distances[p] > 6 and p.tile and p.tile.type in ['field', 'save']]
         far_from_goal_penalty = -sum(self.weights['goal_bonuses'].get(p.number, 0) for p in numbered_far_from_goal)
@@ -186,7 +184,7 @@ class Agent():
         # dice spread — reward having pieces at varied distances so any roll is useful
         goal_distances = set(distances[p] for p in player_board_pieces 
                             if 1 <= distances[p] <= 6
-                            and not p.can_be_saved())
+                            and not p.can_be_saved() and not (p.rack is save_rack))
         dice_spread_bonus = len(goal_distances) * self.weights.get('dice_spread', 3)
     
         score_components = {
@@ -220,6 +218,7 @@ class Agent():
 
 
     def select_move_pair(self, moves, board, player):
+
         move_scores = dict()
 
         # Ensure moves is a set and does not contain integers
