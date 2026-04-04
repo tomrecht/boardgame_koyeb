@@ -18,7 +18,7 @@ app = Flask(__name__, static_folder='', static_url_path='')
 CORS(app)
 
 current_weights = get_weights()
-agent = Agent(weights=current_weights, log_to_file=False)
+agent = Agent(weights=current_weights, log_to_file=True)
 
 @app.route('/')
 def index():

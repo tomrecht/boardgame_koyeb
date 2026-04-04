@@ -121,6 +121,19 @@ class Agent():
 
         # Goal pieces and bonus
         goal_pieces = [p for p in player_pieces if p.can_be_saved()]
+
+        if board.log_callback:
+            for p in goal_pieces:
+                if p.number <= 6 and p.tile and p.tile.number != p.number:
+                    self.log_callback({
+                        'event': 'wrong_goal_saveable',
+                        'piece': {'player': p.player, 'number': p.number},
+                        'tile': {'type': p.tile.type, 'number': p.tile.number, 'ring': p.tile.ring, 'pos': p.tile.pos},
+                        'can_be_saved': p.can_be_saved(),
+                        'dice': [{'number': d.number, 'used': d.used} for d in self.board.dice],
+                        'game_stage': self.board.game_stages[p.player],
+                    })
+
         goal_bonus = sum(self.weights['goal_bonuses'].get(p.number, 0) for p in goal_pieces if p.number <= 6)
 
         # High goal penalty
