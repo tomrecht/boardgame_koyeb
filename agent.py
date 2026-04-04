@@ -221,6 +221,9 @@ class Agent():
         moves = set(moves)
         moves.discard((0, 0, 0))
 
+        save_die_log = []
+        board.log_callback = lambda entry: save_die_log.append(entry)
+
         for move in moves:
             if not isinstance(move, tuple) or len(move) != 3:
                 raise ValueError('Invalid move format: each move should be a tuple of length 3.')
@@ -327,7 +330,8 @@ class Agent():
             with open(self.log_file, 'w') as file:
                 file.write(json.dumps(self.log, indent=4))
 
-
+        board.log_callback = None
+        self.log = save_die_log + self.log
         return best_move_pair
 
 

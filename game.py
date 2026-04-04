@@ -81,7 +81,7 @@ class Board:
         self._distance_cache = {}
         self._reachable_cache = {}
         self._blocked_key_cache = {}  # keyed by player string
-
+        self.log_callback = None
         self.endgame_reward_applied = {'white': False, 'black': False}
         self.offgoals = {'white': 0, 'black': 0}
 
@@ -276,22 +276,43 @@ class Board:
         return True
 
     def get_saving_die(self, piece):
-    
+
         if self.game_stages[piece.player] == 'opening':
-            return False  # can't save pieces in the opening
+            return False
 
         valid_dice = []
         current_tile = piece.tile
         if current_tile and current_tile.type == 'save' and (piece.number > 6 or piece.number == current_tile.number):
             if self.game_stages[piece.player] == 'endgame':
                 if piece.number > 6:
+                    highest_occupied_goal_number = max(
+                        (tile.number for tile in self.tiles
+                        if tile.type == 'save' and len(tile.pieces) > 0
+                        and any(p.player == piece.player for p in tile.pieces)),
+                        default=-1
+                    )
+                    valid_dice = [die for die in self.dice
+                                if (not die.used) and
+                                (die.number == current_tile.number or
+                                (die.number > current_tile.number and current_tile.number == highest_occupied_goal_number))]
 
-                    #these 2 lines are meant to fix the bug where agent tries to save with a too low roll; if it messes up anything, delete  and uncomment the following line
-                    highest_occupied_goal_number = max((tile.number for tile in self.tiles if tile.type == 'save' and len(tile.pieces) > 0 and any(p.player == piece.player for p in tile.pieces)), default=-1)
-                    valid_dice = [die for die in self.dice if (not die.used) and (die.number == current_tile.number or (die.number > current_tile.number and current_tile.number == highest_occupied_goal_number))]
-                
-                    #highest_occupied_goal_number = max((tile.number for tile in self.tiles if tile.type == 'save' and len(tile.pieces) > 0 and any(p.player == piece.player for p in tile.pieces)), default=0)
-                    #valid_dice = [die for die in self.dice if (not die.used) and (die.number == current_tile.number or (die.number > current_tile.number and current_tile.number >= highest_occupied_goal_number))]
+                    if valid_dice and self.log_callback:
+                        self.log_callback({
+                            'event': 'saving_die_granted',
+                            'piece': {'player': piece.player, 'number': piece.number, 'can_be_saved': piece.can_be_saved(), 'rack': str(piece.rack)},
+                            'current_tile': {'type': current_tile.type, 'number': current_tile.number, 'ring': current_tile.ring, 'pos': current_tile.pos},
+                            'highest_occupied_goal_number': highest_occupied_goal_number,
+                            'save_tiles': [
+                                {
+                                    'number': t.number, 'ring': t.ring, 'pos': t.pos,
+                                    'pieces': [{'player': p.player, 'number': p.number, 'can_be_saved': p.can_be_saved()} for p in t.pieces]
+                                }
+                                for t in self.tiles if t.type == 'save'
+                            ],
+                            'valid_dice': [die.number for die in valid_dice],
+                            'dice': [{'number': d.number, 'used': d.used} for d in self.dice],
+                            'game_stage': self.game_stages[piece.player],
+                        })
                 else:
                     valid_dice = [die for die in self.dice if (not die.used) and die.number == current_tile.number]
             else:
