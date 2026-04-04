@@ -350,7 +350,26 @@ class Board:
         self._reachable_cache[cache_key] = result
         return result
 
-    def get_reachable_tiles_by_dice(self, piece):   
+    def get_reachable_tiles_by_dice(self, piece):  
+
+        # logging block for shortest move bug
+        if any(d.used for d in self.dice) and not all(d.used for d in self.dice):
+            if self.log_callback:
+                if not self.firstMove:
+                    self.log_callback({
+                        'event': 'firstMove_missing_on_second_move',
+                        'piece': {'player': piece.player, 'number': piece.number},
+                        'dice': [{'number': d.number, 'used': d.used} for d in self.dice],
+                    })
+                elif self.firstMove['piece'] != piece:
+                    self.log_callback({
+                        'event': 'firstMove_different_piece',
+                        'piece': {'player': piece.player, 'number': piece.number},
+                        'firstMove_piece': {'player': self.firstMove['piece'].player, 'number': self.firstMove['piece'].number},
+                        'firstMove_origin': {'ring': self.firstMove['origin_tile'].ring, 'pos': self.firstMove['origin_tile'].pos} if self.firstMove['origin_tile'] else None,
+                        'dice': [{'number': d.number, 'used': d.used} for d in self.dice],
+                    })
+
         reachable_tiles = {self.dice[0].number: [], self.dice[1].number: []}
         
         if piece.rack and piece.rack in [self.white_unentered, self.black_unentered]:   # if an unentered piece, start from the home tile
@@ -460,6 +479,7 @@ class Board:
         move_to_save['destination'] = destination
         move_to_save['captured_piece'] = captured_piece
         move_to_save['roll'] = roll
+        move_to_save['firstMove_before'] = self.firstMove
 
         self.moves.append(move_to_save)
 
@@ -513,9 +533,10 @@ class Board:
 
         # if exactly one die is now unused, this was the first move, so clear self.firstMove
         # changed 1 to 2 to see if this fixes the bug where agent moving out the first piece ignored the rule -- evaluate
-        if sum(not die.used for die in self.dice) == 2:
-            self.firstMove = None
+        #if sum(not die.used for die in self.dice) == 2:
+         #   self.firstMove = None
         
+        self.firstMove = last_move['firstMove_before']
 
         self.current_player = piece.player
       
@@ -593,7 +614,7 @@ class Board:
             
             # Set the first move if not set already
             if not self.firstMove:
-                self.firstMove = {'piece': piece, 'origin_tile': piece.tile}
+                self.firstMove = {'piece': piece, 'origin_tile': origin_tile}
 
             # Check if we are capturing an opponent piece (only on field tiles)
             if new_tile.type == 'field' and new_tile.pieces and new_tile.pieces[0].player != piece.player:
@@ -984,8 +1005,7 @@ if __name__ == '__main__':
             except ValueError:
                 print("Invalid input. Please enter a number.")
 
-# bug: agent sometimes passes when it shouldn't, ditto offgoals
-# and passes when it has a captured piece so passing is illegal?
+
 # bug ignoring shortest move rule
 # rare bug moving completely blocked piece! agent moved its 6 from tile 3-11, where it was completely blocked and had no legal moves, to tile 2-8 on a roll of 2, when that tile is 4 tiles away so illegal twice!
 # in two-player game, a player can offer to end the game with a proposed score
