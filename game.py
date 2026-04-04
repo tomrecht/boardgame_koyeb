@@ -29,7 +29,7 @@ class Piece:
         return f'{self.player}({self.number})'
     
     def can_be_saved(self, already_saved_counts_as_saveable=True):
-        if self.rack and self.rack == self.board.white_saved or self.rack == self.board.black_saved:
+        if self.rack and (self.rack is self.board.white_saved or self.rack is self.board.black_saved):
             return True if already_saved_counts_as_saveable else False
         
         tile = self.tile
