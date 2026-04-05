@@ -278,7 +278,7 @@ class Board:
     def get_saving_die(self, piece):
 
         if self.game_stages[piece.player] == 'opening':
-            return False
+            return []
 
         valid_dice = []
         current_tile = piece.tile
@@ -469,7 +469,7 @@ class Board:
   
         return tuples_list
     
-    def save_move(self, move, origin_tile = None, origin_rack = None, captured_piece = None):
+    def save_move(self, move, origin_tile=None, origin_rack=None, captured_piece=None, firstMove_before=None):
         piece_id, destination, roll = move
 
         move_to_save = dict()
@@ -479,7 +479,7 @@ class Board:
         move_to_save['destination'] = destination
         move_to_save['captured_piece'] = captured_piece
         move_to_save['roll'] = roll
-        move_to_save['firstMove_before'] = self.firstMove
+        move_to_save['firstMove_before'] = firstMove_before
 
         self.moves.append(move_to_save)
 
@@ -559,6 +559,8 @@ class Board:
                 self.current_player = 'white' if self.current_player == 'black' else 'black'
             return
 
+        firstMove_before = self.firstMove
+
         self._blocked_key_cache = {}
         piece = self.piece_lookup.get(piece_id)
         if not piece:
@@ -577,7 +579,7 @@ class Board:
                 p.tile = None
                 p.rack = saved_rack
                 saved_rack.append(p)
-                self.save_move(((p.player, p.number), 0, 0), origin_tile, None, None)
+                self.save_move(((p.player, p.number), 0, 0), origin_tile, None, None, firstMove_before)
             
             for die in self.dice:
                 die.used = True
@@ -587,6 +589,14 @@ class Board:
 
         # Handle saving a piece
         elif destination == 'save':
+            # Diagnostic: only flag illegal saves on real game moves, not search evaluations
+            if switch_turn:
+                valid_save_rolls = self.get_saving_die(piece)
+                if roll not in valid_save_rolls:
+                    print(f"[ILLEGAL SAVE] move={move}, piece={piece}, tile={piece.tile}, roll={roll}, "
+                          f"valid_rolls={valid_save_rolls}, stage={self.game_stages[piece.player]}, "
+                          f"dice={[(d.number, d.used) for d in self.dice]}, "
+                          f"can_be_saved={piece.can_be_saved()}")
             saved_rack = self.white_saved if piece.player == 'white' else self.black_saved
             saved_rack.append(piece)
             if piece.tile:
@@ -637,7 +647,7 @@ class Board:
 
 #        self.game_stages[self.current_player] = self.get_game_stage(self.current_player)
 
-        self.save_move(move, origin_tile, origin_rack, captured_piece)
+        self.save_move(move, origin_tile, origin_rack, captured_piece, firstMove_before)
 
         # Switch to the next player if both dice are used
         if switch_turn and all(die.used for die in self.dice):

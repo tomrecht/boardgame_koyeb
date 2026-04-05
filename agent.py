@@ -5,7 +5,7 @@ import math
 
 
 GAME_OVER_SCORE = 10000
-LOG_TO_FILE = False
+LOG_TO_FILE = True
 
 INITIAL_WEIGHTS = {
     'saved_bonuses': {'a': 18.0, 'b': 1.1}, # a = value for piece 1, b = exponent
@@ -221,6 +221,9 @@ class Agent():
 
         move_scores = dict()
 
+        if not board.dice[0].used and not board.dice[1].used:
+            board.firstMove = None
+
         # Ensure moves is a set and does not contain integers
         if not isinstance(moves, (list, set)) or not all(isinstance(m, tuple) for m in moves):
             raise ValueError('Invalid moves format: expected a list or set of tuples.')
@@ -277,6 +280,44 @@ class Agent():
         best_move_pair = max(move_scores, key=lambda k: move_scores[k][0])
         best_move_score, best_move_components = move_scores[best_move_pair]
 
+        # Diagnostic: fire only when same piece is moved twice
+        m1, m2 = best_move_pair
+        if (m1 != (0,0,0) and m2 != (0,0,0) and m1[0] == m2[0]):
+            piece_id = m1[0]
+            piece_obj = board.piece_lookup.get(piece_id)
+            diag = {
+                'event': 'same_piece_moved_twice',
+                'piece': piece_id,
+                'dice': [{'number': d.number, 'used': d.used} for d in board.dice],
+                'move1': str(m1),
+                'move2': str(m2),
+            }
+            # Replay move1 and capture firstMove + reachable_by_sum at second-move generation
+            board.apply_move(m1, switch_turn=False)
+            diag['firstMove_after_m1'] = (
+                {'piece': (board.firstMove['piece'].player, board.firstMove['piece'].number),
+                 'origin': (board.firstMove['origin_tile'].ring, board.firstMove['origin_tile'].pos) if board.firstMove['origin_tile'] else None}
+                if board.firstMove else None
+            )
+            diag['dice_after_m1'] = [{'number': d.number, 'used': d.used} for d in board.dice]
+            if board.firstMove and piece_obj:
+                origin_tile = board.firstMove['origin_tile'] or board.home_tile
+                sum_steps = board.dice[0].number + board.dice[1].number
+                reachable_by_sum = board.get_reachable_tiles(origin_tile, sum_steps)
+                diag['origin_tile'] = (origin_tile.ring, origin_tile.pos)
+                diag['sum_steps'] = sum_steps
+                diag['reachable_by_sum'] = [(t.ring, t.pos) for t in reachable_by_sum]
+                diag['m2_destination'] = m2[1]
+                if isinstance(m2[1], tuple):
+                    dest_tile = board.get_tile(*m2[1])
+                    diag['m2_dest_in_reachable_by_sum'] = dest_tile in reachable_by_sum
+                    # Also compute direct reachable from origin at each die number to find true shortest
+                    for die in board.dice:
+                        direct = board.get_reachable_tiles(origin_tile, die.number)
+                        diag[f'direct_from_origin_at_{die.number}'] = [(t.ring, t.pos) for t in direct]
+            board.undo_last_move()
+            print(f"[SAME_PIECE_TWICE] {diag}")
+
         # debug: check if we chose pass as second move when better options existed
 #        if best_move_pair[1] == (0, 0, 0):
  #           non_pass_pairs = {k: v for k, v in move_scores.items() if k[1] != (0, 0, 0)}
@@ -316,8 +357,8 @@ class Agent():
             board.undo_last_move()
             restored = snapshot(board)
             undo_mismatch = restored != before
-            if undo_mismatch:
-                print(f"[UNDO MISMATCH] move={move} before={before} restored={restored}")
+         #   if undo_mismatch:
+          #      print(f"[UNDO MISMATCH] move={move} before={before} restored={restored}")
             return {
                 'move': move,
                 'before': before,
