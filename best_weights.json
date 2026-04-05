@@ -1,0 +1,42 @@
+{
+  "saved_bonuses": {
+    "a": 8.43750339225759,
+    "b": 1.143114121535163
+  },
+  "goal_bonuses": {
+    "a": 29.159719823894296,
+    "b": 1.3923685804374746
+  },
+  "near_goal_bonuses": {
+    "a": 15.417099630703026,
+    "b": 1.072762243907398
+  },
+  "captured_bonuses": {
+    "a": 2.2369810049974492,
+    "b": 2.1256389612825557
+  },
+  "loose_piece_penalties": {
+    "a": -15.87476307213923,
+    "b": 1.0058651843370443
+  },
+  "blocked_piece_penalties": {
+    "a": -14.560738626505556,
+    "b": 1.3266055981925817
+  },
+  "game_stage_bonuses": {
+    "midgame": 173.18434168669927,
+    "endgame": 103.27141317213767
+  },
+  "saved_piece": 41.86625441006498,
+  "goal_piece": 115.1854083428212,
+  "near_goal_piece": 3.101201053367702,
+  "nearer_goal_piece": 1.5924817155335071,
+  "captured_opponent_piece": 6.14346918631938,
+  "unentered_piece": -8.015523788453295,
+  "loose_piece": -6.482051950123289,
+  "blocked_piece": -9.328126895271396,
+  "distance_penalty": -0.03891430902056473,
+  "high_goal_penalty": -0.16606357875907754,
+  "dice_roll_utilization": -0.723372874009143,
+  "dice_spread": 2.3857382569198697
+}
