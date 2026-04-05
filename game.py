@@ -320,19 +320,15 @@ class Board:
 
         if valid_dice:
             rolls = [die.number for die in valid_dice]
-            if piece.number <= 6 and any(r != current_tile.number for r in rolls):
-                print(f"[SAVING_DIE BUG] piece={piece}, tile={current_tile}(number={current_tile.number}), "
-                      f"rolls={rolls}, stage={self.game_stages[piece.player]}, "
-                      f"dice={[(d.number, d.used) for d in self.dice]}, piece.number={piece.number}")
             return rolls
         else:
             return []
 
     def get_reachable_tiles(self, start_tile, steps):
-        cache_key = (start_tile.index, steps, self._get_blocked_key(self.current_player))
-
-        if cache_key in self._reachable_cache:
-            return self._reachable_cache[cache_key]
+        # Temporarily disable caching
+    # cache_key = (start_tile.index, steps, self._get_blocked_key(self.current_player))
+    # if cache_key in self._reachable_cache:
+    #     return self._reachable_cache[cache_key]
 
         queue = deque([(start_tile, 0)])
         visited = set([start_tile])
@@ -352,28 +348,12 @@ class Board:
                 reachable_tiles.append(current_tile)
 
         result = list(set(reachable_tiles))
-        self._reachable_cache[cache_key] = result
+   #     self._reachable_cache[cache_key] = result
         return result
 
     def get_reachable_tiles_by_dice(self, piece):  
 
-        # logging block for shortest move bug
-        if any(d.used for d in self.dice) and not all(d.used for d in self.dice):
-            if self.log_callback:
-                if not self.firstMove:
-                    self.log_callback({
-                        'event': 'firstMove_missing_on_second_move',
-                        'piece': {'player': piece.player, 'number': piece.number},
-                        'dice': [{'number': d.number, 'used': d.used} for d in self.dice],
-                    })
-                elif self.firstMove['piece'] != piece:
-                    self.log_callback({
-                        'event': 'firstMove_different_piece',
-                        'piece': {'player': piece.player, 'number': piece.number},
-                        'firstMove_piece': {'player': self.firstMove['piece'].player, 'number': self.firstMove['piece'].number},
-                        'firstMove_origin': {'ring': self.firstMove['origin_tile'].ring, 'pos': self.firstMove['origin_tile'].pos} if self.firstMove['origin_tile'] else None,
-                        'dice': [{'number': d.number, 'used': d.used} for d in self.dice],
-                    })
+        piece.reachable_tiles = None   # clear any stale data
 
         reachable_tiles = {self.dice[0].number: [], self.dice[1].number: []}
         
@@ -403,7 +383,8 @@ class Board:
             save_rolls = self.get_saving_die(piece)
             for roll in save_rolls:
                 if roll in reachable_tiles:
-                    reachable_tiles[roll].append('save')
+                    if 'save' not in reachable_tiles[roll]:  # Only add once
+                        reachable_tiles[roll].append('save')
 
         piece.reachable_tiles = reachable_tiles
 
@@ -448,8 +429,6 @@ class Board:
                         
                         if destination == 'save':
                             tuples_list.append(((piece.player, piece.number), destination, roll))
-                     #   elif mask_offgoals and piece.can_be_saved() and (piece.number <=6 or roll != 4 or destination.type != 'save'):
-                      #      continue   # don't include offgoal moves
                         else:
                             tuples_list.append(((piece.player, piece.number), (destination.ring, destination.pos), roll))
 
@@ -648,7 +627,7 @@ class Board:
 
         # Switch to the next player if both dice are used
         if switch_turn and all(die.used for die in self.dice):
-            print('switching turn')
+       #     print('switching turn')
             self.switch_turn()
 
     def get_save_rack(self, player):
@@ -733,9 +712,16 @@ class Board:
             save_rack = self.get_save_rack(player)
             unsaved = [p for p in self.pieces if p.player == player and p.rack != save_rack]
             if len(unsaved) == 1 and unsaved[0].number <= 6:
-                old_key = (unsaved[0].player, unsaved[0].number)
-                unsaved[0].number = NUM_PIECES + 1
-                new_key = (unsaved[0].player, unsaved[0].number)
+                piece = unsaved[0]
+                # Remove old key from piece_lookup
+                old_key = (piece.player, piece.number)
+                if old_key in self.piece_lookup:
+                    del self.piece_lookup[old_key]
+                # Update piece number
+                piece.number = NUM_PIECES + 1  # 13
+                # Add new key to piece_lookup
+                new_key = (piece.player, piece.number)
+                self.piece_lookup[new_key] = piece
 
 
     def get_all_possible_moves(self):

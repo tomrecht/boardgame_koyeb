@@ -220,19 +220,6 @@ class Agent():
     def select_move_pair(self, moves, board, player):
 
         move_scores = dict()
-
-        # Flag any illegal saves in the incoming moves list
-        for m in moves:
-            if m != (0,0,0) and m[1] == 'save':
-                p = board.piece_lookup.get(m[0])
-                if p and m[2] not in board.get_saving_die(p):
-                    print(f"[ILLEGAL SAVE IN MOVES] {m}, piece={p}, tile={p.tile}, "
-                          f"valid={board.get_saving_die(p)}, stage={board.game_stages[p.player]}, "
-                          f"dice={[(d.number, d.used) for d in board.dice]}")
-
-        # If both dice are unused this is a fresh turn; firstMove must be None.
-        # A stale firstMove from a prior turn (e.g. if switch_turn wasn't reached)
-        # would corrupt the shortest-move filter for every candidate pair.
         if not board.dice[0].used and not board.dice[1].used:
             board.firstMove = None
 
@@ -292,69 +279,6 @@ class Agent():
         best_move_pair = max(move_scores, key=lambda k: move_scores[k][0])
         best_move_score, best_move_components = move_scores[best_move_pair]
 
-        # Diagnostic: flag if chosen pair contains an illegal save
-        for chosen_move in best_move_pair:
-            if chosen_move != (0,0,0) and chosen_move[1] == 'save':
-                piece_obj = board.piece_lookup.get(chosen_move[0])
-                if piece_obj:
-                    valid_rolls = board.get_saving_die(piece_obj)
-                    if chosen_move[2] not in valid_rolls:
-                        print(f"[CHOSEN ILLEGAL SAVE] move={chosen_move}, piece={piece_obj}, "
-                              f"tile={piece_obj.tile}, valid_rolls={valid_rolls}, "
-                              f"stage={board.game_stages[piece_obj.player]}, "
-                              f"dice={[(d.number, d.used) for d in board.dice]}, "
-                              f"can_be_saved={piece_obj.can_be_saved()}")
-        m1, m2 = best_move_pair
-        if (m1 != (0,0,0) and m2 != (0,0,0) and m1[0] == m2[0]):
-            piece_id = m1[0]
-            piece_obj = board.piece_lookup.get(piece_id)
-            diag = {
-                'event': 'same_piece_moved_twice',
-                'piece': piece_id,
-                'dice': [{'number': d.number, 'used': d.used} for d in board.dice],
-                'move1': str(m1),
-                'move2': str(m2),
-            }
-            # Replay move1 and capture firstMove + reachable_by_sum at second-move generation
-            board.apply_move(m1, switch_turn=False)
-            diag['firstMove_after_m1'] = (
-                {'piece': (board.firstMove['piece'].player, board.firstMove['piece'].number),
-                 'origin': (board.firstMove['origin_tile'].ring, board.firstMove['origin_tile'].pos) if board.firstMove['origin_tile'] else None}
-                if board.firstMove else None
-            )
-            diag['dice_after_m1'] = [{'number': d.number, 'used': d.used} for d in board.dice]
-            if board.firstMove and piece_obj:
-                origin_tile = board.firstMove['origin_tile'] or board.home_tile
-                sum_steps = board.dice[0].number + board.dice[1].number
-                reachable_by_sum = board.get_reachable_tiles(origin_tile, sum_steps)
-                diag['origin_tile'] = (origin_tile.ring, origin_tile.pos)
-                diag['sum_steps'] = sum_steps
-                diag['reachable_by_sum'] = [(t.ring, t.pos) for t in reachable_by_sum]
-                diag['m2_destination'] = m2[1]
-                if isinstance(m2[1], tuple):
-                    dest_tile = board.get_tile(*m2[1])
-                    diag['m2_dest_in_reachable_by_sum'] = dest_tile in reachable_by_sum
-                    # Also compute direct reachable from origin at each die number to find true shortest
-                    for die in board.dice:
-                        direct = board.get_reachable_tiles(origin_tile, die.number)
-                        diag[f'direct_from_origin_at_{die.number}'] = [(t.ring, t.pos) for t in direct]
-            board.undo_last_move()
-            print(f"[SAME_PIECE_TWICE] {diag}")
-
-        # debug: check if we chose pass as second move when better options existed
-#        if best_move_pair[1] == (0, 0, 0):
- #           non_pass_pairs = {k: v for k, v in move_scores.items() if k[1] != (0, 0, 0)}
-  #          if non_pass_pairs:
-   #             best_non_pass = max(non_pass_pairs, key=lambda k: non_pass_pairs[k][0])
-    #            best_non_pass_score = non_pass_pairs[best_non_pass][0]
-     #           print(f"Chose pass as second move (score={best_move_score:.1f}) over {best_non_pass} (score={best_non_pass_score:.1f})")
-      #          print(f"First move: {best_move_pair[0]}, dice: {[(d.number, d.used) for d in board.dice]}")
-       #         print(f"Chosen components: {best_move_components}")
-        #        print(f"Best non-pass components: {non_pass_pairs[best_non_pass][1]}")
-         #   else:
-          #      print("Chose pass as second move, no non-pass pairs")
-
-
         # rank all move pairs by score
         all_moves_ranked = sorted(move_scores.items(), key=lambda x: x[1][0], reverse=True)
 
@@ -380,8 +304,8 @@ class Agent():
             board.undo_last_move()
             restored = snapshot(board)
             undo_mismatch = restored != before
-     #       if undo_mismatch:
-      #          print(f"[UNDO MISMATCH] move={move} before={before} restored={restored}")
+    #        if undo_mismatch:
+     #           print(f"[UNDO MISMATCH] move={move} before={before} restored={restored}")
             return {
                 'move': move,
                 'before': before,
