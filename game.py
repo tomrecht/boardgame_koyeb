@@ -319,7 +319,12 @@ class Board:
                 valid_dice = [die for die in self.dice if (not die.used) and die.number == current_tile.number]
 
         if valid_dice:
-            return [die.number for die in valid_dice]
+            rolls = [die.number for die in valid_dice]
+            if piece.number <= 6 and any(r != current_tile.number for r in rolls):
+                print(f"[SAVING_DIE BUG] piece={piece}, tile={current_tile}(number={current_tile.number}), "
+                      f"rolls={rolls}, stage={self.game_stages[piece.player]}, "
+                      f"dice={[(d.number, d.used) for d in self.dice]}, piece.number={piece.number}")
+            return rolls
         else:
             return []
 
@@ -589,14 +594,6 @@ class Board:
 
         # Handle saving a piece
         elif destination == 'save':
-            # Diagnostic: only flag illegal saves on real game moves, not search evaluations
-            if switch_turn:
-                valid_save_rolls = self.get_saving_die(piece)
-                if roll not in valid_save_rolls:
-                    print(f"[ILLEGAL SAVE] move={move}, piece={piece}, tile={piece.tile}, roll={roll}, "
-                          f"valid_rolls={valid_save_rolls}, stage={self.game_stages[piece.player]}, "
-                          f"dice={[(d.number, d.used) for d in self.dice]}, "
-                          f"can_be_saved={piece.can_be_saved()}")
             saved_rack = self.white_saved if piece.player == 'white' else self.black_saved
             saved_rack.append(piece)
             if piece.tile:

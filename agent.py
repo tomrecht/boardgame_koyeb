@@ -5,7 +5,7 @@ import math
 
 
 GAME_OVER_SCORE = 10000
-LOG_TO_FILE = True
+LOG_TO_FILE = False
 
 INITIAL_WEIGHTS = {
     'saved_bonuses': {'a': 18.0, 'b': 1.1}, # a = value for piece 1, b = exponent
@@ -221,6 +221,18 @@ class Agent():
 
         move_scores = dict()
 
+        # Flag any illegal saves in the incoming moves list
+        for m in moves:
+            if m != (0,0,0) and m[1] == 'save':
+                p = board.piece_lookup.get(m[0])
+                if p and m[2] not in board.get_saving_die(p):
+                    print(f"[ILLEGAL SAVE IN MOVES] {m}, piece={p}, tile={p.tile}, "
+                          f"valid={board.get_saving_die(p)}, stage={board.game_stages[p.player]}, "
+                          f"dice={[(d.number, d.used) for d in board.dice]}")
+
+        # If both dice are unused this is a fresh turn; firstMove must be None.
+        # A stale firstMove from a prior turn (e.g. if switch_turn wasn't reached)
+        # would corrupt the shortest-move filter for every candidate pair.
         if not board.dice[0].used and not board.dice[1].used:
             board.firstMove = None
 
@@ -280,7 +292,18 @@ class Agent():
         best_move_pair = max(move_scores, key=lambda k: move_scores[k][0])
         best_move_score, best_move_components = move_scores[best_move_pair]
 
-        # Diagnostic: fire only when same piece is moved twice
+        # Diagnostic: flag if chosen pair contains an illegal save
+        for chosen_move in best_move_pair:
+            if chosen_move != (0,0,0) and chosen_move[1] == 'save':
+                piece_obj = board.piece_lookup.get(chosen_move[0])
+                if piece_obj:
+                    valid_rolls = board.get_saving_die(piece_obj)
+                    if chosen_move[2] not in valid_rolls:
+                        print(f"[CHOSEN ILLEGAL SAVE] move={chosen_move}, piece={piece_obj}, "
+                              f"tile={piece_obj.tile}, valid_rolls={valid_rolls}, "
+                              f"stage={board.game_stages[piece_obj.player]}, "
+                              f"dice={[(d.number, d.used) for d in board.dice]}, "
+                              f"can_be_saved={piece_obj.can_be_saved()}")
         m1, m2 = best_move_pair
         if (m1 != (0,0,0) and m2 != (0,0,0) and m1[0] == m2[0]):
             piece_id = m1[0]
@@ -357,8 +380,8 @@ class Agent():
             board.undo_last_move()
             restored = snapshot(board)
             undo_mismatch = restored != before
-         #   if undo_mismatch:
-          #      print(f"[UNDO MISMATCH] move={move} before={before} restored={restored}")
+     #       if undo_mismatch:
+      #          print(f"[UNDO MISMATCH] move={move} before={before} restored={restored}")
             return {
                 'move': move,
                 'before': before,
