@@ -110,10 +110,10 @@ SELFPLAY_WEIGHTS = os.path.join(DRIVE_DIR, 'gnn_selfplay.pt')
 
 # Shaped reward constants — small relative to the +-1 terminal signal.
 # Purpose: dense gradient signal during the game, not primary objective.
-R_SAVE_BASE         = 0.02
-R_SAVE_NUMBER_SCALE = 0.002
-R_CAPTURE           = 0.01
-R_ENDGAME           = 0.05
+R_SAVE_BASE         = 0.0
+R_SAVE_NUMBER_SCALE = 0.0
+R_CAPTURE           = 0.0
+R_ENDGAME           = 0.0
 
 print(f"FULL mode | games={GAMES_PER_GEN} eval_pairs={EVAL_PAIRS} "
       f"buffer={BUFFER_SIZE} min_buffer={MIN_BUFFER} batch={BATCH_SIZE}")
@@ -422,7 +422,7 @@ def compute_mc_targets(record, terminal_value, gamma=GAMMA):
     for t in reversed(range(T)):
         encoded, reward, aux_target = record[t]
         G = reward + gamma * G
-        G_clipped = max(-1.0, min(1.0, G))
+        G_clipped = max(-0.99, min(0.99, G))
         samples.append((encoded, G_clipped, aux_target))
 
     samples.reverse()
@@ -684,7 +684,7 @@ def main():
 
     optimizer = optim.Adam(model.parameters(), lr=LR)
     scheduler = optim.lr_scheduler.ExponentialLR(optimizer, gamma=LR_DECAY)
-    criterion = nn.MSELoss()
+    criterion = nn.SmoothL1Loss()
 
     challenger_agent = GNNAgent(model=model)
     replay_buffer    = collections.deque(maxlen=BUFFER_SIZE)
