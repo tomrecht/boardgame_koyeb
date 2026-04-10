@@ -466,13 +466,14 @@ class BoardGNN(nn.Module):
         # Shared trunk input size: mean(tiles) + mean(pieces) + global + dice
         trunk_dim = H * 3 + global_feat_dim
 
-        # Value head (unchanged from original)
+        # Value head — Tanh bounds output to [-1, 1] matching MC targets
         self.readout = nn.Sequential(
             nn.Linear(trunk_dim, H),
             nn.ReLU(),
             nn.Linear(H, 32),
             nn.ReLU(),
             nn.Linear(32, 1),
+            nn.Tanh(),
         )
 
         # Auxiliary head — lightweight, branches off same combined vector
