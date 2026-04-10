@@ -225,9 +225,9 @@ def _finish_game(record, winner, margin, current_player_is_agent):
     elif winner is None:
         terminal_value = 0.0
     elif winner == current_player_is_agent:
-        terminal_value = 0.5
+        terminal_value = 1
     else:
-        terminal_value = -0.5
+        terminal_value = -1
     return record, winner, margin, terminal_value
 
 
@@ -416,7 +416,7 @@ def compute_mc_targets(record, terminal_value, gamma=GAMMA):
     for t in reversed(range(T)):
         encoded, reward, aux_target = record[t]
         G = reward + gamma * G
-        G_clipped = max(-0.99, min(0.99, G))
+        G_clipped = max(-0.98, min(0.98, G))
         samples.append((encoded, G_clipped, aux_target))
 
     samples.reverse()
@@ -780,7 +780,12 @@ def main():
                 value_preds, aux_preds = model.forward_with_aux(encoded_list)
                 value_loss = criterion(value_preds, value_targets)
                 aux_loss   = criterion(aux_preds, aux_targets)
-                loss       = value_loss + AUX_LOSS_WEIGHT * aux_loss
+      #          loss       = value_loss + AUX_LOSS_WEIGHT * aux_loss
+
+                raw_outputs = value_preds.detach()  # Detach so we don't penalize the optimizer graph
+                scale_penalty = ((raw_outputs.abs() - 0.80).clamp(min=0)
+                loss = (value_loss + AUX_LOSS_WEIGHT * aux_loss) + 0.1 * scale_penalty.mean()
+
                 loss.backward()
                 grad_norm = torch.nn.utils.clip_grad_norm_(model.parameters(), 0.5).item()
                 optimizer.step()
