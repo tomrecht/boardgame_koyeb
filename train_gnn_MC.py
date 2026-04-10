@@ -85,7 +85,7 @@ if not args.full:
 GAMES_PER_GEN       = 20
 EVAL_PAIRS          = 10      # paired games (2 games each) per opponent per eval
 BUFFER_SIZE         = 30_000
-MIN_BUFFER          = 1_000
+MIN_BUFFER          = 5_000
 BATCH_SIZE          = 256
 TRAINING_STEPS      = 100
 LR                  = 1e-4
@@ -220,20 +220,14 @@ def snapshot_board_state(board):
 
 
 def _finish_game(record, winner, margin, current_player_is_agent):
-    """
-    Strict +1.0 / -1.0 terminal rewards. 
-    Margin is ignored to prevent the win signal from being drowned out
-    by tiny mid-game shaped rewards.
-    """
     if current_player_is_agent is None:
         terminal_value = 0.0
     elif winner is None:
         terminal_value = 0.0
     elif winner == current_player_is_agent:
-        terminal_value = 1.0
+        terminal_value = 0.5
     else:
-        terminal_value = -1.0
-        
+        terminal_value = -0.5
     return record, winner, margin, terminal_value
 
 
@@ -501,11 +495,11 @@ def evaluate_vs_opponent(challenger, opponent_agent, num_pairs, seed_offset,
         seed = seed_offset + i * 2
 
         # Early exit if promotion is mathematically impossible
-        remaining = (num_pairs - i) * 2
-        if total > 0 and (wins + remaining) / (total + remaining) < PROMOTION_WINRATE - 0.05:
-            print(f"    Early exit: max possible win rate "
-                  f"{(wins + remaining)/(total + remaining):.1%} < threshold")
-            break
+#        remaining = (num_pairs - i) * 2
+ #       if total > 0 and (wins + remaining) / (total + remaining) < PROMOTION_WINRATE - 0.05:
+  #          print(f"    Early exit: max possible win rate "
+   #               f"{(wins + remaining)/(total + remaining):.1%} < threshold")
+    #        break
 
         # Game 1: challenger = white
         winner, margin, turns = play_eval_game(
@@ -550,11 +544,11 @@ def _eval_vs_pool(challenger, frozen_pool, num_pairs, seed_offset, label=''):
     for i in range(num_pairs):
         seed = seed_offset + i * 2
 
-        remaining = (num_pairs - i) * 2
-        if total > 0 and (wins + remaining) / (total + remaining) < PROMOTION_WINRATE - 0.05:
-            print(f"    Early exit: max possible win rate "
-                  f"{(wins + remaining)/(total + remaining):.1%} < threshold")
-            break
+#        remaining = (num_pairs - i) * 2
+ #       if total > 0 and (wins + remaining) / (total + remaining) < PROMOTION_WINRATE - 0.05:
+  #          print(f"    Early exit: max possible win rate "
+   #               f"{(wins + remaining)/(total + remaining):.1%} < threshold")
+    #        break
 
         opp_model = random.choice(frozen_pool)
         opp_agent = GNNAgent(model=opp_model)
