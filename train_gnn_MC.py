@@ -220,19 +220,20 @@ def snapshot_board_state(board):
 
 
 def _finish_game(record, winner, margin, current_player_is_agent):
+    """
+    Strict +1.0 / -1.0 terminal rewards. 
+    Margin is ignored to prevent the win signal from being drowned out
+    by tiny mid-game shaped rewards.
+    """
     if current_player_is_agent is None:
         terminal_value = 0.0
     elif winner is None:
         terminal_value = 0.0
+    elif winner == current_player_is_agent:
+        terminal_value = 1.0
     else:
-        # margin is always positive from winner's perspective
-        normalized = margin / float(NUM_PIECES)  # max = 12 → 1.0
-
-        if winner == current_player_is_agent:
-            terminal_value = normalized
-        else:
-            terminal_value = -normalized
-
+        terminal_value = -1.0
+        
     return record, winner, margin, terminal_value
 
 
