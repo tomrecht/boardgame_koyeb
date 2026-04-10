@@ -309,7 +309,7 @@ def play_game(agent, encoder, opponent_agent, current_player_is_agent,
                 chosen = opponent_agent.select_move_pair_fast(
                     moves, board, current_player)
             else:
-                chosen = heuristic_agent.select_move_pair(
+                chosen = heuristic_agent.select_move_pair_fast(
                     moves, board, current_player)
 
         # Handle double-pass (stalemate detection)
@@ -812,11 +812,6 @@ def main():
             model.eval()
             eval_seed = generation * 1000 + random.randint(0, 999)
 
-            wins_h, total_h, margin_h = evaluate_vs_opponent(
-                challenger_agent, None, EVAL_PAIRS, eval_seed,
-                heuristic=True, heuristic_agent=heuristic_agent, label='heuristic')
-            rolling_vs_heuristic.update(wins_h / total_h, margin_h)
-
             wins_f, total_f, margin_f = _eval_vs_pool(
                 challenger_agent, frozen_pool, EVAL_PAIRS, eval_seed + 500,
                 label='frozen pool')
@@ -828,8 +823,6 @@ def main():
             rolling_vs_distilled.update(wins_d / total_d, margin_d)
 
             print(f"  [Rolling {PROMOTION_ROLLING_GENS}-gen avg] "
-                  f"vs_heuristic={rolling_vs_heuristic.avg_win_rate():.1%} "
-                  f"margin={rolling_vs_heuristic.avg_margin():+.2f} | "
                   f"vs_frozen={rolling_vs_frozen.avg_win_rate():.1%} "
                   f"margin={rolling_vs_frozen.avg_margin():+.2f} | "
                   f"vs_distilled={rolling_vs_distilled.avg_win_rate():.1%} "
