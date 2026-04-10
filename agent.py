@@ -292,81 +292,81 @@ class Agent():
         1-ply move selection for fast self-play data generation.
         Evaluates all first moves, then greedily picks the best second move.
         """
-        move_scores = dict()
+        first_move_scores = {}
+
+        # Evaluate the pass move if legal
         if (0, 0, 0) in moves:
-            move_scores[((0, 0, 0), (0, 0, 0))] = self.evaluate(board, player)
+            score, _ = self.evaluate(board, player)
+            first_move_scores[(0, 0, 0)] = score
 
         moves_set = set(moves)
         moves_set.discard((0, 0, 0))
 
         for move in moves_set:
+            if not isinstance(move, tuple) or len(move) != 3:
+                continue
+                
             initial_move_count = len(board.moves)
             board.apply_move(move, switch_turn=False)
-            
+
+            # Check if second move is possible
             remaining_captured = [p for p in board.home_tile.pieces if p.player == board.current_player]
-            if not remaining_captured:
-                move_scores[(move, (0, 0, 0))] = self.evaluate(board, player)
+            can_second_move = not remaining_captured and not all(die.used for die in board.dice)
+            
+            if can_second_move:
+                next_moves = set(board.get_valid_moves()) - {(0, 0, 0)}
+            else:
+                next_moves = set()
 
-            if all(die.used for die in board.dice):
-                while len(board.moves) > initial_move_count:
-                    board.undo_last_move()
-                continue
-
-            next_moves = set(board.get_valid_moves())
-            next_moves.discard((0, 0, 0))
-
-            best_next_score = float('-inf')
-            for next_move in next_moves:
-                board.apply_move(next_move, switch_turn=False)
+            if not next_moves:
+                # No second move possible, score is just the first move
                 score, _ = self.evaluate(board, player)
-                if score > best_next_score:
-                    best_next_score = score
-                board.undo_last_move()
+                first_move_scores[move] = score
+            else:
+                # Find the best second move
+                best_second_score = float('-inf')
+                for next_move in next_moves:
+                    if not isinstance(next_move, tuple) or len(next_move) != 3:
+                        continue
+                    board.apply_move(next_move, switch_turn=False)
+                    score, _ = self.evaluate(board, player)
+                    if score > best_second_score:
+                        best_second_score = score
+                    board.undo_last_move()
+                first_move_scores[move] = best_second_score
 
-            if best_next_score != float('-inf'):
-                # We don't need to store the exact second move in the dict during search,
-                # just the score of the best first move. We will reconstruct it after.
-                move_scores[move] = best_next_score 
-
+            # Undo first move
             while len(board.moves) > initial_move_count:
                 board.undo_last_move()
 
-        if not move_scores:
+        if not first_move_scores:
             return ((0, 0, 0), (0, 0, 0))
 
         # Find the best first move
-        best_first_move = max(move_scores, key=lambda k: move_scores[k][0]) if isinstance(list(move_scores.keys())[0], tuple) and len(list(move_scores.keys())[0]) == 3 else max(move_scores, key=lambda k: move_scores[k])
-        
-        # Apply best first move and find the best second move
+        best_first_move = max(first_move_scores, key=first_move_scores.get)
+
+        # If best is pass, return pass
+        if best_first_move == (0, 0, 0):
+            return ((0, 0, 0), (0, 0, 0))
+
+        # Re-apply best first move to find the corresponding best second move
         initial = len(board.moves)
         board.apply_move(best_first_move, switch_turn=False)
-        
-        if all(die.used for die in board.dice):
-            while len(board.moves) > initial:
-                board.undo_last_move()
-            return (best_first_move, (0, 0, 0))
 
-        next_moves = set(board.get_valid_moves()) - {(0, 0, 0)}
+        remaining_captured = [p for p in board.home_tile.pieces if p.player == board.current_player]
+        can_second_move = not remaining_captured and not all(die.used for die in board.dice)
+        
+        if can_second_move:
+            next_moves = set(board.get_valid_moves()) - {(0, 0, 0)}
+        else:
+            next_moves = set()
+
         if not next_moves:
             while len(board.moves) > initial:
                 board.undo_last_move()
             return (best_first_move, (0, 0, 0))
 
-        best_second_move = None
-        best_score = float('-inf')
-        for nm in next_moves:
-            board.apply_move(nm, switch_turn=False)
-            score, _ = self.evaluate(board, player)
-            if score > best_score:
-                best_score = score
-                best_second_move = nm
-            board.undo_last_move()
-
-        while len(board.moves) > initial:
-            board.undo_last_move()
-
-        return (best_first_move, best_second_move)
-
+        # Find the actual
 
 # agent tried to save a numbered piece when it wasn't in the midgame (but was one piece away from midgame)
 # agent doesn't bring out its second captured piece but passes instead
