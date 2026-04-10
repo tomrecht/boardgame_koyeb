@@ -218,24 +218,21 @@ def snapshot_board_state(board):
 # TERMINAL VALUE
 # -------------------------
 
-def _finish_game(record, winner, margin, current_player_is_agent):
-    """
-    Determine terminal value from the training agent's perspective.
 
-    Pure self-play (current_player_is_agent is None): 0.0 — no unambiguous
-    perspective, shaped rewards carry the signal.
-    Win:  +1.0
-    Draw:  0.0
-    Loss: -1.0
-    """
+def _finish_game(record, winner, margin, current_player_is_agent):
     if current_player_is_agent is None:
         terminal_value = 0.0
     elif winner is None:
         terminal_value = 0.0
-    elif winner == current_player_is_agent:
-        terminal_value = 1.0
     else:
-        terminal_value = -1.0
+        # margin is always positive from winner's perspective
+        normalized = margin / float(NUM_PIECES)  # max = 12 → 1.0
+
+        if winner == current_player_is_agent:
+            terminal_value = normalized
+        else:
+            terminal_value = -normalized
+
     return record, winner, margin, terminal_value
 
 
