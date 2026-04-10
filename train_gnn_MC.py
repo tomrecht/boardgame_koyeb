@@ -103,8 +103,10 @@ PROMOTION_ROLLING_GENS    = 3
 COLLAPSE_MARGIN_THRESHOLD = -1.5
 COLLAPSE_CONSECUTIVE      = 3
 
-DISTILL_WEIGHTS  = 'gnn_weights.pt'
-SELFPLAY_WEIGHTS = 'gnn_selfplay.pt'
+DRIVE_DIR = os.environ.get('CHECKPOINT_DIR', '.') # Fallback to local if not run via Colab
+
+DISTILL_WEIGHTS  = os.path.join(DRIVE_DIR, 'gnn_weights.pt')
+SELFPLAY_WEIGHTS = os.path.join(DRIVE_DIR, 'gnn_selfplay.pt')
 
 # Shaped reward constants — small relative to the +-1 terminal signal.
 # Purpose: dense gradient signal during the game, not primary objective.
