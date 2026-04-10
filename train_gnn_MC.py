@@ -783,7 +783,7 @@ def main():
       #          loss       = value_loss + AUX_LOSS_WEIGHT * aux_loss
 
                 raw_outputs = value_preds.detach()  # Detach so we don't penalize the optimizer graph
-                scale_penalty = ((raw_outputs.abs() - 0.80).clamp(min=0)
+                scale_penalty = ((raw_outputs.abs() - 0.80).clamp(min=0))
                 loss = (value_loss + AUX_LOSS_WEIGHT * aux_loss) + 0.1 * scale_penalty.mean()
 
                 loss.backward()
