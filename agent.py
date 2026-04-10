@@ -294,11 +294,12 @@ class Agent():
         """
         first_move_scores = {}
 
-        # Evaluate the pass move if legal
+        # 1. Evaluate passing
         if (0, 0, 0) in moves:
             score, _ = self.evaluate(board, player)
             first_move_scores[(0, 0, 0)] = score
 
+        # 2. Evaluate all legal first moves
         moves_set = set(moves)
         moves_set.discard((0, 0, 0))
 
@@ -309,21 +310,15 @@ class Agent():
             initial_move_count = len(board.moves)
             board.apply_move(move, switch_turn=False)
 
-            # Check if second move is possible
             remaining_captured = [p for p in board.home_tile.pieces if p.player == board.current_player]
             can_second_move = not remaining_captured and not all(die.used for die in board.dice)
             
-            if can_second_move:
-                next_moves = set(board.get_valid_moves()) - {(0, 0, 0)}
-            else:
-                next_moves = set()
+            next_moves = set(board.get_valid_moves()) - {(0, 0, 0)} if can_second_move else set()
 
             if not next_moves:
-                # No second move possible, score is just the first move
                 score, _ = self.evaluate(board, player)
                 first_move_scores[move] = score
             else:
-                # Find the best second move
                 best_second_score = float('-inf')
                 for next_move in next_moves:
                     if not isinstance(next_move, tuple) or len(next_move) != 3:
@@ -335,39 +330,50 @@ class Agent():
                     board.undo_last_move()
                 first_move_scores[move] = best_second_score
 
-            # Undo first move
             while len(board.moves) > initial_move_count:
                 board.undo_last_move()
 
         if not first_move_scores:
             return ((0, 0, 0), (0, 0, 0))
 
-        # Find the best first move
+        # 3. Pick the best first move
         best_first_move = max(first_move_scores, key=first_move_scores.get)
 
-        # If best is pass, return pass
         if best_first_move == (0, 0, 0):
             return ((0, 0, 0), (0, 0, 0))
 
-        # Re-apply best first move to find the corresponding best second move
+        # 4. Re-apply best first move to find the actual second move
         initial = len(board.moves)
         board.apply_move(best_first_move, switch_turn=False)
 
         remaining_captured = [p for p in board.home_tile.pieces if p.player == board.current_player]
         can_second_move = not remaining_captured and not all(die.used for die in board.dice)
         
-        if can_second_move:
-            next_moves = set(board.get_valid_moves()) - {(0, 0, 0)}
-        else:
-            next_moves = set()
+        next_moves = set(board.get_valid_moves()) - {(0, 0, 0)} if can_second_move else set()
 
         if not next_moves:
             while len(board.moves) > initial:
                 board.undo_last_move()
             return (best_first_move, (0, 0, 0))
 
-        # Find the actual
+        best_second_move = (0, 0, 0)
+        best_score = float('-inf')
+        for nm in next_moves:
+            if not isinstance(nm, tuple) or len(nm) != 3:
+                continue
+            board.apply_move(nm, switch_turn=False)
+            score, _ = self.evaluate(board, player)
+            if score > best_score:
+                best_score = score
+                best_second_move = nm
+            board.undo_last_move()
 
+        while len(board.moves) > initial:
+            board.undo_last_move()
+
+        # 5. Guaranteed to return a tuple of two tuples. Impossible to return None.
+        return (best_first_move, best_second_move)
+    
 # agent tried to save a numbered piece when it wasn't in the midgame (but was one piece away from midgame)
 # agent doesn't bring out its second captured piece but passes instead
 # in endgame agent tries to save a piece that can't be saved when it can save a piece on a lower goal
