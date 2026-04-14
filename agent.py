@@ -1,5 +1,3 @@
-# "best_weights copy.json" is backup for a seemingly good set of weights
-# 
 import json
 import os
 import copy
@@ -46,10 +44,8 @@ def get_weights():
     return INITIAL_WEIGHTS
 
 class Agent():
-    def __init__(self, board=None, weights=INITIAL_WEIGHTS, log_file='game_log.json', log_to_file=False):
+    def __init__(self, board=None, weights=INITIAL_WEIGHTS, log_file='game_log.json', log_to_file=LOG_TO_FILE):
         self.board = board
-        if weights == INITIAL_WEIGHTS:
-            print("Using initial weights")
 
         raw_weights = weights if weights is not None else get_weights()
         self.weights = self._expand_weights(raw_weights)
@@ -81,12 +77,20 @@ class Agent():
             factor = 1 if winner == player else -1
             return factor * score * GAME_OVER_SCORE, {}
 
-        # precompute distances once for both players
-        distances = {piece: board.shortest_route_to_goal(piece) for piece in board.pieces}
-
         opponent = 'white' if player == 'black' else 'black'
-        player_eval, player_components = self.evaluate_player(board, player, distances)
-        opponent_eval, opponent_components = self.evaluate_player(board, opponent, distances)
+
+        # split once here instead of repeatedly inside evaluate_player
+        pieces_by_player = {
+            player:   [p for p in board.pieces if p.player == player],
+            opponent: [p for p in board.pieces if p.player == opponent],
+        }
+
+        distances = {piece: board.shortest_route_to_goal(piece) 
+                    for pieces in pieces_by_player.values() 
+                    for piece in pieces}
+
+        player_eval, player_components = self.evaluate_player(board, player, distances, pieces_by_player)
+        opponent_eval, opponent_components = self.evaluate_player(board, opponent, distances, pieces_by_player)
 
         total_score = player_eval - opponent_eval
         score_components = {
@@ -94,19 +98,18 @@ class Agent():
             'opponent': opponent_components,
             'total_score': f'{player}: {player_eval} - {opponent_eval} = {total_score}'
         }
-
         return total_score, score_components
 
 
-    def evaluate_player(self, board, player, distances):
+    def evaluate_player(self, board, player, distances, pieces_by_player):
         opponent = 'white' if player == 'black' else 'black'
         save_rack = board.get_save_rack(player)
         unentered_rack = board.get_unentered_rack(player)
         opponent_unentered = board.get_unentered_rack(opponent)
 
         # Build piece subsets once
-        player_pieces = [p for p in board.pieces if p.player == player]
-        opponent_pieces = [p for p in board.pieces if p.player == opponent]
+        player_pieces = pieces_by_player[player]
+        opponent_pieces = pieces_by_player[opponent]
         player_board_pieces = [p for p in player_pieces if p.tile]
         opponent_board_pieces_list = [p for p in opponent_pieces if p.tile]
 
@@ -116,6 +119,19 @@ class Agent():
 
         # Goal pieces and bonus
         goal_pieces = [p for p in player_pieces if p.can_be_saved()]
+
+        if board.log_callback:
+            for p in goal_pieces:
+                if p.number <= 6 and p.tile and p.tile.number != p.number:
+                    self.log_callback({
+                        'event': 'wrong_goal_saveable',
+                        'piece': {'player': p.player, 'number': p.number},
+                        'tile': {'type': p.tile.type, 'number': p.tile.number, 'ring': p.tile.ring, 'pos': p.tile.pos},
+                        'can_be_saved': p.can_be_saved(),
+                        'dice': [{'number': d.number, 'used': d.used} for d in self.board.dice],
+                        'game_stage': self.board.game_stages[p.player],
+                    })
+
         goal_bonus = sum(self.weights['goal_bonuses'].get(p.number, 0) for p in goal_pieces if p.number <= 6)
 
         # High goal penalty
@@ -130,7 +146,7 @@ class Agent():
         near_goal_bonus = sum(self.weights['near_goal_bonuses'].get(p.number, 0) for p in pieces_near_goal if p.number <= 6)
 
         # Off-goal and far-from-goal penalties
-        numbered_off_goal = [p for p in player_pieces if p.number <= 6 and not p.can_be_saved()]
+        numbered_off_goal = [p for p in player_pieces if p.number <= 6 and not p.can_be_saved() and not (p.rack is save_rack)]
         off_goal_penalty = -sum(self.weights['goal_bonuses'].get(p.number, 0) for p in numbered_off_goal)
         numbered_far_from_goal = [p for p in numbered_off_goal if distances[p] > 6 and p.tile and p.tile.type in ['field', 'save']]
         far_from_goal_penalty = -sum(self.weights['goal_bonuses'].get(p.number, 0) for p in numbered_far_from_goal)
@@ -168,7 +184,7 @@ class Agent():
         # dice spread — reward having pieces at varied distances so any roll is useful
         goal_distances = set(distances[p] for p in player_board_pieces 
                             if 1 <= distances[p] <= 6
-                            and not p.can_be_saved())
+                            and not p.can_be_saved() and not (p.rack is save_rack))
         dice_spread_bonus = len(goal_distances) * self.weights.get('dice_spread', 3)
     
         score_components = {
@@ -202,17 +218,37 @@ class Agent():
 
 
     def select_move_pair(self, moves, board, player):
-        move_scores = dict()
 
-        # Ensure moves is a set and does not contain integers
+        if not board.dice[0].used and not board.dice[1].used:
+            board.firstMove = None
+
         if not isinstance(moves, (list, set)) or not all(isinstance(m, tuple) for m in moves):
             raise ValueError('Invalid moves format: expected a list or set of tuples.')
 
+        best_move_pair = None
+        best_score = float('-inf')
+        best_components = None
+
+        top_moves = []  # (score, move_pair, components), max 4
+
+        def _keep_top(move_pair, score, components):
+            top_moves.append((score, move_pair, components))
+            top_moves.sort(key=lambda x: x[0], reverse=True)
+            if len(top_moves) > 4:
+                top_moves.pop()
+
+        save_die_log = []
+        board.log_callback = lambda entry: save_die_log.append(entry)
+
         # Evaluate the pass move if legal
         if (0, 0, 0) in moves:
-            move_scores[((0, 0, 0), (0, 0, 0))] = self.evaluate(board, player)
+            score, components = self.evaluate(board, player)
+            if score > best_score:
+                best_score = score
+                best_move_pair = ((0, 0, 0), (0, 0, 0))
+                best_components = components
+            _keep_top(((0, 0, 0), (0, 0, 0)), score, components)
 
-        # Create a set of moves without the pass move
         moves = set(moves)
         moves.discard((0, 0, 0))
 
@@ -223,10 +259,15 @@ class Agent():
             initial_move_count = len(board.moves)
 
             board.apply_move(move, switch_turn=False)
-            # only score pass as second move if it would be legal
+
             remaining_captured = [p for p in board.home_tile.pieces if p.player == board.current_player]
             if not remaining_captured:
-                move_scores[(move, (0, 0, 0))] = self.evaluate(board, player)
+                score, components = self.evaluate(board, player)
+                if score > best_score:
+                    best_score = score
+                    best_move_pair = (move, (0, 0, 0))
+                    best_components = components
+                _keep_top((move, (0, 0, 0)), score, components)
 
             if all(die.used for die in board.dice):
                 while len(board.moves) > initial_move_count:
@@ -239,6 +280,7 @@ class Agent():
                 while len(board.moves) > initial_move_count:
                     board.undo_last_move()
                 continue
+
             next_moves.discard((0, 0, 0))
 
             for next_move in next_moves:
@@ -246,141 +288,67 @@ class Agent():
                     raise ValueError('Invalid next move format: each move should be a tuple of length 3.')
 
                 board.apply_move(next_move, switch_turn=False)
-                move_scores[(move, next_move)] = self.evaluate(board, player)
+
+                score, components = self.evaluate(board, player)
+                if score > best_score:
+                    best_score = score
+                    best_move_pair = (move, next_move)
+                    best_components = components
+
+                _keep_top((move, next_move), score, components)
+
                 board.undo_last_move()
 
             while len(board.moves) > initial_move_count:
                 board.undo_last_move()
 
-        best_move_pair = max(move_scores, key=lambda k: move_scores[k][0])
-        best_move_score, best_move_components = move_scores[best_move_pair]
+        def serialize_first_move(fm):
+            if fm is None:
+                return None
+            tile = fm['origin_tile']
+            return {
+                'piece': (fm['piece'].player, fm['piece'].number),
+                'origin_tile': {'type': tile.type, 'ring': tile.ring, 'pos': tile.pos} if tile else None,
+            }
 
-        # get top 4 move pairs by score
-        top_moves = sorted(move_scores.items(), key=lambda x: x[1][0], reverse=True)[:4]
+        def snapshot(board):
+            return {
+                'firstMove': serialize_first_move(board.firstMove),
+                'dice': [{'number': d.number, 'used': d.used} for d in board.dice],
+            }
 
-        log_entry = {
-            'move': best_move_pair,
-            'score': best_move_score,
-            'components': best_move_components,
-            'competitors': [
+        def move_with_first(move):
+            before = snapshot(board)
+            board.apply_move(move, switch_turn=False)
+            after = snapshot(board)
+            board.undo_last_move()
+            restored = snapshot(board)
+            undo_mismatch = restored != before
+            return {
+                'move': move,
+                'before': before,
+                'after': after,
+                'restored': restored,
+                'undo_mismatch': undo_mismatch,
+            }
+
+        if self.log_to_file:
+            self.log = [
                 {
-                    'move': move_pair,
+                    'move_pair': {
+                        'first': move_with_first(move_pair[0]),
+                        'second': move_with_first(move_pair[1]),
+                    },
                     'score': score,
                     'components': components
                 }
-                for move_pair, (score, components) in top_moves[1:]  # skip best, already logged
+                for score, move_pair, components in top_moves
             ]
-        }
 
-        self.log.append(log_entry)
-
-        # keep only last N entries
-        MAX_LOG_ENTRIES = 10
-        if len(self.log) > MAX_LOG_ENTRIES:
-            self.log = self.log[-MAX_LOG_ENTRIES:]
-
-        if self.log_to_file:
             with open(self.log_file, 'w') as file:
                 file.write(json.dumps(self.log, indent=4))
-            #print(f"Log updated with move: {best_move_pair}")
 
+        board.log_callback = None
+        self.log = save_die_log + self.log
 
         return best_move_pair
-
-    def select_move_pair_fast(self, moves, board, player):
-        """
-        1-ply move selection for fast self-play data generation.
-        Evaluates all first moves, then greedily picks the best second move.
-        """
-        first_move_scores = {}
-
-        # 1. Evaluate passing
-        if (0, 0, 0) in moves:
-            score, _ = self.evaluate(board, player)
-            first_move_scores[(0, 0, 0)] = score
-
-        moves_set = set(moves)
-        moves_set.discard((0, 0, 0))
-
-        for move in moves_set:
-            if not isinstance(move, tuple) or len(move) != 3:
-                continue
-                
-            initial_move_count = len(board.moves)
-            board.apply_move(move, switch_turn=False)
-
-            # Let the game engine tell us if a second move is possible.
-            # If all dice are used, or no valid moves exist, score is just the first move.
-            if all(die.used for die in board.dice):
-                score, _ = self.evaluate(board, player)
-                first_move_scores[move] = score
-            else:
-                next_moves = set(board.get_valid_moves())
-                if not next_moves:
-                    score, _ = self.evaluate(board, player)
-                    first_move_scores[move] = score
-                else:
-                    # Find the best second move (ignoring pass moves)
-                    best_second_score = float('-inf')
-                    for next_move in next_moves:
-                        if next_move == (0, 0, 0):
-                            continue
-                        if not isinstance(next_move, tuple) or len(next_move) != 3:
-                            continue
-                        board.apply_move(next_move, switch_turn=False)
-                        score, _ = self.evaluate(board, player)
-                        if score > best_second_score:
-                            best_second_score = score
-                        board.undo_last_move()
-                    first_move_scores[move] = best_second_score
-
-            while len(board.moves) > initial_move_count:
-                board.undo_last_move()
-
-        if not first_move_scores:
-            return ((0, 0, 0), (0, 0, 0))
-
-        # 2. Pick the best first move
-        best_first_move = max(first_move_scores, key=first_move_scores.get)
-
-        if best_first_move == (0, 0, 0):
-            return ((0, 0, 0), (0, 0, 0))
-
-        # 3. Re-apply best first move to reconstruct the actual second move
-        initial = len(board.moves)
-        board.apply_move(best_first_move, switch_turn=False)
-
-        if all(die.used for die in board.dice):
-            while len(board.moves) > initial:
-                board.undo_last_move()
-            return (best_first_move, (0, 0, 0))
-
-        next_moves = set(board.get_valid_moves())
-        if not next_moves:
-            while len(board.moves) > initial:
-                board.undo_last_move()
-            return (best_first_move, (0, 0, 0))
-
-        best_second_move = (0, 0, 0)
-        best_score = float('-inf')
-        for nm in next_moves:
-            if nm == (0, 0, 0):
-                continue
-            if not isinstance(nm, tuple) or len(nm) != 3:
-                continue
-            board.apply_move(nm, switch_turn=False)
-            score, _ = self.evaluate(board, player)
-            if score > best_score:
-                best_score = score
-                best_second_move = nm
-            board.undo_last_move()
-
-        while len(board.moves) > initial:
-            board.undo_last_move()
-
-        return (best_first_move, best_second_move)
- 
-# agent tried to save a numbered piece when it wasn't in the midgame (but was one piece away from midgame)
-# agent doesn't bring out its second captured piece but passes instead
-# in endgame agent tries to save a piece that can't be saved when it can save a piece on a lower goal
-# add "distance from endgame bonus"
