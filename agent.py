@@ -219,24 +219,38 @@ class Agent():
 
     def select_move_pair(self, moves, board, player):
 
-        move_scores = dict()
         if not board.dice[0].used and not board.dice[1].used:
             board.firstMove = None
 
-        # Ensure moves is a set and does not contain integers
         if not isinstance(moves, (list, set)) or not all(isinstance(m, tuple) for m in moves):
             raise ValueError('Invalid moves format: expected a list or set of tuples.')
 
-        # Evaluate the pass move if legal
-        if (0, 0, 0) in moves:
-            move_scores[((0, 0, 0), (0, 0, 0))] = self.evaluate(board, player)
+        best_move_pair = None
+        best_score = float('-inf')
+        best_components = None
 
-        # Create a set of moves without the pass move
-        moves = set(moves)
-        moves.discard((0, 0, 0))
+        top_moves = []  # (score, move_pair, components), max 4
+
+        def _keep_top(move_pair, score, components):
+            top_moves.append((score, move_pair, components))
+            top_moves.sort(key=lambda x: x[0], reverse=True)
+            if len(top_moves) > 4:
+                top_moves.pop()
 
         save_die_log = []
         board.log_callback = lambda entry: save_die_log.append(entry)
+
+        # Evaluate the pass move if legal
+        if (0, 0, 0) in moves:
+            score, components = self.evaluate(board, player)
+            if score > best_score:
+                best_score = score
+                best_move_pair = ((0, 0, 0), (0, 0, 0))
+                best_components = components
+            _keep_top(((0, 0, 0), (0, 0, 0)), score, components)
+
+        moves = set(moves)
+        moves.discard((0, 0, 0))
 
         for move in moves:
             if not isinstance(move, tuple) or len(move) != 3:
@@ -245,12 +259,15 @@ class Agent():
             initial_move_count = len(board.moves)
 
             board.apply_move(move, switch_turn=False)
-            # only score pass as second move if it would be legal
+
             remaining_captured = [p for p in board.home_tile.pieces if p.player == board.current_player]
             if not remaining_captured:
-                move_scores[(move, (0, 0, 0))] = self.evaluate(board, player)
-     #       print(f"After {move}: dice={[(d.number, d.used) for d in board.dice]}, next_moves count={len(set(board.get_valid_moves()))}")
-
+                score, components = self.evaluate(board, player)
+                if score > best_score:
+                    best_score = score
+                    best_move_pair = (move, (0, 0, 0))
+                    best_components = components
+                _keep_top((move, (0, 0, 0)), score, components)
 
             if all(die.used for die in board.dice):
                 while len(board.moves) > initial_move_count:
@@ -263,6 +280,7 @@ class Agent():
                 while len(board.moves) > initial_move_count:
                     board.undo_last_move()
                 continue
+
             next_moves.discard((0, 0, 0))
 
             for next_move in next_moves:
@@ -270,17 +288,19 @@ class Agent():
                     raise ValueError('Invalid next move format: each move should be a tuple of length 3.')
 
                 board.apply_move(next_move, switch_turn=False)
-                move_scores[(move, next_move)] = self.evaluate(board, player)
+
+                score, components = self.evaluate(board, player)
+                if score > best_score:
+                    best_score = score
+                    best_move_pair = (move, next_move)
+                    best_components = components
+
+                _keep_top((move, next_move), score, components)
+
                 board.undo_last_move()
 
             while len(board.moves) > initial_move_count:
                 board.undo_last_move()
-
-        best_move_pair = max(move_scores, key=lambda k: move_scores[k][0])
-        best_move_score, best_move_components = move_scores[best_move_pair]
-
-        # rank all move pairs by score
-        all_moves_ranked = sorted(move_scores.items(), key=lambda x: x[1][0], reverse=True)
 
         def serialize_first_move(fm):
             if fm is None:
@@ -304,8 +324,6 @@ class Agent():
             board.undo_last_move()
             restored = snapshot(board)
             undo_mismatch = restored != before
-    #        if undo_mismatch:
-     #           print(f"[UNDO MISMATCH] move={move} before={before} restored={restored}")
             return {
                 'move': move,
                 'before': before,
@@ -316,23 +334,21 @@ class Agent():
 
         if self.log_to_file:
             self.log = [
-            {
-                'move_pair': {
-                    'first': move_with_first(move_pair[0]),
-                    'second': move_with_first(move_pair[1]),
-                },
-                'score': score,
-                'components': components
-            }
-            for move_pair, (score, components) in all_moves_ranked
-        ]
+                {
+                    'move_pair': {
+                        'first': move_with_first(move_pair[0]),
+                        'second': move_with_first(move_pair[1]),
+                    },
+                    'score': score,
+                    'components': components
+                }
+                for score, move_pair, components in top_moves
+            ]
 
             with open(self.log_file, 'w') as file:
                 file.write(json.dumps(self.log, indent=4))
 
         board.log_callback = None
         self.log = save_die_log + self.log
+
         return best_move_pair
-
-
-# in endgame agent tried to save a numbered piee with a lower roll
