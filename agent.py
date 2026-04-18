@@ -2,7 +2,7 @@ import json
 import os
 import copy
 import math
-
+from collections import deque
 
 GAME_OVER_SCORE = 10000
 LOG_TO_FILE = False
@@ -14,6 +14,8 @@ INITIAL_WEIGHTS = {
     'captured_bonuses': {'a': 4.0, 'b': 1.5},
     'loose_piece_penalties': {'a': -18.0, 'b': 1.1},
     'blocked_piece_penalties': {'a': -16.0, 'b': 1.1},
+    'enemy_blot_penalties': {'a': -6.0, 'b': 1.1},
+    'high_goal_proximity_penalties': {'a': -0.25, 'b': 1.2},
     'game_stage_bonuses': {'midgame': 50, 'endgame': 100},
     'saved_piece': 60,
     'goal_piece': 36,
@@ -34,10 +36,17 @@ def get_weights():
         import json
         with open('best_weights.json') as f:
             weights = json.load(f)
+        
+        # Add any missing keys from INITIAL_WEIGHTS
+        for key, default_value in INITIAL_WEIGHTS.items():
+            if key not in weights:
+                weights[key] = default_value
+                print(f"Added missing weight: {key} = {default_value}")
+        
         for key in ['saved_bonuses', 'goal_bonuses', 'near_goal_bonuses',
-                    'captured_bonuses', 'loose_piece_penalties', 'blocked_piece_penalties']:
+                    'captured_bonuses', 'loose_piece_penalties', 'blocked_piece_penalties',
+                    'enemy_blot_penalties', 'high_goal_proximity_penalties']:
             if key in weights and isinstance(weights[key], dict):
-                # Use .isdigit() to safely check if the key is a number
                 weights[key] = {int(k) if k.isdigit() else k: v for k, v in weights[key].items()}
         print("Loaded best_weights.json")
         return weights
@@ -145,6 +154,17 @@ class Agent():
         pieces_nearer_goal = [p for p in board_pieces if p.number > 6 and 1 <= distances[p] <= 4]
         near_goal_bonus = sum(self.weights['near_goal_bonuses'].get(p.number, 0) for p in pieces_near_goal if p.number <= 6)
 
+        # Penalize unnumbered pieces that are 5-6 tiles from a high-numbered goal
+        high_goal_proximity_penalty = 0
+        if board.game_stages[player] != 'endgame': 
+            near_but_not_nearer = [p for p in pieces_near_goal if p.number > 6 and p not in pieces_nearer_goal]
+            for piece in near_but_not_nearer:
+                target_goal = board.get_target_goal_number(piece)
+                if target_goal:
+                    goal_index = target_goal - 1  # 0 for goal 1, 5 for goal 6
+                    penalty_value = self.weights['high_goal_proximity_penalties']['a'] * (goal_index ** self.weights['high_goal_proximity_penalties']['b'])
+                    high_goal_proximity_penalty += penalty_value
+
         # Off-goal and far-from-goal penalties
         numbered_off_goal = [p for p in player_pieces if p.number <= 6 and not p.can_be_saved() and not (p.rack is save_rack)]
         off_goal_penalty = -sum(self.weights['goal_bonuses'].get(p.number, 0) for p in numbered_off_goal)
@@ -171,6 +191,16 @@ class Agent():
         loose_piece_bonus *= (opponent_board_piece_count / 14)
         if board.game_stages[opponent] == 'endgame':
             loose_piece_bonus *= -1
+
+        # pieces with enemy blots between them and goal
+        enemy_blot_penalty = 0
+        if board.game_stages['white'] != 'endgame' and board.game_stages['black'] != 'endgame':
+            for piece in player_board_pieces:
+                if not piece.can_be_saved():
+                    blots = board.count_enemy_blots_on_shortest_path(piece)
+                    if blots != float('inf') and blots > 0:
+                        piece_value = self.weights['enemy_blot_penalties'].get(piece.number, 1)
+                        enemy_blot_penalty += blots * piece_value
 
         # Captured opponent pieces
         captured_pieces = [p for p in opponent_pieces if p.tile and p.tile.type == 'home']
@@ -206,6 +236,8 @@ class Agent():
             'off_goal_penalty': off_goal_penalty,
             'far_from_goal_penalty': far_from_goal_penalty,
             'high_goal_penalty': high_goal_penalty,
+            'high_goal_proximity_penalty': high_goal_proximity_penalty,
+            'enemy_blot_penalty': enemy_blot_penalty,
             'game_stage_bonus': game_stage_bonus,
             'dice_spread_bonus': dice_spread_bonus
         }

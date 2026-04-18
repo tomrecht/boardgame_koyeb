@@ -665,7 +665,36 @@ class Board:
 
         self._distance_cache[cache_key] = float('inf')
         return float('inf')
-    
+
+# In Board class
+    def get_target_goal_number(self, piece):
+        """Returns the goal number this piece is heading toward on its shortest path."""
+        if not hasattr(self, '_goal_cache'):
+            self._goal_cache = {}
+        
+        cache_key = (piece.player, piece.number, piece.tile.index if piece.tile else -1)
+        if cache_key in self._goal_cache:
+            return self._goal_cache[cache_key]
+        
+        if piece.can_be_saved():
+            return None
+        
+        start_tile = piece.tile if piece.tile else self.home_tile
+        queue = deque([(start_tile, 0)])
+        visited = set([start_tile])
+        
+        while queue:
+            current, _ = queue.popleft()
+            for neighbor in current.neighbors:
+                if neighbor not in visited:
+                    if neighbor.type == 'save' and (piece.number > 6 or piece.number == neighbor.number):
+                        self._goal_cache[cache_key] = neighbor.number
+                        return neighbor.number
+                    visited.add(neighbor)
+                    queue.append((neighbor, 0))
+        
+        self._goal_cache[cache_key] = None
+        return None
 
     def count_enemy_blots_on_shortest_path(self, piece):
         """Returns the number of enemy blots on the shortest path to goal."""
