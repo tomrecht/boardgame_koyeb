@@ -67,7 +67,8 @@ class Agent():
             expanded = copy.deepcopy(raw)
             categories = [
                 'saved_bonuses', 'goal_bonuses', 'near_goal_bonuses',
-                'captured_bonuses', 'loose_piece_penalties', 'blocked_piece_penalties'
+                'captured_bonuses', 'loose_piece_penalties', 'blocked_piece_penalties',
+                'enemy_blot_penalties', 'high_goal_proximity_penalties'
             ]
             
             for cat in categories:
