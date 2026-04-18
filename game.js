@@ -238,8 +238,6 @@ class Piece {
             const savedRack = this.color === 0xffffff ? this.game.whiteSavedRack : this.game.blackSavedRack;
 
             this.currentTile.pieces.forEach(piece => piece.moveToRack(savedRack));
-            //this.moveToRack(savedRack); (left over from where just one piece was saved, can delete)
-
             this.game.dice.forEach(die => die.setUsed())
 
             // Check for the endgame condition
@@ -844,6 +842,10 @@ class Rack {
             const newX = this.x + this.horizontalPadding + (i % this.cols) * this.spacing;
             const newY = this.y + this.verticalPadding + Math.floor(i / this.cols) * this.spacing;
             piece.setPosition(newX, newY);
+                    // Force size reset when on rack
+            if (this.type === 'unentered' || this.type === 'saved') {
+                piece.setSize(PIECE_RADIUS_BASE);
+            }
         }
     }
 
