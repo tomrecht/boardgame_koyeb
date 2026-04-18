@@ -149,14 +149,17 @@ class Piece {
         if (this.game.gameOver) return; 
         if (this.game.dice[0].used && this.game.dice[1].used) return;
 
-        // If this piece is on a field tile with multiple pieces, treat as tile click instead
-        if (this.currentTile && this.currentTile.type === 'field' && this.currentTile.pieces.length > 1) {
-            // Pass click to the tile
-            this.currentTile.onClick();
-            return;
-        }
+
 
         if (this.game.selectedPiece && this.game.selectedPiece !== this) {
+
+            // If this piece is on a field tile with multiple pieces, treat as tile click instead
+            if (this.currentTile && this.currentTile.type === 'field' && this.currentTile.pieces.length > 1) {
+                // Pass click to the tile
+                this.currentTile.onClick();
+                return;
+            }
+
             this.game.selectedPiece.isSelected = false;
             if (this.game.selectedPiece.currentTile && this.game.selectedPiece.currentTile.type === 'home' && this.game.selectedPiece.justMovedHome) {
                 this.game.selectedPiece.returnToRack();}
