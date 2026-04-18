@@ -43,6 +43,45 @@ def select_moves():
         logger.error(f"Error in select_moves: {e}")
         return jsonify({"message": "An error occurred"}), 500
 
+@app.route('/debug_piece_blots', methods=['POST'])
+def debug_piece_blots():
+    try:
+        data = request.json
+        game_state = data['gameState']
+        piece_info = data['piece']
+        
+        local_board = Board()
+        local_board.update_state(game_state)
+        
+        # Find the piece
+        piece = None
+        for p in local_board.pieces:
+            if p.player == piece_info['player'] and p.number == piece_info['number']:
+                piece = p
+                break
+        
+        if not piece:
+            return jsonify({"error": "Piece not found"}), 404
+        
+        # Get distance and blot count
+        distance = local_board.shortest_route_to_goal(piece)
+        
+        # Make sure the method exists
+        if hasattr(local_board, 'count_enemy_blots_on_shortest_path'):
+            blot_count = local_board.count_enemy_blots_on_shortest_path(piece)
+        else:
+            blot_count = "Method not implemented yet"
+        
+        return jsonify({
+            "distance": distance,
+            "blot_count": blot_count,
+            "can_be_saved": piece.can_be_saved()
+        }), 200
+        
+    except Exception as e:
+        print(f"Error in debug_piece_blots: {e}")  # Use print instead of logger if logger not configured
+        return jsonify({"error": str(e)}), 500
+
 @app.route('/evaluate_board', methods=['POST'])
 def evaluate_board():
     try:

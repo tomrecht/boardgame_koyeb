@@ -666,6 +666,43 @@ class Board:
         self._distance_cache[cache_key] = float('inf')
         return float('inf')
     
+
+    def count_enemy_blots_on_shortest_path(self, piece):
+        """Returns the number of enemy blots on the shortest path to goal."""
+        if piece.can_be_saved():
+            return 0
+
+        start_tile = piece.tile if piece.tile else self.home_tile
+
+        # BFS to find shortest path, tracking blot count
+        queue = deque([(start_tile, 0, 0)])  # (tile, distance, blot_count)
+        visited = set([start_tile])
+
+        while queue:
+            current_tile, distance, blot_count = queue.popleft()
+            
+            for neighbor in current_tile.neighbors:
+                if neighbor not in visited:
+                    visited.add(neighbor)
+                    
+                    # Count enemy blot if stepping onto this tile
+                    new_blot_count = blot_count
+                    if (neighbor.type == 'field' and 
+                        len(neighbor.pieces) == 1 and 
+                        neighbor.pieces[0].player != piece.player):
+                        new_blot_count += 1
+                    
+                    # Check if we reached the goal
+                    if neighbor.type == 'save' and (piece.number > 6 or piece.number == neighbor.number):
+                        return new_blot_count
+                    
+                    # Continue exploring if not blocked
+                    if neighbor.type not in ['nogo', 'home'] and not neighbor.is_blocked(piece.player):
+                        queue.append((neighbor, distance + 1, new_blot_count))
+
+        return float('inf')  # No path to goal
+
+
     def count_pieces_reaching_goals(self):
         # Initialize counters for each possible die roll (1-6)
         reachable_counts = [0] * 6

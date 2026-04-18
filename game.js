@@ -112,6 +112,40 @@ class Piece {
     }
 
     handleClick(pointer) {
+
+    // Check for right-click (button 2)
+    if (pointer.rightButtonDown()) {
+        console.log('🔍 Getting blot info for piece:', this.player, this.number);
+        
+        // Get current game state
+        const gameState = getGameState(this.game);
+        
+        // Call the backend
+        fetch(`${SERVER_URL}/debug_piece_blots`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                gameState: gameState,
+                piece: {
+                    player: this.player,
+                    number: this.number
+                }
+            })
+        })
+        .then(response => response.json())
+        .then(data => {
+            console.log(`📊 Piece ${this.player}(${this.number}):`);
+            console.log(`   Distance to goal: ${data.distance === Infinity ? 'No path' : data.distance}`);
+            console.log(`   Enemy blots on path: ${data.blot_count === Infinity ? 'No path' : data.blot_count}`);
+            console.log(`   Can be saved: ${data.can_be_saved}`);
+        })
+        .catch(error => {
+            console.error('Error getting blot info:', error);
+        });
+        
+        return; // Stop here, don't select the piece
+    }
+
         if (this.game.gameOver) return; 
         if (this.game.dice[0].used && this.game.dice[1].used) return;
         if (this.game.selectedPiece && this.game.selectedPiece !== this) {
@@ -223,6 +257,77 @@ class Piece {
         }
     }
     
+
+    async debugShowPathInfo() {
+        if (!this.currentTile) {
+            console.log(`Piece ${this.player}(${this.number}) is not on the board (on rack or saved)`);
+            return;
+        }
+        
+        console.log(`\n=== DEBUG: Piece ${this.player}(${this.number}) ===`);
+        console.log(`Location: Ring ${this.currentTile.ring}, Sector ${this.currentTile.sector} (${this.currentTile.type})`);
+        
+        // Get the current game state
+        const gameState = getGameState(this.game);
+        
+        // Add a temporary endpoint to the server to get blot count
+        // Or we can calculate it locally (more complex)
+        
+        // For now, let's request the evaluation which includes distance info
+        try {
+            const response = await fetch(`${SERVER_URL}/debug_piece_info`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    gameState: gameState,
+                    piece: {
+                        player: this.player,
+                        number: this.number
+                    }
+                })
+            });
+            
+            if (response.ok) {
+                const data = await response.json();
+                console.log(`Distance to goal: ${data.distance === Infinity ? 'No path' : data.distance} steps`);
+                console.log(`Enemy blots on shortest path: ${data.blot_count === Infinity ? 'No path' : data.blot_count}`);
+                if (data.path && data.path.length > 0) {
+                    console.log(`Path length: ${data.path.length} tiles (including start and goal)`);
+                    console.log(`Path: ${data.path.map(t => `${t.ring},${t.sector}`).join(' → ')}`);
+                }
+                if (data.can_be_saved) {
+                    console.log(`✓ Piece can be saved immediately!`);
+                }
+            } else {
+                console.log(`Could not get debug info from server`);
+                // Fallback to local calculation
+                this.localDebugInfo();
+            }
+        } catch (error) {
+            console.error(`Error getting debug info: ${error}`);
+            this.localDebugInfo();
+        }
+    }
+
+    localDebugInfo() {
+        // Simple local info without server call
+        console.log(`Distance: Use shortest_route_to_goal() from backend`);
+        console.log(`Can be saved: ${this.canBeSaved()}`);
+        
+        // Calculate reachable tiles for current dice
+        const reachable = this.game.getReachableTilesByDice(this);
+        if (reachable) {
+            console.log(`Reachable with ${this.game.dice.filter(d => !d.used).map(d => d.value).join(',')}:`);
+            if (reachable.reachableByFirstDie?.length) 
+                console.log(`  Die 1 (${this.game.dice[0].value}): ${reachable.reachableByFirstDie.map(t => `${t.ring},${t.sector}`).join(', ')}`);
+            if (reachable.reachableBySecondDie?.length) 
+                console.log(`  Die 2 (${this.game.dice[1].value}): ${reachable.reachableBySecondDie.map(t => `${t.ring},${t.sector}`).join(', ')}`);
+            if (reachable.reachableBySum?.length) 
+                console.log(`  Sum (${this.game.dice[0].value + this.game.dice[1].value}): ${reachable.reachableBySum.map(t => `${t.ring},${t.sector}`).join(', ')}`);
+        }
+    }
+
+
     move(tile, checkMidgame = true) {
         if (this.rack) {
             this.moveFromRack();
