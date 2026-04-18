@@ -50,12 +50,15 @@ def evaluate_board():
         local_board = Board()
         local_board.update_state(state)
         
-        _, eval_data = agent.evaluate(local_board, local_board.current_player)
-        
-        if eval_data:
-            return jsonify({"message": "Success", "eval": eval_data}), 200
-        else:
-            return jsonify({"message": "Evaluation failed"}), 200
+        total_score, components = agent.evaluate(local_board, local_board.current_player)
+
+        return jsonify({
+            "message": "Success",
+            "eval": total_score,
+            "total_score": total_score,
+            "player": components.get("player"),
+            "opponent": components.get("opponent"),
+        }), 200
     except Exception as e:
         logger.error(f"Error in evaluate_board: {e}")
         return jsonify({"message": "An error occurred"}), 500

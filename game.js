@@ -7,7 +7,6 @@ const SERVER_URL = IS_LOCAL
     : window.location.origin;
 
 const DEBUG_MODE = false; 
-// You don't need the LOCAL_AI constant anymore because IS_LOCAL handles it
 const WHITE_IS_AI = false;
 let BLACK_IS_AI = true;
 
@@ -37,6 +36,33 @@ const scoreTracker = {
     };
 
 let extraMoveRequested = false;
+
+// ── HIDDEN DEBUG TOGGLE ───────────────────────────────────────────────────────
+// Press D three times within 1 second to toggle debug mode.
+window.debugMode = false;
+(function() {
+    var tapCount = 0;
+    var tapTimer = null;
+    document.addEventListener('keydown', function(e) {
+        if (e.key !== 'd' && e.key !== 'D') return;
+        e.preventDefault();
+        tapCount++;
+        clearTimeout(tapTimer);
+        tapTimer = setTimeout(function() { tapCount = 0; }, 1000);
+        if (tapCount >= 3) {
+            tapCount = 0;
+            window.debugMode = !window.debugMode;
+            var scene = gameInstance && gameInstance.scene && gameInstance.scene.scenes && gameInstance.scene.scenes[0];
+            if (scene && scene._debugEvalButton) {
+                scene._debugEvalButton.setVisible(window.debugMode);
+                scene._debugEvalLabel.setVisible(window.debugMode);
+            }
+            console.log('[DEBUG] mode: ' + (window.debugMode ? 'ON' : 'OFF'));
+        }
+    });
+})();
+
+
 
 class Piece {
     constructor(scene, game, color, number, x, y, rack = null) {
@@ -1842,8 +1868,7 @@ class MainGameScene extends Phaser.Scene {
         this.game = new Game(this, this.startingPlayer, debugMode);
 
         this.createRadioButton();
-        if (DEBUG_MODE) { 
-            this.createEvalButton();}
+        this.createEvalButton();
 
         const iconSize = 192;
         const xPosition = this.sys.game.config.width - iconSize / 2 - 100; 
@@ -1966,22 +1991,103 @@ class MainGameScene extends Phaser.Scene {
     createEvalButton() {
         const circleX = this.sys.game.config.width - 450;
         const circleY = this.sys.game.config.height - 100;
-        const textX = circleX + 30;
-        const textY = circleY;
-    
-        const circle = this.add.circle(circleX, circleY, 15, 0xD3D3D3)
+
+        const circle = this.add.circle(circleX, circleY, 15, 0xff6600)
             .setInteractive()
+            .setVisible(false)
             .on('pointerdown', () => {
-                evaluateBoard(getGameState(this.game));
+                evaluateBoard(getGameState(this.game)).then(data => {
+                    if (data) this.showEvalPanel(data);
+                });
             });
-    
-        const text = this.add.text(textX, textY, 'Evaluate', {
-            fontSize: '24px',
+
+        const label = this.add.text(circleX + 25, circleY, 'Evaluate Position', {
+            fontSize: '22px',
             fontFamily: FONT_FAMILY,
-            color: '#000'
-        }).setOrigin(0, 0.5);
+            color: '#cc4400'
+        }).setOrigin(0, 0.5).setVisible(false);
+
+        this._debugEvalButton = circle;
+        this._debugEvalLabel  = label;
     }
 
+
+        showEvalPanel(data) {
+        if (this._evalPanel) this._evalPanel.remove();
+
+        const panel = document.createElement('div');
+        panel.style.cssText = `
+            position:fixed; top:10px; right:10px; width:480px; max-height:90vh;
+            overflow-y:auto; background:rgba(15,15,15,0.93); color:#e8e8e8;
+            font-family:'Courier New',monospace; font-size:16px; line-height:1.6;
+            border:1px solid #555; border-radius:6px; padding:14px 18px;
+            z-index:9999; box-shadow:0 4px 18px rgba(0,0,0,0.6);
+        `;
+
+        // Close button
+        const close = document.createElement('button');
+        close.textContent = 'X';
+        close.style.cssText = 'float:right;background:none;border:none;color:#aaa;font-size:16px;cursor:pointer;';
+        close.onclick = () => panel.remove();
+        panel.appendChild(close);
+
+        // Title
+        const title = document.createElement('div');
+        title.textContent = 'Position Evaluation';
+        title.style.cssText = 'font-weight:bold;font-size:15px;margin-bottom:6px;color:#ffcc55;';
+        panel.appendChild(title);
+
+        // Total score line
+        if (data.total_score !== undefined || data.eval !== undefined) {
+            const tot = document.createElement('div');
+            tot.textContent = `Total: ${data.total_score ?? data.eval}`;
+            tot.style.cssText = 'color:#88ff88;margin-bottom:10px;';
+            panel.appendChild(tot);
+        }
+
+        const renderBlock = (heading, components) => {
+            if (!components) return;
+            const h = document.createElement('div');
+            h.textContent = heading;
+            h.style.cssText = `font-weight:bold;margin:8px 0 3px;
+                color:${heading.includes('White') ? '#ffffff' : '#aaaaff'};
+                border-bottom:1px solid #444;padding-bottom:2px;`;
+            panel.appendChild(h);
+
+            const entries = Object.entries(components)
+                .filter(([k]) => !k.startsWith('_'))
+                .sort(([,a],[,b]) => Math.abs(b) - Math.abs(a));
+
+            const table = document.createElement('table');
+            table.style.cssText = 'width:100%;border-collapse:collapse;';
+            for (const [k, v] of entries) {
+                const tr = document.createElement('tr');
+                const num = typeof v === 'number' ? v.toFixed(2) : String(v);
+                tr.innerHTML = `
+                    <td style="padding:1px 4px;color:#ccc;">${k.replace(/_/g,' ')}</td>
+                    <td style="padding:1px 4px;text-align:right;
+                        color:${parseFloat(num)>=0?'#88ff88':'#ff8888'};
+                        font-weight:${Math.abs(parseFloat(num))>50?'bold':'normal'}">
+                        ${num}
+                    </td>`;
+                table.appendChild(tr);
+            }
+            panel.appendChild(table);
+        };
+
+        // Route player/opponent blocks to the right colour label
+        const p = data.player, o = data.opponent;
+        const whiteComponents = p?._player === 'white' ? p : o;
+        const blackComponents = p?._player === 'black' ? p : o;
+        renderBlock('White', whiteComponents);
+        renderBlock('Black', blackComponents);
+
+        var _g = this.game;
+        if (_g && _g.switchTurn) { var _o = _g.switchTurn.bind(_g); _g.switchTurn = function() { panel.remove(); _g.switchTurn = _o; _o(); }; }
+
+        document.body.appendChild(panel);
+        this._evalPanel = panel;
+    }
     showThinkingIcon() {
         this.thinkingIcon.setAlpha(0); // Ensure it starts from fully transparent
         this.thinkingIcon.setVisible(true);
@@ -2229,23 +2335,14 @@ function calculateAverageScore() {
 // Ensure these functions are defined outside of any class or method
 
 function evaluateBoard(gameState) {
-    console.log('Sending game state to agent:', gameState);
     return fetch(`${SERVER_URL}/evaluate_board`, {
         method: 'POST',
-        headers: {
-            'Content-Type': 'application/json'
-        },
+        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(gameState)
     })
-    .then(response => {
-        console.log('Response status:', response.status);
-        return response.json();
-    })
-    .then(data => {
-        console.log('Evaluation:', data.eval);
-        return data.eval;
-    })
-    .catch(error => console.error('Error:', error));
+    .then(r => r.json())
+    .then(data => { console.log('Evaluation:', data); return data; })
+    .catch(error => { console.error('Error:', error); return null; });
 }
 
 
