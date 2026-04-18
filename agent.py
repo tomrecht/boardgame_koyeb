@@ -64,22 +64,43 @@ class Agent():
         self.log_to_file = log_to_file
 
     def _expand_weights(self, raw):
-            expanded = copy.deepcopy(raw)
-            categories = [
-                'saved_bonuses', 'goal_bonuses', 'near_goal_bonuses',
-                'captured_bonuses', 'loose_piece_penalties', 'blocked_piece_penalties',
-                'enemy_blot_penalties', 'high_goal_proximity_penalties'
-            ]
-            
-            for cat in categories:
-                if isinstance(raw[cat], dict) and 'a' in raw[cat]:
-                    a = raw[cat]['a']
-                    b = raw[cat]['b']
-                    # Create the 1-6 lookup dictionary
-                    # Formula: y = a * (x^b)
-                    expanded[cat] = {n: a * (math.pow(n, b)) for n in range(1, 7)}
-                    expanded[cat][0] = 0.0  # Always 0 for non-existent piece 0
-            return expanded
+        expanded = copy.deepcopy(raw)
+        categories = [
+            'saved_bonuses', 'goal_bonuses', 'near_goal_bonuses',
+            'captured_bonuses', 'loose_piece_penalties', 'blocked_piece_penalties',
+            'enemy_blot_penalties'
+        ]
+        
+        for cat in categories:
+            try:
+                # Check if category exists
+                if cat not in raw:
+                    print(f"DEBUG: Category '{cat}' missing from raw weights")
+                    continue
+                    
+                # Check if it's a dict
+                if not isinstance(raw[cat], dict):
+                    print(f"DEBUG: Category '{cat}' is not a dict, it's {type(raw[cat])}: {raw[cat]}")
+                    continue
+                    
+                # Check for 'a' key
+                if 'a' not in raw[cat]:
+                    print(f"DEBUG: Category '{cat}' dict missing 'a' key. Has keys: {raw[cat].keys()}")
+                    continue
+                    
+                # If we get here, all good
+                a = raw[cat]['a']
+                b = raw[cat]['b']
+                expanded[cat] = {n: a * (math.pow(n, b)) for n in range(1, 7)}
+                expanded[cat][0] = 0.0
+                print(f"DEBUG: Successfully expanded {cat} with a={a}, b={b}")
+                
+            except Exception as e:
+                print(f"DEBUG: Error processing {cat}: {e}")
+                import traceback
+                traceback.print_exc()
+        
+        return expanded
 
     def evaluate(self, board, player):
         winner, score = board.check_game_over()

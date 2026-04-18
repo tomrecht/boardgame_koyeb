@@ -28,19 +28,29 @@ def index():
 def select_moves():
     try:
         state = request.json
-
-        local_board = Board()
-        local_board.update_state(state)
+        print(f"DEBUG select_moves: Received state with keys: {state.keys()}")
         
+        local_board = Board()
+        
+        print("DEBUG select_moves: About to call update_state")
+        local_board.update_state(state)
+        print("DEBUG select_moves: update_state completed")
+        
+        print("DEBUG select_moves: About to get valid moves")
         moves = local_board.get_valid_moves()
+        print(f"DEBUG select_moves: Got {len(moves)} valid moves")
         
         if moves:
+            print("DEBUG select_moves: About to call agent.select_move_pair")
             chosen_moves = agent.select_move_pair(moves, local_board, local_board.current_player)
+            print(f"DEBUG select_moves: Selected moves: {chosen_moves}")
             return jsonify({"message": "Success", "move": chosen_moves}), 200
         else:
             return jsonify({"message": "No valid moves available"}), 200
     except Exception as e:
         logger.error(f"Error in select_moves: {e}")
+        import traceback
+        traceback.print_exc()
         return jsonify({"message": "An error occurred"}), 500
 
 @app.route('/debug_piece_blots', methods=['POST'])
