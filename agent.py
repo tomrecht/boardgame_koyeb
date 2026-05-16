@@ -355,4 +355,37 @@ class Agent():
             if (0, 0, 0) in moves:
                 return ((0, 0, 0), (0, 0, 0))
             return next(iter(moves)) if moves else ((0, 0, 0), (0, 0, 0))
+        
+        # --- Reordering logic for numbered piece saves: ensure numbered piece is saved first if possible to avoid frontend bug ---
+        def is_save_numbered_move(move):
+            if move[1] != 'save':
+                return False
+            piece_id = move[0]
+            if isinstance(piece_id, tuple) and len(piece_id) == 2:
+                return piece_id[1] <= 6
+            return False
+
+        def is_bring_out_move(move, board):
+            piece_id = move[0]
+            if piece_id == 0 or piece_id == (0,0):
+                return False
+            piece = board.piece_lookup.get(piece_id)
+            if not piece:
+                return False
+            if piece.tile and piece.tile.type == 'home':
+                return True
+            if piece.rack and piece.rack in (board.white_unentered, board.black_unentered):
+                return True
+            return False
+
+        if best_move_pair != ((0,0,0), (0,0,0)):
+            m1, m2 = best_move_pair
+            save1 = is_save_numbered_move(m1)
+            save2 = is_save_numbered_move(m2)
+            if save1 != save2:
+                save_move = m1 if save1 else m2
+                other_move = m2 if save1 else m1
+                if save_move[0] != other_move[0] and not is_bring_out_move(other_move, board):
+                    best_move_pair = (save_move, other_move)
+        
         return best_move_pair
