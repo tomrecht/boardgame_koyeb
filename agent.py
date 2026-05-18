@@ -239,7 +239,6 @@ class Agent():
         best_components = None
 
         top_moves = []
-
         def _keep_top(move_pair, score, components):
             top_moves.append((score, move_pair, components))
             top_moves.sort(key=lambda x: x[0], reverse=True)
@@ -249,6 +248,24 @@ class Agent():
         save_die_log = []
         board.log_callback = lambda entry: save_die_log.append(entry)
 
+        # --- Canonical key for deduplication ---
+        def canonical_key(m1, m2):
+            # Pass moves are unique (no symmetric partner)
+            if m1 == (0,0,0) or m2 == (0,0,0):
+                return (m1, m2)
+            # Different pieces → sort by piece identifier (tuple)
+            if m1[0] != m2[0]:
+                # Compare tuples directly (both are (player, number))
+                if m1[0] < m2[0]:
+                    return (m1, m2)
+                else:
+                    return (m2, m1)
+            # Same piece → order matters (no deduplication)
+            return (m1, m2)
+
+        seen_keys = set()
+
+        # ---- Pass move ----
         if (0, 0, 0) in moves:
             score, components = self.evaluate(board, player)
             if score > best_score:
@@ -256,11 +273,12 @@ class Agent():
                 best_move_pair = ((0, 0, 0), (0, 0, 0))
                 best_components = components
             _keep_top(((0, 0, 0), (0, 0, 0)), score, components)
+            seen_keys.add(((0,0,0),(0,0,0)))
 
-        moves = set(moves)
-        moves.discard((0, 0, 0))
+        moves_set = set(moves)
+        moves_set.discard((0, 0, 0))
 
-        for move in moves:
+        for move in moves_set:
             if not isinstance(move, tuple) or len(move) != 3:
                 raise ValueError('Invalid move format: each move should be a tuple of length 3.')
 
@@ -269,12 +287,16 @@ class Agent():
 
             remaining_captured = [p for p in board.home_tile.pieces if p.player == board.current_player]
             if not remaining_captured:
-                score, components = self.evaluate(board, player)
-                if score > best_score:
-                    best_score = score
-                    best_move_pair = (move, (0, 0, 0))
-                    best_components = components
-                _keep_top((move, (0, 0, 0)), score, components)
+                pair = (move, (0, 0, 0))
+                key = canonical_key(pair[0], pair[1])
+                if key not in seen_keys:
+                    seen_keys.add(key)
+                    score, components = self.evaluate(board, player)
+                    if score > best_score:
+                        best_score = score
+                        best_move_pair = (move, (0, 0, 0))
+                        best_components = components
+                    _keep_top((move, (0, 0, 0)), score, components)
 
             if all(die.used for die in board.dice):
                 while len(board.moves) > initial_move_count:
@@ -292,17 +314,22 @@ class Agent():
                 if not isinstance(next_move, tuple) or len(next_move) != 3:
                     raise ValueError('Invalid next move format.')
                 board.apply_move(next_move, switch_turn=False)
-                score, components = self.evaluate(board, player)
-                if score > best_score:
-                    best_score = score
-                    best_move_pair = (move, next_move)
-                    best_components = components
-                _keep_top((move, next_move), score, components)
+                pair = (move, next_move)
+                key = canonical_key(pair[0], pair[1])
+                if key not in seen_keys:
+                    seen_keys.add(key)
+                    score, components = self.evaluate(board, player)
+                    if score > best_score:
+                        best_score = score
+                        best_move_pair = (move, next_move)
+                        best_components = components
+                    _keep_top((move, next_move), score, components)
                 board.undo_last_move()
 
             while len(board.moves) > initial_move_count:
                 board.undo_last_move()
 
+        # ---- Logging (unchanged) ----
         def serialize_first_move(fm):
             if fm is None:
                 return None
@@ -355,37 +382,5 @@ class Agent():
             if (0, 0, 0) in moves:
                 return ((0, 0, 0), (0, 0, 0))
             return next(iter(moves)) if moves else ((0, 0, 0), (0, 0, 0))
-        
-        # --- Reordering logic for numbered piece saves: ensure numbered piece is saved first if possible to avoid frontend bug ---
-        def is_save_numbered_move(move):
-            if move[1] != 'save':
-                return False
-            piece_id = move[0]
-            if isinstance(piece_id, tuple) and len(piece_id) == 2:
-                return piece_id[1] <= 6
-            return False
 
-        def is_bring_out_move(move, board):
-            piece_id = move[0]
-            if piece_id == 0 or piece_id == (0,0):
-                return False
-            piece = board.piece_lookup.get(piece_id)
-            if not piece:
-                return False
-            if piece.tile and piece.tile.type == 'home':
-                return True
-            if piece.rack and piece.rack in (board.white_unentered, board.black_unentered):
-                return True
-            return False
-
-        if best_move_pair != ((0,0,0), (0,0,0)):
-            m1, m2 = best_move_pair
-            save1 = is_save_numbered_move(m1)
-            save2 = is_save_numbered_move(m2)
-            if save1 != save2:
-                save_move = m1 if save1 else m2
-                other_move = m2 if save1 else m1
-                if save_move[0] != other_move[0] and not is_bring_out_move(other_move, board):
-                    best_move_pair = (save_move, other_move)
-        
         return best_move_pair
