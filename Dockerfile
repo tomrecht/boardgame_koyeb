@@ -14,4 +14,4 @@ RUN pip install --no-cache-dir -r requirements.txt
 COPY . .
 
 # Run gunicorn (adjust timeout to 60-120 seconds for safety)
-CMD ["gunicorn", "--bind", "0.0.0.0:10000", "--timeout", "60", "app:app"]
+CMD gunicorn --bind 0.0.0.0:$PORT --timeout 60 app:app
