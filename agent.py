@@ -3,6 +3,7 @@ import os
 import copy
 import math
 from collections import deque
+import time
 
 GAME_OVER_SCORE = 10000
 LOG_TO_FILE = False
@@ -228,6 +229,9 @@ class Agent():
         return total_score, score_components
 
     def select_move_pair(self, moves, board, player):
+
+        start_time = time.time()
+
         if not board.dice[0].used and not board.dice[1].used:
             board.firstMove = None
 
@@ -387,5 +391,8 @@ class Agent():
                 other_move = m2 if save1 else m1
                 if save_move[0] != other_move[0] and not is_bring_out_move(other_move, board):
                     best_move_pair = (save_move, other_move)
-        
+                    
+        elapsed = time.time() - start_time
+        print(f"select_move_pair took {elapsed:.3f} seconds")
+
         return best_move_pair
