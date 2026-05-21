@@ -161,13 +161,16 @@ class Agent():
                                 for p in blocked_pieces if p.number <= 6)
 
         loose_pieces = [p for p in board_pieces if p.tile.type == 'field' and len(p.tile.pieces) == 1]
+        loose_piece_penalty = len(loose_pieces) * self.weights['loose_piece']
+        if board.game_stages[opponent] == 'endgame':
+            loose_piece_penalty *= -1
+
         loose_piece_bonus = sum(self.weights['loose_piece_penalties'].get(p.number, 0)
                                 for p in loose_pieces if p.number <= 6)
         opponent_board_piece_count = (len([p for p in opponent_board_pieces_list if p.tile.type in ['field', 'home']])
                                 + min(1, len(opponent_unentered)))
         loose_piece_bonus *= (opponent_board_piece_count / 14)
-        if board.game_stages[opponent] == 'endgame':
-            loose_piece_bonus *= -1
+        
 
         enemy_blot_penalty = 0
         if board.game_stages['white'] != 'endgame' and board.game_stages['black'] != 'endgame':
@@ -210,7 +213,7 @@ class Agent():
             'near_goal_bonus': near_goal_bonus,
             'blocked_pieces': len(blocked_pieces) * self.weights['blocked_piece'],
             'blocked_piece_bonus': blocked_piece_bonus,
-            'loose_pieces': len(loose_pieces) * self.weights['loose_piece'],
+            'loose_pieces': loose_piece_penalty,
             'loose_piece_bonus': loose_piece_bonus,
             'total_distance': total_distance * self.weights['distance_penalty'],
             'unentered_pieces': len(unentered_rack) * self.weights['unentered_piece'],
