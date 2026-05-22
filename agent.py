@@ -169,8 +169,7 @@ class Agent():
                                 for p in loose_pieces if p.number <= 6)
         opponent_board_piece_count = (len([p for p in opponent_board_pieces_list if p.tile.type in ['field', 'home']])
                                 + min(1, len(opponent_unentered)))
-        loose_piece_bonus *= (opponent_board_piece_count / 14)
-        
+        loose_piece_bonus *= (opponent_board_piece_count / 12)
 
         enemy_blot_penalty = 0
         if board.game_stages['white'] != 'endgame' and board.game_stages['black'] != 'endgame':
@@ -188,18 +187,29 @@ class Agent():
         game_stage = board.game_stages[player]
         game_stage_bonus = self.weights['game_stage_bonuses'].get(game_stage, 0)
 
-        goal_distances = set(distances[p] for p in player_board_pieces
-                            if 1 <= distances[p] <= 6
-                            and not p.can_be_saved() and not (p.rack is save_rack))
-        dice_spread_bonus = len(goal_distances) * self.weights.get('dice_spread', 3)
+        # Count useful dice rolls (1-6) – at least one piece can be saved or can move onto its goal
+        useful_rolls = set()
+        for piece in player_pieces:
+            if piece.can_be_saved():
+                save_rolls = board.get_saving_die(piece)   # list of dice numbers that would save this piece
+                for r in save_rolls:
+                    useful_rolls.add(r)
+
+        for piece in player_board_pieces:
+            if not piece.can_be_saved() and not (piece.rack is save_rack):
+                d = distances[piece]
+                if 1 <= d <= 6:
+                    useful_rolls.add(d)
+        dice_spread_bonus = len(useful_rolls) * self.weights.get('dice_spread', 3)
 
         # Permanent block bonus
         permanent_block_bonus = 0
-        for tile in board.tiles:
-            if tile.type == 'field':
-                friendly_pieces = [p for p in tile.pieces if p.player == player]
-                if len(friendly_pieces) >= 2 and all(p.number > 6 for p in friendly_pieces):
-                    permanent_block_bonus += self.weights.get('permanent_block_bonus', 13)
+        if board.game_stages[opponent] != 'endgame':
+            for tile in board.tiles:
+                if tile.type == 'field':
+                    friendly_pieces = [p for p in tile.pieces if p.player == player]
+                    if len(friendly_pieces) >= 2 and all(p.number > 6 for p in friendly_pieces):
+                        permanent_block_bonus += self.weights.get('permanent_block_bonus', 13)
 
         score_components = {
             'saved_pieces': saved_pieces * self.weights['saved_piece'],
