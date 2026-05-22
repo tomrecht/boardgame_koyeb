@@ -31,7 +31,7 @@ INITIAL_WEIGHTS = {
     'distance_penalty': -.2,
     'high_goal_penalty': -.3,
     'dice_roll_utilization': -2,
-    'dice_spread': 3,
+    'dice_spread': 10,
     'permanent_block_bonus': 13, 
 }
 
