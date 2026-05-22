@@ -153,9 +153,8 @@ class Piece {
 
         if (this.game.selectedPiece && this.game.selectedPiece !== this) {
 
-            // If this piece is on a field tile with multiple pieces, treat as tile click instead
-            if (this.currentTile && this.currentTile.type === 'field' && this.currentTile.pieces.length > 1) {
-                // Pass click to the tile
+            // If this piece is on a field tile, treat as tile click instead
+            if (this.currentTile && this.currentTile.type === 'field') {
                 this.currentTile.onClick();
                 return;
             }
