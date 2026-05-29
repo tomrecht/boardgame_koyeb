@@ -37,8 +37,38 @@ const scoreTracker = {
 
 let extraMoveRequested = false;
 
-// ── HIDDEN DEBUG TOGGLE ───────────────────────────────────────────────────────
-// Press D three times within 1 second to toggle debug mode.
+// ── DATA COLLECTION GLOBALS ─────────────────────────────────────────────
+let currentGameId = null;
+let moveCounter = 0;
+let _pendingMoves = [];   // stores moves made this turn in agent format
+let _lastMovePair = null; // complete move pair for the turn
+
+function clearMoveRecording() {
+    _pendingMoves = [];
+    _lastMovePair = null;
+}
+
+// Call before a human move executes; returns the die value that got used.
+// Usage: const dieUsed = getDieUsedAfter(game, () => { /* execute move */ });
+// Since moves are synchronous in the human path, we snapshot dice before and diff after.
+function getDieUsedAfter(game, executeFn) {
+    const before = game.dice.map(d => ({ value: d.value, used: d.used }));
+    executeFn();
+    for (let i = 0; i < game.dice.length; i++) {
+        if (!before[i].used && game.dice[i].used) return before[i].value;
+    }
+    return 0; // both used (sum move) – return 0 as sentinel; caller handles
+}
+
+// Record one half-move in agent format and push to _pendingMoves.
+// pieceColorNumber: [color_str, number]  e.g. ['white', 3]
+// target: [ring, sector] | 'save' | 0  (0 = block-save)
+// die: numeric die value used
+function pushHumanMove(pieceColorNumber, target, die) {
+    _pendingMoves.push([pieceColorNumber, target, die]);
+}
+
+// ── HIDDEN DEBUG TOGGLE ─────────────────────────────────────────────────
 window.debugMode = false;
 (function() {
     var tapCount = 0;
@@ -238,6 +268,12 @@ class Piece {
 
             this.currentTile.pieces.forEach(piece => piece.moveToRack(savedRack));
             this.game.dice.forEach(die => die.setUsed())
+
+            // Record human block-save as a complete move pair (matches agent encoding)
+            if (this.game.turn === 'white') {
+                const rep = [this.player, this.number];
+                _pendingMoves = [[rep, 0, 0], [rep, 0, 0]];
+            }
 
             // Check for the endgame condition
             const player = this.color === 0xffffff ? this.game.players[0] : this.game.players[1];
@@ -489,12 +525,18 @@ class Piece {
 
             if (dieToUse) {
                 console.log(`Using die ${dieToUse.value} to save piece ${this.number}`);
+                const dieValue = dieToUse.value;
                 // Use the corresponding die
                 dieToUse.setUsed();
 
                 // Move the piece to the saved rack
                 const savedRack = this.color === 0xffffff ? this.game.whiteSavedRack : this.game.blackSavedRack;
                 this.moveToRack(savedRack); // Move the piece to the saved rack
+
+                // Record human save move
+                if (this.player === 'white') {
+                    pushHumanMove([this.player, this.number], 'save', dieValue);
+                }
 
                 // Check for the endgame condition
                 this.game.checkEndgame(player);
@@ -638,9 +680,19 @@ class Tile {
         onClick() {
             if (this.game.gameOver) return; 
             if (this.game.selectedPiece && this.type !== "nogo") {
-                if (this.game.movePiece(this.game.selectedPiece, this)) {
-                    this.game.selectedPiece.isSelected = false;
-                    this.game.selectedPiece.updateColor();
+                const piece = this.game.selectedPiece;
+                const diceBefore = this.game.dice.map(d => ({ value: d.value, used: d.used }));
+                if (this.game.movePiece(piece, this)) {
+                    // Determine which die(s) were consumed
+                    let dieUsed = 0;
+                    for (let i = 0; i < this.game.dice.length; i++) {
+                        if (!diceBefore[i].used && this.game.dice[i].used) {
+                            dieUsed = dieUsed === 0 ? diceBefore[i].value : dieUsed + diceBefore[i].value;
+                        }
+                    }
+                    pushHumanMove([piece.player, piece.number], [this.ring, this.sector], dieUsed);
+                    piece.isSelected = false;
+                    piece.updateColor();
                     this.game.selectedPiece = null;
                 } else {
                     console.log('Move not possible');
@@ -1517,11 +1569,24 @@ class Game {
         this.updateMovablePieces(); // Update movable pieces
     }
 
+
+    
     switchTurn() {
+        // Determine which player just completed their turn
+        const justFinished = this.turn;  // this.turn is still the player who just moved
+        const playerObj = this.players.find(p => p.name === justFinished);
+        const source = playerObj.isAI ? 'heuristic' : 'human';
+
+        // Record human turns here (AI turns are not recorded)
+        if (!playerObj.isAI) {
+            const movePair = _pendingMoves.length > 0 ? _pendingMoves.slice() : null;
+            recordTurnPosition(this, justFinished, source, movePair);
+            clearMoveRecording();
+        }
 
         this.turn = this.turn === 'white' ? 'black' : 'white';
 
-            // Unhighlight all pieces
+        // Unhighlight all pieces
         this.pieces.forEach(piece => {
             piece.isSelected = false;
             piece.isHovered = false;
@@ -1610,31 +1675,43 @@ class Game {
         }
     }
 
-    endGame(winner, score = null) {
-        this.gameOver = true;
-        if (winner === 'tie') {
-            console.log("Game ended in a tie.");
-            score = 0;
-        } else {
-            if (score === null) {
-                score = winner === 'white'
-                    ? TOTAL_PIECES - this.blackSavedRack.pieces.length
-                    : TOTAL_PIECES - this.whiteSavedRack.pieces.length;
-            }
-            console.log(`${winner} wins with a score of ${score}!`);
-            if (winner === 'white') {
-                scoreTracker.total_score += score;
-                scoreTracker.white_wins += 1;
-            } else {
-                scoreTracker.total_score -= score;
-                scoreTracker.black_wins += 1;
-            }
-        }
-        scoreTracker.games_played += 1;
-        this.scene.updateScoreText();
-        this.scene.scene.start('EndGameScene', { winner: winner, score: score });
+endGame(winner, score = null) {
+    // Determine the score (margin) first
+    if (winner === 'tie') {
+        score = 0;
+    } else if (score === null) {
+        score = winner === 'white'
+            ? TOTAL_PIECES - this.blackSavedRack.pieces.length
+            : TOTAL_PIECES - this.whiteSavedRack.pieces.length;
     }
 
+    // Flush any pending human move pair before the game result is recorded
+    if (_pendingMoves.length > 0) {
+        const playerObj = this.players.find(p => p.name === this.turn);
+        const source = playerObj.isAI ? 'heuristic' : 'human';
+        recordTurnPosition(this, this.turn, source, _pendingMoves.slice());
+        clearMoveRecording();
+    }
+
+    // Notify backend of game result – this will flush all positions to disk
+    notifyGameResult(winner, score);
+
+    this.gameOver = true;
+    console.log(`${winner} wins with a score of ${score}!`);
+    if (winner === 'white') {
+        scoreTracker.total_score += score;
+        scoreTracker.white_wins += 1;
+    } else if (winner === 'black') {
+        scoreTracker.total_score -= score;
+        scoreTracker.black_wins += 1;
+    }
+    scoreTracker.games_played += 1;
+
+    // No need to record final position here – it was already recorded by applyMovePair
+    // Just update the UI and switch to end scene
+    this.scene.updateScoreText();
+    this.scene.scene.start('EndGameScene', { winner: winner, score: score });
+}
 
     captureState() {
         const state = {
@@ -1772,6 +1849,7 @@ class Game {
         this.hideOuterNogoTiles()
         this.selectedPiece = null;
         console.log('Game state restored.');
+        clearMoveRecording();
     }
     
     
@@ -1780,7 +1858,10 @@ class Game {
         this.undoButton = scene.add.image(config.width - DIE_2_POSITION, 85, 'leftWavyArrow')
             .setDisplaySize(buttonSize, buttonSize)
             .setInteractive()
-            .on('pointerdown', () => this.restoreState());
+            .on('pointerdown', () => {
+                this.restoreState();
+                clearMoveRecording();
+            });
     
         // Add tooltip for undo button
         const undoTooltip = scene.add.text(this.undoButton.x, this.undoButton.y, 'UNDO', {
@@ -2058,6 +2139,9 @@ class MainGameScene extends Phaser.Scene {
             this.updateScoreText();
             this.checkInitialAIReady();
 
+            // Call notifyStartGame when game is created
+            notifyStartGame();
+
     }
 
     updateScoreText() {
@@ -2274,8 +2358,18 @@ class MainGameScene extends Phaser.Scene {
         this.confirmationModal.add(cancelButton);
 
         confirmButton.on('pointerdown', () => {
+            if (!this.game.gameOver && currentGameId) {
+                fetch(`${SERVER_URL}/abort_game`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    credentials: 'include'
+                }).catch(e => console.warn('abort_game failed:', e));
+                currentGameId = null;
+                moveCounter = 0;
+                clearMoveRecording();
+            }
             this.startingPlayer = (scoreTracker.games_played % 2 === 0) ? 'white' : 'black';
-            this.scene.restart(); // Restart the current scene to start a new game
+            this.scene.restart();
             this.hideConfirmationModal();
         });
 
@@ -2361,6 +2455,17 @@ class EndGameScene extends Phaser.Scene {
             padding: { x: 20, y: 10 }
         }).setOrigin(0.5).setInteractive();
         restartButton.on('pointerdown', () => {
+            // Abort current game before restarting
+            if (currentGameId) {
+                fetch(`${SERVER_URL}/abort_game`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    credentials: 'include'
+                }).catch(e => console.warn('abort_game failed:', e));
+                currentGameId = null;
+                moveCounter = 0;
+                clearMoveRecording();
+            }
             const nextStarter = (scoreTracker.games_played % 2 === 0) ? 'white' : 'black';
             this.scene.start('MainGameScene', { startingPlayer: nextStarter });
         });
@@ -2396,7 +2501,7 @@ class InstructionsScene extends Phaser.Scene {
             'A piece must take the shortest available route to its destination tile, both when using one die and when using two dice. \n\n' +
             'You may pass your turn without using one or both dice. \n\n' +
             'When all your pieces are either saved or on goal tiles from which they can be saved, you are in the endgame. In the endgame, you may save unnumbered pieces using a higher roll than the goal tile number, as long as you don\'t have any pieces on higher-numbered goals. \n\n' +
-            'If you have only one piece left at the start of your turn, and it\'s a numbered piece which is on its goal, that piece becomes unnumbered.'
+            'If you have only one piece left at the start of your turn, and it\'s a numbered piece which is on its goal, that piece becomes unnumbered.\n\n' +
             'Click the back arrow to undo your moves or the right arrow to end your turn. \n\n' +
             'Good luck!'
 
@@ -2470,6 +2575,7 @@ function getAgentMoves(gameState) {
         headers: {
             'Content-Type': 'application/json'
         },
+        credentials: 'include',
         body: JSON.stringify(gameState)
     })
     .then(response => {
@@ -2492,6 +2598,82 @@ function getAgentMoves(gameState) {
         gameInstance.scene.scenes[0].hideThinkingIcon();
     });
 }
+
+function recordTurnPosition(game, player, source, movePair) {
+    if (!currentGameId) {
+        console.warn('No active game ID, skipping position recording');
+        return;
+    }
+    const gameState = getGameState(game);
+    moveCounter++;
+    const playerObj = game.players.find(p => p.name === player);
+    const gameStage = playerObj ? playerObj.getGamePhase() : 'unknown';
+    fetch(`${SERVER_URL}/record_position`, {
+        method: 'POST',
+        credentials: 'include',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+            state: gameState,
+            player: player,
+            source: source,
+            move_index: moveCounter,
+            game_stage: gameStage,
+            move_pair: movePair
+        })
+    })
+    .then(response => response.json())
+    .then(data => {
+        if (data.message !== 'Position recorded') {
+            console.warn('Failed to record position:', data);
+        } else {
+            console.log('Position recorded successfully');
+        }
+    })
+    .catch(e => console.warn('record_position failed:', e));
+}
+
+function notifyStartGame() {
+    console.log('Starting new game, notifying backend...');
+    fetch(`${SERVER_URL}/start_game`, {
+        method: 'POST',
+        credentials: 'include',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({})
+    })
+    .then(response => response.json())
+    .then(data => {
+        currentGameId = data.game_id;
+        moveCounter = 0;
+        clearMoveRecording();
+        console.log('Game started with ID:', currentGameId);
+    })
+    .catch(e => console.warn('start_game failed:', e));
+}
+
+function notifyGameResult(winner, score) {
+    if (!currentGameId) {
+        console.warn('No active game ID, cannot record result');
+        return;
+    }
+    console.log(`Recording game result: ${winner} wins with score ${score}`);
+    fetch(`${SERVER_URL}/record_game_result`, {
+        method: 'POST',
+        credentials: 'include',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+            winner: winner,
+            score: score
+        })
+    })
+    .then(() => {
+        // Clear game ID after successful recording
+        currentGameId = null;
+        moveCounter = 0;
+        clearMoveRecording();
+    })
+    .catch(e => console.warn('record_game_result failed:', e));
+}
+
 
 function applyMove(move) { 
     const game = gameInstance.scene.scenes[0].game;
@@ -2694,32 +2876,24 @@ function applyMovePair(movePair) {
 
             if (neitherMoveWasPass && game.dice.some(die => !die.used) && !extraMoveRequested) {
                 console.log('Requesting extra move.');
-                extraMoveRequested = true;  // Set the flag to true
+                extraMoveRequested = true;
                 const gameState = getGameState(game);
-                setTimeout(() => getAgentMoves(gameState), 1000); // Get another move pair if dice are unused
+                setTimeout(() => getAgentMoves(gameState), 1000);
             } else {
                 console.log('Applied both moves, switching turn.');
-                game.switchTurn();    // comment this out to not automatically pass turn back from AI to human player
+                game.switchTurn();
             }
         });
     });
 }
 
-
-
 function findPieceByColorAndNumber(color, number) {
-    // Implement this function to find the piece by its color and number
     return gameInstance.scene.scenes[0].game.pieces.find(piece => piece.player === color && piece.number === number);
 }
 
 function findTileByRingAndSector(ring, sector) {
-    // Implement this function to find the tile by its ring and sector
     return gameInstance.scene.scenes[0].game.tiles.find(tile => tile.ring === ring && tile.sector === sector);
 }
-
-
-
-
 
 function findPieceById(id) {
     const game = gameInstance.scene.scenes[0].game;
@@ -2728,8 +2902,6 @@ function findPieceById(id) {
         return pieceId === id;
     });
 }
-
-
 
 function getGameState(game) {
     console.log('Getting game state details');
@@ -2766,21 +2938,29 @@ function getGameState(game) {
                     sector: piece.currentTile.sector
                 }
             };
-
             if (piece.reachableTiles && piece.reachableTiles.reachableBySum) {
                 pieceDetails.reachableBySum = piece.reachableTiles.reachableBySum.map(tile => ({
                     ring: tile.ring,
                     sector: tile.sector
                 }));
             }
-
             return pieceDetails;
         })
     };
-
     return gameStateDetails;
 }
 
+// Page unload handler to abort game
+window.addEventListener('beforeunload', function() {
+    if (currentGameId) {
+        fetch(`${SERVER_URL}/abort_game`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            credentials: 'include',
+            keepalive: true
+        }).catch(e => console.warn('abort_game failed:', e));
+    }
+});
 
 
 const config = {
@@ -2796,11 +2976,3 @@ const config = {
 };
 
 const gameInstance = new Phaser.Game(config);
-
-// bug: code is allowing movement on sum against shortest-move rule (when click on piece twice)
-// and allowing moving a board piece first when still in opening
-
-// should be able to make moves in either order when must move a piece
-// missing border for save tiles
-
-// when >1 captured piece don't allow moving on sum
