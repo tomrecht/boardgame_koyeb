@@ -1,4 +1,5 @@
-# python -m http.server 8000 & python app.py
+# python -m http.server 8000
+# python app.py
 
 from flask import Flask, request, jsonify, session
 from flask_cors import CORS
@@ -23,7 +24,8 @@ CORS(app, supports_credentials=True)
 # -------------------------
 
 DATA_DIR = 'training_data'
-POSITIONS_FILE = os.path.join(DATA_DIR, 'positions_with_moves.jsonl')   # clearer name
+POSITIONS_FILE = os.path.join(DATA_DIR, 'positions_with_moves.jsonl')
+CONTRASTIVE_FILE = os.path.join(DATA_DIR, 'contrastive_pairs.jsonl')
 os.makedirs(DATA_DIR, exist_ok=True)
 
 active_games = {}  # game_id -> {'positions': [], 'start_time': ...}
@@ -47,6 +49,54 @@ shared_board = Board()
 def save_position_to_disk(position_data):
     with open(POSITIONS_FILE, 'a') as f:
         f.write(json.dumps(position_data) + '\n')
+
+def save_contrastive_pair(record):
+    with open(CONTRASTIVE_FILE, 'a') as f:
+        f.write(json.dumps(record) + '\n')
+
+# -------------------------
+# CANONICALIZATION
+# -------------------------
+
+def _normalize_move(m):
+    """Convert a move from JSON list format to a hashable tuple."""
+    if m is None or m == [0, 0, 0]:
+        return (0, 0, 0)
+    piece, dest, roll = m
+    piece = tuple(piece) if isinstance(piece, list) else piece
+    dest = tuple(dest) if isinstance(dest, list) else dest
+    return (piece, dest, roll)
+
+def apply_pair_to_board(board, m1, m2):
+    """Apply a move pair and return a frozenset snapshot of resulting piece positions."""
+    initial_move_count = len(board.moves)
+    try:
+        if m1 != (0, 0, 0):
+            board.apply_move(m1, switch_turn=False)
+        if m2 != (0, 0, 0):
+            board.apply_move(m2, switch_turn=False)
+        result = frozenset(
+            (p.player, p.number,
+             p.tile.ring if p.tile else None,
+             p.tile.sector if p.tile else None,
+             p.rack.type if p.rack else None)
+            for p in board.pieces
+        )
+    except Exception as e:
+        logger.warning(f"apply_pair_to_board failed: {e} m1={m1} m2={m2}")
+        result = None
+    finally:
+        while len(board.moves) > initial_move_count:
+            board.undo_last_move()
+    return result
+
+def pairs_effectively_equal(human_pair, agent_pair, board):
+    """True iff both move pairs produce identical resulting board states."""
+    if human_pair == agent_pair:
+        return True
+    h_result = apply_pair_to_board(board, human_pair[0], human_pair[1])
+    a_result = apply_pair_to_board(board, agent_pair[0], agent_pair[1])
+    return h_result is not None and h_result == a_result
 
 def flush_game_to_disk(game_id, winner, margin):
     if game_id not in active_games:
@@ -296,6 +346,85 @@ def training_data_stats():
     except Exception as e:
         logger.error(f"Error in training_data_stats: {e}")
         return jsonify({"message": "An error occurred"}), 500
+
+@app.route('/query_agent_move', methods=['POST'])
+def query_agent_move():
+    """
+    Given a pre-move board state and the human's chosen move pair,
+    return what the agent would have chosen, whether it differs
+    (by resulting board state comparison), and the agent's eval score.
+    Used to build contrastive training pairs.
+    """
+    try:
+        data = request.json
+        state = data.get('state')
+        human_pair_raw = data.get('human_pair')
+
+        if not state or not human_pair_raw:
+            return jsonify({"message": "state and human_pair required"}), 400
+
+        local_board = Board()
+        local_board.update_state(state)
+        moves = local_board.get_valid_moves()
+
+        if not moves:
+            return jsonify({"differs": False, "agent_pair": None, "agent_score": None}), 200
+
+        agent_pair = agent.select_move_pair(moves, local_board, local_board.current_player)
+        agent_score, _ = agent.evaluate(local_board, local_board.current_player)
+
+        # Normalize move encodings
+        local_board.update_state(state)
+        human_m1 = _normalize_move(human_pair_raw[0] if len(human_pair_raw) > 0 else None)
+        human_m2 = _normalize_move(human_pair_raw[1] if len(human_pair_raw) > 1 else [0, 0, 0])
+        agent_m1 = _normalize_move(agent_pair[0] if len(agent_pair) > 0 else None)
+        agent_m2 = _normalize_move(agent_pair[1] if len(agent_pair) > 1 else [0, 0, 0])
+
+        differs = not pairs_effectively_equal(
+            (human_m1, human_m2), (agent_m1, agent_m2), local_board
+        )
+
+        return jsonify({
+            "differs": differs,
+            "agent_pair": agent_pair,
+            "agent_score": agent_score,
+        }), 200
+    except Exception as e:
+        logger.exception("Error in query_agent_move")
+        return jsonify({"message": str(e)}), 500
+
+
+@app.route('/record_contrastive_pair', methods=['POST'])
+def record_contrastive_pair():
+    """
+    Record a disagreement between human and agent move choices.
+    final_score is added post-game via a labeling pass (join by game_id + move_index).
+    """
+    try:
+        data = request.json
+        game_id = session.get('game_id')
+        if not game_id:
+            return jsonify({"message": "No active game"}), 400
+
+        record = {
+            'schema_version': SCHEMA_VERSION,
+            'game_id': game_id,
+            'player': data.get('player'),
+            'game_stage': data.get('game_stage', 'unknown'),
+            'move_index': data.get('move_index', 0),
+            'human_pair': data.get('human_pair'),
+            'agent_pair': data.get('agent_pair'),
+            'agent_score': data.get('agent_score'),
+            'raw_state': data.get('state'),
+            'timestamp': int(time.time()),
+        }
+        save_contrastive_pair(record)
+        logger.debug(f"Recorded contrastive pair for game {game_id}, move {record['move_index']}")
+        return jsonify({"message": "Contrastive pair recorded"}), 200
+    except Exception as e:
+        logger.exception("Error in record_contrastive_pair")
+        return jsonify({"message": str(e)}), 500
+
 
 if __name__ == '__main__':
     port = int(os.environ.get('PORT', 10000))

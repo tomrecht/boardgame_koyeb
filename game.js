@@ -1053,6 +1053,7 @@ class Game {
 
         // Capture initial state
         this.state = this.captureState();
+        this.turnStartState = null;  // populated after each rollDice in switchTurn
 
                 // Set players to endgame if debug mode is active
                 this.debug = debug; // Add debug flag
@@ -1579,8 +1580,12 @@ class Game {
 
         // Record human turns here (AI turns are not recorded)
         if (!playerObj.isAI) {
+            const preState = this.turnStartState || getGameState(this);
             const movePair = _pendingMoves.length > 0 ? _pendingMoves.slice() : null;
             recordTurnPosition(this, justFinished, source, movePair);
+            if (movePair) {
+                queryAndRecordContrastive(preState, movePair, justFinished, moveCounter);
+            }
             clearMoveRecording();
         }
 
@@ -1612,7 +1617,9 @@ class Game {
         this.updateMovablePieces();
         this.pieces.forEach(piece => piece.reachableTiles = null);
         this.state = this.captureState();
-        this.applyLastPieceRule();  
+        this.applyLastPieceRule();
+        // Snapshot state with fresh dice for contrastive query at end of turn
+        this.turnStartState = getGameState(this);  
 
         // Check if it's the agent's turn and call getAgentMoves
         const currentPlayer = this.turn;
@@ -1689,7 +1696,12 @@ endGame(winner, score = null) {
     if (_pendingMoves.length > 0) {
         const playerObj = this.players.find(p => p.name === this.turn);
         const source = playerObj.isAI ? 'heuristic' : 'human';
-        recordTurnPosition(this, this.turn, source, _pendingMoves.slice());
+        const preState = this.turnStartState || getGameState(this);
+        const movePair = _pendingMoves.slice();
+        recordTurnPosition(this, this.turn, source, movePair);
+        if (!playerObj.isAI) {
+            queryAndRecordContrastive(preState, movePair, this.turn, moveCounter);
+        }
         clearMoveRecording();
     }
 
@@ -2630,6 +2642,43 @@ function recordTurnPosition(game, player, source, movePair) {
         }
     })
     .catch(e => console.warn('record_position failed:', e));
+}
+
+async function queryAndRecordContrastive(preState, humanPair, player, moveIndex) {
+    if (!currentGameId) return;
+    try {
+        const game = gameInstance.scene.scenes[0].game;
+        const playerObj = game.players.find(p => p.name === player);
+        const gameStage = playerObj ? playerObj.getGamePhase() : 'unknown';
+
+        const response = await fetch(`${SERVER_URL}/query_agent_move`, {
+            method: 'POST',
+            credentials: 'include',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ state: preState, human_pair: humanPair }),
+        });
+        const data = await response.json();
+
+        if (!data.differs) return;  // agent agreed, nothing to record
+
+        await fetch(`${SERVER_URL}/record_contrastive_pair`, {
+            method: 'POST',
+            credentials: 'include',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                state: preState,
+                player: player,
+                game_stage: gameStage,
+                move_index: moveIndex,
+                human_pair: humanPair,
+                agent_pair: data.agent_pair,
+                agent_score: data.agent_score,
+            }),
+        });
+        console.log('Contrastive pair recorded (agent disagreed)');
+    } catch(e) {
+        console.warn('queryAndRecordContrastive failed:', e);
+    }
 }
 
 function notifyStartGame() {
