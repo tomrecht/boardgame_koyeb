@@ -420,6 +420,7 @@ class Board:
                 origin_rack.insert(0, piece)
                 piece.rack = origin_rack
             if captured_piece:
+                self.home_tile.pieces.remove(captured_piece)
                 new_tile.pieces.append(captured_piece)
                 captured_piece.tile = new_tile
         if roll == self.dice[0].number and self.dice[0].used:
