@@ -36,7 +36,7 @@ SCHEMA_VERSION = 1
 # AGENT INITIALIZATION
 # -------------------------
 
-current_weights = get_weights()
+current_weights = get_weights(weights_file='optimized_weights.json')
 agent = Agent(weights=current_weights, log_to_file=True)
 
 # Reuse a single board to keep caches across moves (optional, can be per‑request)

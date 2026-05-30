@@ -35,10 +35,10 @@ INITIAL_WEIGHTS = {
     'permanent_block_bonus': 13, 
 }
 
-def get_weights():
-    if os.path.exists('best_weights.json'):
+def get_weights(weights_file = 'best_weights.json'):
+    if os.path.exists(weights_file):
         import json
-        with open('best_weights.json') as f:
+        with open(weights_file) as f:
             weights = json.load(f)
 
         for key, default_value in INITIAL_WEIGHTS.items():
@@ -51,7 +51,7 @@ def get_weights():
                     'enemy_blot_penalties', 'high_goal_proximity_penalties']:
             if key in weights and isinstance(weights[key], dict):
                 weights[key] = {int(k) if k.isdigit() else k: v for k, v in weights[key].items()}
-        print("Loaded best_weights.json")
+        print("Loaded", weights_file)
         return weights
     return INITIAL_WEIGHTS
 
