@@ -44,16 +44,17 @@ def get_weights(weights_file = 'best_weights.json'):
         for key, default_value in INITIAL_WEIGHTS.items():
             if key not in weights:
                 weights[key] = default_value
-                print(f"Added missing weight: {key} = {default_value}")
+     #           print(f"Added missing weight: {key} = {default_value}")
 
         for key in ['saved_bonuses', 'goal_bonuses', 'near_goal_bonuses',
                     'captured_bonuses', 'loose_piece_penalties', 'blocked_piece_penalties',
                     'enemy_blot_penalties', 'high_goal_proximity_penalties']:
             if key in weights and isinstance(weights[key], dict):
                 weights[key] = {int(k) if k.isdigit() else k: v for k, v in weights[key].items()}
-        print("Loaded", weights_file)
+       # print("Loaded", weights_file)
         return weights
     return INITIAL_WEIGHTS
+
 
 class Agent():
     def __init__(self, board=None, weights=INITIAL_WEIGHTS, log_file='game_log.json', log_to_file=LOG_TO_FILE):

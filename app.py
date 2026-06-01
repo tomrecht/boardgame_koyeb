@@ -1,5 +1,4 @@
-# python -m http.server 8000
-# python app.py
+# python -m http.server 8000 & python app.py
 
 from flask import Flask, request, jsonify, session
 from flask_cors import CORS
@@ -36,7 +35,7 @@ SCHEMA_VERSION = 1
 # AGENT INITIALIZATION
 # -------------------------
 
-current_weights = get_weights(weights_file='optimized_weights.json')
+current_weights = get_weights(weights_file='best_weights.json')
 agent = Agent(weights=current_weights, log_to_file=True)
 
 # Reuse a single board to keep caches across moves (optional, can be per‑request)

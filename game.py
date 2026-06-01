@@ -85,6 +85,27 @@ class Board:
         self.endgame_reward_applied = {'white': False, 'black': False}
         self.offgoals = {'white': 0, 'black': 0}
 
+
+    def all_goal_distances(self, piece):
+        """
+        Return dict {goal_num: distance} for goals 1-6.
+        """
+        distances = {}
+        
+        # Get the tile for each goal (assumes goal tiles exist)
+        # This assumes you have goal tiles indexed 1-6
+        for goal_num in range(1, 7):
+            try:
+                # Try to find the goal tile for this goal number
+                goal_tile = next(t for t in self.tiles if t.type == 'save' and t.index == goal_num)
+                # Use get_reachable_tiles to compute distance
+                dist = self.shortest_route_to_tile(piece.tile, goal_tile) if piece.tile else float('inf')
+                distances[goal_num] = dist if dist is not None else float('inf')
+            except StopIteration:
+                distances[goal_num] = float('inf')
+        
+        return distances
+
     def __repr__(self):
         board_repr = "White unentered: " + str(self.white_unentered) + "\n"
         board_repr += "White saved: " + str(self.white_saved) + "\n"
@@ -237,9 +258,9 @@ class Board:
 
     def get_unentered_piece(self):
         unentered_rack = self.white_unentered if self.current_player == 'white' else self.black_unentered
-        if len(unentered_rack) > 0:
-            return unentered_rack[0]
-        return None
+        if len(unentered_rack) == 0:
+            return None
+        return unentered_rack[0]
 
     def must_move_unentered(self):
         unentered_rack = self.white_unentered if self.current_player == 'white' else self.black_unentered
@@ -342,9 +363,25 @@ class Board:
             unentered_piece = self.get_unentered_piece()
             if unentered_piece:
                 player_pieces.append(unentered_piece)
+
+            # Deduplicate: among unnumbered pieces (number > 6) on the same tile since they're interchangeable
+            # first try this only for second move (firstMove is not None) to reduce possible bugs
+         #   if self.firstMove is not None:
+            deduped = []
+            seen_tiles = {}
+            for piece in player_pieces:
+                if piece.number > 6 and piece.tile is not None:
+                    if piece.tile in seen_tiles:
+                        continue
+                    seen_tiles[piece.tile] = True
+                deduped.append(piece)
+            player_pieces = deduped
+
             for piece in player_pieces:
                 self.get_reachable_tiles_by_dice(piece)
             self.destinations_by_piece = {piece: piece.reachable_tiles for piece in player_pieces}
+
+
         tuples_list = []
         for piece, moves in self.destinations_by_piece.items():
             for roll, destinations in moves.items():
@@ -420,8 +457,9 @@ class Board:
                 origin_rack.insert(0, piece)
                 piece.rack = origin_rack
             if captured_piece:
-                new_tile.pieces.append(captured_piece)
+                self.home_tile.pieces.remove(captured_piece)
                 captured_piece.tile = new_tile
+                new_tile.pieces.append(captured_piece)
         if roll == self.dice[0].number and self.dice[0].used:
             self.dice[0].used = False
         elif roll == self.dice[1].number and self.dice[1].used:
@@ -527,6 +565,61 @@ class Board:
                         queue.append((neighbor, distance + 1))
         self._distance_cache[cache_key] = float('inf')
         return float('inf')
+
+    def all_goal_distances(self, piece):
+        """
+        Return a dict {goal_number: distance} for all 6 goal tiles,
+        accounting for current blocks. Distance is 0 if already saved
+        or currently on that goal tile and can_be_saved.
+        Uses a single BFS that collects all reachable goal distances at once.
+        Unnumbered pieces (number > 6) can reach any goal tile.
+        Numbered pieces can only reach their matching goal tile.
+        """
+        NUM_GOALS = 6
+        goal_numbers = list(range(1, NUM_GOALS + 1))
+
+        # Already saved: distance 0 to all goals (piece is done)
+        if piece.rack and (piece.rack is self.white_saved or piece.rack is self.black_saved):
+            return {n: 0 for n in goal_numbers}
+
+        # Currently on a reachable goal tile
+        if piece.can_be_saved():
+            result = {n: float('inf') for n in goal_numbers}
+            if piece.tile and piece.tile.type == 'save':
+                result[piece.tile.number] = 0
+            return result
+
+        # Numbered piece can only reach its own goal
+        if piece.number <= 6:
+            dist = self.shortest_route_to_goal(piece)
+            return {n: (dist if n == piece.number else float('inf'))
+                    for n in goal_numbers}
+
+        # Unnumbered piece: single BFS collecting all 6 goal distances
+        cache_key = ('all_goals', piece.tile.index if piece.tile else -1,
+                     piece.player, self._get_blocked_key(piece.player))
+        if cache_key in self._distance_cache:
+            return self._distance_cache[cache_key]
+
+        start_tile = piece.tile if piece.tile else self.home_tile
+        result = {}
+        queue = deque([(start_tile, 0)])
+        visited = set([start_tile])
+
+        while queue and len(result) < NUM_GOALS:
+            current_tile, distance = queue.popleft()
+            for neighbor in current_tile.neighbors:
+                if neighbor not in visited:
+                    visited.add(neighbor)
+                    if neighbor.type == 'save' and neighbor.number not in result:
+                        result[neighbor.number] = distance + 1
+                    if neighbor.type not in ['nogo', 'home'] and not neighbor.is_blocked(piece.player):
+                        queue.append((neighbor, distance + 1))
+
+        # Fill unreachable goals with inf
+        full_result = {n: result.get(n, float('inf')) for n in goal_numbers}
+        self._distance_cache[cache_key] = full_result
+        return full_result
 
     def get_target_goal_number(self, piece):
         if not hasattr(self, '_goal_cache'):
