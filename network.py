@@ -135,28 +135,45 @@ def update_tile_features_dynamic(tile_feats, board, current_player, tile_index):
       [9]  reserved
       [10] my_piece_count (current player)
       [11] opp_piece_count (opponent)
+
+    Only iterates tiles that actually have pieces — the base feature tensor
+    has zeros in slots 8/10/11, so empty tiles need no update. Most tiles are
+    empty most of the time, so this is far cheaper than iterating all 70.
     """
-    opponent = 'black' if current_player == 'white' else 'white'
     tile_feats = tile_feats.clone()
 
-    for (ring, sector), idx in tile_index.items():
-        tile = board.get_tile(ring, sector)
+    # Group pieces by their tile (only occupied tiles)
+    for piece in board.pieces:
+        tile = piece.tile
         if tile is None:
             continue
-
-        my_pieces  = [p for p in tile.pieces if p.player == current_player]
-        opp_pieces = [p for p in tile.pieces if p.player == opponent]
-
-        # has_permanent_block: 2+ unnumbered friendly pieces on a field tile
-        if tile.type == 'field' and len(my_pieces) >= 2:
-            unnumbered = sum(1 for p in my_pieces if p.number > 6)
-            tile_feats[idx, 8] = 1.0 if unnumbered >= 2 else 0.0
+        coords = (tile.ring, tile.pos)
+        idx = tile_index.get(coords)
+        if idx is None:
+            continue
+        # Increment the appropriate piece count
+        if piece.player == current_player:
+            tile_feats[idx, 10] += 1.0
         else:
-            tile_feats[idx, 8] = 0.0
+            tile_feats[idx, 11] += 1.0
 
-        tile_feats[idx, 9]  = 0.0  # reserved
-        tile_feats[idx, 10] = float(len(my_pieces))
-        tile_feats[idx, 11] = float(len(opp_pieces))
+    # has_permanent_block: recompute only for occupied field tiles
+    occupied_field_tiles = set()
+    for piece in board.pieces:
+        tile = piece.tile
+        if tile is not None and tile.type == 'field':
+            occupied_field_tiles.add(tile)
+
+    for tile in occupied_field_tiles:
+        coords = (tile.ring, tile.pos)
+        idx = tile_index.get(coords)
+        if idx is None:
+            continue
+        my_pieces = [p for p in tile.pieces if p.player == current_player]
+        if len(my_pieces) >= 2:
+            unnumbered = sum(1 for p in my_pieces if p.number > 6)
+            if unnumbered >= 2:
+                tile_feats[idx, 8] = 1.0
 
     return tile_feats
 
@@ -245,6 +262,16 @@ def encode_piece_features(board, tile_index, current_player):
                         key=lambda p: p.number)
     opp_pieces = sorted([p for p in board.pieces if p.player == opponent],
                         key=lambda p: p.number)
+
+    # Defensive: enforce at most NUM_PIECES per player. A known bug can
+    # occasionally produce 13 pieces for a player (last-piece renumber to 13
+    # combined with a serialization edge case). Truncate so the encoded
+    # tensor is always [TOTAL_PIECES, PIECE_FEAT_DIM].
+    if len(cur_pieces) > NUM_PIECES:
+        cur_pieces = cur_pieces[:NUM_PIECES]
+    if len(opp_pieces) > NUM_PIECES:
+        opp_pieces = opp_pieces[:NUM_PIECES]
+
     all_pieces = cur_pieces + opp_pieces
 
     cur_un = board.white_unentered if current_player == 'white' else board.black_unentered
@@ -636,7 +663,15 @@ class BoardGNN(nn.Module):
         return self.readout(combined).squeeze(1)
 
     def forward(self, encoded):
-        """Accept single encoded dict or list of dicts (batch)."""
+        """
+        Accept:
+          - a single encoded dict (from encoder.encode)
+          - a list of encoded dicts
+          - a pre-collated batch dict (from collate_batch, has 'B' key)
+        """
+        if isinstance(encoded, dict) and 'B' in encoded:
+            # Already collated
+            return self._forward_batch(encoded)
         if isinstance(encoded, dict):
             batch = collate_batch([encoded])
             return self._forward_batch(batch).squeeze(0)

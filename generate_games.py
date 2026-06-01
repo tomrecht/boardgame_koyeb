@@ -5,7 +5,7 @@ Saves positions in the same schema as positions_with_moves.jsonl.
 Uses multiprocessing for speed.
 
 Usage:
-    python generate_games.py --games 3000 --out training_data/generated_positions.jsonl
+    python generate_games.py --games 6000 --out training_data/generated_positions.jsonl
     python generate_games.py --games 3000 --out training_data/generated_positions.jsonl --workers 4
 """
 
@@ -162,9 +162,9 @@ def main():
     timeouts = 0
     games_done = 0
 
-    with open(args.out, 'w') as f:
+    with open(args.out, 'a') as f:
         with Pool(processes=args.workers) as pool:
-            for records, timed_out, seed in pool.imap_unordered(worker, seeds, chunksize=4):
+            for records, timed_out, seed in pool.imap_unordered(worker, seeds, chunksize=1):
                 games_done += 1
                 if timed_out:
                     timeouts += 1
@@ -174,7 +174,11 @@ def main():
                         f.write(json.dumps(rec) + '\n')
                     total_positions += len(records)
 
-                if games_done % 100 == 0:
+                if games_done == 1:
+                    elapsed = time.time() - start
+                    print(f"  First game done in {elapsed:.1f}s ({len(records) if not timed_out else 0} positions)")
+
+                if games_done % 10 == 0:
                     elapsed = time.time() - start
                     rate = games_done / elapsed
                     remaining = (args.games - games_done) / rate
