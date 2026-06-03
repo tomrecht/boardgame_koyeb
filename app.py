@@ -9,6 +9,7 @@ import time
 import logging
 from game import Board
 from agent import Agent, get_weights
+from agent_gnn import GNNAgent
 
 logging.basicConfig(level=logging.INFO,
                     format='%(asctime)s %(levelname)s %(message)s')
@@ -36,7 +37,8 @@ SCHEMA_VERSION = 1
 # -------------------------
 
 current_weights = get_weights(weights_file='best_weights.json')
-agent = Agent(weights=current_weights, log_to_file=True)
+#agent = Agent(weights=current_weights, log_to_file=True)
+agent = GNNAgent(weights_path='opponent_1.pt')
 
 # Reuse a single board to keep caches across moves (optional, can be per‑request)
 shared_board = Board()

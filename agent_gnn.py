@@ -31,13 +31,28 @@ class GNNAgent:
     
     _printed_ready = False  # class-level flag
 
-    def __init__(self, weights_path=GNN_WEIGHTS, model=None):
+    def __init__(self, weights_path=GNN_WEIGHTS, model=None,
+                 use_prefilter=False, prefilter_top_k=40, heuristic_weights=None):
         self.encoder = BoardEncoder()
         if model is not None:
             self.model = model
             self.model.eval()
         else:
             self.model = load_model(weights_path)
+
+        # Optional move-pair pre-filter: rank candidates with the cheap heuristic
+        # and only GNN-encode the top-K. Speeds up high-branching turns.
+        self.use_prefilter   = use_prefilter
+        self.prefilter_top_k = prefilter_top_k
+        self.heuristic = None
+        if use_prefilter:
+            from agent import Agent, get_weights
+            if isinstance(heuristic_weights, str):
+                w = get_weights(heuristic_weights)
+            else:
+                w = heuristic_weights          # dict or None (None -> Agent loads defaults)
+            self.heuristic = Agent(weights=w)
+
         if not GNNAgent._printed_ready:
             print(f"GNNAgent ready on {next(self.model.parameters()).device}")
             GNNAgent._printed_ready = True
@@ -74,13 +89,24 @@ class GNNAgent:
         if not isinstance(moves, (list, set)) or not all(isinstance(m, tuple) for m in moves):
             raise ValueError('Invalid moves format: expected a list or set of tuples.')
 
+        prefilter = self.use_prefilter and self.heuristic is not None
+
         move_keys    = []   # list of (move1, move2) pairs
-        encoded_list = []   # corresponding encoded positions
+        encoded_list = []   # corresponding encoded positions (filled when NOT prefiltering)
+        scored       = []   # (heuristic_score, pair)        (filled when prefiltering)
+
+        def record(pair):
+            # board is currently IN the resulting position for `pair`
+            if prefilter:
+                s, _ = self.heuristic.evaluate(board, player)   # cheap; returns (score, components)
+                scored.append((s, pair))
+            else:
+                move_keys.append(pair)
+                encoded_list.append(self.encoder.encode(board, player))
 
         # --- Pass move ---
         if (0, 0, 0) in moves:
-            move_keys.append(((0, 0, 0), (0, 0, 0)))
-            encoded_list.append(self.encoder.encode(board, player))
+            record(((0, 0, 0), (0, 0, 0)))
 
         moves_set = set(moves)
         moves_set.discard((0, 0, 0))
@@ -96,8 +122,7 @@ class GNNAgent:
             remaining_captured = [p for p in board.home_tile.pieces
                                    if p.player == board.current_player]
             if not remaining_captured:
-                move_keys.append((move, (0, 0, 0)))
-                encoded_list.append(self.encoder.encode(board, player))
+                record((move, (0, 0, 0)))
 
             if all(die.used for die in board.dice):
                 while len(board.moves) > initial_move_count:
@@ -115,17 +140,32 @@ class GNNAgent:
                 if not isinstance(next_move, tuple) or len(next_move) != 3:
                     raise ValueError('Invalid next move format.')
                 board.apply_move(next_move, switch_turn=False)
-                move_keys.append((move, next_move))
-                encoded_list.append(self.encoder.encode(board, player))
+                record((move, next_move))
                 board.undo_last_move()
 
             while len(board.moves) > initial_move_count:
                 board.undo_last_move()
 
+        # --- If prefiltering: take heuristic top-K, then encode ONLY those ---
+        if prefilter:
+            if not scored:
+                return ((0, 0, 0), (0, 0, 0))
+            scored.sort(key=lambda x: x[0], reverse=True)
+            top_pairs = [pair for _, pair in scored[:self.prefilter_top_k]]
+            for pair in top_pairs:
+                base = len(board.moves)
+                for m in pair:
+                    if m != (0, 0, 0):
+                        board.apply_move(m, switch_turn=False)
+                move_keys.append(pair)
+                encoded_list.append(self.encoder.encode(board, player))
+                while len(board.moves) > base:
+                    board.undo_last_move()
+
         if not move_keys:
             return ((0, 0, 0), (0, 0, 0))
 
-        # --- Single batched forward pass ---
+        # --- Single batched forward pass over the (filtered) candidates ---
         with torch.no_grad():
             scores = self.model(encoded_list)   # [N]
 
