@@ -327,6 +327,7 @@ def evaluate_board():
         player = local_board.current_player
         gnn_total, gnn_components = agent.evaluate(local_board, player)
         heur_total, heur_components = heur_agent.evaluate(local_board, player)
+        gnn_best = agent.best_play_value(local_board, player)
         return jsonify({
             "message": "Success",
             "eval": gnn_total,
@@ -334,6 +335,7 @@ def evaluate_board():
             "gnn_raw": gnn_components.get("gnn_raw"),
             "gnn_score": gnn_total,
             "gnn_player": player,
+            "gnn_best_margin": gnn_best,
             "heur_score": heur_total,
             "player": heur_components.get("player"),
             "opponent": heur_components.get("opponent"),

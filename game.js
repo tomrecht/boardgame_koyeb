@@ -157,13 +157,12 @@ function refreshEvalReadout() {
     evaluateBoard(getGameState(scene.game)).then(data => {
         if (!window.showEvals) { hideEvalReadout(); return; }
         if (!data) { el.textContent = 'eval unavailable'; return; }
-        // GNN value head predicts normalized margin (final_score / TOTAL_PIECES),
-        // so expected margin in points = raw * TOTAL_PIECES.
-        const margin = (data.gnn_raw === undefined || data.gnn_raw === null)
-            ? null : data.gnn_raw * TOTAL_PIECES;
-        const gnn  = _fmtAhead(data.gnn_player, margin, 1);
-        const heur = _fmtAhead(data.gnn_player, data.heur_score, 1);
-        el.textContent = 'GNN  exp margin: ' + gnn + '\nHeur score:      ' + heur;
+        const margin = (data.gnn_raw == null) ? null : data.gnn_raw * TOTAL_PIECES;
+        const best   = (data.gnn_best_margin == null) ? null : data.gnn_best_margin;
+        el.textContent =
+            'GNN best play: ' + _fmtAhead(data.gnn_player, best, 1) +
+            '\nGNN current:   ' + _fmtAhead(data.gnn_player, margin, 1) +
+            '\nHeur score:    ' + _fmtAhead(data.gnn_player, data.heur_score, 1);
     });
 }
 
@@ -2391,6 +2390,12 @@ class MainGameScene extends Phaser.Scene {
             tot.textContent = `GNN value (scaled): ${data.total_score ?? data.eval}`;
             tot.style.cssText = 'color:#88ff88;margin-bottom:10px;';
             panel.appendChild(tot);
+        }
+        if (data.gnn_best_margin !== undefined && data.gnn_best_margin !== null && gnnLabel) {
+            const b = document.createElement('div');
+            b.textContent = `GNN best-play margin: ${_fmtAhead(data.gnn_player, data.gnn_best_margin, 1)}`;
+            b.style.cssText = 'color:#88ffcc;margin-bottom:10px;font-weight:bold;font-size:17px;';
+            panel.appendChild(b);
         }
 
         // Heuristic total, shown from the leading side's perspective.

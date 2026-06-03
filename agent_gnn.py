@@ -19,7 +19,8 @@ import torch
 from network import BoardEncoder, BoardGNN, load_model, DEVICE
 
 GAME_OVER_SCORE = 10000
-SCORE_SCALE     = 1000.0   # must match train_distill.py
+SCORE_SCALE     = 1000.0   # must match train_distill.py if that's used
+NUM_PIECES      = 12       # must match train_gnn.py normalizer
 GNN_WEIGHTS     = 'gnn_weights.pt'
 
 
@@ -88,6 +89,31 @@ class GNNAgent:
 
         final_score = raw_score * SCORE_SCALE
         return final_score, {'gnn_raw': raw_score, 'gnn_score': final_score, '_player': player}
+
+    def best_play_value(self, board, player):
+            """
+            Expected margin (points, side-to-move perspective) assuming the side to
+            move plays its best pair this turn. Unlike a static eval of the current
+            board, this is the value the agent acts on, so it doesn't climb as the
+            player makes the moves it was always going to make.
+            NOTE: runs a full move selection -- on high-branching turns this is slow
+            unless the agent has the prefilter enabled.
+            """
+            pair = self.select_move_pair(board.get_valid_moves(), board, player)
+            base = len(board.moves)
+            for m in pair:
+                if m != (0, 0, 0):
+                    board.apply_move(m, switch_turn=False)
+            winner, score = board.check_game_over()
+            if winner:
+                margin = score if winner == player else -score
+            else:
+                with torch.no_grad():
+                    raw = self.model(self.encoder.encode(board, player)).item()
+                margin = raw * NUM_PIECES
+            while len(board.moves) > base:
+                board.undo_last_move()
+            return margin
 
     def select_move_pair(self, moves, board, player):
         """
