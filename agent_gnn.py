@@ -32,7 +32,8 @@ class GNNAgent:
     _printed_ready = False  # class-level flag
 
     def __init__(self, weights_path=GNN_WEIGHTS, model=None,
-                 use_prefilter=True, prefilter_top_k=40, heuristic_weights=None):
+                 use_prefilter=False, prefilter_top_k=40, heuristic_weights=None,
+                 prefilter_min_k=5, prefilter_frac=None, prefilter_score_alpha=None):
         self.encoder = BoardEncoder()
         if model is not None:
             self.model = model
@@ -41,9 +42,23 @@ class GNNAgent:
             self.model = load_model(weights_path)
 
         # Optional move-pair pre-filter: rank candidates with the cheap heuristic
-        # and only GNN-encode the top-K. Speeds up high-branching turns.
-        self.use_prefilter   = use_prefilter
-        self.prefilter_top_k = prefilter_top_k
+        # and only GNN-encode the top ones. Speeds up high-branching turns and
+        # removes the GNN's heuristically-bad blind spots.
+        #   prefilter_top_k       : absolute count cap (K).
+        #   prefilter_frac        : dynamic cap as a fraction of all pairs (rank-based;
+        #                           invariant to ANY monotonic heuristic change).
+        #   prefilter_score_alpha : adaptive score cutoff in [0,1] on the within-
+        #                           position normalized score (affine-invariant to
+        #                           the heuristic scale; survives re-weighting).
+        #   prefilter_min_k       : floor -- always keep at least this many.
+        self.use_prefilter        = use_prefilter
+        self.prefilter_top_k      = prefilter_top_k
+        self.prefilter_min_k      = prefilter_min_k
+        self.prefilter_frac       = prefilter_frac
+        self.prefilter_score_alpha = prefilter_score_alpha
+        # kept-set instrumentation (compute proxy for sweeps)
+        self.dbg_kept_total = 0
+        self.dbg_kept_calls = 0
         self.heuristic = None
         if use_prefilter:
             from agent import Agent, get_weights
@@ -161,12 +176,13 @@ class GNNAgent:
             while len(board.moves) > initial_move_count:
                 board.undo_last_move()
 
-        # --- If prefiltering: take heuristic top-K, then encode ONLY those ---
+        # --- If prefiltering: pick the kept candidates, then encode ONLY those ---
         if prefilter:
             if not scored:
                 return ((0, 0, 0), (0, 0, 0))
-            scored.sort(key=lambda x: x[0], reverse=True)
-            top_pairs = [pair for _, pair in scored[:self.prefilter_top_k]]
+            top_pairs = self._select_filtered(scored)
+            self.dbg_kept_total += len(top_pairs)
+            self.dbg_kept_calls += 1
             for pair in top_pairs:
                 base = len(board.moves)
                 for m in pair:
@@ -187,6 +203,59 @@ class GNNAgent:
         final_scores = scores * SCORE_SCALE
         best_idx     = final_scores.argmax().item()
         return move_keys[best_idx]
+
+    def _select_filtered(self, scored):
+        """
+        Given scored = list of (heuristic_score, pair), return the kept pairs.
+
+        Combines three optional knobs (applied together):
+          * prefilter_score_alpha (alpha in [0,1]): adaptive SCORE cutoff. Keep
+            pairs whose within-position normalized score
+            (score - worst) / (best - worst) is >= 1 - alpha. alpha None or >= 1
+            disables it (keep all by score); alpha = 0 keeps only pairs tied with
+            the best. Normalized per position, so it is AFFINE-INVARIANT to the
+            heuristic's scale -- re-weighting the heuristic (s' = a*s + b, a > 0)
+            leaves the kept set unchanged.
+          * prefilter_frac (f in (0,1]): dynamic count cap = round(f * n_pairs).
+            Purely rank/percentile based, so it is invariant to ANY monotonic
+            transform of the heuristic score.
+          * prefilter_top_k (K): absolute count cap.
+          * prefilter_min_k (m): floor -- always keep at least m (capped by n) so
+            the GNN always has options.
+
+        Kept count = clamp(score_cutoff_count, min_k, min(top_k, frac_cap)).
+        Pure top-K is recovered with alpha=None, frac=None.
+        """
+        n = len(scored)
+        if n == 0:
+            return []
+        scored = sorted(scored, key=lambda x: x[0], reverse=True)
+
+        # 1) adaptive count from the normalized score cutoff
+        alpha = self.prefilter_score_alpha
+        if alpha is None or alpha >= 1.0:
+            cut_count = n
+        else:
+            best   = scored[0][0]
+            worst  = scored[-1][0]
+            spread = best - worst
+            if spread <= 1e-12:
+                cut_count = n                       # all equal: cutoff can't discriminate
+            else:
+                thresh = best - alpha * spread
+                cut_count = sum(1 for s, _ in scored if s >= thresh)
+
+        # 2) count ceilings: absolute top_k and/or fraction-of-pairs
+        ceil_k = self.prefilter_top_k if self.prefilter_top_k else n
+        if self.prefilter_frac is not None:
+            ceil_k = min(ceil_k, max(1, round(self.prefilter_frac * n)))
+
+        # 3) combine: floor by min_k, ceil by ceil_k
+        min_k = self.prefilter_min_k or 1
+        k = max(cut_count, min(min_k, n))
+        k = min(k, ceil_k)
+        k = max(1, min(k, n))
+        return [pair for _, pair in scored[:k]]
 
     def select_move_pair_fast(self, moves, board, player):
         """
