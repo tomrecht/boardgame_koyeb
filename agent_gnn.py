@@ -118,6 +118,16 @@ class GNNAgent:
             initial_move_count = len(board.moves)
             board.apply_move(move, switch_turn=False)
 
+            # Terminal short-circuit: a winning move beats any learned value.
+            # The GNN never sees game_over (it just encodes the board), and a
+            # fully-won board is maximally out-of-distribution, so its value is
+            # unreliable -- take the guaranteed win directly.
+            wgo, _ = board.check_game_over()
+            if wgo == player:
+                while len(board.moves) > initial_move_count:
+                    board.undo_last_move()
+                return (move, (0, 0, 0))
+
             # Pass as second move (if legal)
             remaining_captured = [p for p in board.home_tile.pieces
                                    if p.player == board.current_player]
@@ -140,6 +150,11 @@ class GNNAgent:
                 if not isinstance(next_move, tuple) or len(next_move) != 3:
                     raise ValueError('Invalid next move format.')
                 board.apply_move(next_move, switch_turn=False)
+                wgo, _ = board.check_game_over()
+                if wgo == player:
+                    while len(board.moves) > initial_move_count:
+                        board.undo_last_move()
+                    return (move, next_move)
                 record((move, next_move))
                 board.undo_last_move()
 
@@ -202,6 +217,12 @@ class GNNAgent:
                 continue
             initial = len(board.moves)
             board.apply_move(move, switch_turn=False)
+            # Terminal short-circuit: winning first move.
+            wgo, _ = board.check_game_over()
+            if wgo == player:
+                while len(board.moves) > initial:
+                    board.undo_last_move()
+                return (move, (0, 0, 0))
             first_move_keys.append(move)
             first_encoded_list.append(self.encoder.encode(board, player))
             while len(board.moves) > initial:
@@ -220,6 +241,12 @@ class GNNAgent:
         # Apply best first move and find best second move
         initial = len(board.moves)
         board.apply_move(best_first, switch_turn=False)
+        # Terminal short-circuit: best first move is a win.
+        wgo, _ = board.check_game_over()
+        if wgo == player:
+            while len(board.moves) > initial:
+                board.undo_last_move()
+            return (best_first, (0, 0, 0))
 
         if all(die.used for die in board.dice):
             while len(board.moves) > initial:
@@ -242,6 +269,14 @@ class GNNAgent:
                 continue
             nm_initial = len(board.moves)
             board.apply_move(nm, switch_turn=False)
+            # Terminal short-circuit: winning second move.
+            wgo, _ = board.check_game_over()
+            if wgo == player:
+                while len(board.moves) > nm_initial:
+                    board.undo_last_move()
+                while len(board.moves) > initial:
+                    board.undo_last_move()
+                return (best_first, nm)
             second_move_keys.append(nm)
             second_encoded_list.append(self.encoder.encode(board, player))
             while len(board.moves) > nm_initial:
@@ -275,6 +310,12 @@ class GNNAgent:
 
             for m1 in valid_moves:
                 board.apply_move(m1, switch_turn=False)
+                # Terminal short-circuit: winning first move.
+                wgo, _ = board.check_game_over()
+                if wgo == player:
+                    while len(board.moves) > initial_len:
+                        board.undo_last_move()
+                    return (m1, (0, 0, 0))
                 enc = self.encoder.encode(board, player)
                 first_states.append(enc)
                 first_meta.append(m1)
@@ -292,6 +333,12 @@ class GNNAgent:
                 m1 = first_meta[idx]
 
                 board.apply_move(m1, switch_turn=False)
+                # Terminal short-circuit: top-K first move is a win.
+                wgo, _ = board.check_game_over()
+                if wgo == player:
+                    while len(board.moves) > initial_len:
+                        board.undo_last_move()
+                    return (m1, (0, 0, 0))
 
                 # If no second move
                 if all(die.used for die in board.dice):
@@ -322,6 +369,14 @@ class GNNAgent:
 
                 for m2 in second_moves:
                     board.apply_move(m2, switch_turn=False)
+                    # Terminal short-circuit: winning second move.
+                    wgo, _ = board.check_game_over()
+                    if wgo == player:
+                        while len(board.moves) > mid_len:
+                            board.undo_last_move()
+                        while len(board.moves) > initial_len:
+                            board.undo_last_move()
+                        return (m1, m2)
                     enc = self.encoder.encode(board, player)
                     second_states.append(enc)
                     second_meta.append(m2)
