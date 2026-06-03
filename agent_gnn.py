@@ -32,7 +32,7 @@ class GNNAgent:
     _printed_ready = False  # class-level flag
 
     def __init__(self, weights_path=GNN_WEIGHTS, model=None,
-                 use_prefilter=False, prefilter_top_k=40, heuristic_weights=None):
+                 use_prefilter=True, prefilter_top_k=40, heuristic_weights=None):
         self.encoder = BoardEncoder()
         if model is not None:
             self.model = model

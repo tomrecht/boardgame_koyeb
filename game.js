@@ -82,15 +82,115 @@ window.debugMode = false;
         if (tapCount >= 3) {
             tapCount = 0;
             window.debugMode = !window.debugMode;
-            var scene = gameInstance && gameInstance.scene && gameInstance.scene.scenes && gameInstance.scene.scenes[0];
-            if (scene && scene._debugEvalButton) {
-                scene._debugEvalButton.setVisible(window.debugMode);
-                scene._debugEvalLabel.setVisible(window.debugMode);
-            }
+            if (!window.debugMode) hideDebugTip();
             console.log('[DEBUG] mode: ' + (window.debugMode ? 'ON' : 'OFF'));
         }
     });
 })();
+
+// ── EVAL DISPLAY TOGGLE (separate from debug) ───────────────────────────
+// Triple-press 'E' to toggle a persistent on-board readout of both the GNN
+// and heuristic evals for the current position. Also reveals the detailed
+// "Evaluate Position" button/panel.
+window.showEvals = false;
+(function() {
+    var tapCount = 0;
+    var tapTimer = null;
+    document.addEventListener('keydown', function(e) {
+        if (e.key !== 'e' && e.key !== 'E') return;
+        e.preventDefault();
+        tapCount++;
+        clearTimeout(tapTimer);
+        tapTimer = setTimeout(function() { tapCount = 0; }, 1000);
+        if (tapCount >= 3) {
+            tapCount = 0;
+            window.showEvals = !window.showEvals;
+            var scene = gameInstance && gameInstance.scene && gameInstance.scene.scenes && gameInstance.scene.scenes[0];
+            if (scene && scene._debugEvalButton) {
+                scene._debugEvalButton.setVisible(window.showEvals);
+                scene._debugEvalLabel.setVisible(window.showEvals);
+            }
+            if (window.showEvals) {
+                refreshEvalReadout();
+            } else {
+                hideEvalReadout();
+            }
+            console.log('[EVALS] display: ' + (window.showEvals ? 'ON' : 'OFF'));
+        }
+    });
+})();
+
+// ── ON-BOARD EVAL READOUT ───────────────────────────────────────────────
+let _evalReadout = null;
+function _getEvalReadout() {
+    if (!_evalReadout) {
+        _evalReadout = document.createElement('div');
+        _evalReadout.style.cssText =
+            'position:fixed; top:12px; left:12px; z-index:9998;' +
+            'background:rgba(15,15,15,0.88); color:#e8e8e8;' +
+            "font-family:'Courier New',monospace; font-size:15px; line-height:1.5;" +
+            'border:1px solid #555; border-radius:6px; padding:8px 12px;' +
+            'white-space:pre; pointer-events:none;';
+        document.body.appendChild(_evalReadout);
+    }
+    return _evalReadout;
+}
+function hideEvalReadout() {
+    if (_evalReadout) _evalReadout.style.display = 'none';
+}
+function _fmtAhead(player, value, decimals) {
+    if (player === undefined || player === null || value === undefined || value === null) return '—';
+    const v = Number(value);
+    // value is from `player`'s (side-to-move) perspective; positive means that
+    // side is ahead. Relabel to whichever side leads and show a positive magnitude.
+    const ahead = v >= 0 ? player : (player === 'white' ? 'black' : 'white');
+    const label = ahead.charAt(0).toUpperCase() + ahead.slice(1);
+    return label + ' +' + Math.abs(v).toFixed(decimals);
+}
+function refreshEvalReadout() {
+    if (!window.showEvals) return;
+    const scene = gameInstance && gameInstance.scene && gameInstance.scene.scenes && gameInstance.scene.scenes[0];
+    if (!scene || !scene.game) return;
+    const el = _getEvalReadout();
+    el.style.display = 'block';
+    el.textContent = 'Evaluating…';
+    evaluateBoard(getGameState(scene.game)).then(data => {
+        if (!window.showEvals) { hideEvalReadout(); return; }
+        if (!data) { el.textContent = 'eval unavailable'; return; }
+        const gnn  = _fmtAhead(data.gnn_player, data.gnn_raw, 2);
+        const heur = _fmtAhead(data.gnn_player, data.heur_score, 1);
+        el.textContent = 'GNN:  ' + gnn + '\nHeur: ' + heur;
+    });
+}
+
+// ── DEBUG HOVER TOOLTIP (follows cursor) ────────────────────────────────
+let _dbgTip = null, _dbgMouseX = 0, _dbgMouseY = 0;
+document.addEventListener('mousemove', function(e) {
+    _dbgMouseX = e.clientX; _dbgMouseY = e.clientY;
+    if (_dbgTip && _dbgTip.style.display === 'block') {
+        _dbgTip.style.left = (_dbgMouseX + 14) + 'px';
+        _dbgTip.style.top  = (_dbgMouseY + 14) + 'px';
+    }
+});
+function showDebugTip(text) {
+    if (!window.debugMode) return;
+    if (!_dbgTip) {
+        _dbgTip = document.createElement('div');
+        _dbgTip.style.cssText =
+            'position:fixed; pointer-events:none; z-index:10001;' +
+            'background:rgba(15,15,15,0.9); color:#ffe08a;' +
+            "font-family:'Courier New',monospace; font-size:13px;" +
+            'padding:2px 7px; border-radius:4px; white-space:nowrap;';
+        document.body.appendChild(_dbgTip);
+    }
+    _dbgTip.textContent = text;
+    _dbgTip.style.left = (_dbgMouseX + 14) + 'px';
+    _dbgTip.style.top  = (_dbgMouseY + 14) + 'px';
+    _dbgTip.style.display = 'block';
+}
+function hideDebugTip() {
+    if (_dbgTip) _dbgTip.style.display = 'none';
+}
 
 
 
@@ -544,6 +644,7 @@ class Piece {
                 // Check for the win condition
                 this.game.checkWinCondition();
 
+                refreshEvalReadout();  // update on-board eval after the save settles
                 return true;
             } else {
                 console.log(`No available die roll corresponds to the save tile's number ${saveTileNumber}, piece ${this.number} cannot be saved`);
@@ -560,6 +661,13 @@ class Piece {
             .on('pointerover', () => this.onHover())
             .on('pointerout', () => this.onOut())
             .on('pointerdown', (pointer) => this.handleClick(pointer));
+
+        // Debug-mode tooltip: show the number of unnumbered pieces (numbered
+        // pieces already display their number on the board).
+        this.circle
+            .on('pointerover', () => { if (window.debugMode && this.number > 6) showDebugTip(`${this.player} #${this.number}`); })
+            .on('pointermove', () => { if (window.debugMode && this.number > 6) showDebugTip(`${this.player} #${this.number}`); })
+            .on('pointerout',  () => { hideDebugTip(); });
 
         this.circle.setStrokeStyle(2, this.borderColor);
 
@@ -848,6 +956,12 @@ class Tile {
                 .on('pointerdown', () => this.onClick())
                 .on('pointerover', () => this.onHover())
                 .on('pointerout', () => this.onOut());
+
+            // Debug-mode tooltip: show this tile's ring and sector.
+            this.graphics
+                .on('pointerover', () => { if (window.debugMode) showDebugTip(`ring ${this.ring}, sector ${this.sector}`); })
+                .on('pointermove', () => { if (window.debugMode) showDebugTip(`ring ${this.ring}, sector ${this.sector}`); })
+                .on('pointerout',  () => { hideDebugTip(); });
 
                             // Add number to "save" tiles
         if (this.type === 'save' && this.number !== undefined) {
@@ -1470,6 +1584,7 @@ class Game {
             this.mustMovePieces = this.mustMovePieces.filter(p => p !== piece);
             }
 
+            refreshEvalReadout();  // update on-board eval after the move settles
             return true;
         }
     
@@ -1620,6 +1735,8 @@ class Game {
         this.applyLastPieceRule();
         // Snapshot state with fresh dice for contrastive query at end of turn
         this.turnStartState = getGameState(this);  
+        // Keep the on-board eval readout current for the new position
+        if (window.showEvals) refreshEvalReadout();
 
         // Check if it's the agent's turn and call getAgentMoves
         const currentPlayer = this.turn;
@@ -1862,6 +1979,7 @@ endGame(winner, score = null) {
         this.selectedPiece = null;
         console.log('Game state restored.');
         clearMoveRecording();
+        refreshEvalReadout();  // update on-board eval after undo
     }
     
     
@@ -2250,12 +2368,32 @@ class MainGameScene extends Phaser.Scene {
         title.style.cssText = 'font-weight:bold;font-size:15px;margin-bottom:6px;color:#ffcc55;';
         panel.appendChild(title);
 
-        // Total score line
-        if (data.total_score !== undefined || data.eval !== undefined) {
+        // GNN predicted value, phrased as "<Player> <raw>" e.g. "White 0.50".
+        // The server agent IS the GNN, so total_score is the scaled value
+        // (raw * SCORE_SCALE); gnn_raw is the model's direct output and
+        // gnn_player is the side-to-move perspective the value is from.
+        const gnnLabel = data.gnn_player
+            ? data.gnn_player.charAt(0).toUpperCase() + data.gnn_player.slice(1)
+            : null;
+        if (data.gnn_raw !== undefined && data.gnn_raw !== null && gnnLabel) {
+            const g = document.createElement('div');
+            g.textContent = `GNN value: ${_fmtAhead(data.gnn_player, data.gnn_raw, 2)}`;
+            g.style.cssText = 'color:#66ccff;margin-bottom:10px;font-weight:bold;font-size:17px;';
+            panel.appendChild(g);
+        } else if (data.total_score !== undefined || data.eval !== undefined) {
+            // Fallback if the backend hasn't been updated to send gnn_raw yet.
             const tot = document.createElement('div');
-            tot.textContent = `Total: ${data.total_score ?? data.eval}`;
+            tot.textContent = `GNN value (scaled): ${data.total_score ?? data.eval}`;
             tot.style.cssText = 'color:#88ff88;margin-bottom:10px;';
             panel.appendChild(tot);
+        }
+
+        // Heuristic total, shown from the leading side's perspective.
+        if (data.heur_score !== undefined && data.heur_score !== null && gnnLabel) {
+            const h = document.createElement('div');
+            h.textContent = `Heuristic: ${_fmtAhead(data.gnn_player, data.heur_score, 1)}`;
+            h.style.cssText = 'color:#ffcc88;margin-bottom:10px;font-weight:bold;font-size:16px;';
+            panel.appendChild(h);
         }
 
         const renderBlock = (heading, components) => {
@@ -2824,7 +2962,41 @@ function applyMovePair(movePair) {
         return;
     }
 
-    const [move1, move2] = movePair;
+    let [move1, move2] = movePair;
+
+    // Ensure a numbered-piece save is applied before its companion move.
+    // A numbered save requires the die whose value equals the goal number, but
+    // movePiece() consumes whichever unused die reaches the target -- so if the
+    // companion runs first it can steal the save's die and the save then fails.
+    // Mirror the backend guard: reorder only when exactly one move is a numbered
+    // save, the companion is not a bring-out (which has its own die requirement),
+    // and the two moves are different pieces. This lets the backend stay
+    // agnostic about move order, for any move source (human, heuristic, GNN).
+    const isNumberedSave = (mv) =>
+        Array.isArray(mv) && mv[1] === 'save' &&
+        Array.isArray(mv[0]) && mv[0].length === 2 && mv[0][1] <= 6;
+
+    const isBringOut = (mv) => {
+        if (!Array.isArray(mv) || !Array.isArray(mv[0]) || mv[0].length !== 2) return false;
+        const p = findPieceByColorAndNumber(mv[0][0], mv[0][1]);
+        if (!p) return false;
+        if (p.currentTile && p.currentTile.type === 'home') return true;
+        if (p.rack && p.rack.type === 'unentered') return true;
+        return false;
+    };
+
+    const save1 = isNumberedSave(move1);
+    const save2 = isNumberedSave(move2);
+    if (save1 !== save2) {
+        const saveMove  = save1 ? move1 : move2;
+        const otherMove = save1 ? move2 : move1;
+        const samePiece = Array.isArray(saveMove[0]) && Array.isArray(otherMove[0]) &&
+                          saveMove[0][0] === otherMove[0][0] && saveMove[0][1] === otherMove[0][1];
+        if (!samePiece && !isBringOut(otherMove)) {
+            move1 = saveMove;
+            move2 = otherMove;
+        }
+    }
 
     function processMove(move, callback) {
         console.log('Applying move:', move);

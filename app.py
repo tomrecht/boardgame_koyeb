@@ -39,6 +39,10 @@ SCHEMA_VERSION = 1
 current_weights = get_weights(weights_file='best_weights.json')
 #agent = Agent(weights=current_weights, log_to_file=True)
 agent = GNNAgent(weights_path='opponent_1.pt')
+# Heuristic agent kept alongside the GNN so /evaluate_board can report both
+# evals for the same position (the GNN is the player; the heuristic is shown
+# for comparison / prefilter context).
+heur_agent = Agent(weights=current_weights)
 
 # Reuse a single board to keep caches across moves (optional, can be per‑request)
 shared_board = Board()
@@ -320,13 +324,19 @@ def evaluate_board():
         state = request.json
         local_board = Board()
         local_board.update_state(state)
-        total_score, components = agent.evaluate(local_board, local_board.current_player)
+        player = local_board.current_player
+        gnn_total, gnn_components = agent.evaluate(local_board, player)
+        heur_total, heur_components = heur_agent.evaluate(local_board, player)
         return jsonify({
             "message": "Success",
-            "eval": total_score,
-            "total_score": total_score,
-            "player": components.get("player"),
-            "opponent": components.get("opponent"),
+            "eval": gnn_total,
+            "total_score": gnn_total,
+            "gnn_raw": gnn_components.get("gnn_raw"),
+            "gnn_score": gnn_total,
+            "gnn_player": player,
+            "heur_score": heur_total,
+            "player": heur_components.get("player"),
+            "opponent": heur_components.get("opponent"),
         }), 200
     except Exception as e:
         logger.error(f"Error in evaluate_board: {e}")
