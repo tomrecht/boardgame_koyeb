@@ -157,9 +157,13 @@ function refreshEvalReadout() {
     evaluateBoard(getGameState(scene.game)).then(data => {
         if (!window.showEvals) { hideEvalReadout(); return; }
         if (!data) { el.textContent = 'eval unavailable'; return; }
-        const gnn  = _fmtAhead(data.gnn_player, data.gnn_raw, 2);
+        // GNN value head predicts normalized margin (final_score / TOTAL_PIECES),
+        // so expected margin in points = raw * TOTAL_PIECES.
+        const margin = (data.gnn_raw === undefined || data.gnn_raw === null)
+            ? null : data.gnn_raw * TOTAL_PIECES;
+        const gnn  = _fmtAhead(data.gnn_player, margin, 1);
         const heur = _fmtAhead(data.gnn_player, data.heur_score, 1);
-        el.textContent = 'GNN:  ' + gnn + '\nHeur: ' + heur;
+        el.textContent = 'GNN  exp margin: ' + gnn + '\nHeur score:      ' + heur;
     });
 }
 
@@ -2377,7 +2381,8 @@ class MainGameScene extends Phaser.Scene {
             : null;
         if (data.gnn_raw !== undefined && data.gnn_raw !== null && gnnLabel) {
             const g = document.createElement('div');
-            g.textContent = `GNN value: ${_fmtAhead(data.gnn_player, data.gnn_raw, 2)}`;
+            const margin = _fmtAhead(data.gnn_player, data.gnn_raw * TOTAL_PIECES, 1);
+            g.textContent = `GNN expected margin: ${margin}  (raw ${Number(data.gnn_raw).toFixed(2)})`;
             g.style.cssText = 'color:#66ccff;margin-bottom:10px;font-weight:bold;font-size:17px;';
             panel.appendChild(g);
         } else if (data.total_score !== undefined || data.eval !== undefined) {
