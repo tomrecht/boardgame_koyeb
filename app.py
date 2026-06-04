@@ -38,7 +38,7 @@ SCHEMA_VERSION = 1
 
 current_weights = get_weights(weights_file='best_weights.json')
 #agent = Agent(weights=current_weights, log_to_file=True)
-agent = GNNAgent(weights_path='opponent_1.pt')
+agent = GNNAgent(weights_path='opponent_1.pt', use_prefilter=True, prefilter_top_k=40, heuristic_weights=current_weights)
 # Heuristic agent kept alongside the GNN so /evaluate_board can report both
 # evals for the same position (the GNN is the player; the heuristic is shown
 # for comparison / prefilter context).
