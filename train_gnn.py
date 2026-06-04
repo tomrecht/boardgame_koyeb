@@ -39,6 +39,7 @@ from game import Board
 from network import BoardEncoder, BoardGNN, collate_batch, DEVICE
 
 NUM_PIECES = 12
+CONTRASTIVE_WEIGHT = 2.0   # weight on counterfactual-pair difference loss; raise if pairs are few
 
 # -------------------------
 # DATA LOADING
@@ -81,9 +82,13 @@ def compute_label(rec):
 
 
 def compute_weight(rec):
-    """Higher weight for positions closer to game end."""
+    """Higher weight near game end; up-weight MC-averaged (lower-variance) labels."""
     ply = rec.get('ply_from_end', 10)
-    return 1.0 / max(1, ply)
+    w = 1.0 / max(1, ply)
+    mc = rec.get('mc_count')
+    if mc:                       # endgame records: inverse-variance-ish, capped
+        w *= min(mc, 20) / 4.0
+    return w
 
 
 def print_data_stats(records, label=''):
@@ -129,6 +134,60 @@ def encode_batch(records, encoder, board):
     weights = torch.tensor(weights, dtype=torch.float32, device=DEVICE)
     return batch, labels, weights
 
+def build_pairs(records):
+    """Group counterfactual records into (branch_a, branch_b) tuples by pair_id."""
+    by_id = {}
+    for r in records:
+        by_id.setdefault(r['pair_id'], {})[r.get('branch')] = r
+    return [(d['a'], d['b']) for d in by_id.values() if 'a' in d and 'b' in d]
+
+
+def encode_pairs(pairs, encoder, board):
+    """Encode both branches, keeping A/B aligned (drop a pair if either fails)."""
+    ea, eb, la, lb = [], [], [], []
+    for ra, rb in pairs:
+        try:
+            board.update_state(ra['raw_state']); a = encoder.encode(board, ra['player'])
+            board.update_state(rb['raw_state']); b = encoder.encode(board, rb['player'])
+        except Exception:
+            continue
+        ea.append(a); eb.append(b)
+        la.append(compute_label(ra)); lb.append(compute_label(rb))
+    if not ea:
+        return None, None, None, None
+    return (collate_batch(ea), collate_batch(eb),
+            torch.tensor(la, dtype=torch.float32, device=DEVICE),
+            torch.tensor(lb, dtype=torch.float32, device=DEVICE))
+
+
+def run_contrastive_epoch(model, pairs, encoder, board, optimizer, batch_size,
+                          training, weight=CONTRASTIVE_WEIGHT):
+    """Train value DIFFERENCE on shared-dice pairs: (pred_a - pred_b) ~= (label_a - label_b)."""
+    if not pairs:
+        return 0.0
+    if training:
+        model.train(); random.shuffle(pairs)
+    else:
+        model.eval()
+    total = 0.0
+    n_pairs = 0
+    for start in range(0, len(pairs), batch_size):
+        chunk = pairs[start:start + batch_size]
+        ba, bb, la, lb = encode_pairs(chunk, encoder, board)
+        if ba is None:
+            continue
+        with torch.set_grad_enabled(training):
+            diff_pred = model(ba) - model(bb)
+            diff_targ = la - lb
+            loss = weight * ((diff_pred - diff_targ) ** 2).mean()
+        if training:
+            optimizer.zero_grad()
+            loss.backward()
+            nn.utils.clip_grad_norm_(model.parameters(), max_norm=1.0)
+            optimizer.step()
+        total += loss.item() * len(chunk)
+        n_pairs += len(chunk)
+    return total / n_pairs if n_pairs else 0.0
 
 # -------------------------
 # TRAINING
@@ -233,6 +292,15 @@ def main():
         return
 
     train_recs, val_recs = split_by_game(records, args.val_frac)
+
+    def _split(recs):
+        pts   = [r for r in recs if 'pair_id' not in r]
+        pairs = build_pairs([r for r in recs if 'pair_id' in r])
+        return pts, pairs
+    train_pts, train_pairs = _split(train_recs)
+    val_pts,   val_pairs   = _split(val_recs)
+    print(f"  Contrastive pairs: train={len(train_pairs)} val={len(val_pairs)}")
+
     print()
     print_data_stats(train_recs, 'Train')
     print_data_stats(val_recs,   'Val')
@@ -269,28 +337,36 @@ def main():
 
     for epoch in range(1, args.epochs + 1):
         train_loss, train_acc = run_epoch(
-            model, train_recs, encoder, board, optimizer,
+            model, train_pts, encoder, board, optimizer,
+            args.batch_size, training=True)
+        train_ctr = run_contrastive_epoch(
+            model, train_pairs, encoder, board, optimizer,
             args.batch_size, training=True)
 
         val_loss, val_acc = run_epoch(
-            model, val_recs, encoder, board, optimizer,
+            model, val_pts, encoder, board, optimizer,
             args.batch_size, training=False)
+        val_ctr = run_contrastive_epoch(
+            model, val_pairs, encoder, board, optimizer,
+            args.batch_size, training=False)
+        val_metric = val_loss + val_ctr      # checkpoint/early-stop on the combined objective
 
-        mae = mean_abs_output(model, val_recs, encoder, board)
+        mae = mean_abs_output(model, val_pts or val_recs, encoder, board)
         lr  = optimizer.param_groups[0]['lr']
 
         print(f"Epoch {epoch:3d}/{args.epochs}: "
               f"train={train_loss:.4f} ({train_acc:.1%})  "
               f"val={val_loss:.4f} ({val_acc:.1%})  "
+              f"ctr={train_ctr:.4f}/{val_ctr:.4f}  "
               f"mean_abs={mae:.3f}  lr={lr:.2e}")
 
         # Collapse warning
         if mae < 0.05:
             print(f"  WARNING: mean_abs_output={mae:.4f} — possible collapse")
 
-        scheduler.step(val_loss)
+        scheduler.step(val_metric)
 
-        if val_loss < best_val_loss:
+        if val_metric < best_val_loss:
             best_val_loss    = val_loss
             patience_counter = 0
             torch.save(model.state_dict(), args.save)
@@ -304,7 +380,7 @@ def main():
 
     elapsed = time.time() - start_time
     print(f"\nTraining complete in {elapsed/60:.1f} minutes")
-    print(f"Best val loss: {best_val_loss:.4f}")
+    print(f"  ✓ Saved (val_metric={best_val_loss:.4f})")
     print(f"Weights saved to: {args.save}")
 
 
