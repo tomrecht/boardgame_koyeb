@@ -7,7 +7,7 @@ import json
 import uuid
 import time
 import logging
-from game import Board
+from game import Board, IMPASSE_TURNS_FOR_DRAW
 from agent import Agent, get_weights
 from agent_gnn import GNNAgent
 
@@ -153,6 +153,23 @@ def select_moves():
         state = request.json
         logger.debug("select_moves: received state")
         shared_board.update_state(state)
+
+        # impasse logic
+        game_id = session.get('game_id')
+        blocked = shared_board.impasse_blocked_player()
+        imp = (active_games.get(game_id, {}).get('impasse')
+            or {'blocked_player': None, 'turns': 0, 'draw_callable': False})
+        if blocked is None:
+            imp = {'blocked_player': None, 'turns': 0, 'draw_callable': False}
+        elif imp['blocked_player'] == blocked:
+            imp = {**imp, 'turns': imp['turns'] + 1}
+        else:
+            imp = {'blocked_player': blocked, 'turns': 1, 'draw_callable': False}
+        imp['draw_callable'] = imp['turns'] >= IMPASSE_TURNS_FOR_DRAW
+        if game_id and game_id in active_games:
+            active_games[game_id]['impasse'] = imp
+        shared_board.impasse = imp          # so get_valid_moves offers (1,1,1) to the agent
+
         moves = shared_board.get_valid_moves()
         logger.debug(f"select_moves: got {len(moves)} valid moves")
         if moves:

@@ -377,6 +377,7 @@ class Agent():
             return next(iter(moves)) if moves else ((0, 0, 0), (0, 0, 0))
         
         # --- Reordering logic for numbered piece saves: ensure numbered piece is saved first if possible to avoid frontend bug ---
+        # this may no longer be needed if we're doing this correctly on the frontend
         def is_save_numbered_move(move):
             if move[1] != 'save':
                 return False

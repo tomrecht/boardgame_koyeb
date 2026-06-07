@@ -4,6 +4,7 @@ import json
 import itertools
 
 NUM_PIECES = 12
+IMPASSE_TURNS_FOR_DRAW = 3
 
 class Die:
     def __init__(self, board):
@@ -77,6 +78,8 @@ class Board:
         self.piece_lookup = {(p.player, p.number): p for p in self.pieces}
         self.firstMove = None
         self.moves = []
+        self.impasse = {'blocked_player': None, 'turns': 0, 'draw_callable': False}
+        self.draw_called = False
         self._distance_cache = {}
         self._blot_cache = {}          # NEW: cache for count_enemy_blots_on_shortest_path
         self._reachable_cache = {}
@@ -85,6 +88,33 @@ class Board:
         self.endgame_reward_applied = {'white': False, 'black': False}
         self.offgoals = {'white': 0, 'black': 0}
 
+    def impasse_blocked_player(self):
+        """Which player is fully blocked right now (no counter side effects), else None."""
+        for player in ['white', 'black']:
+            saved_rack = self.white_saved if player == 'white' else self.black_saved
+            unsaved = [p for p in self.pieces if p.player == player and p.rack is not saved_rack]
+            if unsaved and all(self.shortest_route_to_goal(p) == float('inf') for p in unsaved):
+                return player
+        return None
+
+    def check_impasse(self):
+        player = self.impasse_blocked_player()
+
+        if player is None:
+            self.impasse = {'blocked_player': None, 'turns': 0, 'draw_callable': False}
+            return
+
+        if self.impasse['blocked_player'] != player:
+            # Newly entered impasse
+            self.impasse = {'blocked_player': player, 'turns': 1, 'draw_callable': False}
+
+        elif self.current_player == player:
+            # Count only when the blocked player's turn ends
+            self.impasse['turns'] += 1
+
+        self.impasse['draw_callable'] = (self.impasse['turns'] >= IMPASSE_TURNS_FOR_DRAW)
+
+        print(f"Impasse: {player}, turns={self.impasse['turns']}, draw_callable={self.impasse['draw_callable']}")
 
     def all_goal_distances(self, piece):
         """
@@ -239,13 +269,17 @@ class Board:
         self._blot_cache.clear()      # clear blot cache
         self._reachable_cache.clear()
         self._blocked_key_cache.clear()
+        self.check_impasse()
         self.firstMove = None  
         for die in self.dice:
             die.roll()
         self.current_player = 'white' if self.current_player == 'black' else 'black'
         self.apply_last_piece_rule()
+        
 
     def check_game_over(self):
+        if self.draw_called:
+            return 'draw', 0
         white_saved_count = len(self.white_saved)
         black_saved_count = len(self.black_saved)
         if white_saved_count == NUM_PIECES:
@@ -364,9 +398,7 @@ class Board:
             if unentered_piece:
                 player_pieces.append(unentered_piece)
 
-            # Deduplicate: among unnumbered pieces (number > 6) on the same tile since they're interchangeable
-            # first try this only for second move (firstMove is not None) to reduce possible bugs
-         #   if self.firstMove is not None:
+            # Deduplicate among unnumbered pieces (number > 6) on the same tile since they're interchangeable
             deduped = []
             seen_tiles = {}
             for piece in player_pieces:
@@ -392,7 +424,8 @@ class Board:
                         else:
                             tuples_list.append(((piece.player, piece.number), (destination.ring, destination.pos), roll))
         if not captured_pieces and not self.must_move_unentered():
-            tuples_list.append((0, 0, 0))
+            tuples_list.append((0, 0, 0))   # add the pass move
+            # add block saving moves
             if (not self.dice[0].used and not self.dice[1].used 
                     and self.game_stages[self.current_player] != 'opening'
                     and not captured_pieces
@@ -407,6 +440,8 @@ class Board:
                     if piece.tile not in seen_tiles:
                         seen_tiles.add(piece.tile)
                         tuples_list.append(((piece.player, piece.number), 0, 0))
+        if (not self.dice[0].used and not self.dice[1].used) and self.impasse['draw_callable']:
+            tuples_list.append((1, 1, 1))   # add calling a draw
         return tuples_list
 
     def save_move(self, move, origin_tile=None, origin_rack=None, captured_piece=None, firstMove_before=None):
@@ -432,6 +467,10 @@ class Board:
         origin_tile = last_move['origin_tile']
         origin_rack = last_move['origin_rack']
         destination = last_move['destination']
+        if destination == 'draw':
+            self.draw_called = False
+            self.firstMove = last_move['firstMove_before']
+            return
         captured_piece = last_move['captured_piece']
         roll = last_move['roll']
         if destination == 'save':
@@ -479,13 +518,19 @@ class Board:
             if switch_turn:
                 self.current_player = 'white' if self.current_player == 'black' else 'black'
             return
+        if move == (1, 1, 1):              
+            self.draw_called = True
+            self.moves.append({'piece': None, 'origin_tile': None, 'origin_rack': None,
+                       'destination': 'draw', 'captured_piece': None, 'roll': None,
+                       'firstMove_before': self.firstMove})
+            return
         firstMove_before = self.firstMove
         self._blocked_key_cache.clear()
         piece = self.piece_lookup.get(piece_id)
         if not piece:
             print(f"No piece found for {piece_id}")
             return
-        if destination == 0 and roll == 0:
+        if destination == 0 and roll == 0:      # save opponent's block
             saved_rack = self.white_saved if piece.player == 'white' else self.black_saved
             origin_tile = piece.tile
             block_pieces = origin_tile.pieces[:]
@@ -499,7 +544,7 @@ class Board:
                 die.used = True
             self.game_stages[self.current_player] = self.get_game_stage(self.current_player)
             return
-        elif destination == 'save':
+        elif destination == 'save':             # save a piece
             saved_rack = self.white_saved if piece.player == 'white' else self.black_saved
             saved_rack.append(piece)
             if piece.tile:
@@ -508,7 +553,7 @@ class Board:
             piece.tile = None
             piece.rack = saved_rack
             self.game_stages[self.current_player] = self.get_game_stage(self.current_player)
-        else:
+        else:                                   # move a piece
             ring, pos = destination
             new_tile = self.get_tile(ring, pos)
             if piece.rack:

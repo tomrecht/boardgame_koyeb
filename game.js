@@ -32,6 +32,7 @@ const scoreTracker = {
     games_played: 0,
     white_wins: 0,
     black_wins: 0,
+    draws: 0,
     total_score: 0
     };
 
@@ -195,7 +196,26 @@ function hideDebugTip() {
     if (_dbgTip) _dbgTip.style.display = 'none';
 }
 
-
+function updateImpasseDisplay(impasse) {
+    const scene = gameInstance.scene.scenes[0];
+    const game = scene.game;
+    if (!impasse || !impasse.blocked_player) {
+        scene.impasseText.setVisible(false);
+        scene.callDrawButton.setVisible(false);
+        return;
+    }
+    scene.impasseText
+        .setText(`${impasse.blocked_player} is at an impasse, ${impasse.turns} turns`)
+        .setVisible(true);
+    // human is white; show the button on the human's turn when a draw is callable
+    const humanCanCall = impasse.draw_callable && game.turn === 'white' && !game.gameOver;
+    if (humanCanCall) {
+        const b = scene.impasseText.getBounds();
+        scene.callDrawButton.setPosition(b.right + 10, b.bottom).setVisible(true);
+    } else {
+        scene.callDrawButton.setVisible(false);
+    }
+}
 
 class Piece {
     constructor(scene, game, color, number, x, y, rack = null) {
@@ -1830,7 +1850,9 @@ endGame(winner, score = null) {
 
     this.gameOver = true;
     console.log(`${winner} wins with a score of ${score}!`);
-    if (winner === 'white') {
+    if (winner === 'draw') {
+        scoreTracker.draws += 1;
+    } else if (winner === 'white') {
         scoreTracker.total_score += score;
         scoreTracker.white_wins += 1;
     } else if (winner === 'black') {
@@ -2257,23 +2279,39 @@ class MainGameScene extends Phaser.Scene {
         });
     }
 
-            // Add score display text box
-            this.scoreText = this.add.text(20, this.sys.game.config.height - 100, '', {
-                fontSize: '24px',
-                fontFamily: FONT_FAMILY,
-                color: '#000',
-                backgroundColor: '#ffffff',
-                padding: { x: 10, y: 5 },
-                borderColor: '#000',
-                borderWidth: 1.5,
-                borderRadius: 3.75
-            }).setOrigin(0, 1);
-    
-            this.updateScoreText();
-            this.checkInitialAIReady();
+        // Add score display text box
+        this.scoreText = this.add.text(20, this.sys.game.config.height - 100, '', {
+            fontSize: '24px',
+            fontFamily: FONT_FAMILY,
+            color: '#000',
+            backgroundColor: '#ffffff',
+            padding: { x: 10, y: 5 },
+            borderColor: '#000',
+            borderWidth: 1.5,
+            borderRadius: 3.75
+        }).setOrigin(0, 1);
 
-            // Call notifyStartGame when game is created
-            notifyStartGame();
+        this.updateScoreText();
+
+        this.impasseText = this.add.text(20, this.sys.game.config.height - 200, '', {
+                fontSize: '20px', fontFamily: FONT_FAMILY, color: '#a00',
+                backgroundColor: '#fff', padding: { x: 8, y: 4 }
+            }).setOrigin(0, 1).setVisible(false);
+
+            this.callDrawButton = this.add.text(0, 0, 'Call draw', {
+                fontSize: '20px', fontFamily: FONT_FAMILY, color: '#fff',
+                backgroundColor: '#a00', padding: { x: 10, y: 5 }
+            }).setOrigin(0, 1).setVisible(false).setInteractive({ useHandCursor: true });
+            this.callDrawButton.on('pointerdown', () => {
+                fetch(`${SERVER_URL}/call_draw`, { method: 'POST', credentials: 'include' })
+                    .catch(e => console.warn('call_draw failed:', e));
+                gameInstance.scene.scenes[0].game.endGame('draw');
+            });
+
+        this.checkInitialAIReady();
+
+        // Call notifyStartGame when game is created
+        notifyStartGame();
 
     }
 
@@ -2296,6 +2334,7 @@ class MainGameScene extends Phaser.Scene {
                 `Games Played: ${scoreTracker.games_played}\n` +
                 `White Wins: ${scoreTracker.white_wins}\n` +
                 `Black Wins: ${scoreTracker.black_wins}\n` +
+                `Draws: ${scoreTracker.draws}\n` +
                 finalScoreLine
             );
         }
@@ -2598,11 +2637,9 @@ class EndGameScene extends Phaser.Scene {
 
     create() {
         let message;
-        if (this.winner === 'tie') {
-            message = "Game ends in a tie!";
-        } else {
-            message = `${this.winner} wins with a score of ${this.score}!`;
-        }
+        message = this.winner === 'draw'
+                ? `${gameInstance.scene.scenes[0].game.impasse_caller || 'A player'} calls a draw`
+                : `${this.winner} wins with a score of ${this.score}!`;
         this.add.text(CENTER_X, CENTER_Y - 50, message, {
             fontSize: '48px',
             fontFamily: FONT_FAMILY,
@@ -2743,6 +2780,7 @@ function getAgentMoves(gameState) {
         return response.json();
     })
     .then(data => {
+        updateImpasseDisplay(data.impasse);
         if (data.move) {
             console.log('Agent moves:', data.move);
             applyMovePair(data.move);
@@ -2969,6 +3007,11 @@ function applyMovePair(movePair) {
     console.log('Applying move pair:', movePair);
     if (!Array.isArray(movePair) || movePair.length !== 2) {
         console.error('Invalid move pair format:', movePair);
+        return;
+    }
+
+    if (movePair.some(m => Array.isArray(m) && m[0] === 1 && m[1] === 1 && m[2] === 1)) {
+        gameInstance.scene.scenes[0].game.endGame('draw');
         return;
     }
 
