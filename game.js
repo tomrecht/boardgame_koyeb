@@ -3001,8 +3001,13 @@ function applyMovePair(movePair) {
         const saveMove  = save1 ? move1 : move2;
         const otherMove = save1 ? move2 : move1;
         const samePiece = Array.isArray(saveMove[0]) && Array.isArray(otherMove[0]) &&
-                          saveMove[0][0] === otherMove[0][0] && saveMove[0][1] === otherMove[0][1];
-        if (!samePiece && !isBringOut(otherMove)) {
+                  String(saveMove[0][0]) === String(otherMove[0][0]) &&
+                  Number(saveMove[0][1]) === Number(otherMove[0][1]);
+        if (samePiece) {
+            // Ensure move-to-goal precedes save regardless of which order they arrived in
+            move1 = otherMove;   // move first
+            move2 = saveMove;    // save second
+        } else if (!isBringOut(otherMove)) {
             move1 = saveMove;
             move2 = otherMove;
         }

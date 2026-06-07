@@ -39,7 +39,7 @@ from game import Board
 from network import BoardEncoder, BoardGNN, collate_batch, DEVICE
 
 NUM_PIECES = 12
-CONTRASTIVE_WEIGHT = 2.0   # weight on counterfactual-pair difference loss; raise if pairs are few
+CONTRASTIVE_WEIGHT = 0.5   # weight on counterfactual-pair difference loss; raise if pairs are few
 
 # -------------------------
 # DATA LOADING
@@ -53,7 +53,10 @@ def load_records(paths, max_ply=None, min_ply=None):
                 line = line.strip()
                 if not line:
                     continue
-                rec = json.loads(line)
+                try:
+                    rec = json.loads(line)
+                except json.JSONDecodeError:
+                    continue
                 if rec.get('final_score') is None:
                     continue
                 ply = rec.get('ply_from_end', 999)
@@ -189,6 +192,74 @@ def run_contrastive_epoch(model, pairs, encoder, board, optimizer, batch_size,
         n_pairs += len(chunk)
     return total / n_pairs if n_pairs else 0.0
 
+def run_joint_epoch(model, point_recs, pairs, encoder, board, optimizer,
+                    batch_size, training, ctr_weight=CONTRASTIVE_WEIGHT, pair_every=8):
+    """One epoch combining pointwise MSE and contrastive-pair loss in a single
+    optimizer step per batch. The (small) contrastive set is cycled so every
+    pointwise batch is paired with one, giving both objectives equal step-share."""
+    if training:
+        model.train()
+        random.shuffle(point_recs)
+        if pairs:
+            random.shuffle(pairs)
+    else:
+        model.eval()
+
+    total_loss = total_weight = 0.0
+    total_ctr = 0.0
+    ctr_batches = 0
+    correct = 0
+    pair_pos = 0
+    pair_bs = max(1, batch_size // 2)
+
+    for bidx, start in enumerate(range(0, len(point_recs), batch_size)):
+        chunk = point_recs[start:start + batch_size]
+        batch, labels, weights = encode_batch(chunk, encoder, board)
+
+        ba = None
+        ctr_loss = torch.zeros((), device=DEVICE)
+        if pairs and (bidx % pair_every == 0):
+            if pair_pos >= len(pairs):
+                pair_pos = 0
+                if training:
+                    random.shuffle(pairs)
+            pchunk = pairs[pair_pos:pair_pos + pair_bs]
+            pair_pos += pair_bs
+            ba, bb, la, lb = encode_pairs(pchunk, encoder, board)
+            if ba is not None:
+                with torch.set_grad_enabled(training):
+                    ctr_loss = ((model(ba) - model(bb)) - (la - lb)).pow(2).mean()
+
+        if batch is None and ba is None:
+            continue
+
+        with torch.set_grad_enabled(training):
+            point_loss = torch.zeros((), device=DEVICE)
+            if batch is not None:
+                preds = model(batch)
+                d = preds - labels
+                point_loss = (weights * d * d).sum() / weights.sum()
+                correct += ((preds > 0) == (labels > 0)).sum().item()
+            loss = point_loss + ctr_weight * ctr_loss
+
+        if training:
+            optimizer.zero_grad()
+            loss.backward()
+            nn.utils.clip_grad_norm_(model.parameters(), max_norm=1.0)
+            optimizer.step()
+
+        if batch is not None:
+            total_loss += point_loss.item() * weights.sum().item()
+            total_weight += weights.sum().item()
+        if ba is not None:
+            total_ctr += ctr_loss.item()
+            ctr_batches += 1
+
+    avg_loss = total_loss / total_weight if total_weight else 0.0
+    avg_ctr = total_ctr / ctr_batches if ctr_batches else 0.0
+    acc = correct / len(point_recs) if point_recs else 0.0
+    return avg_loss, acc, avg_ctr
+    
 # -------------------------
 # TRAINING
 # -------------------------
@@ -294,8 +365,9 @@ def main():
     train_recs, val_recs = split_by_game(records, args.val_frac)
 
     def _split(recs):
-        pts   = [r for r in recs if 'pair_id' not in r]
-        pairs = build_pairs([r for r in recs if 'pair_id' in r])
+        pair_recs = [r for r in recs if 'pair_id' in r]
+        pts   = [r for r in recs if 'pair_id' not in r] + pair_recs
+        pairs = build_pairs(pair_recs)
         return pts, pairs
     train_pts, train_pairs = _split(train_recs)
     val_pts,   val_pairs   = _split(val_recs)
@@ -336,20 +408,13 @@ def main():
     start_time        = time.time()
 
     for epoch in range(1, args.epochs + 1):
-        train_loss, train_acc = run_epoch(
-            model, train_pts, encoder, board, optimizer,
+        train_loss, train_acc, train_ctr = run_joint_epoch(
+            model, train_pts, train_pairs, encoder, board, optimizer,
             args.batch_size, training=True)
-        train_ctr = run_contrastive_epoch(
-            model, train_pairs, encoder, board, optimizer,
-            args.batch_size, training=True)
-
-        val_loss, val_acc = run_epoch(
-            model, val_pts, encoder, board, optimizer,
+        val_loss, val_acc, val_ctr = run_joint_epoch(
+            model, val_pts, val_pairs, encoder, board, optimizer,
             args.batch_size, training=False)
-        val_ctr = run_contrastive_epoch(
-            model, val_pairs, encoder, board, optimizer,
-            args.batch_size, training=False)
-        val_metric = val_loss + val_ctr      # checkpoint/early-stop on the combined objective
+        val_metric = val_loss + CONTRASTIVE_WEIGHT * val_ctr
 
         mae = mean_abs_output(model, val_pts or val_recs, encoder, board)
         lr  = optimizer.param_groups[0]['lr']
@@ -364,9 +429,9 @@ def main():
         if mae < 0.05:
             print(f"  WARNING: mean_abs_output={mae:.4f} — possible collapse")
 
-        scheduler.step(val_metric)
+        scheduler.step(val_loss)
 
-        if val_metric < best_val_loss:
+        if val_loss < best_val_loss:
             best_val_loss    = val_loss
             patience_counter = 0
             torch.save(model.state_dict(), args.save)
