@@ -1,4 +1,4 @@
-# python -m http.server 8000 & python app.py
+# python app.py, then localhost:10000
 
 from flask import Flask, request, jsonify, session
 from flask_cors import CORS
@@ -154,27 +154,12 @@ def select_moves():
         logger.debug("select_moves: received state")
         shared_board.update_state(state)
 
-        # --- impasse detection (live play; switch_turn is never called here) ---
-        blocked = shared_board.impasse_blocked_player()
+        # --- impasse detection (read from active game state) ---
         game_id = session.get('game_id')
-        if blocked is None:
+        imp = active_games.get(game_id, {}).get('impasse') if game_id else None
+        if not imp:
             imp = {'blocked_player': None, 'turns': 0, 'draw_callable': False}
-            if game_id and game_id in active_games:
-                active_games[game_id]['impasse'] = imp
-        else:
-            prev = active_games.get(game_id, {}).get('impasse') if game_id else None
-            if prev and prev.get('blocked_player') == blocked:
-                turns = prev['turns'] + 1
-            else:
-                turns = 1
-            imp = {
-                'blocked_player': blocked,
-                'turns': turns,
-                'draw_callable': turns >= IMPASSE_TURNS_FOR_DRAW,
-            }
-            if game_id and game_id in active_games:
-                active_games[game_id]['impasse'] = imp
-            logger.debug(f"select_moves: impasse {imp}")
+            
         # mirror onto the board so get_valid_moves can offer the draw move (1,1,1)
         shared_board.impasse = imp
 
@@ -225,6 +210,47 @@ def start_game():
     except Exception as e:
         logger.error(f"Error in start_game: {e}")
         return jsonify({"message": "An error occurred"}), 500
+
+
+@app.route('/update_impasse', methods=['POST'])
+def update_impasse():
+    """Python is the source of truth for the impasse state."""
+    try:
+        data = request.json
+        state = data.get('state')
+        just_finished = data.get('just_finished')
+        
+        shared_board.update_state(state)
+        blocked = shared_board.impasse_blocked_player()
+        game_id = session.get('game_id')
+        
+        imp = {'blocked_player': None, 'turns': 0, 'draw_callable': False}
+        
+        if blocked:
+            prev = active_games.get(game_id, {}).get('impasse') if game_id else None
+            # If the same player is blocked, check if they just finished their turn to increment
+            if prev and prev.get('blocked_player') == blocked:
+                turns = prev['turns']
+                if just_finished == blocked:
+                    turns += 1
+            else:
+                # First time this player is blocked. If they just moved, it's 1, otherwise 0
+                turns = 1 if just_finished == blocked else 0
+                
+            imp = {
+                'blocked_player': blocked,
+                'turns': turns,
+                'draw_callable': turns >= IMPASSE_TURNS_FOR_DRAW
+            }
+            
+        if game_id and game_id in active_games:
+            active_games[game_id]['impasse'] = imp
+            
+        return jsonify(imp), 200
+    except Exception as e:
+        logger.exception("Error in update_impasse")
+        return jsonify({"error": str(e)}), 500
+    
 
 @app.route('/record_position', methods=['POST'])
 def record_position():

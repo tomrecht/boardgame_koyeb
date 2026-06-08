@@ -2520,7 +2520,7 @@ class MainGameScene extends Phaser.Scene {
             this.callDrawButton.on('pointerdown', () => {
                 fetch(`${SERVER_URL}/call_draw`, { method: 'POST', credentials: 'include' })
                     .catch(e => console.warn('call_draw failed:', e));
-                gameInstance.scene.scenes[0].game.endGame('draw');
+                gameInstance.scene.scenes[0].game.endGame(('draw', null, caller));
             });
 
         this.checkInitialAIReady();
@@ -3231,10 +3231,10 @@ function applyMovePair(movePair) {
     }
 
 if (movePair.some(m => Array.isArray(m) && m[0] === 1 && m[1] === 1 && m[2] === 1)) {
-    this.impasse_caller = this.turn; 
-    console.log(`${this.impasse_caller} called a draw.`);
+    const caller = game.turn; 
+    console.log(`${caller} called a draw.`);
     setTimeout(() => {
-        this.endGame('draw');
+        game.endGame('draw', null, caller);
     }, 2000);
     return;
 }
