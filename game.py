@@ -106,7 +106,7 @@ class Board:
 
         if self.impasse['blocked_player'] != player:
             # Newly entered impasse
-            self.impasse = {'blocked_player': player, 'turns': 1, 'draw_callable': False}
+            self.impasse = {'blocked_player': player, 'turns': 0, 'draw_callable': False}
 
         elif self.current_player == player:
             # Count only when the blocked player's turn ends
