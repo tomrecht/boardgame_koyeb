@@ -1915,13 +1915,12 @@ class Game {
 
 
     
-    switchTurn() {
-        // Determine which player just completed their turn
-        const justFinished = this.turn;  // this.turn is still the player who just moved
+switchTurn() {
+        const justFinished = this.turn;
         const playerObj = this.players.find(p => p.name === justFinished);
         const source = playerObj.isAI ? 'heuristic' : 'human';
 
-        // Record human turns here (AI turns are not recorded)
+        // Record human turns here
         if (!playerObj.isAI) {
             const preState = this.turnStartState || getGameState(this);
             const movePair = _pendingMoves.length > 0 ? _pendingMoves.slice() : null;
@@ -1961,29 +1960,38 @@ class Game {
         this.pieces.forEach(piece => piece.reachableTiles = null);
         this.state = this.captureState();
         this.applyLastPieceRule();
-        // Snapshot state with fresh dice for contrastive query at end of turn
         this.turnStartState = getGameState(this);  
-        // Keep the on-board eval readout current for the new position
+        
         if (window.showEvals) refreshEvalReadout();
 
-        // Check if it's the agent's turn and call getAgentMoves
-        const currentPlayer = this.turn;
+        // --- NEW ASYNC FLOW: Ask Python for Impasse State ---
+        const gameState = getGameState(this);
+        
+        fetch(`${SERVER_URL}/update_impasse`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            credentials: 'include',
+            body: JSON.stringify({ state: gameState, just_finished: justFinished })
+        })
+        .then(response => response.json())
+        .then(impasseData => {
+            // 1. Update UI based on Python's truth
+            updateImpasseDisplay(impasseData);
 
-        const currentPlayerObject = this.players.find(player => player.name === currentPlayer);
-        console.log('Current player is AI:', currentPlayerObject.isAI);
-
-        if (currentPlayerObject && currentPlayerObject.isAI) { // Check if the current player is AI
-            console.log('Agent\'s turn');
-            let extraMoveRequested = false;
-            this.scene.showThinkingIcon(); 
-            const gameState = getGameState(this);
-            setTimeout(() => {
-                getAgentMoves(gameState);
-            }, 1000); // 1 second delay
-        }
-
+            // 2. Check if it's the agent's turn and call getAgentMoves
+            const currentPlayerObject = this.players.find(player => player.name === this.turn);
+            if (currentPlayerObject && currentPlayerObject.isAI) { 
+                let extraMoveRequested = false;
+                this.scene.showThinkingIcon(); 
+                setTimeout(() => {
+                    getAgentMoves(getGameState(this)); 
+                }, 1000);
+            }
+        })
+        .catch(error => {
+            console.error('Error fetching impasse state:', error);
+        });
     }
-
     checkMidgame() {
         const unenteredRack = this.turn === 'white' ? this.whiteUnenteredRack : this.blackUnenteredRack;
         const player = this.turn === 'white' ? this.players[0] : this.players[1];
@@ -2027,7 +2035,7 @@ class Game {
         }
     }
 
-endGame(winner, score = null) {
+endGame(winner, score = null, impasse_caller = null) {
     // Determine the score (margin) first
     if (winner === 'tie') {
         score = 0;
@@ -2065,11 +2073,8 @@ endGame(winner, score = null) {
         scoreTracker.black_wins += 1;
     }
     scoreTracker.games_played += 1;
-
-    // No need to record final position here – it was already recorded by applyMovePair
-    // Just update the UI and switch to end scene
     this.scene.updateScoreText();
-    this.scene.scene.start('EndGameScene', { winner: winner, score: score });
+    this.scene.scene.start('EndGameScene', { winner: winner, score: score, impasse_caller: impasse_caller });
 }
 
     captureState() {
@@ -2498,15 +2503,20 @@ class MainGameScene extends Phaser.Scene {
 
         this.updateScoreText();
 
-        this.impasseText = this.add.text(20, this.sys.game.config.height - 200, '', {
-                fontSize: '20px', fontFamily: FONT_FAMILY, color: '#a00',
-                backgroundColor: '#fff', padding: { x: 8, y: 4 }
-            }).setOrigin(0, 1).setVisible(false);
+        // In MainGameScene.create(), replace the old impasseText and callDrawButton with:
+        this.impasseText = this.add.text(20, this.sys.game.config.height - 280, '', {
+            fontSize: '24px', fontFamily: FONT_FAMILY, color: '#a00',
+            backgroundColor: '#fff', padding: { x: 8, y: 4 },
+            borderColor: '#000', borderWidth: 1.5, borderRadius: 3.75
+        }).setOrigin(0, 1).setVisible(false);
 
-            this.callDrawButton = this.add.text(0, 0, 'Call draw', {
-                fontSize: '20px', fontFamily: FONT_FAMILY, color: '#fff',
-                backgroundColor: '#a00', padding: { x: 10, y: 5 }
-            }).setOrigin(0, 1).setVisible(false).setInteractive({ useHandCursor: true });
+        this.callDrawButton = this.add.text(0, 0, 'Call draw', {
+            fontSize: '24px', fontFamily: FONT_FAMILY, color: '#fff',
+            backgroundColor: '#a00', padding: { x: 10, y: 5 },
+            borderColor: '#000', borderWidth: 1.5, borderRadius: 3.75
+        }).setOrigin(0, 1).setVisible(false).setInteractive({ useHandCursor: true });
+        
+        // ... rest of event listeners stay the same
             this.callDrawButton.on('pointerdown', () => {
                 fetch(`${SERVER_URL}/call_draw`, { method: 'POST', credentials: 'include' })
                     .catch(e => console.warn('call_draw failed:', e));
@@ -2838,13 +2848,18 @@ class EndGameScene extends Phaser.Scene {
     init(data) {
         this.winner = data.winner;
         this.score = data.score;
+        this.impasse_caller = data.impasse_caller;
     }
 
     create() {
         let message;
-        message = this.winner === 'draw'
-                ? `${gameInstance.scene.scenes[0].game.impasse_caller || 'A player'} calls a draw`
-                : `${this.winner} wins with a score of ${this.score}!`;
+        if (this.winner === 'draw') {
+        const caller = this.impasse_caller || 'A player';
+        const formattedCaller = caller.charAt(0).toUpperCase() + caller.slice(1);
+        message = `${formattedCaller} calls a draw!`;
+    } else {
+        message = `${this.winner} wins with a score of ${this.score}!`;
+    }
         this.add.text(CENTER_X, CENTER_Y - 50, message, {
             fontSize: '48px',
             fontFamily: FONT_FAMILY,
@@ -3215,11 +3230,14 @@ function applyMovePair(movePair) {
         return;
     }
 
-    if (movePair.some(m => Array.isArray(m) && m[0] === 1 && m[1] === 1 && m[2] === 1)) {
-        gameInstance.scene.scenes[0].game.endGame('draw');
-        return;
-    }
-
+if (movePair.some(m => Array.isArray(m) && m[0] === 1 && m[1] === 1 && m[2] === 1)) {
+    this.impasse_caller = this.turn; 
+    console.log(`${this.impasse_caller} called a draw.`);
+    setTimeout(() => {
+        this.endGame('draw');
+    }, 2000);
+    return;
+}
     let [move1, move2] = movePair;
 
     // Ensure a numbered-piece save is applied before its companion move.
