@@ -38,7 +38,7 @@ SCHEMA_VERSION = 1
 
 current_weights = get_weights(weights_file='best_weights.json')
 #agent = Agent(weights=current_weights, log_to_file=True)
-agent = GNNAgent(weights_path='best_iter5_m46.pt', use_prefilter=True, prefilter_top_k=40, heuristic_weights=current_weights)
+agent = GNNAgent(weights_path='opponent_1.pt', use_prefilter=True, prefilter_top_k=40, heuristic_weights=current_weights)
 # Heuristic agent kept alongside the GNN so /evaluate_board can report both
 # evals for the same position (the GNN is the player; the heuristic is shown
 # for comparison / prefilter context).
@@ -154,21 +154,29 @@ def select_moves():
         logger.debug("select_moves: received state")
         shared_board.update_state(state)
 
-        # impasse logic
-        game_id = session.get('game_id')
+        # --- impasse detection (live play; switch_turn is never called here) ---
         blocked = shared_board.impasse_blocked_player()
-        imp = (active_games.get(game_id, {}).get('impasse')
-            or {'blocked_player': None, 'turns': 0, 'draw_callable': False})
+        game_id = session.get('game_id')
         if blocked is None:
             imp = {'blocked_player': None, 'turns': 0, 'draw_callable': False}
-        elif imp['blocked_player'] == blocked:
-            imp = {**imp, 'turns': imp['turns'] + 1}
+            if game_id and game_id in active_games:
+                active_games[game_id]['impasse'] = imp
         else:
-            imp = {'blocked_player': blocked, 'turns': 1, 'draw_callable': False}
-        imp['draw_callable'] = imp['turns'] >= IMPASSE_TURNS_FOR_DRAW
-        if game_id and game_id in active_games:
-            active_games[game_id]['impasse'] = imp
-        shared_board.impasse = imp          # so get_valid_moves offers (1,1,1) to the agent
+            prev = active_games.get(game_id, {}).get('impasse') if game_id else None
+            if prev and prev.get('blocked_player') == blocked:
+                turns = prev['turns'] + 1
+            else:
+                turns = 1
+            imp = {
+                'blocked_player': blocked,
+                'turns': turns,
+                'draw_callable': turns >= IMPASSE_TURNS_FOR_DRAW,
+            }
+            if game_id and game_id in active_games:
+                active_games[game_id]['impasse'] = imp
+            logger.debug(f"select_moves: impasse {imp}")
+        # mirror onto the board so get_valid_moves can offer the draw move (1,1,1)
+        shared_board.impasse = imp
 
         moves = shared_board.get_valid_moves()
         logger.debug(f"select_moves: got {len(moves)} valid moves")
@@ -177,7 +185,6 @@ def select_moves():
             logger.debug(f"select_moves: selected {chosen_moves}")
 
             # Record black's position server-side
-            game_id = session.get('game_id')
             if game_id and game_id in active_games:
                 game_data = active_games[game_id]
                 game_stage = shared_board.game_stages.get('black', 'unknown')
@@ -196,9 +203,9 @@ def select_moves():
                 game_data['last_move_time'] = time.time()
                 logger.debug(f"Recorded black position for game {game_id}, move {move_index}")
 
-            return jsonify({"message": "Success", "move": chosen_moves}), 200
+            return jsonify({"message": "Success", "move": chosen_moves, "impasse": imp}), 200
         else:
-            return jsonify({"message": "No valid moves available"}), 200
+            return jsonify({"message": "No valid moves available", "impasse": imp}), 200
     except Exception as e:
         logger.exception("Error in select_moves")
         return jsonify({"message": "Internal server error", "error": str(e)}), 500
@@ -289,6 +296,25 @@ def record_game_result():
             return jsonify({"message": "Failed to record game result"}), 500
     except Exception as e:
         logger.error(f"Error in record_game_result: {e}")
+        return jsonify({"message": "An error occurred"}), 500
+
+@app.route('/call_draw', methods=['POST'])
+def call_draw():
+    try:
+        game_id = session.get('game_id')
+        if not game_id:
+            return jsonify({"message": "No active game"}), 400
+        if game_id not in active_games:
+            logger.warning(f"Game {game_id} not found in active games")
+            return jsonify({"message": "Game not found"}), 404
+        logger.info(f"Draw called for game {game_id}")
+        success = flush_game_to_disk(game_id, None, 0)   # winner=None => draw, margin 0
+        session.pop('game_id', None)
+        if success:
+            return jsonify({"message": "Draw recorded"}), 200
+        return jsonify({"message": "Failed to record draw"}), 500
+    except Exception as e:
+        logger.error(f"Error in call_draw: {e}")
         return jsonify({"message": "An error occurred"}), 500
 
 @app.route('/abort_game', methods=['POST'])

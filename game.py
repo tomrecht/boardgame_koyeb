@@ -89,33 +89,31 @@ class Board:
         self.offgoals = {'white': 0, 'black': 0}
 
     def impasse_blocked_player(self):
-        """Which player is fully blocked right now (no counter side effects), else None."""
+        """Pure structural check (no side effects): return the player who is
+        at an impasse, i.e. has at least one unsaved on-board piece and every
+        such piece is genuinely blocked (shortest_route_to_goal == inf).
+        Saved pieces (in white_saved/black_saved) are ignored. Returns the
+        player string, or None."""
         for player in ['white', 'black']:
-            saved_rack = self.white_saved if player == 'white' else self.black_saved
-            unsaved = [p for p in self.pieces if p.player == player and p.rack is not saved_rack]
+            saved = self.white_saved if player == 'white' else self.black_saved
+            unsaved = [p for p in self.pieces
+                       if p.player == player and not (p.rack is saved)]
             if unsaved and all(self.shortest_route_to_goal(p) == float('inf') for p in unsaved):
                 return player
         return None
 
     def check_impasse(self):
         player = self.impasse_blocked_player()
-
         if player is None:
             self.impasse = {'blocked_player': None, 'turns': 0, 'draw_callable': False}
             return
-
-        if self.impasse['blocked_player'] != player:
-            # Newly entered impasse
-            self.impasse = {'blocked_player': player, 'turns': 0, 'draw_callable': False}
-
-        elif self.current_player == player:
-            # Count only when the blocked player's turn ends
+        if self.impasse['blocked_player'] == player:
             self.impasse['turns'] += 1
-
-        self.impasse['draw_callable'] = (self.impasse['turns'] >= IMPASSE_TURNS_FOR_DRAW)
-
-        print(f"Impasse: {player}, turns={self.impasse['turns']}, draw_callable={self.impasse['draw_callable']}")
-
+        else:
+            self.impasse = {'blocked_player': player, 'turns': 1, 'draw_callable': False}
+        self.impasse['draw_callable'] = self.impasse['turns'] >= IMPASSE_TURNS_FOR_DRAW
+        print(f"Impasse: {player}, turns {self.impasse['turns']}, draw callable {self.impasse['draw_callable']}")
+            
     def all_goal_distances(self, piece):
         """
         Return dict {goal_num: distance} for goals 1-6.
@@ -467,10 +465,6 @@ class Board:
         origin_tile = last_move['origin_tile']
         origin_rack = last_move['origin_rack']
         destination = last_move['destination']
-        if destination == 'draw':
-            self.draw_called = False
-            self.firstMove = last_move['firstMove_before']
-            return
         captured_piece = last_move['captured_piece']
         roll = last_move['roll']
         if destination == 'save':
@@ -518,11 +512,8 @@ class Board:
             if switch_turn:
                 self.current_player = 'white' if self.current_player == 'black' else 'black'
             return
-        if move == (1, 1, 1):              
+        if move == (1, 1, 1):                    # call a draw (no piece involved)
             self.draw_called = True
-            self.moves.append({'piece': None, 'origin_tile': None, 'origin_rack': None,
-                       'destination': 'draw', 'captured_piece': None, 'roll': None,
-                       'firstMove_before': self.firstMove})
             return
         firstMove_before = self.firstMove
         self._blocked_key_cache.clear()
@@ -818,6 +809,9 @@ class Board:
             reward = 0
             done = False
             return next_state, reward, done
+        if move == (1, 1, 1):
+            self.apply_move(move)
+            return self.encode_state(), 0, True
         piece_object = next((p for p in self.pieces if (p.player, p.number) == piece), None)
         start_distance_to_goal = self.shortest_route_to_goal(piece_object)
         start_within_reach = True if start_distance_to_goal <= 6 else False
