@@ -18,6 +18,11 @@ const HOME_TILE_RADIUS = TILE_RADIUS_STEP * 1.5;
 
 const TOTAL_PIECES = 12;
 
+// No-save draw rule: once both players are in midgame, if this many full
+// rounds (a round = white turn + black turn) pass with no save by either
+// player, either player may call a draw. Easily changed. Must match game.py.
+const NO_SAVE_TURNS_FOR_DRAW = 10;
+
 const DIE_1_POSITION= 400;
 const DIE_2_POSITION = 500;
 
@@ -226,6 +231,8 @@ function _showSetupBox() {
             '\u2022 With a piece selected, <b>F</b> = move to front of its rack, <b>B</b> = to back<br>' +
             '\u2022 <b>1</b> / <b>2</b> change a die\u2019s value; <b>Shift+1</b> / <b>Shift+2</b> toggle \u201cused\u201d<br>' +
             '\u2022 <b>T</b> switches whose turn it is<br>' +
+            '\u2022 <b>[</b> / <b>]</b> decrease / increase the no-save round counter<br>' +
+            '\u2022 <b>G</b> send the current position to the agent (no dice re-roll)<br>' +
             '\u2022 Triple-press <b>C</b> to copy the position JSON (also logged)<br>' +
             '\u2022 Triple-press <b>S</b> to exit';
         document.body.appendChild(_setupBox);
@@ -233,8 +240,8 @@ function _showSetupBox() {
     _setupBox.style.display = 'block';
 }
 function _hideSetupBox() { if (_setupBox) _setupBox.style.display = 'none'; }
-function enterSetupMode() { _showSetupBox(); }
-function exitSetupMode() { _setupClearSelection(); _hideSetupBox(); }
+function enterSetupMode() { _showSetupBox(); if (typeof updateNoSaveDisplay === 'function') updateNoSaveDisplay(); }
+function exitSetupMode() { _setupClearSelection(); _hideSetupBox(); if (typeof updateNoSaveDisplay === 'function') updateNoSaveDisplay(); }
 
 // --- export current position ---
 function exportSetupState() {
@@ -301,6 +308,25 @@ document.addEventListener('keydown', function (e) {
     } else if (e.key === 'b' || e.key === 'B') {
         e.preventDefault();
         if (_setupSelected) setupReorderInRack(_setupSelected, false);
+    } else if (e.key === '[' || e.key === ']') {
+        e.preventDefault();
+        const delta = e.key === ']' ? 1 : -1;
+        game.noSaveTurns = Math.max(0, (game.noSaveTurns || 0) + delta);
+        game._halfTurnsSinceRound = 0;
+        game.lastTotalSaved = game.totalSaved();
+        game.drawCallable = game.noSaveTurns >= NO_SAVE_TURNS_FOR_DRAW;
+        updateNoSaveDisplay();
+        console.log('[SETUP] no-save rounds ->', game.noSaveTurns, 'callable:', game.drawCallable);
+    } else if (e.key === 'g' || e.key === 'G') {
+        e.preventDefault();
+        // Send the current position to the agent as-is (no dice re-roll).
+        // Refresh derived per-position state first so the agent's reply isn't
+        // rejected against a stale mustMovePieces list from before setup.
+        game.updateMovablePieces();
+        game.pieces.forEach(p => p.reachableTiles = null);
+        console.log('[SETUP] sending current position to agent');
+        game.scene.showThinkingIcon();
+        getAgentMoves(getGameState(game));
     }
 });
 
@@ -379,19 +405,26 @@ function hideDebugTip() {
     if (_dbgTip) _dbgTip.style.display = 'none';
 }
 
-function updateImpasseDisplay(impasse) {
-    const scene = gameInstance.scene.scenes[0];
+function updateNoSaveDisplay() {
+    const scene = gameInstance && gameInstance.scene && gameInstance.scene.scenes && gameInstance.scene.scenes[0];
+    if (!scene || !scene.game || !scene.impasseText) return;
     const game = scene.game;
-    if (!impasse || !impasse.blocked_player) {
+
+    // Show the counter once both players are past the opening, OR always when
+    // in sandbox (which doesn't track game stages).
+    const show = window.setupMode || game.bothInMidgame();
+    if (!show) {
         scene.impasseText.setVisible(false);
         scene.callDrawButton.setVisible(false);
         return;
     }
+
     scene.impasseText
-        .setText(`${impasse.blocked_player} is at an impasse, ${impasse.turns} turns`)
+        .setText(`Turns with no save: ${game.noSaveTurns}`)
         .setVisible(true);
-    // human is white; show the button on the human's turn when a draw is callable
-    const humanCanCall = impasse.draw_callable && game.turn === 'white' && !game.gameOver;
+
+    // Offer the button on a human player's turn when callable.
+    const humanCanCall = game.drawCallable && game.currentPlayerIsHuman() && !game.gameOver;
     if (humanCanCall) {
         const b = scene.impasseText.getBounds();
         scene.callDrawButton.setPosition(b.right + 10, b.bottom).setVisible(true);
@@ -585,6 +618,7 @@ class Piece {
             const savedRack = this.color === 0xffffff ? this.game.whiteSavedRack : this.game.blackSavedRack;
 
             this.currentTile.pieces.forEach(piece => piece.moveToRack(savedRack));
+            this.game.registerSave();   // no-save streak resets immediately
             this.game.dice.forEach(die => die.setUsed())
 
             // Record human block-save as a complete move pair (matches agent encoding)
@@ -853,6 +887,7 @@ class Piece {
                 // Move the piece to the saved rack
                 const savedRack = this.color === 0xffffff ? this.game.whiteSavedRack : this.game.blackSavedRack;
                 this.moveToRack(savedRack); // Move the piece to the saved rack
+                this.game.registerSave();   // no-save streak resets immediately
 
                 // Record human save move
                 if (this.player === 'white') {
@@ -1365,6 +1400,15 @@ class Game {
         this.score = { 'white': 0, 'black': 0 };
         this.selectedPiece = null;
         this.fullPassCounter = 0;
+
+        // No-save draw rule state (frontend mirror; authoritative rule also
+        // lives in game.py for agent-vs-agent play). Counts FULL ROUNDS with
+        // no save once both players are past the opening. Resets to 0 the
+        // instant any piece is saved; undo-sensitive via captureState.
+        this.noSaveTurns = 0;            // completed rounds with no save
+        this.drawCallable = false;
+        this.lastTotalSaved = 0;         // saved-count snapshot at last turn boundary
+        this._halfTurnsSinceRound = 0;   // 2 player-turns = 1 round
 
 
         // Initialize racks
@@ -1909,6 +1953,7 @@ class Game {
             piece.moveToRack(savedRack);
         });
 
+        this.registerSave();        // no-save streak resets immediately
         this.setDiceUsed(); // Use up both dice
         this.updateMovablePieces(); // Update movable pieces
     }
@@ -1919,6 +1964,9 @@ switchTurn() {
         const justFinished = this.turn;
         const playerObj = this.players.find(p => p.name === justFinished);
         const source = playerObj.isAI ? 'heuristic' : 'human';
+
+        // No-save draw accounting happens at the real turn boundary.
+        this.updateNoSaveCounter();
 
         // Record human turns here
         if (!playerObj.isAI) {
@@ -1964,34 +2012,62 @@ switchTurn() {
         
         if (window.showEvals) refreshEvalReadout();
 
-        // --- NEW ASYNC FLOW: Ask Python for Impasse State ---
-        const gameState = getGameState(this);
-        
-        fetch(`${SERVER_URL}/update_impasse`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            credentials: 'include',
-            body: JSON.stringify({ state: gameState, just_finished: justFinished })
-        })
-        .then(response => response.json())
-        .then(impasseData => {
-            // 1. Update UI based on Python's truth
-            updateImpasseDisplay(impasseData);
+        // No-save draw display is owned by the frontend now; update directly.
+        updateNoSaveDisplay();
 
-            // 2. Check if it's the agent's turn and call getAgentMoves
-            const currentPlayerObject = this.players.find(player => player.name === this.turn);
-            if (currentPlayerObject && currentPlayerObject.isAI) { 
-                let extraMoveRequested = false;
-                this.scene.showThinkingIcon(); 
-                setTimeout(() => {
-                    getAgentMoves(getGameState(this)); 
-                }, 1000);
-            }
-        })
-        .catch(error => {
-            console.error('Error fetching impasse state:', error);
-        });
+        // If it's the agent's turn, ask the backend for its moves.
+        const currentPlayerObject = this.players.find(player => player.name === this.turn);
+        if (currentPlayerObject && currentPlayerObject.isAI) {
+            this.scene.showThinkingIcon();
+            setTimeout(() => {
+                getAgentMoves(getGameState(this));
+            }, 1000);
+        }
     }
+    // ── NO-SAVE DRAW RULE ────────────────────────────────────────────────
+    totalSaved() {
+        return this.whiteSavedRack.pieces.length + this.blackSavedRack.pieces.length;
+    }
+
+    bothInMidgame() {
+        // "past the opening" = unentered rack emptied (midgame or endgame).
+        return this.players.every(p => p.getGamePhase() !== 'opening');
+    }
+
+    currentPlayerIsHuman() {
+        const p = this.players.find(pl => pl.name === this.turn);
+        return !!p && !p.isAI;
+    }
+
+    // Called the instant a piece is saved (own piece or an opponent block).
+    // Resets the streak immediately and refreshes the display, without waiting
+    // for the turn to end.
+    registerSave() {
+        this.noSaveTurns = 0;
+        this._halfTurnsSinceRound = 0;
+        this.lastTotalSaved = this.totalSaved();
+        this.drawCallable = false;
+        updateNoSaveDisplay();
+    }
+
+    // Called once per player-turn at the real turn boundary (switchTurn),
+    // mirroring Board.update_no_save_counter in game.py.
+    updateNoSaveCounter() {
+        const current = this.totalSaved();
+        if (current > this.lastTotalSaved) {
+            this.noSaveTurns = 0;
+            this._halfTurnsSinceRound = 0;
+        } else if (this.bothInMidgame()) {
+            this._halfTurnsSinceRound += 1;
+            if (this._halfTurnsSinceRound >= 2) {
+                this._halfTurnsSinceRound = 0;
+                this.noSaveTurns += 1;
+            }
+        }
+        this.lastTotalSaved = current;
+        this.drawCallable = this.noSaveTurns >= NO_SAVE_TURNS_FOR_DRAW;
+    }
+
     checkMidgame() {
         const unenteredRack = this.turn === 'white' ? this.whiteUnenteredRack : this.blackUnenteredRack;
         const player = this.turn === 'white' ? this.players[0] : this.players[1];
@@ -2115,7 +2191,11 @@ endGame(winner, score = null, impasse_caller = null) {
                 blackUnentered: this.blackUnenteredRack.pieces.map(p => ({ color: p.color, number: p.number })),
                 blackSaved: this.blackSavedRack.pieces.map(p => ({ color: p.color, number: p.number })),
             },
-            gameOver: this.gameOver
+            gameOver: this.gameOver,
+            noSaveTurns: this.noSaveTurns,
+            drawCallable: this.drawCallable,
+            lastTotalSaved: this.lastTotalSaved,
+            halfTurnsSinceRound: this._halfTurnsSinceRound
         };
 
         return state;
@@ -2207,6 +2287,14 @@ endGame(winner, score = null, impasse_caller = null) {
     
     
         this.gameOver = state.gameOver;
+        // Restore no-save draw counter (undo reverts the whole turn, so this
+        // puts the streak back to whatever it was before the undone turn).
+        if (state.noSaveTurns !== undefined) {
+            this.noSaveTurns = state.noSaveTurns;
+            this.drawCallable = state.drawCallable;
+            this.lastTotalSaved = state.lastTotalSaved;
+            this._halfTurnsSinceRound = state.halfTurnsSinceRound;
+        }
         this.pieces.forEach(piece => piece.reachableTiles = null);
         this.updateDiceColors();
         this.unhighlightAllTiles();
@@ -2215,6 +2303,7 @@ endGame(winner, score = null, impasse_caller = null) {
         console.log('Game state restored.');
         clearMoveRecording();
         refreshEvalReadout();  // update on-board eval after undo
+        updateNoSaveDisplay(); // reflect restored no-save streak
     }
     
     
@@ -2251,6 +2340,8 @@ endGame(winner, score = null, impasse_caller = null) {
             .setDisplaySize(buttonSize, buttonSize)
             .setInteractive()
             .on('pointerdown', () => {
+                // Only the human whose turn it is may end the turn.
+                if (this.gameOver || !this.currentPlayerIsHuman()) return;
                 if (this.dice.some(die => !die.used)) {
                     this.showConfirmationModal();
                 } else {
@@ -2520,7 +2611,8 @@ class MainGameScene extends Phaser.Scene {
             this.callDrawButton.on('pointerdown', () => {
                 fetch(`${SERVER_URL}/call_draw`, { method: 'POST', credentials: 'include' })
                     .catch(e => console.warn('call_draw failed:', e));
-                gameInstance.scene.scenes[0].game.endGame(('draw', null, caller));
+                const g = gameInstance.scene.scenes[0].game;
+                g.endGame('draw', null, g.turn);
             });
 
         this.checkInitialAIReady();
@@ -2919,6 +3011,7 @@ class InstructionsScene extends Phaser.Scene {
             'You may pass your turn without using one or both dice. \n\n' +
             'When all your pieces are either saved or on goal tiles from which they can be saved, you are in the endgame. In the endgame, you may save unnumbered pieces using a higher roll than the goal tile number, as long as you don\'t have any pieces on higher-numbered goals. \n\n' +
             'If you have only one piece left at the start of your turn, and it\'s a numbered piece which is on its goal, that piece becomes unnumbered.\n\n' +
+            'Once both players have moved all their pieces onto the board, if ' + NO_SAVE_TURNS_FOR_DRAW + ' full rounds (each round being one turn for each player) pass without either player saving a piece, either player may call a draw on their turn. Saving any piece resets the count. \n\n' +
             'Click the back arrow to undo your moves or the right arrow to end your turn. \n\n' +
             'Good luck!'
 
@@ -3000,7 +3093,7 @@ function getAgentMoves(gameState) {
         return response.json();
     })
     .then(data => {
-        updateImpasseDisplay(data.impasse);
+        updateNoSaveDisplay();
         if (data.move) {
             console.log('Agent moves:', data.move);
             applyMovePair(data.move);
@@ -3318,6 +3411,7 @@ if (movePair.some(m => Array.isArray(m) && m[0] === 1 && m[1] === 1 && m[2] === 
                 setTimeout(() => {
                     const savedRack = piece.color === 0xffffff ? game.whiteSavedRack : game.blackSavedRack;
                     [...piece.currentTile.pieces].forEach(p => p.moveToRack(savedRack));
+                    game.registerSave();   // no-save streak resets immediately
                     game.dice.forEach(die => die.setUsed());
                     game.checkWinCondition();
                     callback();
@@ -3449,6 +3543,9 @@ function getGameState(game) {
             return pieceDetails;
         })
     };
+    gameStateDetails.noSaveTurns = game.noSaveTurns;
+    gameStateDetails.drawCallable = game.drawCallable;
+    gameStateDetails.bothMidgame = game.bothInMidgame();
     return gameStateDetails;
 }
 

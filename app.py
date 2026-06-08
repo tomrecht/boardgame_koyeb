@@ -7,7 +7,7 @@ import json
 import uuid
 import time
 import logging
-from game import Board, IMPASSE_TURNS_FOR_DRAW
+from game import Board, NO_SAVE_TURNS_FOR_DRAW
 from agent import Agent, get_weights
 from agent_gnn import GNNAgent
 
@@ -154,14 +154,14 @@ def select_moves():
         logger.debug("select_moves: received state")
         shared_board.update_state(state)
 
-        # --- impasse detection (read from active game state) ---
+        # The no-save draw counter is owned by the frontend and arrives inside
+        # the state (noSaveTurns / drawCallable); update_state mirrors it onto
+        # the board, so get_valid_moves will offer (1,1,1) when appropriate.
         game_id = session.get('game_id')
-        imp = active_games.get(game_id, {}).get('impasse') if game_id else None
-        if not imp:
-            imp = {'blocked_player': None, 'turns': 0, 'draw_callable': False}
-            
-        # mirror onto the board so get_valid_moves can offer the draw move (1,1,1)
-        shared_board.impasse = imp
+        no_save = {
+            'no_save_turns': shared_board.no_save_turns,
+            'draw_callable': shared_board.draw_callable,
+        }
 
         moves = shared_board.get_valid_moves()
         logger.debug(f"select_moves: got {len(moves)} valid moves")
@@ -188,9 +188,9 @@ def select_moves():
                 game_data['last_move_time'] = time.time()
                 logger.debug(f"Recorded black position for game {game_id}, move {move_index}")
 
-            return jsonify({"message": "Success", "move": chosen_moves, "impasse": imp}), 200
+            return jsonify({"message": "Success", "move": chosen_moves, "no_save": no_save}), 200
         else:
-            return jsonify({"message": "No valid moves available", "impasse": imp}), 200
+            return jsonify({"message": "No valid moves available", "no_save": no_save}), 200
     except Exception as e:
         logger.exception("Error in select_moves")
         return jsonify({"message": "Internal server error", "error": str(e)}), 500
@@ -214,39 +214,18 @@ def start_game():
 
 @app.route('/update_impasse', methods=['POST'])
 def update_impasse():
-    """Python is the source of truth for the impasse state."""
+    """The no-save draw counter is owned by the frontend; this endpoint simply
+    reflects what the posted state reports (kept for backward compatibility
+    with the frontend's turn-end ping)."""
     try:
         data = request.json
-        state = data.get('state')
-        just_finished = data.get('just_finished')
-        
-        shared_board.update_state(state)
-        blocked = shared_board.impasse_blocked_player()
-        game_id = session.get('game_id')
-        
-        imp = {'blocked_player': None, 'turns': 0, 'draw_callable': False}
-        
-        if blocked:
-            prev = active_games.get(game_id, {}).get('impasse') if game_id else None
-            # If the same player is blocked, check if they just finished their turn to increment
-            if prev and prev.get('blocked_player') == blocked:
-                turns = prev['turns']
-                if just_finished == blocked:
-                    turns += 1
-            else:
-                # First time this player is blocked. If they just moved, it's 1, otherwise 0
-                turns = 1 if just_finished == blocked else 0
-                
-            imp = {
-                'blocked_player': blocked,
-                'turns': turns,
-                'draw_callable': turns >= IMPASSE_TURNS_FOR_DRAW
-            }
-            
-        if game_id and game_id in active_games:
-            active_games[game_id]['impasse'] = imp
-            
-        return jsonify(imp), 200
+        state = data.get('state') or {}
+        no_save = {
+            'no_save_turns': state.get('noSaveTurns', 0),
+            'draw_callable': bool(state.get('drawCallable', False)),
+            'both_midgame': bool(state.get('bothMidgame', False)),
+        }
+        return jsonify(no_save), 200
     except Exception as e:
         logger.exception("Error in update_impasse")
         return jsonify({"error": str(e)}), 500

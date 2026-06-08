@@ -20,6 +20,7 @@ from network import BoardEncoder, BoardGNN, load_model, DEVICE
 
 GAME_OVER_SCORE = 10000
 SCORE_SCALE     = 1000.0   # must match train_distill.py
+NUM_PIECES      = 12       # margin display unit (raw * NUM_PIECES = expected margin)
 GNN_WEIGHTS     = 'gnn_weights.pt'
 
 
@@ -72,6 +73,29 @@ class GNNAgent:
             print(f"GNNAgent ready on {next(self.model.parameters()).device}")
             GNNAgent._printed_ready = True
 
+    def best_play_value(self, board, player):
+        """Expected margin (in pieces, from `player`'s perspective) of the
+        position after `player` plays its best move pair from here -- i.e. the
+        value the GNN assigns to its own chosen continuation. Returned in the
+        same units as the 'current' margin shown in the UI (raw * NUM_PIECES).
+        Returns None if there are no legal moves to evaluate."""
+        winner, score = board.check_game_over()
+        if winner:
+            factor = 1 if winner == player else -1
+            return factor * score
+
+        moves = board.get_valid_moves()
+        if not moves:
+            return None
+        ranked = self.select_move_pair(moves, board, player, return_scores=True)
+        if not ranked:
+            return None
+        best_final = ranked[0][0]            # already scaled by SCORE_SCALE
+        if best_final == float('inf'):       # a guaranteed winning pair
+            return float(NUM_PIECES)
+        best_raw = best_final / SCORE_SCALE   # back to the model's raw output
+        return best_raw * NUM_PIECES
+
     def evaluate(self, board, player):
         """
         Evaluate board position from player's perspective.
@@ -89,7 +113,7 @@ class GNNAgent:
         final_score = raw_score * SCORE_SCALE
         return final_score, {'gnn_raw': raw_score, 'gnn_score': final_score, '_player': player}
 
-    def select_move_pair(self, moves, board, player):
+    def select_move_pair(self, moves, board, player, return_scores=False):
         """
         2-ply move selection using batched GNN evaluation.
 
@@ -141,7 +165,8 @@ class GNNAgent:
             if wgo == player:
                 while len(board.moves) > initial_move_count:
                     board.undo_last_move()
-                return (move, (0, 0, 0))
+                win = (move, (0, 0, 0))
+                return [(float('inf'), win)] if return_scores else win
 
             # Pass as second move (if legal)
             remaining_captured = [p for p in board.home_tile.pieces
@@ -169,7 +194,8 @@ class GNNAgent:
                 if wgo == player:
                     while len(board.moves) > initial_move_count:
                         board.undo_last_move()
-                    return (move, next_move)
+                    win = (move, next_move)
+                    return [(float('inf'), win)] if return_scores else win
                 record((move, next_move))
                 board.undo_last_move()
 
@@ -202,67 +228,70 @@ class GNNAgent:
 
         final_scores = scores * SCORE_SCALE
         best_idx     = final_scores.argmax().item()
+        if return_scores:
+            ranked = list(zip(final_scores.tolist(), move_keys))
+            ranked.sort(key=lambda x: x[0], reverse=True)
+            return ranked
         return self._fix_never_good(move_keys[best_idx], board, player)
 
     def _fix_never_good(self, pair, board, player):
-            """
-            Never-good corrections producing a LEGAL sibling (same companion, same dice):
-            1) save a NUMBERED piece instead of an UNNUMBERED one from the same goal;
-            2) never PASS a die when a save is available.
-            """
-            if not (isinstance(pair, tuple) and len(pair) == 2):
-                return pair
-            m1, m2 = pair
-
-            def is_pass(m):  return m == (0, 0, 0)
-            def is_save(m):  return isinstance(m, tuple) and len(m) == 3 and m[1] == 'save'
-            def is_num(pid): return isinstance(pid, tuple) and len(pid) == 2 and pid[1] <= 6
-            def piece_of(m): return m[0] if (isinstance(m, tuple) and len(m) == 3
-                                            and isinstance(m[0], tuple)) else None
-
-            # Rule 1: numbered save dominates unnumbered save from the same goal
-            def upgrade(save_move, other_move):
-                if not is_save(save_move) or is_num(save_move[0]):
-                    return save_move
-                pl, _num = save_move[0]
-                roll = save_move[2]
-                piece = board.piece_lookup.get((pl, _num))
-                if not piece or not piece.tile:
-                    return save_move
-                other_pid = piece_of(other_move)
-                for p in piece.tile.pieces:
-                    pid = (p.player, p.number)
-                    if (p.player == player and p.number <= 6 and p.number == roll
-                            and pid != other_pid):           # don't duplicate companion's piece
-                        return (pid, 'save', roll)
-                return save_move
-
-            u1 = upgrade(m1, m2)
-            u2 = upgrade(m2, u1)                              # exclude the piece u1 now saves
-            if (u1, u2) != (m1, m2) and not (is_save(u1) and is_save(u2) and u1[0] == u2[0]):
-                return (u1, u2)
-
-            # Rule 2: never pass when a save is available
-            def best_save(valid):
-                saves = [mv for mv in valid if is_save(mv)]
-                if not saves:
-                    return None
-                saves.sort(key=lambda mv: 0 if is_num(mv[0]) else 1)
-                return saves[0]
-
-            if is_pass(m1) and is_pass(m2):
-                s = best_save(board.get_valid_moves())
-                if s is not None:
-                    return (s, (0, 0, 0))
-            elif is_pass(m2) and not is_pass(m1):
-                base = len(board.moves)
-                board.apply_move(m1, switch_turn=False)
-                s = best_save(board.get_valid_moves())
-                while len(board.moves) > base:
-                    board.undo_last_move()
-                if s is not None:
-                    return (m1, s)
+        """
+        Two never-good corrections to the GNN's chosen pair. Each produces a
+        LEGAL sibling (same companion move, same dice):
+          1) Saving an UNNUMBERED piece when a NUMBERED piece can be saved from
+             the same goal with the same die -> save the numbered piece instead.
+             (Numbered pieces can only ever be saved from their own goal, so
+             clearing them first is strictly better.)
+          2) PASSING a die when a piece could be saved instead -> save it.
+        Conservative: only acts on clear, individually-legal swaps.
+        """
+        if not (isinstance(pair, tuple) and len(pair) == 2):
             return pair
+        m1, m2 = pair
+
+        def is_pass(m):  return m == (0, 0, 0)
+        def is_save(m):  return isinstance(m, tuple) and len(m) == 3 and m[1] == 'save'
+        def is_num(pid): return isinstance(pid, tuple) and len(pid) == 2 and pid[1] <= 6
+
+        # ---- Rule 1: numbered save dominates unnumbered save from same goal ----
+        def upgrade(save_move):
+            if not is_save(save_move) or is_num(save_move[0]):
+                return save_move
+            pl, _num = save_move[0]
+            roll = save_move[2]
+            piece = board.piece_lookup.get((pl, _num))
+            if not piece or not piece.tile:
+                return save_move
+            for p in piece.tile.pieces:                 # same goal tile
+                if p.player == player and p.number <= 6 and p.number == roll:
+                    return ((p.player, p.number), 'save', roll)
+            return save_move
+
+        u1, u2 = upgrade(m1), upgrade(m2)
+        if (u1, u2) != (m1, m2):
+            return (u1, u2)
+
+        # ---- Rule 2: never pass when a save is available ----
+        def best_save(valid):
+            saves = [mv for mv in valid if is_save(mv)]
+            if not saves:
+                return None
+            saves.sort(key=lambda mv: 0 if is_num(mv[0]) else 1)   # prefer numbered
+            return saves[0]
+
+        if is_pass(m1) and is_pass(m2):
+            s = best_save(board.get_valid_moves())
+            if s is not None:
+                return (s, (0, 0, 0))
+        elif is_pass(m2) and not is_pass(m1):
+            base = len(board.moves)
+            board.apply_move(m1, switch_turn=False)
+            s = best_save(board.get_valid_moves())
+            while len(board.moves) > base:
+                board.undo_last_move()
+            if s is not None:
+                return (m1, s)
+        return pair
 
     def _select_filtered(self, scored):
         """

@@ -4,7 +4,9 @@ import json
 import itertools
 
 NUM_PIECES = 12
-IMPASSE_TURNS_FOR_DRAW = 3
+# After this many two-player turns with no save (once both players are in
+# midgame), either player may call a draw. Easily tunable.
+NO_SAVE_TURNS_FOR_DRAW = 10
 
 class Die:
     def __init__(self, board):
@@ -78,7 +80,16 @@ class Board:
         self.piece_lookup = {(p.player, p.number): p for p in self.pieces}
         self.firstMove = None
         self.moves = []
-        self.impasse = {'blocked_player': None, 'turns': 0, 'draw_callable': False, 'opponent_saves': 0}
+        # No-save draw rule (counts FULL ROUNDS = two player-turns). The
+        # counter is maintained here in switch_turn so it works for every play
+        # path including agent-vs-agent self-play and RL (no frontend needed).
+        # A "save" is any increase in total saved pieces (own save or saving an
+        # opponent's block); any save resets the streak. Counting only runs
+        # once both players have left the opening (both_in_midgame).
+        self.no_save_turns = 0          # completed rounds with no save
+        self.draw_callable = False
+        self._last_total_saved = 0      # snapshot of saved count at last turn boundary
+        self._half_turns_since_round = 0  # 2 player-turns = 1 round
         self.draw_called = False
         self._distance_cache = {}
         self._blot_cache = {}          # NEW: cache for count_enemy_blots_on_shortest_path
@@ -88,62 +99,35 @@ class Board:
         self.endgame_reward_applied = {'white': False, 'black': False}
         self.offgoals = {'white': 0, 'black': 0}
 
-    def impasse_blocked_player(self):
-        """Pure structural check (no side effects): return the player who is
-        at an impasse, i.e. has at least one unsaved on-board piece and every
-        such piece is genuinely blocked (shortest_route_to_goal == inf).
-        Saved pieces (in white_saved/black_saved) are ignored. Returns the
-        player string, or None."""
-        for player in ['white', 'black']:
-            saved = self.white_saved if player == 'white' else self.black_saved
-            unsaved = [p for p in self.pieces
-                       if p.player == player and not (p.rack is saved)]
-            if unsaved and all(self.shortest_route_to_goal(p) == float('inf') for p in unsaved):
-                return player
-        return None
+    def both_in_midgame(self):
+        """True once neither player has pieces left in their unentered rack
+        (i.e. both have left the opening). The no-save draw counter only runs
+        from this point on."""
+        return len(self.white_unentered) == 0 and len(self.black_unentered) == 0
 
-    def count_saved_pieces(self, player):
-        return len([p for p in self.pieces if p.player == player and p.rack and p.rack in (self.white_saved, self.black_saved)])
+    def total_saved(self):
+        return len(self.white_saved) + len(self.black_saved)
 
-    def check_impasse(self):
-        player = self.impasse_blocked_player()
+    def update_no_save_counter(self):
+        """Called once per player-turn at the real turn boundary (switch_turn).
+        Resets the streak on any save; otherwise advances the round counter
+        (2 player-turns = 1 round) once both players are in midgame. Robust to
+        the agent's apply/undo search, which never calls switch_turn and leaves
+        total_saved() unchanged across a probe+undo."""
+        current_saved = self.total_saved()
+        if current_saved > self._last_total_saved:
+            # A piece was saved during the turn that just ended -> reset streak.
+            self.no_save_turns = 0
+            self._half_turns_since_round = 0
+        elif self.both_in_midgame():
+            self._half_turns_since_round += 1
+            if self._half_turns_since_round >= 2:
+                self._half_turns_since_round = 0
+                self.no_save_turns += 1
+        self._last_total_saved = current_saved
+        self.draw_callable = self.no_save_turns >= NO_SAVE_TURNS_FOR_DRAW
 
-        if player is None:
-            self.impasse = {
-                'blocked_player': None,
-                'turns': 0,
-                'draw_callable': False,
-                'opponent_saves': 0
-            }
-            return
 
-        opponent = 'white' if player == 'black' else 'black'
-        opponent_saved_piece_count = self.count_saved_pieces(opponent)
-
-        if opponent_saved_piece_count != self.impasse['opponent_saves']:
-            self.impasse = {
-                'blocked_player': None,
-                'turns': 0,
-                'draw_callable': False,
-                'opponent_saves': opponent_saved_piece_count
-            }
-            return
-
-        if self.impasse['blocked_player'] != player:
-            self.impasse = {
-                'blocked_player': player,
-                'turns': 0,
-                'draw_callable': False,
-                'opponent_saves': opponent_saved_piece_count
-            }
-            return
-        
-        self.impasse['turns'] += 1
-
-        self.impasse['draw_callable'] = (
-            self.impasse['turns'] >= IMPASSE_TURNS_FOR_DRAW
-        )
-    
             
     def all_goal_distances(self, piece):
         """
@@ -275,6 +259,18 @@ class Board:
         self.game_stages['black'] = self.get_game_stage('black')
         self.apply_last_piece_rule()
 
+        # In live play the frontend owns the live no-save counter (so it can
+        # reset instantly on a save and be undo-sensitive). Adopt whatever it
+        # reports if present; fall back to this board's own counter otherwise
+        # (e.g. agent-vs-agent paths that never go through update_state).
+        if 'noSaveTurns' in game_state_details:
+            self.no_save_turns = int(game_state_details.get('noSaveTurns', 0))
+            self.draw_callable = bool(game_state_details.get(
+                'drawCallable', self.no_save_turns >= NO_SAVE_TURNS_FOR_DRAW))
+            self._half_turns_since_round = 0
+        # keep the saved-count snapshot consistent with the rebuilt board
+        self._last_total_saved = self.total_saved()
+
     def assign_tile_indices(self):
         for i in range(len(self.tiles)):
             self.tiles[i].index = i
@@ -298,7 +294,7 @@ class Board:
         self._blot_cache.clear()      # clear blot cache
         self._reachable_cache.clear()
         self._blocked_key_cache.clear()
-        self.check_impasse()
+        self.update_no_save_counter()
         self.firstMove = None  
         for die in self.dice:
             die.roll()
@@ -469,7 +465,7 @@ class Board:
                     if piece.tile not in seen_tiles:
                         seen_tiles.add(piece.tile)
                         tuples_list.append(((piece.player, piece.number), 0, 0))
-        if (not self.dice[0].used and not self.dice[1].used) and self.impasse['draw_callable']:
+        if (not self.dice[0].used and not self.dice[1].used) and self.draw_callable:
             tuples_list.append((1, 1, 1))   # add calling a draw
         return tuples_list
 
