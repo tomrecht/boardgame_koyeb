@@ -78,7 +78,7 @@ class Board:
         self.piece_lookup = {(p.player, p.number): p for p in self.pieces}
         self.firstMove = None
         self.moves = []
-        self.impasse = {'blocked_player': None, 'turns': 0, 'draw_callable': False}
+        self.impasse = {'blocked_player': None, 'turns': 0, 'draw_callable': False, 'opponent_saves': 0}
         self.draw_called = False
         self._distance_cache = {}
         self._blot_cache = {}          # NEW: cache for count_enemy_blots_on_shortest_path
@@ -102,17 +102,48 @@ class Board:
                 return player
         return None
 
+    def count_saved_pieces(self, player):
+        return len([p for p in self.pieces if p.player == player and p.rack and p.rack in (self.white_saved, self.black_saved)])
+
     def check_impasse(self):
         player = self.impasse_blocked_player()
+
         if player is None:
-            self.impasse = {'blocked_player': None, 'turns': 0, 'draw_callable': False}
+            self.impasse = {
+                'blocked_player': None,
+                'turns': 0,
+                'draw_callable': False,
+                'opponent_saves': 0
+            }
             return
-        if self.impasse['blocked_player'] == player:
-            self.impasse['turns'] += 1
-        else:
-            self.impasse = {'blocked_player': player, 'turns': 1, 'draw_callable': False}
-        self.impasse['draw_callable'] = self.impasse['turns'] >= IMPASSE_TURNS_FOR_DRAW
-        print(f"Impasse: {player}, turns {self.impasse['turns']}, draw callable {self.impasse['draw_callable']}")
+
+        opponent = 'white' if player == 'black' else 'black'
+        opponent_saved_piece_count = self.count_saved_pieces(opponent)
+
+        if opponent_saved_piece_count != self.impasse['opponent_saves']:
+            self.impasse = {
+                'blocked_player': None,
+                'turns': 0,
+                'draw_callable': False,
+                'opponent_saves': opponent_saved_piece_count
+            }
+            return
+
+        if self.impasse['blocked_player'] != player:
+            self.impasse = {
+                'blocked_player': player,
+                'turns': 0,
+                'draw_callable': False,
+                'opponent_saves': opponent_saved_piece_count
+            }
+            return
+        
+        self.impasse['turns'] += 1
+
+        self.impasse['draw_callable'] = (
+            self.impasse['turns'] >= IMPASSE_TURNS_FOR_DRAW
+        )
+    
             
     def all_goal_distances(self, piece):
         """
