@@ -32,7 +32,6 @@ const scoreTracker = {
     games_played: 0,
     white_wins: 0,
     black_wins: 0,
-    draws: 0,
     total_score: 0
     };
 
@@ -121,6 +120,189 @@ window.showEvals = false;
     });
 })();
 
+// ── SETUP / SANDBOX MODE ────────────────────────────────────────────────
+// Triple-press 's' to toggle. Rearrange pieces, edit dice, set turn, and
+// order the unentered racks, to build arbitrary positions for testing.
+// Triple-press 'c' to copy the position JSON to clipboard + console.
+window.setupMode = false;
+let _setupSelected = null;     // piece currently picked up
+let _setupBox = null;          // instructions HTML box
+
+function _setupScene() {
+    return gameInstance && gameInstance.scene && gameInstance.scene.scenes && gameInstance.scene.scenes[0];
+}
+function _setupGame() {
+    const s = _setupScene();
+    return s && s.game;
+}
+function _setupClearSelection() {
+    if (_setupSelected) {
+        _setupSelected.isSelected = false;
+        _setupSelected.updateColor();
+        _setupSelected = null;
+    }
+}
+function setupSelectPiece(piece) {
+    if (_setupSelected === piece) { _setupClearSelection(); return; }  // click again = drop selection
+    _setupClearSelection();
+    _setupSelected = piece;
+    piece.isSelected = true;
+    piece.updateColor();
+}
+
+// --- free placement helpers (bypass all game rules) ---
+function _setupRemoveFromCurrent(piece) {
+    if (piece.rack) {
+        const r = piece.rack;
+        r.removePiece(piece);
+        if (r.shiftPiecesUp) r.shiftPiecesUp();
+        piece.rack = null;
+    }
+    if (piece.currentTile) {
+        piece.currentTile.removePiece(piece);   // updatePositions() repositions remaining pieces
+        piece.currentTile = null;
+    }
+}
+function _setupPlaceOnTile(piece, tile) {
+    _setupRemoveFromCurrent(piece);
+    piece.currentTile = tile;
+    piece.rack = null;
+    piece.justMovedHome = false;
+    tile.addPiece(piece);            // pushes + updatePositions() => positions & sizes the piece
+}
+function _setupPlaceInRack(piece, rack, atFront) {
+    _setupRemoveFromCurrent(piece);
+    if (atFront && rack.addPieceToFirstPosition) {
+        rack.addPieceToFirstPosition(piece);
+    } else {
+        rack.addPiece(piece);
+    }
+    rack.shiftPiecesUp();            // canonical re-layout of the whole rack
+    piece.currentTile = null;
+    piece.justMovedHome = false;
+}
+
+// Double-click a piece: cycle board -> saved rack -> unentered rack -> board(home).
+function setupCyclePieceLocation(piece) {
+    const game = _setupGame();
+    if (!game) return;
+    const saved = piece.player === 'white' ? game.whiteSavedRack : game.blackSavedRack;
+    const unentered = piece.player === 'white' ? game.whiteUnenteredRack : game.blackUnenteredRack;
+    const home = game.tiles.find(t => t.type === 'home');
+    if (piece.rack === saved) {
+        _setupPlaceInRack(piece, unentered, false);
+    } else if (piece.rack === unentered) {
+        _setupPlaceOnTile(piece, home);
+    } else {                          // on the board (any tile) or unplaced
+        _setupPlaceInRack(piece, saved, false);
+    }
+    _setupClearSelection();
+}
+
+// Reorder the selected piece within whatever rack it is in (front / back).
+function setupReorderInRack(piece, toFront) {
+    if (!piece || !piece.rack) return;
+    const rack = piece.rack;
+    rack.removePiece(piece);          // filter out (no relayout needed yet)
+    if (toFront) rack.pieces.unshift(piece);
+    else rack.pieces.push(piece);
+    piece.rack = rack;
+    rack.shiftPiecesUp();             // relayout in new order
+}
+
+// --- instructions box ---
+function _showSetupBox() {
+    if (!_setupBox) {
+        _setupBox = document.createElement('div');
+        _setupBox.style.cssText =
+            'position:fixed; top:12px; right:12px; z-index:9999;' +
+            'background:rgba(20,20,20,0.9); color:#fff; font:13px/1.6 monospace;' +
+            'padding:10px 12px; border:1px solid #888; border-radius:6px; max-width:360px;';
+        _setupBox.innerHTML =
+            '<b>SETUP MODE</b><br>' +
+            '\u2022 Click a piece to pick it up; click a tile to drop it<br>' +
+            '\u2022 Double-click a piece to cycle: board \u2192 saved \u2192 unentered \u2192 home<br>' +
+            '\u2022 With a piece selected, <b>F</b> = move to front of its rack, <b>B</b> = to back<br>' +
+            '\u2022 <b>1</b> / <b>2</b> change a die\u2019s value; <b>Shift+1</b> / <b>Shift+2</b> toggle \u201cused\u201d<br>' +
+            '\u2022 <b>T</b> switches whose turn it is<br>' +
+            '\u2022 Triple-press <b>C</b> to copy the position JSON (also logged)<br>' +
+            '\u2022 Triple-press <b>S</b> to exit';
+        document.body.appendChild(_setupBox);
+    }
+    _setupBox.style.display = 'block';
+}
+function _hideSetupBox() { if (_setupBox) _setupBox.style.display = 'none'; }
+function enterSetupMode() { _showSetupBox(); }
+function exitSetupMode() { _setupClearSelection(); _hideSetupBox(); }
+
+// --- export current position ---
+function exportSetupState() {
+    const game = _setupGame();
+    if (!game) return;
+    const json = JSON.stringify(getGameState(game), null, 2);
+    console.log('[SETUP] game state:\n' + json);
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+        navigator.clipboard.writeText(json)
+            .then(() => console.log('[SETUP] copied to clipboard'))
+            .catch(e => console.warn('[SETUP] clipboard copy failed (state is logged above):', e));
+    }
+}
+
+// triple-press 's' : toggle setup mode
+(function () {
+    let n = 0, t = null;
+    document.addEventListener('keydown', function (e) {
+        if (e.key !== 's' && e.key !== 'S') return;
+        if (e.ctrlKey || e.metaKey) return;     // leave Ctrl/Cmd+S alone
+        e.preventDefault();
+        n++; clearTimeout(t); t = setTimeout(() => { n = 0; }, 1000);
+        if (n >= 3) {
+            n = 0;
+            window.setupMode = !window.setupMode;
+            if (window.setupMode) enterSetupMode(); else exitSetupMode();
+            console.log('[SETUP] mode: ' + (window.setupMode ? 'ON' : 'OFF'));
+        }
+    });
+})();
+
+// triple-press 'c' : export position (works in or out of setup mode)
+(function () {
+    let n = 0, t = null;
+    document.addEventListener('keydown', function (e) {
+        if (e.key !== 'c' && e.key !== 'C') return;
+        if (e.ctrlKey || e.metaKey) return;     // leave Ctrl/Cmd+C alone
+        n++; clearTimeout(t); t = setTimeout(() => { n = 0; }, 1000);
+        if (n >= 3) { n = 0; exportSetupState(); }
+    });
+})();
+
+// setup-only keys: 1/2 die value, Shift+1/2 toggle used, t turn, f/b reorder in rack
+document.addEventListener('keydown', function (e) {
+    if (!window.setupMode) return;
+    const game = _setupGame();
+    if (!game) return;
+    if (e.code === 'Digit1' || e.code === 'Digit2') {
+        e.preventDefault();
+        const die = game.dice[e.code === 'Digit1' ? 0 : 1];
+        if (!die) return;
+        if (e.shiftKey) die.used = !die.used;
+        else die.value = (die.value % 6) + 1;
+        die.updateColor(game.turn);
+        console.log(`[SETUP] die ${e.code === 'Digit1' ? 1 : 2}: value ${die.value}, used ${die.used}`);
+    } else if (e.key === 't' || e.key === 'T') {
+        e.preventDefault();
+        game.turn = game.turn === 'white' ? 'black' : 'white';
+        game.dice.forEach(d => d.updateColor(game.turn));
+        console.log('[SETUP] turn ->', game.turn);
+    } else if (e.key === 'f' || e.key === 'F') {
+        e.preventDefault();
+        if (_setupSelected) setupReorderInRack(_setupSelected, true);
+    } else if (e.key === 'b' || e.key === 'B') {
+        e.preventDefault();
+        if (_setupSelected) setupReorderInRack(_setupSelected, false);
+    }
+});
+
 // ── ON-BOARD EVAL READOUT ───────────────────────────────────────────────
 let _evalReadout = null;
 function _getEvalReadout() {
@@ -196,26 +378,7 @@ function hideDebugTip() {
     if (_dbgTip) _dbgTip.style.display = 'none';
 }
 
-function updateImpasseDisplay(impasse) {
-    const scene = gameInstance.scene.scenes[0];
-    const game = scene.game;
-    if (!impasse || !impasse.blocked_player) {
-        scene.impasseText.setVisible(false);
-        scene.callDrawButton.setVisible(false);
-        return;
-    }
-    scene.impasseText
-        .setText(`${impasse.blocked_player} is at an impasse, ${impasse.turns} turns`)
-        .setVisible(true);
-    // human is white; show the button on the human's turn when a draw is callable
-    const humanCanCall = impasse.draw_callable && game.turn === 'white' && !game.gameOver;
-    if (humanCanCall) {
-        const b = scene.impasseText.getBounds();
-        scene.callDrawButton.setPosition(b.right + 10, b.bottom).setVisible(true);
-    } else {
-        scene.callDrawButton.setVisible(false);
-    }
-}
+
 
 class Piece {
     constructor(scene, game, color, number, x, y, rack = null) {
@@ -265,6 +428,18 @@ class Piece {
     }
 
     handleClick(pointer) {
+
+        if (window.setupMode) {
+            const now = Date.now();
+            if (this._setupLastClick && now - this._setupLastClick < 300) {
+                this._setupLastClick = 0;
+                setupCyclePieceLocation(this);   // double-click: cycle board -> saved -> unentered -> home
+            } else {
+                this._setupLastClick = now;
+                setupSelectPiece(this);          // single-click: pick up / drop selection
+            }
+            return;
+        }
 
     // Check for right-click (button 2)
     if (pointer.rightButtonDown()) {
@@ -526,7 +701,7 @@ class Piece {
         this.isSelected = true;
     }
 
-    moveToRack(rack) {
+    moveToRack(rack, addToFront = false) {
         this.rack = rack;
         this.x = rack.nextX();
         this.y = rack.nextY();
@@ -535,7 +710,11 @@ class Piece {
         if (this.text) {
             this.text.setPosition(this.x, this.y);
         }
+        if (addToFront) {
+        rack.addPieceToFirstPosition(this);
+        } else {
         rack.addPiece(this);
+         }
         if (this.currentTile) {
             this.currentTile.removePiece(this);
         }
@@ -549,8 +728,7 @@ class Piece {
 
     returnToRack() {
         const unenteredRack = this.color === 0xffffff ? this.game.whiteUnenteredRack : this.game.blackUnenteredRack;
-        this.moveToRack(unenteredRack);
-        unenteredRack.addPieceToFirstPosition(this)
+        this.moveToRack(unenteredRack, true);
         this.justMovedHome = false;
         this.reachableTiles = null;
         this.game.selectedPiece = null;
@@ -809,6 +987,13 @@ class Tile {
     } */
 
         onClick() {
+            if (window.setupMode) {
+                if (_setupSelected && this.type !== 'nogo') {
+                    _setupPlaceOnTile(_setupSelected, this);
+                    _setupClearSelection();
+                }
+                return;
+            }
             if (this.game.gameOver) return; 
             if (this.game.selectedPiece && this.type !== "nogo") {
                 const piece = this.game.selectedPiece;
@@ -1850,9 +2035,7 @@ endGame(winner, score = null) {
 
     this.gameOver = true;
     console.log(`${winner} wins with a score of ${score}!`);
-    if (winner === 'draw') {
-        scoreTracker.draws += 1;
-    } else if (winner === 'white') {
+    if (winner === 'white') {
         scoreTracker.total_score += score;
         scoreTracker.white_wins += 1;
     } else if (winner === 'black') {
@@ -2279,39 +2462,23 @@ class MainGameScene extends Phaser.Scene {
         });
     }
 
-        // Add score display text box
-        this.scoreText = this.add.text(20, this.sys.game.config.height - 100, '', {
-            fontSize: '24px',
-            fontFamily: FONT_FAMILY,
-            color: '#000',
-            backgroundColor: '#ffffff',
-            padding: { x: 10, y: 5 },
-            borderColor: '#000',
-            borderWidth: 1.5,
-            borderRadius: 3.75
-        }).setOrigin(0, 1);
+            // Add score display text box
+            this.scoreText = this.add.text(20, this.sys.game.config.height - 100, '', {
+                fontSize: '24px',
+                fontFamily: FONT_FAMILY,
+                color: '#000',
+                backgroundColor: '#ffffff',
+                padding: { x: 10, y: 5 },
+                borderColor: '#000',
+                borderWidth: 1.5,
+                borderRadius: 3.75
+            }).setOrigin(0, 1);
+    
+            this.updateScoreText();
+            this.checkInitialAIReady();
 
-        this.updateScoreText();
-
-        this.impasseText = this.add.text(20, this.sys.game.config.height - 200, '', {
-                fontSize: '20px', fontFamily: FONT_FAMILY, color: '#a00',
-                backgroundColor: '#fff', padding: { x: 8, y: 4 }
-            }).setOrigin(0, 1).setVisible(false);
-
-            this.callDrawButton = this.add.text(0, 0, 'Call draw', {
-                fontSize: '20px', fontFamily: FONT_FAMILY, color: '#fff',
-                backgroundColor: '#a00', padding: { x: 10, y: 5 }
-            }).setOrigin(0, 1).setVisible(false).setInteractive({ useHandCursor: true });
-            this.callDrawButton.on('pointerdown', () => {
-                fetch(`${SERVER_URL}/call_draw`, { method: 'POST', credentials: 'include' })
-                    .catch(e => console.warn('call_draw failed:', e));
-                gameInstance.scene.scenes[0].game.endGame('draw');
-            });
-
-        this.checkInitialAIReady();
-
-        // Call notifyStartGame when game is created
-        notifyStartGame();
+            // Call notifyStartGame when game is created
+            notifyStartGame();
 
     }
 
@@ -2334,7 +2501,6 @@ class MainGameScene extends Phaser.Scene {
                 `Games Played: ${scoreTracker.games_played}\n` +
                 `White Wins: ${scoreTracker.white_wins}\n` +
                 `Black Wins: ${scoreTracker.black_wins}\n` +
-                `Draws: ${scoreTracker.draws}\n` +
                 finalScoreLine
             );
         }
@@ -2637,9 +2803,11 @@ class EndGameScene extends Phaser.Scene {
 
     create() {
         let message;
-        message = this.winner === 'draw'
-                ? `${gameInstance.scene.scenes[0].game.impasse_caller || 'A player'} calls a draw`
-                : `${this.winner} wins with a score of ${this.score}!`;
+        if (this.winner === 'tie') {
+            message = "Game ends in a tie!";
+        } else {
+            message = `${this.winner} wins with a score of ${this.score}!`;
+        }
         this.add.text(CENTER_X, CENTER_Y - 50, message, {
             fontSize: '48px',
             fontFamily: FONT_FAMILY,
@@ -2780,7 +2948,6 @@ function getAgentMoves(gameState) {
         return response.json();
     })
     .then(data => {
-        updateImpasseDisplay(data.impasse);
         if (data.move) {
             console.log('Agent moves:', data.move);
             applyMovePair(data.move);
@@ -3010,11 +3177,6 @@ function applyMovePair(movePair) {
         return;
     }
 
-    if (movePair.some(m => Array.isArray(m) && m[0] === 1 && m[1] === 1 && m[2] === 1)) {
-        gameInstance.scene.scenes[0].game.endGame('draw');
-        return;
-    }
-
     let [move1, move2] = movePair;
 
     // Ensure a numbered-piece save is applied before its companion move.
@@ -3044,13 +3206,8 @@ function applyMovePair(movePair) {
         const saveMove  = save1 ? move1 : move2;
         const otherMove = save1 ? move2 : move1;
         const samePiece = Array.isArray(saveMove[0]) && Array.isArray(otherMove[0]) &&
-                  String(saveMove[0][0]) === String(otherMove[0][0]) &&
-                  Number(saveMove[0][1]) === Number(otherMove[0][1]);
-        if (samePiece) {
-            // Ensure move-to-goal precedes save regardless of which order they arrived in
-            move1 = otherMove;   // move first
-            move2 = saveMove;    // save second
-        } else if (!isBringOut(otherMove)) {
+                          saveMove[0][0] === otherMove[0][0] && saveMove[0][1] === otherMove[0][1];
+        if (!samePiece && !isBringOut(otherMove)) {
             move1 = saveMove;
             move2 = otherMove;
         }
