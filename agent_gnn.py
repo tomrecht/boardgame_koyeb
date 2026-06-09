@@ -272,21 +272,22 @@ class GNNAgent:
         return pair
 
     def _note_never_good(self, rule, before, after, fired=True):
-        """Record (and optionally log) a never-good correction. Always stashes
-        the last event on self.last_never_good so the caller (e.g. app.py, which
-        runs in a process whose logs are visible) can surface it. Direct logging
-        here also appears in the Flask server terminal during live play; in
-        worker subprocesses stdout is swallowed, so rely on self.last_never_good
-        / returned data there instead."""
+        """Record (and log) a never-good correction. Always stashes the last
+        event on self.last_never_good and increments never_good_counts (readable
+        from any process). Emits a logging line so it shows up in the Flask
+        server terminal during live play WITHOUT needing a debug flag set:
+          - a correction that FIRED -> INFO
+          - a pass-pair where no save was found -> DEBUG (only with debug flag)
+        Set self.debug_never_good=True for the extra near-miss/no-op lines."""
         self.last_never_good = {'rule': rule, 'before': before, 'after': after, 'fired': fired}
-        self.never_good_counts[rule] = self.never_good_counts.get(rule, 0) + (1 if fired else 0)
-        if getattr(self, 'debug_never_good', False):
-            import logging
-            log = logging.getLogger('agent_gnn')
-            if fired:
-                log.info(f"[never_good] {rule}: {before} -> {after}")
-            else:
-                log.info(f"[never_good] {rule}: pass pair {before} but no save found")
+        if fired:
+            self.never_good_counts[rule] = self.never_good_counts.get(rule, 0) + 1
+        import logging
+        log = logging.getLogger('agent_gnn')
+        if fired:
+            log.info(f"[never_good] {rule} FIRED: {before} -> {after}")
+        elif getattr(self, 'debug_never_good', False):
+            log.info(f"[never_good] {rule}: pass pair {before} but no save found")
 
     def _fix_never_good(self, pair, board, player):
         """

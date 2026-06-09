@@ -38,7 +38,7 @@ SCHEMA_VERSION = 1
 
 current_weights = get_weights(weights_file='best_weights.json')
 #agent = Agent(weights=current_weights, log_to_file=True)
-agent = GNNAgent(weights_path='best_iter5_m46.pt', use_prefilter=True, prefilter_top_k=40, heuristic_weights=current_weights)
+agent = GNNAgent(weights_path='opponent_1.pt', use_prefilter=True, prefilter_top_k=40, heuristic_weights=current_weights)
 # Heuristic agent kept alongside the GNN so /evaluate_board can report both
 # evals for the same position (the GNN is the player; the heuristic is shown
 # for comparison / prefilter context).
@@ -75,6 +75,17 @@ def _normalize_move(m):
 def apply_pair_to_board(board, m1, m2):
     """Apply a move pair and return a frozenset snapshot of resulting piece positions."""
     initial_move_count = len(board.moves)
+
+    def rack_kind(p):
+        # racks are plain lists; identify by object identity
+        if p.rack is None:
+            return None
+        if p.rack is board.white_saved or p.rack is board.black_saved:
+            return 'saved'
+        if p.rack is board.white_unentered or p.rack is board.black_unentered:
+            return 'unentered'
+        return 'other'
+
     try:
         if m1 != (0, 0, 0):
             board.apply_move(m1, switch_turn=False)
@@ -83,8 +94,8 @@ def apply_pair_to_board(board, m1, m2):
         result = frozenset(
             (p.player, p.number,
              p.tile.ring if p.tile else None,
-             p.tile.sector if p.tile else None,
-             p.rack.type if p.rack else None)
+             p.tile.pos if p.tile else None,
+             rack_kind(p))
             for p in board.pieces
         )
     except Exception as e:
