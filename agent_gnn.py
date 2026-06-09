@@ -67,6 +67,13 @@ class GNNAgent:
         self.debug_never_good = False
         self.last_never_good = None
         self.never_good_counts = {}
+        # _fix_never_good is a hand-coded patch over the value head's errors
+        # (e.g. undervaluing saves). DISABLED by default: TD(lambda) is meant to
+        # fix these errors in the value function itself, and a buggy patch in the
+        # loop corrupts data and masks whether training is working. The duplicate
+        # -save dedupe (a hard game invariant) stays on regardless. Set
+        # enable_never_good=True to re-enable the heuristic corrections.
+        self.enable_never_good = False
         self.heuristic = None
         if use_prefilter:
             from agent import Agent, get_weights
@@ -252,7 +259,10 @@ class GNNAgent:
             ranked = list(zip(final_scores.tolist(), move_keys))
             ranked.sort(key=lambda x: x[0], reverse=True)
             return ranked
-        return self._dedupe_save_pair(self._fix_never_good(move_keys[best_idx], board, player))
+        chosen = move_keys[best_idx]
+        if self.enable_never_good:
+            chosen = self._fix_never_good(chosen, board, player)
+        return self._dedupe_save_pair(chosen)
 
     def _dedupe_save_pair(self, pair):
         """A piece can be saved at most once per turn. If a pair tries to save
