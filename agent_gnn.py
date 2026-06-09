@@ -90,9 +90,22 @@ class GNNAgent:
         ranked = self.select_move_pair(moves, board, player, return_scores=True)
         if not ranked:
             return None
-        best_final = ranked[0][0]            # already scaled by SCORE_SCALE
-        if best_final == float('inf'):       # a guaranteed winning pair
-            return float(NUM_PIECES)
+        best_final, best_pair = ranked[0][0], ranked[0][1]
+        if best_final == float('inf'):
+            # Guaranteed winning pair: report the ACTUAL final margin of the
+            # resulting won position (not a flat NUM_PIECES), from player's view.
+            base = len(board.moves)
+            try:
+                for m in best_pair:
+                    if m != (0, 0, 0):
+                        board.apply_move(m, switch_turn=False)
+                w, s = board.check_game_over()
+            finally:
+                while len(board.moves) > base:
+                    board.undo_last_move()
+            if w:
+                return (1 if w == player else -1) * float(s)
+            return float(NUM_PIECES)   # fallback (shouldn't happen)
         best_raw = best_final / SCORE_SCALE   # back to the model's raw output
         return best_raw * NUM_PIECES
 
@@ -232,7 +245,24 @@ class GNNAgent:
             ranked = list(zip(final_scores.tolist(), move_keys))
             ranked.sort(key=lambda x: x[0], reverse=True)
             return ranked
-        return self._fix_never_good(move_keys[best_idx], board, player)
+        return self._dedupe_save_pair(self._fix_never_good(move_keys[best_idx], board, player))
+
+    def _dedupe_save_pair(self, pair):
+        """A piece can be saved at most once per turn. If a pair tries to save
+        the same piece-id twice (e.g. two halves that resolved to the same
+        numbered piece), drop the second save to a pass. Defensive invariant
+        enforced on every returned pair."""
+        if not (isinstance(pair, tuple) and len(pair) == 2):
+            return pair
+        m1, m2 = pair
+        def save_pid(m):
+            if isinstance(m, tuple) and len(m) == 3 and m[1] == 'save':
+                return m[0]
+            return None
+        p1, p2 = save_pid(m1), save_pid(m2)
+        if p1 is not None and p1 == p2:
+            return (m1, (0, 0, 0))
+        return pair
 
     def _fix_never_good(self, pair, board, player):
         """
@@ -254,6 +284,11 @@ class GNNAgent:
         def is_num(pid): return isinstance(pid, tuple) and len(pid) == 2 and pid[1] <= 6
 
         # ---- Rule 1: numbered save dominates unnumbered save from same goal ----
+        # `already_used` tracks numbered pieces we've already redirected a save
+        # to, so two unnumbered saves on the same goal can't both upgrade to the
+        # SAME numbered piece (a piece can be saved at most once per turn).
+        already_used = set()
+
         def upgrade(save_move):
             if not is_save(save_move) or is_num(save_move[0]):
                 return save_move
@@ -263,13 +298,15 @@ class GNNAgent:
             if not piece or not piece.tile:
                 return save_move
             for p in piece.tile.pieces:                 # same goal tile
-                if p.player == player and p.number <= 6 and p.number == roll:
+                if (p.player == player and p.number <= 6 and p.number == roll
+                        and (p.player, p.number) not in already_used):
+                    already_used.add((p.player, p.number))
                     return ((p.player, p.number), 'save', roll)
             return save_move
 
         u1, u2 = upgrade(m1), upgrade(m2)
         if (u1, u2) != (m1, m2):
-            return (u1, u2)
+            return self._dedupe_save_pair((u1, u2))
 
         # ---- Rule 2: never pass when a save is available ----
         def best_save(valid):
@@ -290,8 +327,8 @@ class GNNAgent:
             while len(board.moves) > base:
                 board.undo_last_move()
             if s is not None:
-                return (m1, s)
-        return pair
+                return self._dedupe_save_pair((m1, s))
+        return self._dedupe_save_pair(pair)
 
     def _select_filtered(self, scored):
         """
