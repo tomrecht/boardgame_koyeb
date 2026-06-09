@@ -315,10 +315,15 @@ class GNNAgent:
         def is_num(pid): return isinstance(pid, tuple) and len(pid) == 2 and pid[1] <= 6
 
         # ---- Rule 1: numbered save dominates unnumbered save from same goal ----
-        # `already_used` tracks numbered pieces we've already redirected a save
-        # to, so two unnumbered saves on the same goal can't both upgrade to the
-        # SAME numbered piece (a piece can be saved at most once per turn).
+        # `already_used` tracks numbered pieces already claimed by a save in THIS
+        # pair, so an unnumbered save is never redirected onto a piece that is
+        # already being saved (which would create a duplicate that then collapses
+        # to a pass, dropping a legitimate save). Seed it with the numbered
+        # pieces the pair already saves.
         already_used = set()
+        for m in (m1, m2):
+            if is_save(m) and is_num(m[0]):
+                already_used.add(m[0])
 
         def upgrade(save_move):
             if not is_save(save_move) or is_num(save_move[0]):
