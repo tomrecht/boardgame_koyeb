@@ -1,2 +1,12 @@
 *.pt
 weights*.json
+*.jsonl
+*.pt
+*.pth
+*.ckpt
+*.pkl
+*.npz
+training_data/
+__pycache__/
+.ipynb_checkpoints/
+.DS_Store

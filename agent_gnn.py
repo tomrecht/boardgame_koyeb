@@ -60,6 +60,13 @@ class GNNAgent:
         # kept-set instrumentation (compute proxy for sweeps)
         self.dbg_kept_total = 0
         self.dbg_kept_calls = 0
+        # never-good correction logging. debug_never_good -> emit a logging.INFO
+        # line each time a correction fires (visible in the Flask server terminal
+        # during live play). last_never_good / never_good_counts are always kept
+        # (readable from any process, e.g. app.py).
+        self.debug_never_good = False
+        self.last_never_good = None
+        self.never_good_counts = {}
         self.heuristic = None
         if use_prefilter:
             from agent import Agent, get_weights
@@ -264,6 +271,23 @@ class GNNAgent:
             return (m1, (0, 0, 0))
         return pair
 
+    def _note_never_good(self, rule, before, after, fired=True):
+        """Record (and optionally log) a never-good correction. Always stashes
+        the last event on self.last_never_good so the caller (e.g. app.py, which
+        runs in a process whose logs are visible) can surface it. Direct logging
+        here also appears in the Flask server terminal during live play; in
+        worker subprocesses stdout is swallowed, so rely on self.last_never_good
+        / returned data there instead."""
+        self.last_never_good = {'rule': rule, 'before': before, 'after': after, 'fired': fired}
+        self.never_good_counts[rule] = self.never_good_counts.get(rule, 0) + (1 if fired else 0)
+        if getattr(self, 'debug_never_good', False):
+            import logging
+            log = logging.getLogger('agent_gnn')
+            if fired:
+                log.info(f"[never_good] {rule}: {before} -> {after}")
+            else:
+                log.info(f"[never_good] {rule}: pass pair {before} but no save found")
+
     def _fix_never_good(self, pair, board, player):
         """
         Two never-good corrections to the GNN's chosen pair. Each produces a
@@ -275,6 +299,12 @@ class GNNAgent:
           2) PASSING a die when a piece could be saved instead -> save it.
         Conservative: only acts on clear, individually-legal swaps.
         """
+        # Normalize to tuples — pairs/moves may arrive as lists from some paths,
+        # and `m == (0,0,0)` / isinstance(...tuple) checks silently fail on lists.
+        def _t(x):
+            return tuple(_t(e) for e in x) if isinstance(x, (list, tuple)) else x
+        pair = _t(pair)
+
         if not (isinstance(pair, tuple) and len(pair) == 2):
             return pair
         m1, m2 = pair
@@ -306,29 +336,49 @@ class GNNAgent:
 
         u1, u2 = upgrade(m1), upgrade(m2)
         if (u1, u2) != (m1, m2):
-            return self._dedupe_save_pair((u1, u2))
+            fixed = self._dedupe_save_pair((u1, u2))
+            self._note_never_good('rule1_upgrade_numbered', pair, fixed)
+            return fixed
 
         # ---- Rule 2: never pass when a save is available ----
-        def best_save(valid):
-            saves = [mv for mv in valid if is_save(mv)]
+        def best_save(valid, exclude_pid=None):
+            saves = [mv for mv in valid if is_save(mv) and mv[0] != exclude_pid]
             if not saves:
                 return None
             saves.sort(key=lambda mv: 0 if is_num(mv[0]) else 1)   # prefer numbered
             return saves[0]
 
-        if is_pass(m1) and is_pass(m2):
+        # Identify which slot (if any) is a pass and what the non-pass move is.
+        p1, p2 = is_pass(m1), is_pass(m2)
+
+        result = pair
+        rule = None
+        if p1 and p2:
             s = best_save(board.get_valid_moves())
             if s is not None:
-                return (s, (0, 0, 0))
-        elif is_pass(m2) and not is_pass(m1):
+                result = (s, (0, 0, 0))
+                rule = 'rule2_fill_double_pass'
+        elif p1 ^ p2:
+            real = m2 if p1 else m1            # the non-pass move
             base = len(board.moves)
-            board.apply_move(m1, switch_turn=False)
-            s = best_save(board.get_valid_moves())
+            board.apply_move(real, switch_turn=False)
+            # exclude the piece just moved/saved so we never re-save the same id
+            exclude = real[0] if is_save(real) else None
+            s = best_save(board.get_valid_moves(), exclude_pid=exclude)
             while len(board.moves) > base:
                 board.undo_last_move()
             if s is not None:
-                return self._dedupe_save_pair((m1, s))
-        return self._dedupe_save_pair(pair)
+                result = (real, s)             # canonical order: real move first
+                rule = 'rule2_fill_pass'
+
+        final = self._dedupe_save_pair(result)
+        if rule is not None:
+            self._note_never_good(rule, pair, final)
+        elif (p1 or p2):
+            # A pass slot existed but no save was found to fill it — log when
+            # debugging so we can see "saw a pass pair, found no save" cases.
+            self._note_never_good('rule2_no_save_found', pair, final, fired=False)
+        return final
 
     def _select_filtered(self, scored):
         """
