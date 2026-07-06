@@ -74,6 +74,11 @@ class GNNAgent:
         # -save dedupe (a hard game invariant) stays on regardless. Set
         # enable_never_good=True to re-enable the heuristic corrections.
         self.enable_never_good = False
+        # Diagnostic: when True, log whenever the chosen pair saves nothing yet a
+        # save was legally available, distinguishing a value-head error (save
+        # scored but not chosen) from a candidate drop (save never reached the
+        # GNN, i.e. prefilter/enumeration). See select_move_pair.
+        self.debug_pass_over_save = False
         self.heuristic = None
         if use_prefilter:
             from agent import Agent, get_weights
@@ -151,9 +156,25 @@ class GNNAgent:
           4. Pick the best
 
         This reduces GPU kernel launches from ~400 to 1-2 per turn.
+
+        Draw handling: calling a draw ((1,1,1)) is evaluated by DIRECT
+        COMPARISON against its known terminal value (exactly 0), never by
+        simulating it through apply_move/encode. Two reasons:
+          1) board.apply_move((1,1,1)) sets board.draw_called=True WITHOUT
+             pushing an entry onto board.moves, so the generic apply/undo
+             search loop below can't undo it -- simulating it as a normal
+             candidate would permanently and silently end the game the
+             moment it's merely considered, even if not chosen.
+          2) It moves no piece, so the resulting position would encode
+             identically to a pass -- the network has no way to tell "end
+             the game now at 0" from "do nothing and keep playing." Its
+             true value is exact and known, so it doesn't need estimating.
         """
         if not isinstance(moves, (list, set)) or not all(isinstance(m, tuple) for m in moves):
             raise ValueError('Invalid moves format: expected a list or set of tuples.')
+
+        draw_legal = (1, 1, 1) in moves
+        draw_pair  = ((1, 1, 1), (0, 0, 0))
 
         prefilter = self.use_prefilter and self.heuristic is not None
 
@@ -176,6 +197,7 @@ class GNNAgent:
 
         moves_set = set(moves)
         moves_set.discard((0, 0, 0))
+        moves_set.discard((1, 1, 1))   # draw handled separately, see docstring
 
         for move in moves_set:
             if not isinstance(move, tuple) or len(move) != 3:
@@ -212,6 +234,7 @@ class GNNAgent:
                     board.undo_last_move()
                 continue
             next_moves.discard((0, 0, 0))
+            next_moves.discard((1, 1, 1))   # draw is only ever legal as a lone first action
 
             for next_move in next_moves:
                 if not isinstance(next_move, tuple) or len(next_move) != 3:
@@ -232,8 +255,16 @@ class GNNAgent:
         # --- If prefiltering: pick the kept candidates, then encode ONLY those ---
         if prefilter:
             if not scored:
+                if draw_legal:
+                    return [(0.0, draw_pair)] if return_scores else draw_pair
                 return ((0, 0, 0), (0, 0, 0))
-            top_pairs = self._select_filtered(scored)
+            # Save pairs are exempt from the heuristic top-K cull: the heuristic
+            # can undervalue saves relative to flashier non-save moves, which
+            # would otherwise silently drop a legal save before the GNN ever
+            # sees it. Always keep save-containing pairs; cull only the rest.
+            save_scored  = [(s, p) for s, p in scored if self._pair_has_save(p)]
+            other_scored = [(s, p) for s, p in scored if not self._pair_has_save(p)]
+            top_pairs = [p for _, p in save_scored] + self._select_filtered(other_scored)
             self.dbg_kept_total += len(top_pairs)
             self.dbg_kept_calls += 1
             for pair in top_pairs:
@@ -247,6 +278,8 @@ class GNNAgent:
                     board.undo_last_move()
 
         if not move_keys:
+            if draw_legal:
+                return [(0.0, draw_pair)] if return_scores else draw_pair
             return ((0, 0, 0), (0, 0, 0))
 
         # --- Single batched forward pass over the (filtered) candidates ---
@@ -255,14 +288,62 @@ class GNNAgent:
 
         final_scores = scores * SCORE_SCALE
         best_idx     = final_scores.argmax().item()
+
         if return_scores:
             ranked = list(zip(final_scores.tolist(), move_keys))
+            if draw_legal:
+                ranked.append((0.0, draw_pair))   # exact terminal value, not network-estimated
             ranked.sort(key=lambda x: x[0], reverse=True)
             return ranked
+
+        # A draw's true value is exactly 0, in the same raw*SCORE_SCALE units
+        # as final_scores -- compare directly, no encoding needed.
+        if draw_legal and 0.0 >= final_scores[best_idx].item():
+            return draw_pair
+
         chosen = move_keys[best_idx]
+
+        # --- Diagnostic: localize pass-over-save -------------------------------
+        # Fires when the chosen pair saves nothing but a save WAS available among
+        # the GNN-scored candidates (move_keys). Tells us definitively whether
+        # the save reached the value head and was simply scored lower (value
+        # error) vs. never made it into the candidate set (prefilter/enumeration).
+        if getattr(self, 'debug_pass_over_save', False):
+            def _has_save(p):
+                return any(isinstance(m, tuple) and len(m) == 3 and m[1] == 'save' for m in p)
+            chosen_saves = _has_save(chosen)
+            # was a save legally available at top level at all?
+            save_available = any(isinstance(m, tuple) and len(m) == 3 and m[1] == 'save'
+                                 for m in moves)
+            if save_available and not chosen_saves:
+                import logging
+                log = logging.getLogger('agent_gnn')
+                save_idxs = [i for i, p in enumerate(move_keys) if _has_save(p)]
+                chosen_score = final_scores[best_idx].item()
+                if save_idxs:
+                    best_save_i = max(save_idxs, key=lambda i: final_scores[i].item())
+                    log.info(
+                        "[pass_over_save] VALUE-ERROR: save was scored but not chosen. "
+                        f"chosen={chosen} score={chosen_score:.4f} | "
+                        f"best_save={move_keys[best_save_i]} "
+                        f"score={final_scores[best_save_i].item():.4f} | "
+                        f"{len(save_idxs)} save pairs among {len(move_keys)} scored")
+                else:
+                    log.info(
+                        "[pass_over_save] CANDIDATE-DROP: a save was legal but NO save "
+                        f"pair reached the value head. chosen={chosen} | "
+                        f"prefilter={'on' if prefilter else 'off'} "
+                        f"scored={len(scored) if prefilter else 'n/a'} "
+                        f"kept={len(move_keys)}")
+        # -----------------------------------------------------------------------
+
         if self.enable_never_good:
             chosen = self._fix_never_good(chosen, board, player)
         return self._dedupe_save_pair(chosen)
+
+    @staticmethod
+    def _pair_has_save(pair):
+        return any(isinstance(m, tuple) and len(m) == 3 and m[1] == 'save' for m in pair)
 
     def _dedupe_save_pair(self, pair):
         """A piece can be saved at most once per turn. If a pair tries to save
@@ -461,6 +542,12 @@ class GNNAgent:
         if not isinstance(moves, (list, set)) or not all(isinstance(m, tuple) for m in moves):
             raise ValueError('Invalid moves format.')
 
+        # Draw handled by direct comparison against its known value (0), never
+        # simulated -- see the docstring in select_move_pair for why apply_move
+        # can't safely be used for (1,1,1).
+        draw_legal = (1, 1, 1) in moves
+        draw_pair  = ((1, 1, 1), (0, 0, 0))
+
         moves_set = set(moves)
 
         # Handle pass-only case
@@ -468,6 +555,7 @@ class GNNAgent:
             return ((0, 0, 0), (0, 0, 0))
 
         moves_set.discard((0, 0, 0))
+        moves_set.discard((1, 1, 1))
 
         # Encode position after each first move
         first_move_keys    = []
@@ -490,13 +578,18 @@ class GNNAgent:
                 board.undo_last_move()
 
         if not first_move_keys:
-            return ((0, 0, 0), (0, 0, 0))
+            return draw_pair if draw_legal else ((0, 0, 0), (0, 0, 0))
 
         # Evaluate all first moves in one batch
         with torch.no_grad():
             first_scores = self.model(first_encoded_list) * SCORE_SCALE  # [N]
 
         best_first_idx = first_scores.argmax().item()
+
+        # A draw's true value is exactly 0 -- compare directly, no encoding.
+        if draw_legal and 0.0 >= first_scores[best_first_idx].item():
+            return draw_pair
+
         best_first     = first_move_keys[best_first_idx]
 
         # Apply best first move and find best second move
@@ -514,7 +607,7 @@ class GNNAgent:
                 board.undo_last_move()
             return (best_first, (0, 0, 0))
 
-        next_moves = set(board.get_valid_moves()) - {(0, 0, 0)}
+        next_moves = set(board.get_valid_moves()) - {(0, 0, 0), (1, 1, 1)}
 
         if not next_moves:
             while len(board.moves) > initial:
@@ -558,9 +651,15 @@ class GNNAgent:
 
     def select_move_pair_beam(self, moves, board, player, K=2):
 
-        valid_moves = [m for m in moves if m != (0, 0, 0)]
+        # Draw handled by direct comparison against its known value (0), never
+        # simulated -- see the docstring in select_move_pair for why apply_move
+        # can't safely be used for (1,1,1).
+        draw_legal = (1, 1, 1) in moves
+        draw_pair  = ((1, 1, 1), (0, 0, 0))
+
+        valid_moves = [m for m in moves if m not in ((0, 0, 0), (1, 1, 1))]
         if not valid_moves:
-            return ((0, 0, 0), (0, 0, 0))
+            return draw_pair if draw_legal else ((0, 0, 0), (0, 0, 0))
 
         with torch.no_grad():
             # ---- 1. Evaluate first moves ----
@@ -584,6 +683,13 @@ class GNNAgent:
                     board.undo_last_move()
 
             values = self.model(first_states).view(-1)
+
+            # A draw's true value is exactly 0 -- compare directly against the
+            # best encoded first-move value before running the (expensive)
+            # beam search over second moves.
+            if draw_legal and 0.0 >= values.max().item():
+                return draw_pair
+
             topk = torch.topk(values, min(K, len(values))).indices.tolist()
 
             best_pair = None
@@ -611,7 +717,7 @@ class GNNAgent:
                         board.undo_last_move()
                     continue
 
-                second_moves = list(set(board.get_valid_moves()) - {(0, 0, 0)})
+                second_moves = list(set(board.get_valid_moves()) - {(0, 0, 0), (1, 1, 1)})
 
                 if not second_moves:
                     val = values[idx].item()
