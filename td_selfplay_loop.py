@@ -107,6 +107,7 @@ def run_td_selfplay(model,
                     uniform_weights=True,
                     eval_games=200,
                     promote_winrate=0.55,
+                    revert_below_winrate=0.50,
                     use_heuristic_opp=False,
                     replay_iters=3,
                     save_prefix='td',
@@ -118,7 +119,13 @@ def run_td_selfplay(model,
     at 1. `replay_iters` pools the current plus the last (replay_iters-1)
     iterations' generated games into each training update -- more data per
     step at the cost of it being mildly off-policy (at most replay_iters-1
-    iterations stale). Returns (model, champion_sd, history)."""
+    iterations stale). On a non-promoted iteration, `model`'s live weights
+    are reverted to `champion_sd` unless the win rate beat
+    `revert_below_winrate` (default 0.50) -- i.e. a genuine-but-insufficient
+    improvement over the champion is kept for the next iteration to build on,
+    while a below-coin-flip result is discarded rather than compounded (see
+    the 'reverted' branch below for why: this is what stops a bad iteration
+    from cascading). Returns (model, champion_sd, history)."""
     assert next(model.parameters()).device.type == network.DEVICE.type, \
         f"model must be on {network.DEVICE} (got {next(model.parameters()).device})"
 
@@ -197,36 +204,47 @@ def run_td_selfplay(model,
         torch.save(_cpu_state_dict(model), iter_path)
         promoted = wr >= promote_winrate
         if promoted:
+            action = 'promoted'
             champion_sd = _cpu_state_dict(model)
             torch.save(champion_sd, f'{save_prefix}_champion.pt')
             print(f"  PROMOTED (win rate {wr:.1%} >= {promote_winrate:.0%}). "
                   f"New champion saved.")
+        elif wr > revert_below_winrate:
+            # Not enough to promote, but a genuine improvement over the
+            # champion (beats it more often than not) -- keep training from
+            # these weights rather than discarding the progress. Optimizer is
+            # untouched: no discontinuity in the weights to accommodate.
+            action = 'kept'
+            print(f"  Not promoted (win rate {wr:.1%} < {promote_winrate:.0%}) but "
+                  f"> {revert_below_winrate:.0%} -- keeping live model, not reverting.")
         else:
             # BUGFIX: `model` was previously left as this iteration's (failed)
-            # weights, so the NEXT iteration's self-play generation AND next
-            # training step both started from an already-worse model instead
-            # of the champion -- a single bad iteration could then compound
-            # iteration over iteration with nothing to arrest it (seen live:
-            # iter5 24% -> iter6 24% -> iter7 0%, a TD-bootstrap collapse to a
-            # degenerate near-constant value function with no floor). Revert
-            # the live weights to the champion so a failed iteration is
-            # discarded, not built upon. Also reset the optimizer: its
-            # momentum was accumulated training toward the now-discarded
-            # weights and would be inconsistent applied to the reverted ones
-            # (same accepted cold-restart cost as a resume; see
-            # run_full_td.py's docstring).
+            # weights unconditionally, so the NEXT iteration's self-play
+            # generation AND next training step both started from an
+            # already-worse model instead of the champion -- a single bad
+            # iteration could then compound iteration over iteration with
+            # nothing to arrest it (seen live: iter5 24% -> iter6 24% ->
+            # iter7 0%, a TD-bootstrap collapse to a degenerate near-constant
+            # value function with no floor). Below revert_below_winrate the
+            # model is no better than a coin flip against the champion, so
+            # revert the live weights to the champion instead of building on
+            # them. Also reset the optimizer: its momentum was accumulated
+            # training toward the now-discarded weights and would be
+            # inconsistent applied to the reverted ones (same accepted
+            # cold-restart cost as a resume; see run_full_td.py's docstring).
+            action = 'reverted'
             model.load_state_dict(champion_sd)
             optimizer = torch.optim.Adam(model.parameters(), lr=lr)
-            print(f"  Not promoted (win rate {wr:.1%} < {promote_winrate:.0%}). "
+            print(f"  Not promoted (win rate {wr:.1%} <= {revert_below_winrate:.0%}). "
                   f"Champion unchanged; reverted live model to champion weights.")
 
         dt = time.time() - t0
         history.append({'iter': it, 'val_loss': best_val, 'winrate': wr,
-                        'promoted': promoted, 'seconds': dt,
+                        'promoted': promoted, 'action': action, 'seconds': dt,
                         'positions': len(records),
                         'train_positions': len(train_records)})
         print(f"  iter {it} done in {dt:.0f}s | val {best_val:.5f} | "
-              f"wr {wr:.1%} | promoted={promoted}")
+              f"wr {wr:.1%} | promoted={promoted} | action={action}")
 
     return model, champion_sd, history
 
