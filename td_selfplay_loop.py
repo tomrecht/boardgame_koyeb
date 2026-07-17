@@ -9,7 +9,7 @@ generate_games_parallel / evaluate_parallel are already called:
     from game_worker import init_pool, shutdown_pool
     from td_selfplay_loop import run_td_selfplay
 
-    init_pool(n_workers=10)                      # CPU worker pool, once
+    init_pool(n_workers=5)                       # CPU worker pool, once (M3 Pro: 5 perf cores)
     model = BoardGNN().to(network.DEVICE)
     model.load_state_dict(torch.load('best_iter5_m46.pt', map_location=network.DEVICE))
 
@@ -46,6 +46,7 @@ cross-device errors seen previously.
 """
 import copy
 import time
+from collections import deque
 
 import torch
 
@@ -96,22 +97,29 @@ def run_td_selfplay(model,
                     champion_sd,
                     heuristic_weights,
                     iterations=20,
+                    start_iter=1,
                     games_per_iter=800,
                     epochs_per_iter=12,
                     lam=0.9,
                     gamma=1.0,
-                    lr=2e-4,
+                    lr=1e-4,
                     batch_size=32,
                     uniform_weights=True,
                     eval_games=200,
                     promote_winrate=0.55,
                     use_heuristic_opp=False,
+                    replay_iters=3,
                     save_prefix='td',
                     seed_base=10_000):
     """Iterative TD(lambda) self-play. `model` is trained in place and is the
     current/live network; `champion_sd` is the promotion baseline (start it at
-    iter5). Returns (model, champion_sd, history)."""
-    assert next(model.parameters()).device == network.DEVICE, \
+    iter5). `start_iter` lets a resumed run continue checkpoint numbering
+    (and seed offsets) from where a prior run left off instead of restarting
+    at 1. `replay_iters` pools the current plus the last (replay_iters-1)
+    iterations' generated games into each training update -- more data per
+    step at the cost of it being mildly off-policy (at most replay_iters-1
+    iterations stale). Returns (model, champion_sd, history)."""
+    assert next(model.parameters()).device.type == network.DEVICE.type, \
         f"model must be on {network.DEVICE} (got {next(model.parameters()).device})"
 
     # Pool must already be running (init_pool called by the caller). If not,
@@ -128,13 +136,15 @@ def run_td_selfplay(model,
     optimizer = torch.optim.Adam(model.parameters(), lr=lr)
 
     history = []
+    replay = deque(maxlen=replay_iters)   # last replay_iters lists of records
+    last_iter = start_iter + iterations - 1
     print(f"TD(lambda) self-play: lambda={lam} gamma={gamma} lr={lr} "
           f"games/iter={games_per_iter} epochs/iter={epochs_per_iter} "
-          f"device={network.DEVICE}")
+          f"replay_iters={replay_iters} device={network.DEVICE}")
 
-    for it in range(1, iterations + 1):
+    for it in range(start_iter, last_iter + 1):
         t0 = time.time()
-        print(f"\n=== Iteration {it}/{iterations} ===")
+        print(f"\n=== Iteration {it}/{last_iter} ===")
 
         # 1. Generate fresh on-policy self-play with the CURRENT model.
         # Workers are CPU-only; ship a CPU state_dict. opp = self (None) unless
@@ -154,20 +164,32 @@ def run_td_selfplay(model,
             print("  Too few games to train this iteration; skipping.")
             continue
 
-        # 2 + 3. TD(lambda) targets (main process, on DEVICE) + train.
+        # 2 + 3. TD(lambda) targets (main process, on DEVICE) + train. Pool the
+        # current iteration's games with the last (replay_iters-1) iterations'
+        # for more data per update (game_ids are unique across iterations since
+        # generation seeds don't overlap, so split_by_game groups correctly).
+        replay.append(records)
+        train_records = [r for recs in replay for r in recs]
+        print(f"  training on {len(train_records)} positions "
+              f"from {len(replay)} iteration(s)")
         best_val = train_on_records(
-            model, records, encoder, board, optimizer,
+            model, train_records, encoder, board, optimizer,
             epochs=epochs_per_iter, lam=lam, gamma=gamma,
             batch_size=batch_size, uniform_weights=uniform_weights,
             seed=it, log=True)
 
-        # 4. Evaluate the new model vs the current champion (CPU pool).
+        # 4. Evaluate the new model vs the current champion (CPU pool). Eval
+        # seeds live in a high, disjoint block (paired eval uses only
+        # eval_games//2 distinct seeds per iteration) so they never collide
+        # with generation seeds (seed_base + it*games_per_iter) at any
+        # games_per_iter setting.
         champ_sd_cpu = {k: v.cpu() for k, v in champion_sd.items()}
         wr = evaluate_parallel(
             model, champ_sd_cpu,
             n_games=eval_games,
-            seed_offset=seed_base + 777 + it,
+            seed_offset=seed_base + 1_000_000 + it * eval_games,
             heuristic_weights=heuristic_weights,
+            promote_winrate=promote_winrate,
             label=f'eval it{it} vs champ')
 
         # 5. Promote on gate; always checkpoint.
@@ -186,7 +208,8 @@ def run_td_selfplay(model,
         dt = time.time() - t0
         history.append({'iter': it, 'val_loss': best_val, 'winrate': wr,
                         'promoted': promoted, 'seconds': dt,
-                        'positions': len(records)})
+                        'positions': len(records),
+                        'train_positions': len(train_records)})
         print(f"  iter {it} done in {dt:.0f}s | val {best_val:.5f} | "
               f"wr {wr:.1%} | promoted={promoted}")
 

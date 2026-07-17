@@ -20,7 +20,7 @@ the real game rules):
 Partial positions are always recorded (even on draw/stuck/timeout) so no
 game is wasted.
 """
-import random, time, os
+import random, time, os, math
 import torch
 import multiprocessing as mp
 
@@ -181,11 +181,17 @@ def _pool_worker_init():
     os.environ["CUDA_VISIBLE_DEVICES"] = ""
     import torch
     torch.set_num_threads(1)
+    # Workers only ever run inference (self-play/eval), never training, so
+    # disable autograd process-wide. This skips the VariableType dispatch
+    # layer on every tensor op -- notably the per-move board encoding, which
+    # runs outside the model's own no_grad blocks and was paying that
+    # overhead on all its gather/scatter/view ops.
+    torch.set_grad_enabled(False)
     import network as _net
     _net.DEVICE = torch.device('cpu')
 
 
-def init_pool(n_workers=10):
+def init_pool(n_workers=5):
     """
     Create the persistent worker pool ONCE. Call this in its own cell,
     BEFORE the training loop. Uses spawn so workers never inherit the
@@ -240,26 +246,24 @@ def generate_games_parallel(model, opp_state_dict_or_none,
         for i in range(n_games)
     ]
 
-    try:
-        from tqdm.notebook import tqdm
-    except ImportError:
-        from tqdm import tqdm
-
     t0 = time.time()
     records = []
     backstop = 0   # stuck/maxturns backstop terminations (should be rare)
     draws = 0
+    done = 0
+    print_every = max(1, n_games // 10)
 
-    with tqdm(total=n_games, desc=label, unit='game') as pbar:
-        for recs, winner, score in _POOL.imap_unordered(worker_play, args_list, chunksize=1):
-            if recs:
-                records.extend(recs)
-            if winner is None:
-                draws += 1
-            if recs and recs[0]['game_id'].endswith(('stuck', 'maxturns')):
-                backstop += 1
-            pbar.set_postfix(positions=len(records), backstop=backstop, draws=draws)
-            pbar.update(1)
+    for recs, winner, score in _POOL.imap_unordered(worker_play, args_list, chunksize=1):
+        if recs:
+            records.extend(recs)
+        if winner is None:
+            draws += 1
+        if recs and recs[0]['game_id'].endswith(('stuck', 'maxturns')):
+            backstop += 1
+        done += 1
+        if done % print_every == 0 or done == n_games:
+            print(f'  {label}: {done}/{n_games} games ({time.time()-t0:.0f}s, '
+                  f'{len(records)} positions, {draws} draws, {backstop} backstop)')
 
     elapsed = time.time() - t0
     print(f'  {label}: {n_games} games ({draws} draws, of which {backstop} backstop), '
@@ -361,42 +365,89 @@ def worker_eval(args):
 
 def evaluate_parallel(challenger_model, opponent_sd_or_none,
                       n_games, seed_offset, heuristic_weights,
-                      label='Eval'):
+                      label='Eval', promote_winrate=None,
+                      sprt_alpha=0.02, sprt_beta=0.02):
     """
     Win rate of challenger vs opponent over n_games (alternating colors),
     run in parallel on the persistent pool. Draws excluded from win rate
     denominator. Returns win_rate (float).
+
+    If promote_winrate is given, applies a one-sided SPRT futility check
+    (H0: p<=promote_winrate-0.05 vs H1: p>=promote_winrate+0.05) after each
+    decisive result. Only the lower (futility) boundary is acted on -- a
+    result that's actually trending toward promotion always plays out the
+    full n_games, so the promote_winrate gate keeps its full noise-robustness
+    for any real promotion decision. sprt_beta bounds the probability of
+    wrongly cutting off a genuinely-promoting model early; sprt_alpha is the
+    complementary (unused-in-practice) false-promote rate that the boundary
+    formula also depends on.
+
+    Dispatches in small batches (not all n_games at once) so an early SPRT
+    stop actually frees the worker pool quickly -- Pool.imap_unordered
+    queues its whole args_list up front regardless of whether the consumer
+    keeps reading results, so batching bounds the wasted/abandoned work to
+    about one batch instead of the whole remaining eval set.
     """
     global _POOL
     if _POOL is None:
         init_pool(10)
 
     ch_sd = {k: v.cpu() for k, v in challenger_model.state_dict().items()}
-    args_list = [
-        (ch_sd, opponent_sd_or_none, heuristic_weights,
-         seed_offset + i, i % 2 == 0)
-        for i in range(n_games)
-    ]
 
-    try:
-        from tqdm.notebook import tqdm
-    except ImportError:
-        from tqdm import tqdm
+    sprt_enabled = promote_winrate is not None
+    if sprt_enabled:
+        margin = 0.05
+        p0 = promote_winrate - margin
+        p1 = promote_winrate + margin
+        llr_win = math.log(p1 / p0)
+        llr_loss = math.log((1 - p1) / (1 - p0))
+        lower_bound = math.log(sprt_beta / (1 - sprt_alpha))
+        llr = 0.0
 
+    batch_size = max((_POOL_WORKERS or 5) * 2, 1)
+
+    t0 = time.time()
     wins = 0
     decisive = 0
     draws = 0
-    with tqdm(total=n_games, desc=label, unit='game') as pbar:
-        for won, is_draw in _POOL.imap_unordered(worker_eval, args_list, chunksize=1):
+    done = 0
+    print_every = max(1, n_games // 10)
+    stopped_early = False
+
+    next_i = 0
+    while next_i < n_games and not stopped_early:
+        batch = range(next_i, min(next_i + batch_size, n_games))
+        next_i += len(batch)
+        # Paired seeds: games (2k, 2k+1) share dice stream seed_offset+k with
+        # challenger colors swapped (duplicate-bridge style), cancelling
+        # dice-luck variance across the pair. eval seeds therefore span only
+        # [seed_offset, seed_offset + n_games//2) -- callers must space
+        # seed_offset accordingly.
+        args_batch = [(ch_sd, opponent_sd_or_none, heuristic_weights,
+                       seed_offset + i // 2, i % 2 == 0) for i in batch]
+
+        for won, is_draw in _POOL.imap_unordered(worker_eval, args_batch, chunksize=1):
+            done += 1
             if is_draw:
                 draws += 1
             else:
                 decisive += 1
                 if won:
                     wins += 1
-            pbar.set_postfix(wins=wins, draws=draws)
-            pbar.update(1)
+                if sprt_enabled:
+                    llr += llr_win if won else llr_loss
+            if done % print_every == 0 or done == n_games:
+                print(f'  {label}: {done}/{n_games} games ({time.time()-t0:.0f}s, '
+                      f'{wins} wins, {draws} draws)')
+            if sprt_enabled and decisive >= 10 and llr <= lower_bound:
+                stopped_early = True
+
+    if stopped_early:
+        print(f'  {label}: SPRT futility stop after {done}/{n_games} games '
+              f'({wins}/{decisive} decisive wins so far) -- promotion '
+              f'statistically implausible, skipping remaining evals.')
 
     wr = wins / decisive if decisive else 0.0
-    print(f'  {label}: {wins}/{decisive} decisive wins ({draws} draws) -> {wr:.1%}')
+    print(f'  {label}: {wins}/{decisive} decisive wins ({draws} draws) -> {wr:.1%}'
+          + (' [early stop]' if stopped_early else ''))
     return wr
