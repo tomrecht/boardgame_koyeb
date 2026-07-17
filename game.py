@@ -95,7 +95,6 @@ class Board:
         self._blot_cache = {}          # NEW: cache for count_enemy_blots_on_shortest_path
         self._reachable_cache = {}
         self._blocked_key_cache = {}
-        self._is_blocked_cache = {}    # cache (tile_index, blocked_key, player) -> bool
         self.log_callback = None
         self.endgame_reward_applied = {'white': False, 'black': False}
         self.offgoals = {'white': 0, 'black': 0}
@@ -220,16 +219,6 @@ class Board:
             )
         return self._blocked_key_cache[player]
 
-    def _is_tile_blocked_cached(self, tile, player, blocked_key):
-        """Check if a tile is blocked for a player, using cache."""
-        cache_key = (tile.index, blocked_key, player)
-        if cache_key not in self._is_blocked_cache:
-            # Inline the is_blocked check: field type, multiple pieces, first piece from opponent
-            self._is_blocked_cache[cache_key] = (
-                tile.type == 'field' and len(tile.pieces) > 1 and tile.pieces[0].player != player
-            )
-        return self._is_blocked_cache[cache_key]
-
     def update_state(self, game_state_details):
         self.current_player = game_state_details['currentTurn']
         self.clear()
@@ -305,7 +294,6 @@ class Board:
         self._blot_cache.clear()      # clear blot cache
         self._reachable_cache.clear()
         self._blocked_key_cache.clear()
-        self._is_blocked_cache.clear()
         self.update_no_save_counter()
         self.firstMove = None  
         for die in self.dice:
@@ -498,7 +486,6 @@ class Board:
             return
         last_move = self.moves.pop()
         self._blocked_key_cache.clear()
-        self._is_blocked_cache.clear()
         self._distance_cache.clear()
         self._blot_cache.clear()   # clear blot cache
         piece = last_move['piece']
@@ -557,7 +544,6 @@ class Board:
             return
         firstMove_before = self.firstMove
         self._blocked_key_cache.clear()
-        self._is_blocked_cache.clear()
         piece = self.piece_lookup.get(piece_id)
         if not piece:
             print(f"No piece found for {piece_id}")
@@ -639,7 +625,9 @@ class Board:
                     if neighbor.type == 'save' and (piece.number > 6 or piece.number == neighbor.number):
                         self._distance_cache[cache_key] = distance + 1
                         return distance + 1
-                    if neighbor.type not in ['nogo', 'home'] and not self._is_tile_blocked_cached(neighbor, piece.player, blocked_key):
+                    # blocked_key IS the frozenset of blocked tile indices for
+                    # this player, so membership == is_blocked (and is O(1))
+                    if neighbor.type not in ['nogo', 'home'] and neighbor.index not in blocked_key:
                         queue.append((neighbor, distance + 1))
         self._distance_cache[cache_key] = float('inf')
         return float('inf')
@@ -667,11 +655,21 @@ class Board:
                 result[piece.tile.number] = 0
             return result
 
-        # Numbered piece can only reach its own goal
+        # Numbered piece can only reach its own goal. Cache the result dict
+        # like the unnumbered path does (callers only read it) -- rebuilding
+        # it per call was pure overhead at millions of calls per game.
         if piece.number <= 6:
+            blocked_key = self._get_blocked_key(piece.player)
+            cache_key = ('num_goals', piece.tile.index if piece.tile else -1,
+                         piece.player, piece.number, blocked_key)
+            cached = self._distance_cache.get(cache_key)
+            if cached is not None:
+                return cached
             dist = self.shortest_route_to_goal(piece)
-            return {n: (dist if n == piece.number else float('inf'))
-                    for n in goal_numbers}
+            full_result = {n: (dist if n == piece.number else float('inf'))
+                           for n in goal_numbers}
+            self._distance_cache[cache_key] = full_result
+            return full_result
 
         # Unnumbered piece: single BFS collecting all 6 goal distances
         blocked_key = self._get_blocked_key(piece.player)
@@ -692,7 +690,7 @@ class Board:
                     visited.add(neighbor)
                     if neighbor.type == 'save' and neighbor.number not in result:
                         result[neighbor.number] = distance + 1
-                    if neighbor.type not in ['nogo', 'home'] and not self._is_tile_blocked_cached(neighbor, piece.player, blocked_key):
+                    if neighbor.type not in ['nogo', 'home'] and neighbor.index not in blocked_key:
                         queue.append((neighbor, distance + 1))
 
         # Fill unreachable goals with inf
