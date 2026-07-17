@@ -202,8 +202,23 @@ def run_td_selfplay(model,
             print(f"  PROMOTED (win rate {wr:.1%} >= {promote_winrate:.0%}). "
                   f"New champion saved.")
         else:
+            # BUGFIX: `model` was previously left as this iteration's (failed)
+            # weights, so the NEXT iteration's self-play generation AND next
+            # training step both started from an already-worse model instead
+            # of the champion -- a single bad iteration could then compound
+            # iteration over iteration with nothing to arrest it (seen live:
+            # iter5 24% -> iter6 24% -> iter7 0%, a TD-bootstrap collapse to a
+            # degenerate near-constant value function with no floor). Revert
+            # the live weights to the champion so a failed iteration is
+            # discarded, not built upon. Also reset the optimizer: its
+            # momentum was accumulated training toward the now-discarded
+            # weights and would be inconsistent applied to the reverted ones
+            # (same accepted cold-restart cost as a resume; see
+            # run_full_td.py's docstring).
+            model.load_state_dict(champion_sd)
+            optimizer = torch.optim.Adam(model.parameters(), lr=lr)
             print(f"  Not promoted (win rate {wr:.1%} < {promote_winrate:.0%}). "
-                  f"Champion unchanged.")
+                  f"Champion unchanged; reverted live model to champion weights.")
 
         dt = time.time() - t0
         history.append({'iter': it, 'val_loss': best_val, 'winrate': wr,
