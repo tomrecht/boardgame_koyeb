@@ -260,23 +260,44 @@ Goal-pair blocking bias (exploration gap, NOT expected to be fixed by TD).
 Owner (Tom) clarified the domain reasoning: blocking certain goal *pairs*
 can be an *absolute* block — a structural dead-end where the opponent has
 **zero** path to either goal, not merely a slowed one — which makes it a
-genuinely strong, high-value strategy. Three symmetric pairs afford this
-equally: 2&4, 1&6, 3&5. `best_iter5` discovered it for **only 2&4** (goes
-for it almost every game) and never attempts 1&6 or 3&5; the current TD
-champ (promoted iter1) inherited exactly the same bias. This is therefore
-an *exploration* deficiency — self-play found one instance of a strong
-pattern and never tried its symmetric variants — and the GNN is not
-generalizing the symmetry on its own (or it would already value all three
-pairs equally).
+genuinely strong, high-value strategy. Three pairs afford this: 2&4, 1&6,
+3&5 — and owner confirms all three are **equally easy to block** (true board
+symmetry), so any preference among them is a pure exploration/coverage
+artifact, not board geometry. `best_iter5` strongly and consistently favors
+**2&4** (goes for it almost every game); the current TD champ (promoted
+iter1) inherited the same bias. This is an *exploration* deficiency —
+self-play found one instance of a strong pattern and under-explores its
+symmetric variants — and the GNN is not generalizing the symmetry on its own
+(or it would already value all three pairs equally).
+
+Measured baseline (8 self-play games from `best_iter5`, detection below):
+per-goal denial rate — goal 2 32.9%, goal 4 25.5% vs goals 1/3/5/6 all in the
+~2-10% range. Robust conclusion: **2&4 is strongly preferred over the other
+two pairs** (2&4-denial in 7/8 games). NOT robust at n=8: any finer ordering
+among 1&6 vs 3&5 — which pair a given game sets up is high-variance,
+strongly influenced by opening piece order, so the non-2&4 breakdown is noise
+here. A trustworthy per-pair baseline needs ~hundreds of games (a pair block
+is a game-level ~binary event); deferred until the exploration experiment is
+actually built. **Detection is free** and needs no board geometry: goal g is
+"denied" against a player iff that player's (non-saved) numbered piece g is at
+INF_DIST (`shortest_route_to_goal == INF`, already computed as the encoder's
+`is_completely_blocked`). Exclude saved pieces — a saved piece can read INF if
+its path is sealed *after* it scored, but it already succeeded. This per-goal
+signal (not pair-both-only) is the right diagnostic primitive.
+
+Corollary from the opening-order sensitivity: **opening randomization** is
+likely an especially high-leverage exploration lever for this gap — it
+diversifies which pair the game steers toward at the source, potentially
+surfacing 1&6/3&5 setups without any per-move noise. See EXPLORATION_SPEC.md.
 
 Key implication: **TD(λ) is not expected to resolve this**, unlike the
 offgoaling / pass-over-save edges. TD changes the training *target*
 (bootstrapped λ-return); it improves credit assignment only for states the
-greedy self-play policy actually visits. Since the net never values a 1&6
-or 3&5 block, self-play never plays one, so no outcome data about those
-blocks is ever generated — neither MC nor TD targets can teach a value from
-experience that never happened. TD adds no exploration and no symmetry
-prior. The natural fixes are post-TD and exploration-side, not target-side:
+greedy self-play policy actually visits. Since the net rarely values the
+1&6/3&5 blocks it visits them rarely, so little outcome data about those
+blocks is generated — and TD can only sharpen values for states that are
+actually experienced, not drive the policy to experience new ones. TD adds
+no exploration and no symmetry prior. The natural fixes are post-TD and exploration-side, not target-side:
 (a) **symmetry augmentation** — transform recorded (position, target) pairs
 under the goal-pair symmetry to synthesize experience with the other two
 pairs directly (cheap/targeted, valid only if the transform is a true board
