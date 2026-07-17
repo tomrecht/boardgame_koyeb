@@ -21,14 +21,25 @@ Features:
 """
 
 import json
+import os
 import numpy as np
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
-DEVICE = torch.device('cuda' if torch.cuda.is_available()
-                       else 'mps' if torch.backends.mps.is_available()
-                       else 'cpu')
+# Device: BOARDGAME_DEVICE env var overrides autodetection. Needed because
+# MPS support varies by machine/torch build -- e.g. the iMac's Metal stack
+# hard-aborts (MPSNDArrayScatter assertion) on the batched scatter_add that
+# the M3 Pro handles fine. Launch with BOARDGAME_DEVICE=cpu on machines
+# where MPS misbehaves; for the Flask app CPU is the right choice anyway
+# (single-position inference is latency-bound, MPS buys nothing there).
+_env_device = os.environ.get('BOARDGAME_DEVICE')
+if _env_device:
+    DEVICE = torch.device(_env_device)
+else:
+    DEVICE = torch.device('cuda' if torch.cuda.is_available()
+                           else 'mps' if torch.backends.mps.is_available()
+                           else 'cpu')
 
 # -------------------------
 # CONSTANTS
