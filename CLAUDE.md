@@ -290,6 +290,41 @@ likely an especially high-leverage exploration lever for this gap — it
 diversifies which pair the game steers toward at the source, potentially
 surfacing 1&6/3&5 setups without any per-move noise. See EXPLORATION_SPEC.md.
 
+VALUE FUNCTION IS ~SYMMETRIC ACROSS THE PAIRS — key finding, reframes the
+whole issue. A validated 240° board automorphism (derived from
+`tile_neighbors.json`'s graph — the board's automorphism group is D3;
+verified g^3=identity and distance-to-goal equivariant, 0 fails over 293
+positions / 3512 distances) maps any 2&4-block position to an exact 1&6-block
+image. Diff-in-differences value diagnostic over n=117 real 2&4-block
+positions: signed mean V[2&4] − V[1&6-image] = **+0.002** (median +0.003),
+vs a non-block control signed mean of −0.002 — i.e. **no systematic value
+preference for 2&4**. The net's non-equivariance is real but *unsigned*
+(mean|gap| 0.05 on blocks vs 0.034 control, random direction). So the net
+does NOT undervalue 1&6/3&5 blocks — it values them equally. (Owner's manual
+n≈3 that suggested a 0.1–0.2 gradient was within this per-position noise.)
+
+Consequence: the 2&4 *behavioral* monopoly is NOT a value/representation
+failure — it's coverage/behavior. Given symmetric values + symmetric init
+(rack placement is random — no goal-pair favoritism) + symmetric dynamics
+(all pairs equally blockable, per owner), a rigorous symmetry argument says
+behavior *should* be symmetric; the fact it isn't means a small
+symmetry-breaker hides below the ~0 signed value bias — either a value
+asymmetry concentrated specifically at the commitment junctures (washed out
+in the distribution-averaged diagnostic) or something geometry-blind in
+move generation. Deliberately NOT pinned down: general exploration fixes it
+regardless of the exact sub-mechanism (it injects stochasticity at the
+commitment points; the already-symmetric values then keep the pairs
+balanced), and the goal-pair bias is best read as one *visible* symptom of
+the general under-exploration, subsumed by the exploration plan. Ruled out
+as the breaker: argmax tiebreak (needs exact transposition ties, ~never
+happens across regions) and initial conditions (random racks). Testable
+prediction for the exploration experiment: because values are already
+symmetric, exploration should **rebalance block frequencies fast** — it only
+needs to *visit* the pairs, not re-learn their worth. The validated
+automorphism is reusable infrastructure for symmetry augmentation / the
+2&4→1&6 seed transform if ever needed. Diagnostic scripts were scratchpad
+one-offs (not committed).
+
 Key implication: **TD(λ) is not expected to resolve this**, unlike the
 offgoaling / pass-over-save edges. TD changes the training *target*
 (bootstrapped λ-return); it improves credit assignment only for states the
