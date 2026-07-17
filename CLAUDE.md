@@ -420,3 +420,80 @@ expected to self-resolve via the TD run.
    clean TD signal hasn't even been observed once yet. Sequence: get a few
    corrected-feature TD iterations first, then run exploration as its own
    tuned experiment.
+
+## Post-TD roadmap — reaching "beats human consistently"
+
+Current agent plays at ~human level (parity ~55-60% from human side, now
+matched by iter4 promoted at 58% on the second clean-feature iteration). Next
+goal: consistent win over human tester. Historical precedent (TD-Gammon) and
+the measured value-symmetry finding (net values all three goal-pairs equally,
+gap is coverage not representation) suggest a clear priority order. All
+costs/benefits are relative to the current budget (M3 Pro; fast turnaround is
+higher value than raw speed); a cloud GPU would reprioritize.
+
+**1. Exploration (highest expected value, cheapest).** See step 4 above;
+EXPLORATION_SPEC.md has the full design (ε-greedy all-stages, exploring-start
+seeds, symmetry augmentation as fallback). Should raise strength with
+orthogonal, already-identified mechanisms without new code complexity.
+
+**2. Symmetry augmentation (nearly free data multiplier).** Board has a proven
+D₃ automorphism group (240° element: goals 2→1→3→2 / 4→6→5→4; derived from
+tile-neighbors graph; validated over 293 positions). Training-time solution:
+rotate each position to a random element of the group, use same target λ-return
+on the rotated image. Effect: 6× effective training data, forces equivariance
+into feature learning, eliminates non-symmetric coverage gaps by symmetry.
+Cheap/low-risk (data augmentation is standard practice), big multiplier.
+Applies to any model in the pipeline, including post-exploration.
+
+**3. Selective 3-ply search at play/eval time (highest-confidence strength
+gain).** The agent's 2-ply argmax is minimal lookahead; classical result
+(TD-Gammon → Gammon-Tutor, chess, go) is that deeper search converts to
+direct strength gain on a fixed value net. Concretely: expectimax 3-ply with
+beam (top-k candidates per node), averaging over dice at chance nodes,
+reuse/extend the measured 35% transposition cache hit rate from earlier (grows
+with depth). Deploy asymmetrically: full depth at play/eval (one game is
+cheap), keep generation at 2-ply (saves the b× cost). Infra partially built
+(transposition cache validated). This directly addresses observed rough edges
+(offgoaling, pass-over-save) without retraining, and historically it's the
+most reliable strength lever at this stage.
+
+**4. Richer auxiliary targets (accelerator, not bottleneck).** Current training
+is one scalar (win/loss λ-return) per position. Add auxiliary heads: predicted
+final score margin (dice-agnostic), per-goal outcome predictions, block-count
+predictions. Auxiliary supervision forces the trunk to represent strategically
+meaningful features and acts as a regularizer; measured to accelerate
+convergence. Cheap to implement (self-play data already contains these labels),
+low-risk. Applies post-exploration.
+
+**5. Bigger network (straightforward drastic).** Current GNN is 1.6MB; scale
+depth/width, add attention layers (piece-piece relations like "X blocks Y's
+route" are attention-shaped), increase message-passing rounds. Capacity is not
+obviously the binding constraint yet (coverage and search seem more salient),
+but scaling wisdom says capacity + data usually wins. Deferred until 1–3 are
+validated (avoid overfitting to current model's quirks). Would benefit from
+better generation throughput (batched-across-games, not current one-at-a-time)
+to amortize training cost.
+
+**6. Policy head + MCTS (terminal architecture rebuild).** Add a policy head,
+replace 2-ply argmax with PUCT-style MCTS using visit counts. Subsumes #3
+and is the full AlphaZero recipe. Large rebuild (search loop, training loop,
+all hyperparameters change); stochastic-MCTS for dice games is fiddlier than
+deterministic. Historical precedent (TD-Gammon didn't need MCTS to reach
+superhuman) suggests you can go very far with value+search alone — hold as the
+later big swing, after validating how much #3's shallower search gains.
+
+**7. League / population play (insurance against self-play delusions).** Self-play against a single lineage can converge to local strategies that beat
+itself but lose to outsiders (rock-paper-scissors collapse). Pool: current
+champ + prior champs + heuristic agent + exploration-heavy variants as
+opponents during generation. Hardens against the "my blind spots" worry. Best
+substitute for "more diverse humans to play against" since you're the only
+tester.
+
+**Recommended sequence:** exploration (1) → symmetry augmentation in training
+(2) → selective 3-ply at play/eval (3) → reassess gap; then capacity (5),
+targets (4), league (7), or MCTS (6) depending on the remaining margin. All
+are incremental and can be validated per step. Measurement note: "beats
+consistently" is a sample-size problem (you're one person, can't
+significance-test at scale). Use agent-vs-agent margins as primary metric
+(each new champion beats previous by growing margin); human play becomes
+periodic qualitative spot-check rather than the gate itself.
