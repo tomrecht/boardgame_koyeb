@@ -282,6 +282,16 @@ class GNNAgent:
                 return [(0.0, draw_pair)] if return_scores else draw_pair
             return ((0, 0, 0), (0, 0, 0))
 
+        # Forced move: one candidate and no draw option to value it against --
+        # the argmax is predetermined, skip the model forward. Must still run
+        # the same postprocessing tail as the scored path. (Draw-legal and
+        # return_scores paths still need the actual score.)
+        if len(move_keys) == 1 and not draw_legal and not return_scores:
+            chosen = move_keys[0]
+            if self.enable_never_good:
+                chosen = self._fix_never_good(chosen, board, player)
+            return self._dedupe_save_pair(chosen)
+
         # --- Single batched forward pass over the (filtered) candidates ---
         with torch.no_grad():
             scores = self.model(encoded_list)   # [N]

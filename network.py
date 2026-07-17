@@ -21,11 +21,14 @@ Features:
 """
 
 import json
+import numpy as np
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
-DEVICE = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+DEVICE = torch.device('cuda' if torch.cuda.is_available()
+                       else 'mps' if torch.backends.mps.is_available()
+                       else 'cpu')
 
 # -------------------------
 # CONSTANTS
@@ -128,7 +131,7 @@ def encode_tile_features(tile_index, tile_info):
     return f.to(DEVICE)
 
 
-def update_tile_features_dynamic(tile_feats, board, current_player, tile_index):
+def update_tile_features_dynamic(base_np, board, current_player, tile_index):
     """
     Update dynamic tile features:
       [8]  has_permanent_block (2+ unnumbered friendly pieces)
@@ -136,11 +139,17 @@ def update_tile_features_dynamic(tile_feats, board, current_player, tile_index):
       [10] my_piece_count (current player)
       [11] opp_piece_count (opponent)
 
-    Only iterates tiles that actually have pieces — the base feature tensor
+    Only iterates tiles that actually have pieces — the base feature array
     has zeros in slots 8/10/11, so empty tiles need no update. Most tiles are
     empty most of the time, so this is far cheaper than iterating all 70.
+
+    Works on a numpy copy of the base features: per-element scalar updates in
+    numpy avoid a torch dispatch per increment (the previous per-index tensor
+    ops dominated this function's cost), then a single tensor conversion at
+    the end. torch.from_numpy shares the fresh copy's memory, which is safe
+    because the array is never touched after return.
     """
-    tile_feats = tile_feats.clone()
+    arr = base_np.copy()
 
     # Group pieces by their tile (only occupied tiles)
     for piece in board.pieces:
@@ -153,9 +162,9 @@ def update_tile_features_dynamic(tile_feats, board, current_player, tile_index):
             continue
         # Increment the appropriate piece count
         if piece.player == current_player:
-            tile_feats[idx, 10] += 1.0
+            arr[idx, 10] += 1.0
         else:
-            tile_feats[idx, 11] += 1.0
+            arr[idx, 11] += 1.0
 
     # has_permanent_block: recompute only for occupied field tiles
     occupied_field_tiles = set()
@@ -173,9 +182,10 @@ def update_tile_features_dynamic(tile_feats, board, current_player, tile_index):
         if len(my_pieces) >= 2:
             unnumbered = sum(1 for p in my_pieces if p.number > 6)
             if unnumbered >= 2:
-                tile_feats[idx, 8] = 1.0
+                arr[idx, 8] = 1.0
 
-    return tile_feats
+    t = torch.from_numpy(arr)
+    return t if DEVICE.type == 'cpu' else t.to(DEVICE)
 
 
 # -------------------------
@@ -243,7 +253,7 @@ def _encode_goal_distances(piece, board):
     return raw, binned
 
 
-def encode_piece_features(board, tile_index, current_player):
+def encode_piece_features(board, tile_index, current_player, row_cache=None):
     """
     [TOTAL_PIECES, PIECE_FEAT_DIM]
     [0]     player_id (0=current, 1=opponent)
@@ -279,46 +289,72 @@ def encode_piece_features(board, tile_index, current_player):
     rack_pos = {p: i for i, p in enumerate(cur_un)}
     rack_pos.update({p: i for i, p in enumerate(opp_un)})
 
+    # A piece's feature row is a pure function of:
+    #   (its player, current-player bit, number, placement, rack slot,
+    #    blot bit, the player's blocked-tile frozenset)
+    # -- placement + number determine status/can_be_saved; the blocked set +
+    # placement determine every distance-derived field. Rows are therefore
+    # cacheable under that key, and in the 2-ply candidate loop ~22 of 24
+    # pieces are unchanged between candidates, so hits dominate.
+    blocked_keys = {}
     rows = []
     for piece in all_pieces:
-        status = _piece_status(piece, board)
-        onehot = [0.0] * NUM_STATUSES
-        onehot[status] = 1.0
-
-        is_numbered = 1.0 if piece.number <= 6 else 0.0
-
-        is_blot = 0.0
-        if piece.tile and piece.tile.type == 'field' and len(piece.tile.pieces) == 1:
-            is_blot = 1.0
-
-        dist = board.shortest_route_to_goal(piece)
-        is_completely_blocked = 1.0 if dist == INF_DIST else 0.0
-
-        if dist == INF_DIST:
-            distance_category = 0.0
-        elif dist <= 6:
-            distance_category = 1.0
-        elif dist <= 12:
-            distance_category = 0.5
+        tile = piece.tile
+        if tile is not None:
+            place = tile.index
+            is_blot = 1.0 if (tile.type == 'field' and len(tile.pieces) == 1) else 0.0
         else:
-            distance_category = 0.25
+            place = 'u' if piece.rack in (board.white_unentered, board.black_unentered) else 's'
+            is_blot = 0.0
+        rp = rack_pos.get(piece, 0)
+        bk = blocked_keys.get(piece.player)
+        if bk is None:
+            bk = board._get_blocked_key(piece.player)
+            blocked_keys[piece.player] = bk
 
-        goal_dist_raw, goal_dist_binned = _encode_goal_distances(piece, board)
+        key = (piece.player, piece.player == current_player, piece.number,
+               place, rp, is_blot, bk)
+        row = row_cache.get(key) if row_cache is not None else None
+        if row is None:
+            status = _piece_status(piece, board)
+            onehot = [0.0] * NUM_STATUSES
+            onehot[status] = 1.0
 
-        rows.append([
-            0.0 if piece.player == current_player else 1.0,
-            piece.number / 12.0,
-            is_numbered,
-            *onehot,
-            rack_pos.get(piece, 0) / 11.0 if status == STATUS_UNENTERED else 0.0,
-            is_blot,
-            is_completely_blocked,
-            distance_category,
-            *goal_dist_raw,
-            *goal_dist_binned,
-        ])
+            is_numbered = 1.0 if piece.number <= 6 else 0.0
 
-    return torch.tensor(rows, dtype=torch.float32, device=DEVICE), all_pieces
+            dist = board.shortest_route_to_goal(piece)
+            is_completely_blocked = 1.0 if dist == INF_DIST else 0.0
+
+            if dist == INF_DIST:
+                distance_category = 0.0
+            elif dist <= 6:
+                distance_category = 1.0
+            elif dist <= 12:
+                distance_category = 0.5
+            else:
+                distance_category = 0.25
+
+            goal_dist_raw, goal_dist_binned = _encode_goal_distances(piece, board)
+
+            row = (
+                0.0 if piece.player == current_player else 1.0,
+                piece.number / 12.0,
+                is_numbered,
+                *onehot,
+                rp / 11.0 if status == STATUS_UNENTERED else 0.0,
+                is_blot,
+                is_completely_blocked,
+                distance_category,
+                *goal_dist_raw,
+                *goal_dist_binned,
+            )
+            if row_cache is not None:
+                row_cache[key] = row
+        rows.append(row)
+
+    arr = np.asarray(rows, dtype=np.float32)
+    t = torch.from_numpy(arr)
+    return (t if DEVICE.type == 'cpu' else t.to(DEVICE)), all_pieces
 
 
 # -------------------------
@@ -338,8 +374,13 @@ def encode_piece_tile_edges(all_pieces, tile_index):
                 psrc.append(pidx)
                 tdst.append(tile_index[coords])
     if psrc:
-        p2t = torch.tensor([psrc, tdst], dtype=torch.long, device=DEVICE)
-        t2p = torch.tensor([tdst, psrc], dtype=torch.long, device=DEVICE)
+        p2t_np = np.array([psrc, tdst], dtype=np.int64)
+        t2p_np = np.array([tdst, psrc], dtype=np.int64)
+        p2t = torch.from_numpy(p2t_np)
+        t2p = torch.from_numpy(t2p_np)
+        if DEVICE.type != 'cpu':
+            p2t = p2t.to(DEVICE)
+            t2p = t2p.to(DEVICE)
     else:
         p2t = torch.zeros(2, 0, dtype=torch.long, device=DEVICE)
         t2p = torch.zeros(2, 0, dtype=torch.long, device=DEVICE)
@@ -436,13 +477,23 @@ class BoardEncoder:
         _tile_info  = self.tile_info
         self.num_tiles = len(self.tile_index)
         self._base_tile_feats = encode_tile_features(self.tile_index, self.tile_info)
+        # numpy copy of the base tile features (identical float32 bits) for
+        # the fast dynamic-update path; row cache for per-piece feature rows.
+        self._base_tile_feats_np = np.ascontiguousarray(
+            self._base_tile_feats.cpu().numpy())
+        self._row_cache = {}
 
     def encode(self, board, current_player):
         tile_feats = update_tile_features_dynamic(
-            self._base_tile_feats, board, current_player, self.tile_index)
+            self._base_tile_feats_np, board, current_player, self.tile_index)
 
+        # Bound the row cache (keys embed blocked-set frozensets, so entries
+        # never go stale -- this is purely a memory cap; one turn's candidate
+        # loop needs only ~1-2K entries).
+        if len(self._row_cache) > 100_000:
+            self._row_cache.clear()
         piece_feats, all_pieces = encode_piece_features(
-            board, self.tile_index, current_player)
+            board, self.tile_index, current_player, self._row_cache)
 
         p2t, t2p = encode_piece_tile_edges(all_pieces, self.tile_index)
 

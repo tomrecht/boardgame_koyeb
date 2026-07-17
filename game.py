@@ -127,28 +127,6 @@ class Board:
         self._last_total_saved = current_saved
         self.draw_callable = self.no_save_turns >= NO_SAVE_TURNS_FOR_DRAW
 
-
-            
-    def all_goal_distances(self, piece):
-        """
-        Return dict {goal_num: distance} for goals 1-6.
-        """
-        distances = {}
-        
-        # Get the tile for each goal (assumes goal tiles exist)
-        # This assumes you have goal tiles indexed 1-6
-        for goal_num in range(1, 7):
-            try:
-                # Try to find the goal tile for this goal number
-                goal_tile = next(t for t in self.tiles if t.type == 'save' and t.index == goal_num)
-                # Use get_reachable_tiles to compute distance
-                dist = self.shortest_route_to_tile(piece.tile, goal_tile) if piece.tile else float('inf')
-                distances[goal_num] = dist if dist is not None else float('inf')
-            except StopIteration:
-                distances[goal_num] = float('inf')
-        
-        return distances
-
     def __repr__(self):
         board_repr = "White unentered: " + str(self.white_unentered) + "\n"
         board_repr += "White saved: " + str(self.white_saved) + "\n"
@@ -221,6 +199,12 @@ class Board:
 
     def update_state(self, game_state_details):
         self.current_player = game_state_details['currentTurn']
+        # BUGFIX: this was never invalidated here, so a reused Board (training
+        # target/input encoding loops over records, and the Flask app between
+        # requests) kept the PREVIOUS state's blocked-tile snapshot -- distance
+        # features were then computed against stale blocking. The bk-keyed
+        # value caches (_distance_cache etc.) stay valid once the key is fresh.
+        self._blocked_key_cache.clear()
         self.clear()
         for die, die_details in zip(self.dice, game_state_details['dice']):
             die.number = die_details['value']
@@ -485,9 +469,18 @@ class Board:
         if not self.moves:
             return
         last_move = self.moves.pop()
+        # _distance_cache entries embed the blocked frozenset in their keys,
+        # making them pure functions of (start, player, class, blocking) --
+        # piece positions don't otherwise affect route distances. apply_move
+        # already relies on exactly this purity (it too keeps the distance
+        # cache), so keeping the entries lets the 2-ply search reuse BFS
+        # results across all of a turn's candidates instead of recomputing
+        # per undo. _blot_cache does NOT get this treatment: its key reuses
+        # the distance key, but blot counts depend on single-piece placements
+        # the blocked set doesn't capture, so it must stay conservatively
+        # cleared here.
         self._blocked_key_cache.clear()
-        self._distance_cache.clear()
-        self._blot_cache.clear()   # clear blot cache
+        self._blot_cache.clear()
         piece = last_move['piece']
         origin_tile = last_move['origin_tile']
         origin_rack = last_move['origin_rack']
