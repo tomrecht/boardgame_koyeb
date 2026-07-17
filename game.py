@@ -609,9 +609,10 @@ class Board:
         if piece.can_be_saved():
             return 0
         start_tile = piece.tile if piece.tile else self.home_tile
-        cache_key = (start_tile.index, piece.player, 
+        blocked_key = self._get_blocked_key(piece.player)
+        cache_key = (start_tile.index, piece.player,
                      piece.number if piece.number <= 6 else 'any',
-                     self._get_blocked_key(piece.player))
+                     blocked_key)
         if cache_key in self._distance_cache:
             return self._distance_cache[cache_key]
         queue = deque([(start_tile, 0)])
@@ -624,7 +625,9 @@ class Board:
                     if neighbor.type == 'save' and (piece.number > 6 or piece.number == neighbor.number):
                         self._distance_cache[cache_key] = distance + 1
                         return distance + 1
-                    if neighbor.type not in ['nogo', 'home'] and not neighbor.is_blocked(piece.player):
+                    # blocked_key IS the frozenset of blocked tile indices for
+                    # this player, so membership == is_blocked (and is O(1))
+                    if neighbor.type not in ['nogo', 'home'] and neighbor.index not in blocked_key:
                         queue.append((neighbor, distance + 1))
         self._distance_cache[cache_key] = float('inf')
         return float('inf')
@@ -652,15 +655,26 @@ class Board:
                 result[piece.tile.number] = 0
             return result
 
-        # Numbered piece can only reach its own goal
+        # Numbered piece can only reach its own goal. Cache the result dict
+        # like the unnumbered path does (callers only read it) -- rebuilding
+        # it per call was pure overhead at millions of calls per game.
         if piece.number <= 6:
+            blocked_key = self._get_blocked_key(piece.player)
+            cache_key = ('num_goals', piece.tile.index if piece.tile else -1,
+                         piece.player, piece.number, blocked_key)
+            cached = self._distance_cache.get(cache_key)
+            if cached is not None:
+                return cached
             dist = self.shortest_route_to_goal(piece)
-            return {n: (dist if n == piece.number else float('inf'))
-                    for n in goal_numbers}
+            full_result = {n: (dist if n == piece.number else float('inf'))
+                           for n in goal_numbers}
+            self._distance_cache[cache_key] = full_result
+            return full_result
 
         # Unnumbered piece: single BFS collecting all 6 goal distances
+        blocked_key = self._get_blocked_key(piece.player)
         cache_key = ('all_goals', piece.tile.index if piece.tile else -1,
-                     piece.player, self._get_blocked_key(piece.player))
+                     piece.player, blocked_key)
         if cache_key in self._distance_cache:
             return self._distance_cache[cache_key]
 
@@ -676,7 +690,7 @@ class Board:
                     visited.add(neighbor)
                     if neighbor.type == 'save' and neighbor.number not in result:
                         result[neighbor.number] = distance + 1
-                    if neighbor.type not in ['nogo', 'home'] and not neighbor.is_blocked(piece.player):
+                    if neighbor.type not in ['nogo', 'home'] and neighbor.index not in blocked_key:
                         queue.append((neighbor, distance + 1))
 
         # Fill unreachable goals with inf
