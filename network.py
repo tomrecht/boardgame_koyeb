@@ -433,8 +433,18 @@ def encode_global_features(board):
     d1, d2 = board.dice[0], board.dice[1]
 
     stage_map = {'opening': 0.0, 'midgame': 0.5, 'endgame': 1.0}
-    my_stage  = stage_map.get(board.game_stages[current_player], 0.5)
-    opp_stage = stage_map.get(board.game_stages[opponent], 0.5)
+    # Compute stages FRESH -- do not read board.game_stages. That dict is
+    # mutated as a side effect of get_valid_moves (current player's slot
+    # only, at entry, never restored), so during candidate enumeration it
+    # holds whatever the previous probe left behind: candidate #N gets
+    # encoded with candidate #N-1's stage, the opponent's slot can stay
+    # stale indefinitely, and successive calls from the same position can
+    # score identical candidates 20-80 scaled points apart (measured).
+    # Training encodes always saw fresh stages (update_state recomputes
+    # both slots), so fresh computation here also closes a long-standing
+    # train/selection semantics gap.
+    my_stage  = stage_map.get(board.get_game_stage(current_player), 0.5)
+    opp_stage = stage_map.get(board.get_game_stage(opponent), 0.5)
 
     my_saved  = board.white_saved  if current_player == 'white' else board.black_saved
     opp_saved = board.black_saved  if current_player == 'white' else board.white_saved
