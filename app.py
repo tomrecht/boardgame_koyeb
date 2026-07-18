@@ -1,8 +1,15 @@
 # python app.py, then localhost:10000
 
+import os
+# The app serves one position per request -- latency-bound inference where
+# GPU/MPS buys nothing, and some machines' MPS stacks hard-abort on the
+# GNN's batched scatter_add (MPSNDArrayScatter rank assertion on the iMac).
+# Default the app to CPU BEFORE network.py is imported (it reads this env
+# var at import time); an explicitly exported BOARDGAME_DEVICE still wins.
+os.environ.setdefault('BOARDGAME_DEVICE', 'cpu')
+
 from flask import Flask, request, jsonify, session
 from flask_cors import CORS
-import os
 import json
 import uuid
 import time
