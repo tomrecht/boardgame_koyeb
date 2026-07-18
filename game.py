@@ -499,6 +499,18 @@ class Board:
             piece.rack = None
             piece.tile = origin_tile
             origin_tile.pieces.append(piece)
+            # BUGFIX: block-saves marked BOTH dice used on apply, but their
+            # roll is 0, which can never match a die number in the generic
+            # unmark below -- so undoing a block-save left both dice
+            # permanently 'used'. Every search that probed a block-save
+            # candidate then ran the rest of its enumeration with corrupted
+            # dice (dropping all two-move pairs and mis-encoding used-flags).
+            # Block-saves are only legal when both dice are unused
+            # (get_valid_moves gates on exactly that), so unconditionally
+            # clearing both is exact; repeated clears while unwinding the
+            # rest of the block's per-piece entries are harmless no-ops.
+            self.dice[0].used = False
+            self.dice[1].used = False
         else:
             new_tile = self.get_tile(*destination)
             new_tile.pieces.remove(piece)

@@ -976,60 +976,70 @@ class GNNAgent:
 
         Intended for PLAY/EVAL ONLY -- generation keeps the shallow path.
         """
-        ranked = self.select_move_pair(moves, board, player, return_scores=True)
-        if isinstance(ranked, tuple):        # defensive: shallow returned a pair
-            return ranked
-        if not ranked:
-            return ((0, 0, 0), (0, 0, 0))
-        draw_pair = ((1, 1, 1), (0, 0, 0))
-        if ranked[0][0] == float('inf'):     # guaranteed win found shallowly
-            return ranked[0][1]
-        draw_legal = any(p == draw_pair for _, p in ranked)
-        cands = [p for _, p in ranked if p != draw_pair][:k_me]
-        if not cands:
-            return draw_pair if draw_legal else ((0, 0, 0), (0, 0, 0))
-        if len(cands) == 1 and not draw_legal and not return_scores:
-            chosen = cands[0]                # forced move: nothing to compare
+        # game_stages hygiene: undo_last_move recomputes a player's stage
+        # only when undoing save/rack moves, so unwinding a mixed pair (e.g.
+        # field-move + save) can leave a slot reflecting an INTERMEDIATE
+        # position's stage. Scores no longer read the dict (encode computes
+        # stages fresh), but restore it anyway so a deep call is externally
+        # side-effect-free.
+        stages0 = dict(board.game_stages)
+        try:
+            ranked = self.select_move_pair(moves, board, player, return_scores=True)
+            if isinstance(ranked, tuple):    # defensive: shallow returned a pair
+                return ranked
+            if not ranked:
+                return ((0, 0, 0), (0, 0, 0))
+            draw_pair = ((1, 1, 1), (0, 0, 0))
+            if ranked[0][0] == float('inf'):  # guaranteed win found shallowly
+                return ranked[0][1]
+            draw_legal = any(p == draw_pair for _, p in ranked)
+            cands = [p for _, p in ranked if p != draw_pair][:k_me]
+            if not cands:
+                return draw_pair if draw_legal else ((0, 0, 0), (0, 0, 0))
+            if len(cands) == 1 and not draw_legal and not return_scores:
+                chosen = cands[0]            # forced move: nothing to compare
+                if self.enable_never_good:
+                    chosen = self._fix_never_good(chosen, board, player)
+                return self._dedupe_save_pair(chosen)
+
+            opp = 'white' if player == 'black' else 'black'
+            deep_scored = []
+            root_len = len(board.moves)
+            for pair in cands:
+                for m in pair:
+                    if m != (0, 0, 0):
+                        board.apply_move(m, switch_turn=False)
+                saved = self._enter_opponent_turn_deterministic(board)
+                # Stand-pat leaf is dice-independent (encoding reads only the
+                # used flags, both False at turn start): compute once, not x21.
+                board.dice[0].used = False
+                board.dice[1].used = False
+                stand_pat_v = self._raw_value(board, opp)
+                exp_v = 0.0
+                for d1, d2, w in self._DICE_ROLLS_21:
+                    board.dice[0].number = d1
+                    board.dice[0].used = False
+                    board.dice[1].number = d2
+                    board.dice[1].used = False
+                    exp_v += w * (-self._opp_greedy_reply_raw(board, opp,
+                                                              stand_pat_v))
+                self._restore_turn_state(board, saved)
+                while len(board.moves) > root_len:
+                    board.undo_last_move()
+                deep_scored.append((exp_v, pair))
+
+            deep_scored.sort(key=lambda x: x[0], reverse=True)
+            if return_scores:
+                out = list(deep_scored)
+                if draw_legal:
+                    out.append((0.0, draw_pair))
+                    out.sort(key=lambda x: x[0], reverse=True)
+                return out
+            best_v, chosen = deep_scored[0]
+            if draw_legal and 0.0 >= best_v:
+                return draw_pair
             if self.enable_never_good:
                 chosen = self._fix_never_good(chosen, board, player)
             return self._dedupe_save_pair(chosen)
-
-        opp = 'white' if player == 'black' else 'black'
-        deep_scored = []
-        root_len = len(board.moves)
-        for pair in cands:
-            for m in pair:
-                if m != (0, 0, 0):
-                    board.apply_move(m, switch_turn=False)
-            saved = self._enter_opponent_turn_deterministic(board)
-            # Stand-pat leaf is dice-independent (encoding reads only the
-            # used flags, both False at turn start): compute once, not x21.
-            board.dice[0].used = False
-            board.dice[1].used = False
-            stand_pat_v = self._raw_value(board, opp)
-            exp_v = 0.0
-            for d1, d2, w in self._DICE_ROLLS_21:
-                board.dice[0].number = d1
-                board.dice[0].used = False
-                board.dice[1].number = d2
-                board.dice[1].used = False
-                exp_v += w * (-self._opp_greedy_reply_raw(board, opp,
-                                                          stand_pat_v))
-            self._restore_turn_state(board, saved)
-            while len(board.moves) > root_len:
-                board.undo_last_move()
-            deep_scored.append((exp_v, pair))
-
-        deep_scored.sort(key=lambda x: x[0], reverse=True)
-        if return_scores:
-            out = list(deep_scored)
-            if draw_legal:
-                out.append((0.0, draw_pair))
-                out.sort(key=lambda x: x[0], reverse=True)
-            return out
-        best_v, chosen = deep_scored[0]
-        if draw_legal and 0.0 >= best_v:
-            return draw_pair
-        if self.enable_never_good:
-            chosen = self._fix_never_good(chosen, board, player)
-        return self._dedupe_save_pair(chosen)
+        finally:
+            board.game_stages.update(stages0)
