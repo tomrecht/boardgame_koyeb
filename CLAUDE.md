@@ -325,6 +325,18 @@ automorphism is reusable infrastructure for symmetry augmentation / the
 2&4→1&6 seed transform if ever needed. Diagnostic scripts were scratchpad
 one-offs (not committed).
 
+UPDATE (owner playtest vs td iter4 champion, ~6 games): the 2&4 obsession
+is **no longer observed**. This partially contradicts the "TD won't fix it"
+prediction above — but is consistent with the razor-thin-edge diagnosis:
+a +0.002 value edge amplified by argmax is not just too small to justify
+the monopoly, it's too UNSTABLE to survive continued training; three TD
+iterations perturbed values enough to stop routing every game toward 2&4.
+Caveat: the underlying near-tie remains, so the behavior may *wander*
+(a new favorite pair emerging) rather than stay balanced — keep watching
+across future champions. Exploration remains the principled fix for
+coverage in general; the goal-pair instance may simply no longer be the
+motivating example.
+
 Key implication: **TD(λ) is not expected to resolve this**, unlike the
 offgoaling / pass-over-save edges. TD changes the training *target*
 (bootstrapped λ-return); it improves credit assignment only for states the
