@@ -773,3 +773,273 @@ class GNNAgent:
                     board.undo_last_move()
 
             return best_pair if best_pair else ((0,0,0),(0,0,0))
+    # ------------------------------------------------------------------
+    # Deep search: one opponent ply over the dice chance node
+    # ------------------------------------------------------------------
+    #
+    # select_move_pair evaluates V(position after my pair) with the net.
+    # select_move_pair_deep replaces that leaf value, for the top-k_me
+    # candidate pairs, with a one-opponent-ply expectiminimax backup:
+    #
+    #     E[my value] = sum over the opponent's 21 possible dice rolls of
+    #                   P(roll) * ( - V(position after the opponent's greedy
+    #                                   reply pair, from the opponent's frame) )
+    #
+    # Frames/phases are chosen so every net evaluation is exactly the phase
+    # the net was trained on ("mover's pair just completed, encoded from the
+    # mover's perspective"): root leaves are (after my pair, my frame);
+    # depth-2 leaves are (after opponent's reply, opponent's frame), negated.
+    # Terminal positions use the training-target convention directly:
+    # score/NUM_PIECES in the winner's frame (draws exactly 0), so learned
+    # and exact values live on one comparable scale (raw net units).
+    #
+    # The opponent reply is the same greedy two-stage argmax as
+    # select_move_pair_fast (batch first moves -> commit -> batch second
+    # moves), i.e. a 1-ply shallow opponent -- deliberately NOT a recursive
+    # deep opponent (cost) and NOT full pair enumeration (budget: with
+    # k_me=8 candidates x 21 rolls, the greedy reply's ~2 small batches per
+    # roll lands the whole move in a few seconds on CPU).
+
+    # The 21 unordered dice rolls with their probabilities (dice are
+    # interchangeable in this game's move legality, so (a,b)~(b,a)).
+    _DICE_ROLLS_21 = [(d1, d2, (1.0 if d1 == d2 else 2.0) / 36.0)
+                      for d1 in range(1, 7) for d2 in range(d1, 7)]
+
+    def _raw_value(self, board, player):
+        """Net value of the current position in raw units from `player`'s
+        frame (no SCORE_SCALE)."""
+        with torch.no_grad():
+            return self.model(self.encoder.encode(board, player)).item()
+
+    def _enter_opponent_turn_deterministic(self, board):
+        """Reproduce switch_turn's side effects reversibly and WITHOUT
+        rolling dice (caller sets dice per chance-node branch afterwards).
+        Returns an opaque snapshot for _restore_turn_state. Must be called
+        with the acting player's pair already applied.
+
+        Side effects mirrored from switch_turn (game.py): cache clears,
+        no-save/draw counter update, firstMove reset, player flip, and the
+        last-piece rule. The last-piece rule PERMANENTLY renumbers a
+        player's final numbered piece to unnumbered (piece.number ->
+        NUM_PIECES+1) and rewrites piece_lookup -- there is no undo path
+        for it in the engine, so we track exactly what it changed and
+        reverse it by hand in _restore_turn_state."""
+        saved = {
+            'player': board.current_player,
+            'dice': [(d.number, d.used) for d in board.dice],
+            'firstMove': board.firstMove,
+            'no_save_turns': board.no_save_turns,
+            'half_turns': board._half_turns_since_round,
+            'last_total_saved': board._last_total_saved,
+            'draw_callable': board.draw_callable,
+            'game_stages': dict(board.game_stages),
+            'moves_len': len(board.moves),
+        }
+        board._distance_cache.clear()
+        board._blot_cache.clear()
+        board._reachable_cache.clear()
+        board._blocked_key_cache.clear()
+        board.update_no_save_counter()
+        board.firstMove = None
+        board.current_player = 'white' if board.current_player == 'black' else 'black'
+        # last-piece rule, tracked for manual reversal
+        before = {id(p): p.number for p in board.pieces if p.number <= 6}
+        board.apply_last_piece_rule()
+        saved['renumbered'] = [(p, before[id(p)]) for p in board.pieces
+                               if id(p) in before and p.number != before[id(p)]]
+        return saved
+
+    def _restore_turn_state(self, board, saved):
+        """Exactly reverse _enter_opponent_turn_deterministic. The caller
+        must already have undone any opponent moves it applied (so
+        len(board.moves) == saved['moves_len'] and the dice in play are the
+        simulated opponent dice, about to be overwritten)."""
+        assert len(board.moves) == saved['moves_len'], \
+            "opponent moves not fully undone before turn-state restore"
+        for p, old_num in saved['renumbered']:
+            new_key = (p.player, p.number)
+            if board.piece_lookup.get(new_key) is p:
+                del board.piece_lookup[new_key]
+            p.number = old_num
+            board.piece_lookup[(p.player, old_num)] = p
+        board.current_player = saved['player']
+        for d, (num, used) in zip(board.dice, saved['dice']):
+            d.number = num
+            d.used = used
+        board.firstMove = saved['firstMove']
+        board.no_save_turns = saved['no_save_turns']
+        board._half_turns_since_round = saved['half_turns']
+        board._last_total_saved = saved['last_total_saved']
+        board.draw_callable = saved['draw_callable']
+        board.game_stages.update(saved['game_stages'])
+        board._distance_cache.clear()
+        board._blot_cache.clear()
+        board._reachable_cache.clear()
+        board._blocked_key_cache.clear()
+
+    def _opp_greedy_reply_raw(self, board, opp, stand_pat_v=None):
+        """With `board` at the start of the opponent's simulated turn
+        (current_player == opp, dice set, unused), play the opponent's
+        greedy two-stage reply in place, and return the raw net value of
+        the resulting position FROM THE OPPONENT'S FRAME. All applied moves
+        are undone before returning. Terminal wins return the exact
+        training-convention value (score/NUM_PIECES); a legal draw call
+        floors the result at 0 (the opponent takes the draw if its best
+        continuation is worse than 0).
+
+        `stand_pat_v` is the (dice-independent) raw value of the unchanged
+        position from the opponent's frame -- the encoding reads only the
+        dice USED flags (both False here), never the numbers, so it is
+        identical for all 21 rolls and the caller computes it once."""
+        base_len = len(board.moves)
+        moves = board.get_valid_moves()
+        draw_legal = (1, 1, 1) in moves
+        cand = [m for m in moves if m not in ((0, 0, 0), (1, 1, 1))
+                and isinstance(m, tuple) and len(m) == 3]
+        pass_legal = (0, 0, 0) in moves
+
+        def undo_to(n):
+            while len(board.moves) > n:
+                board.undo_last_move()
+
+        best_v = None
+        if pass_legal or not cand:
+            # doing nothing is an option (or forced): value of standing pat
+            best_v = stand_pat_v if stand_pat_v is not None \
+                else self._raw_value(board, opp)
+        if cand:
+            # stage 1: batch all first moves, commit to the argmax
+            encs, keys = [], []
+            for m in cand:
+                board.apply_move(m, switch_turn=False)
+                w, s = board.check_game_over()
+                if w == opp:
+                    undo_to(base_len)
+                    return float(s) / NUM_PIECES
+                encs.append(self.encoder.encode(board, opp))
+                keys.append(m)
+                undo_to(base_len)
+            with torch.no_grad():
+                v1 = self.model(encs).view(-1)
+            b1 = int(v1.argmax().item())
+            v_after_first = float(v1[b1].item())
+            board.apply_move(keys[b1], switch_turn=False)
+            if all(d.used for d in board.dice):
+                # single-die-ish turns: the pair IS the first move
+                if best_v is None or v_after_first > best_v:
+                    best_v = v_after_first
+            else:
+                after_first = board.get_valid_moves()
+                second = [m for m in after_first
+                          if m not in ((0, 0, 0), (1, 1, 1))
+                          and isinstance(m, tuple) and len(m) == 3]
+                # Stopping after one move is only a real option if a pass is
+                # legal AT THIS POINT (e.g. not with captured pieces still to
+                # enter) -- mirror the shallow search's gating, don't assume.
+                stop_allowed = (0, 0, 0) in after_first
+                if stop_allowed or not second:
+                    if best_v is None or v_after_first > best_v:
+                        best_v = v_after_first
+                if second:
+                    encs2 = []
+                    mid_len = len(board.moves)
+                    for m2 in second:
+                        board.apply_move(m2, switch_turn=False)
+                        w, s = board.check_game_over()
+                        if w == opp:
+                            undo_to(base_len)
+                            return float(s) / NUM_PIECES
+                        encs2.append(self.encoder.encode(board, opp))
+                        undo_to(mid_len)
+                    with torch.no_grad():
+                        v2 = self.model(encs2).view(-1)
+                    v_pair = float(v2.max().item())
+                    if best_v is None or v_pair > best_v:
+                        best_v = v_pair
+            undo_to(base_len)
+        if draw_legal and best_v < 0.0:
+            best_v = 0.0    # opponent prefers the exact-0 draw
+        return best_v
+
+    def select_move_pair_deep(self, moves, board, player, k_me=8,
+                              return_scores=False):
+        """Move selection with one opponent ply over the dice chance node.
+
+        1. Rank all my move pairs with the existing shallow search.
+        2. For the top k_me pairs: apply the pair, deterministically enter
+           the opponent's turn, and for each of the 21 dice rolls let the
+           opponent make its greedy reply; my deep value is the
+           probability-weighted mean of the negated reply values.
+        3. Pick the pair with the best deep value (draw compared at its
+           exact 0, same rule as the shallow search), then run the same
+           postprocessing tail (never-good fixes, save dedupe).
+
+        Intended for PLAY/EVAL ONLY -- generation keeps the shallow path.
+        """
+        # game_stages hygiene: undo_last_move recomputes a player's stage
+        # only when undoing save/rack moves, so unwinding a mixed pair (e.g.
+        # field-move + save) can leave a slot reflecting an INTERMEDIATE
+        # position's stage. Scores no longer read the dict (encode computes
+        # stages fresh), but restore it anyway so a deep call is externally
+        # side-effect-free.
+        stages0 = dict(board.game_stages)
+        try:
+            ranked = self.select_move_pair(moves, board, player, return_scores=True)
+            if isinstance(ranked, tuple):    # defensive: shallow returned a pair
+                return ranked
+            if not ranked:
+                return ((0, 0, 0), (0, 0, 0))
+            draw_pair = ((1, 1, 1), (0, 0, 0))
+            if ranked[0][0] == float('inf'):  # guaranteed win found shallowly
+                return ranked[0][1]
+            draw_legal = any(p == draw_pair for _, p in ranked)
+            cands = [p for _, p in ranked if p != draw_pair][:k_me]
+            if not cands:
+                return draw_pair if draw_legal else ((0, 0, 0), (0, 0, 0))
+            if len(cands) == 1 and not draw_legal and not return_scores:
+                chosen = cands[0]            # forced move: nothing to compare
+                if self.enable_never_good:
+                    chosen = self._fix_never_good(chosen, board, player)
+                return self._dedupe_save_pair(chosen)
+
+            opp = 'white' if player == 'black' else 'black'
+            deep_scored = []
+            root_len = len(board.moves)
+            for pair in cands:
+                for m in pair:
+                    if m != (0, 0, 0):
+                        board.apply_move(m, switch_turn=False)
+                saved = self._enter_opponent_turn_deterministic(board)
+                # Stand-pat leaf is dice-independent (encoding reads only the
+                # used flags, both False at turn start): compute once, not x21.
+                board.dice[0].used = False
+                board.dice[1].used = False
+                stand_pat_v = self._raw_value(board, opp)
+                exp_v = 0.0
+                for d1, d2, w in self._DICE_ROLLS_21:
+                    board.dice[0].number = d1
+                    board.dice[0].used = False
+                    board.dice[1].number = d2
+                    board.dice[1].used = False
+                    exp_v += w * (-self._opp_greedy_reply_raw(board, opp,
+                                                              stand_pat_v))
+                self._restore_turn_state(board, saved)
+                while len(board.moves) > root_len:
+                    board.undo_last_move()
+                deep_scored.append((exp_v, pair))
+
+            deep_scored.sort(key=lambda x: x[0], reverse=True)
+            if return_scores:
+                out = list(deep_scored)
+                if draw_legal:
+                    out.append((0.0, draw_pair))
+                    out.sort(key=lambda x: x[0], reverse=True)
+                return out
+            best_v, chosen = deep_scored[0]
+            if draw_legal and 0.0 >= best_v:
+                return draw_pair
+            if self.enable_never_good:
+                chosen = self._fix_never_good(chosen, board, player)
+            return self._dedupe_save_pair(chosen)
+        finally:
+            board.game_stages.update(stages0)
