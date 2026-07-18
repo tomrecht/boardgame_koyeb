@@ -246,6 +246,15 @@ def run_td_selfplay(model,
         print(f"  iter {it} done in {dt:.0f}s | val {best_val:.5f} | "
               f"wr {wr:.1%} | promoted={promoted} | action={action}")
 
+        # LIVE checkpoint: the weights the next iteration will actually
+        # continue from (== champion after a revert, == this iteration's
+        # weights after promote/keep). The revert mechanism broke the old
+        # invariant that "highest td_iterN.pt == live model", so resume
+        # must not load td_iterN.pt as the live model -- it may be the
+        # failed weights of a reverted iteration. run_full_td.py prefers
+        # this file for the model and uses td_iterN.pt only for numbering.
+        torch.save(_cpu_state_dict(model), f'{save_prefix}_live.pt')
+
     return model, champion_sd, history
 
 

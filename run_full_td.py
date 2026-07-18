@@ -43,11 +43,24 @@ def main():
 
     ckpt_path, last_iter = find_latest_checkpoint()
     champion_path = f'{SAVE_PREFIX}_champion.pt'
+    live_path = f'{SAVE_PREFIX}_live.pt'
 
     model = BoardGNN().to(network.DEVICE)
     if ckpt_path:
-        print(f"Resuming: loading {ckpt_path} (completed through iter {last_iter})")
-        model.load_state_dict(torch.load(ckpt_path, map_location=network.DEVICE))
+        # td_iterN.pt is used for ITERATION NUMBERING only. The weights to
+        # continue from are td_live.pt: since the revert-on-failure
+        # mechanism, the last iteration checkpoint may hold the FAILED
+        # weights of a reverted iteration, while the live model was rolled
+        # back to the champion. td_live.pt always records what the next
+        # iteration should actually train from.
+        if os.path.exists(live_path):
+            print(f"Resuming: iter numbering from {ckpt_path} (through iter "
+                  f"{last_iter}); live weights from {live_path}")
+            model.load_state_dict(torch.load(live_path, map_location=network.DEVICE))
+        else:
+            print(f"Resuming: loading {ckpt_path} (completed through iter "
+                  f"{last_iter}); no {live_path} found (pre-revert-era run)")
+            model.load_state_dict(torch.load(ckpt_path, map_location=network.DEVICE))
     else:
         print(f"Fresh start: warm-starting from {WARM_START}")
         model.load_state_dict(torch.load(WARM_START, map_location=network.DEVICE))
@@ -77,7 +90,11 @@ def main():
         start_iter=last_iter + 1,
         games_per_iter=300,
         epochs_per_iter=8,
-        lam=0.9, gamma=1.0, lr=1e-4,
+        # lr halved 1e-4 -> 5e-5 after three consecutive failed updates from
+        # the iter4 champion (24.4%, 36.5%, 37.7%) -- same failure signature
+        # as the 2e-4-era smoke test (healthy model degraded by one update),
+        # and the 600-game pooled attempt ruled out data volume as the cause.
+        lam=0.9, gamma=1.0, lr=5e-5,
         eval_games=200, promote_winrate=0.55,
         replay_iters=3,
         save_prefix=SAVE_PREFIX,
