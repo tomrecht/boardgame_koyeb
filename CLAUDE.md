@@ -527,6 +527,29 @@ Once a clean verdict lands: if deep search wins convincingly, wire
 original motivation — it directly targets the pass-over-save and endgame
 offgoaling rough edges, independent of how the TD run itself fares).
 
+**Owner idea (parked, promising): margin-triggered full-pairwise deep
+search.** Instead of a fixed `k_me=8`, deep-expand only the pairs whose
+shallow scores cluster within a margin δ of the top (adaptive k) — and for
+those near-ties, afford the FULL-pairwise opponent model (the one measured
+prohibitive at 42s/move if applied unconditionally). Rationale: near-ties
+are exactly where argmax is fragile (see the goal-pair +0.002 finding;
+pass-over-save cases smell like near-ties too), and 2-3 clustered
+candidates x 5.3s ≈ 10-16s fires only on contested moves — acceptable for
+human play, and likely reducible to ~2-4s via search engineering that is
+NOT yet done: (1) batch the whole chance node (all roll x move positions
+in 1-2 big forward passes instead of ~60 small per-roll batches — biggest
+win, same lesson as 2-ply batching); (2) transposition cache on position
+values (~35% hit rate already measured at 2-ply, grows with depth);
+(3) Star1 chance-node pruning (values are bounded, so partial 21-roll sums
+can prune candidates that can't catch up; search best-shallow-first);
+(4) roll ordering (15 non-doubles carry 30/36 of the weight). VALIDATION
+PREREQUISITE before building: from the existing battery's ranked lists,
+histogram the shallow-score gap of deep's chosen move — if deep's flips
+concentrate within a small margin of shallow's top, the trigger is sound
+and the histogram calibrates δ; if deep often flips to moves far down the
+shallow ranking, a margin trigger would miss those and the idea needs
+rethinking. Cheap experiment, do it first.
+
 ## Next steps (in order)
 
 1. Rerun the deep-vs-shallow match with the corrected (beam_k=3) opponent
