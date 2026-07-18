@@ -793,12 +793,23 @@ class GNNAgent:
     # score/NUM_PIECES in the winner's frame (draws exactly 0), so learned
     # and exact values live on one comparable scale (raw net units).
     #
-    # The opponent reply is the same greedy two-stage argmax as
-    # select_move_pair_fast (batch first moves -> commit -> batch second
-    # moves), i.e. a 1-ply shallow opponent -- deliberately NOT a recursive
-    # deep opponent (cost) and NOT full pair enumeration (budget: with
-    # k_me=8 candidates x 21 rolls, the greedy reply's ~2 small batches per
-    # roll lands the whole move in a few seconds on CPU).
+    # The opponent reply is a beam search over first moves (beam_k=3, full
+    # batch) x full second-move batch per beam entry -- same structure as
+    # select_move_pair_beam, i.e. a 1-ply shallow opponent -- deliberately
+    # NOT a recursive deep opponent (cost) and NOT full pair enumeration
+    # (budget: with k_me=8 candidates x 21 rolls, beam_k=3 keeps the
+    # opponent reply to one big batch + 3 small batches per roll).
+    #
+    # An earlier version used select_move_pair_fast's two-stage GREEDY
+    # (commit to the single best first move before ever looking at second
+    # moves) to model the opponent here. That is explicitly documented on
+    # select_move_pair_fast as unsuitable for interactive play (it can trap
+    # on a first move whose own score is highest but whose forced follow-up
+    # is poor) -- and using it to model the opponent made deep search
+    # systematically underestimate the opponent's replies, which surfaced
+    # as deep LOSING to plain shallow search at the same weights in a
+    # 20-game match. Beam search (beam_k=3) fixed it -- see
+    # _opp_greedy_reply_raw's docstring for the failure mode in detail.
 
     # The 21 unordered dice rolls with their probabilities (dice are
     # interchangeable in this game's move legality, so (a,b)~(b,a)).
@@ -877,15 +888,31 @@ class GNNAgent:
         board._reachable_cache.clear()
         board._blocked_key_cache.clear()
 
-    def _opp_greedy_reply_raw(self, board, opp, stand_pat_v=None):
+    def _opp_greedy_reply_raw(self, board, opp, stand_pat_v=None, beam_k=3):
         """With `board` at the start of the opponent's simulated turn
-        (current_player == opp, dice set, unused), play the opponent's
-        greedy two-stage reply in place, and return the raw net value of
-        the resulting position FROM THE OPPONENT'S FRAME. All applied moves
-        are undone before returning. Terminal wins return the exact
+        (current_player == opp, dice set, unused), find the opponent's best
+        PAIR-WISE reply (beam over first moves, full second-move batch per
+        beam entry -- same structure as select_move_pair_beam, but returns
+        the value instead of the move), and return the raw net value of the
+        resulting position FROM THE OPPONENT'S FRAME. All applied moves are
+        undone before returning. Terminal wins return the exact
         training-convention value (score/NUM_PIECES); a legal draw call
         floors the result at 0 (the opponent takes the draw if its best
         continuation is worse than 0).
+
+        NOTE: earlier version used select_move_pair_fast's two-stage greedy
+        (commit to the single best first move, then pick the best second
+        move given it) -- cheap, but that scheme is explicitly documented as
+        NOT for interactive play: it can trap on a first move whose own
+        score is highest but whose forced follow-up is poor, while a
+        slightly lower-scoring first move opens a much better pair. Using it
+        to model the opponent inside deep search made the opponent
+        systematically too weak (measured: a 20-game match at k_me=8 lost
+        ~25% to the plain shallow agent using the SAME weights, which should
+        be near-impossible if the opponent model were accurate). beam_k=3
+        keeps most of the two-stage version's speed (one full batch over all
+        first moves, then only 3 second-move batches, not one per first
+        move) while fixing the systematic-underestimate failure mode.
 
         `stand_pat_v` is the (dice-independent) raw value of the unchanged
         position from the opponent's frame -- the encoding reads only the
@@ -908,7 +935,7 @@ class GNNAgent:
             best_v = stand_pat_v if stand_pat_v is not None \
                 else self._raw_value(board, opp)
         if cand:
-            # stage 1: batch all first moves, commit to the argmax
+            # stage 1: batch all first moves
             encs, keys = [], []
             for m in cand:
                 board.apply_move(m, switch_turn=False)
@@ -921,14 +948,17 @@ class GNNAgent:
                 undo_to(base_len)
             with torch.no_grad():
                 v1 = self.model(encs).view(-1)
-            b1 = int(v1.argmax().item())
-            v_after_first = float(v1[b1].item())
-            board.apply_move(keys[b1], switch_turn=False)
-            if all(d.used for d in board.dice):
-                # single-die-ish turns: the pair IS the first move
-                if best_v is None or v_after_first > best_v:
-                    best_v = v_after_first
-            else:
+            topk = torch.topk(v1, min(beam_k, len(v1))).indices.tolist()
+
+            for b1 in topk:
+                v_after_first = float(v1[b1].item())
+                board.apply_move(keys[b1], switch_turn=False)
+                if all(d.used for d in board.dice):
+                    # single-die-ish turns: the pair IS the first move
+                    if best_v is None or v_after_first > best_v:
+                        best_v = v_after_first
+                    undo_to(base_len)
+                    continue
                 after_first = board.get_valid_moves()
                 second = [m for m in after_first
                           if m not in ((0, 0, 0), (1, 1, 1))
@@ -956,7 +986,7 @@ class GNNAgent:
                     v_pair = float(v2.max().item())
                     if best_v is None or v_pair > best_v:
                         best_v = v_pair
-            undo_to(base_len)
+                undo_to(base_len)
         if draw_legal and best_v < 0.0:
             best_v = 0.0    # opponent prefers the exact-0 draw
         return best_v
