@@ -380,29 +380,168 @@ expected to self-resolve via the TD run.
     cold-restarts it — minor, not a correctness issue).
   - `bench_workers.py` — one-off generation-throughput sweep across
     worker counts, not part of the training path itself.
-- **Full Mode A run: launched and in progress.** Current config:
-  `n_workers=8`, `games_per_iter=300`, `epochs_per_iter=12`, `lam=0.9`,
-  `gamma=1.0`, `lr=1e-4`, `replay_iters=3`, `eval_games=200`,
-  `promote_winrate=0.55`, checkpoints as `td_iterN.pt` / `td_champion.pt`,
-  warm-started from (and initial champion =) `best_iter5_m46.pt`. Launch
-  command:
+- **Full Mode A run: iterations 1-6 complete, STOPPED for an intervention,
+  not yet relaunched.** Iter4 promoted at 58% (current champion,
+  `td_champion.pt` = `td_iter4.pt`'s weights). Iters 5 and 6 both
+  **reverted** — three consecutive failed updates from the iter4 champion
+  (an early iter5 attempt hit 24.4% pre-dating the revert-floor fix; the
+  re-run under the fixed floor logic hit 36.5%; iter6, with a 600-game
+  pooled-replay attempt, hit 37.7%, ruling out data volume as the cause).
+  That's the signature of a step size too large for this fine-tuning
+  regime (same shape as the original 2e-4→1e-4 fix), so this was treated
+  as the natural boundary to stop and intervene rather than keep iterating
+  blind.
+  **Intervention package applied (all committed, run not yet relaunched):**
+    - `lr` 1e-4 → 5e-5 (`run_full_td.py`).
+    - **Block-save dice bug (engine, `game.py`)** — `apply_move` marks BOTH
+      dice used for a block-save (roll=0), but `undo_last_move`'s die
+      restore matches by roll number, which 0 can never match. Undoing a
+      probed block-save left both dice permanently "used" for the rest of
+      that search call — silently dropping every two-move pair enumerated
+      afterward (measured 365→38 pairs on one real position) and corrupting
+      encodings' dice-used features. This affected **generation, eval, and
+      the live app** whenever the opponent had a 2+ piece stack on a field
+      tile, for as long as this architecture has existed — not something
+      introduced this session. Plausible contributor to the "passed the
+      second die when a good move was available" playtest observation.
+    - **Stage-encoding drift (`network.py`)** — `encode_global_features`
+      read `board.game_stages`, which `get_valid_moves` mutates as a side
+      effect (current player's slot only, never restored). During
+      candidate enumeration, candidate N was scored with candidate N-1's
+      leftover stage — measured 20-80 scaled-point swings on identical
+      candidates across calls, and training never had this problem
+      (`update_state` always recomputes stages fresh). Fix: encode computes
+      `get_game_stage` fresh for both players. **Behavior-changing for the
+      existing shallow agent too**, not just deep search — this is why the
+      fix waited for this boundary instead of hot-merging mid-run.
+    - **Resume-after-revert bug (`run_full_td.py`, `td_selfplay_loop.py`)**
+      — the auto-resume logic assumed the highest `td_iterN.pt` was always
+      the live model, which the revert mechanism breaks (a reverted
+      iteration's checkpoint holds its *failed* weights, while the live
+      model rolled back to the champion). Fixed by writing `td_live.pt`
+      every iteration (the actual live-model weights) and having resume
+      load that instead, using `td_iterN.pt` only for iteration numbering.
+      `td_live.pt` has been pre-seeded from `td_champion.pt` for this
+      restart and verified byte-identical.
+  Old checkpoints `td_iter5.pt`/`td_iter6.pt`/`td_iter7.pt` (a stray
+  partially-generated iter7 from before the stop) and the pre-crash log are
+  moved aside in `collapsed_iters_5-7/` — not deleted, in case anything
+  needs to be re-examined, but out of the way of the next resume.
+  **Not yet done: actually relaunching.** Launch command unchanged:
   ```
   caffeinate -i python -u run_full_td.py 2>&1 | tee -a td_run.log
   ```
-  `TOTAL_ITERATIONS=20` in `run_full_td.py` is a budget, not a fixed
-  target — stop early if promotions stall, continue if still trending up.
+  It will resume as iter7, training from the champion, on the corrected
+  engine, at the lower lr. Config otherwise unchanged: `n_workers=8`,
+  `games_per_iter=300`, `epochs_per_iter=8` (already dropped from 12 earlier
+  this session), `lam=0.9`, `gamma=1.0`, `replay_iters=3`, `eval_games=200`,
+  `promote_winrate=0.55`. `TOTAL_ITERATIONS=20` is a budget, not a fixed
+  target.
+  **Caveat for interpreting the next iteration's result**: lr and the engine
+  fixes were bundled into one restart, so if iter7 succeeds we won't be able
+  to attribute it to one or the other in isolation — a deliberate
+  progress-over-attribution call at this boundary. If updates still fail at
+  5e-5 on the clean engine, next suspects in order: `epochs_per_iter` (8→
+  4-6), then the per-epoch target-refresh cadence.
+
+## Deep search (branch `deeper-search`, merged into `td-lambda`)
+
+Separate track from TD, pursued in parallel: one-opponent-ply expectiminimax
+search at PLAY/EVAL time only (`agent_gnn.py`'s `select_move_pair_deep`),
+targeting item 3 of the post-TD roadmap below. Nothing in the training loop
+calls it — it's dormant cargo on `td-lambda` until wired into `app.py` or a
+strength run.
+
+**Mechanics**: rank all move pairs with the existing shallow search, take
+the top `k_me` (default 8), and for each, deterministically enter the
+opponent's turn and compute the probability-weighted (over all 21 unordered
+dice rolls) expected value of the opponent's best reply, negated. Pick the
+pair with the best backed-up value. Turn-boundary side effects (cache
+clears, no-save counter, last-piece rule's permanent piece renumbering) are
+mirrored and exactly reversed (`_enter_opponent_turn_deterministic` /
+`_restore_turn_state`) so a deep-search call is side-effect-free on the
+board.
+
+**Bugs found and fixed this session** (all now merged to `td-lambda` via
+`b3cf2b0`/`eaf9e44`, validated by a battery of invariance + reduction +
+timing tests on real self-play positions, `PYTHONHASHSEED=0` for
+reproducibility):
+1. Block-save dice corruption and stage-encoding drift — see "Current
+   state" above; both are engine/encoding bugs, not deep-search-specific,
+   found *because* deep search's correctness tests exposed them.
+2. **Opponent model was too weak** (the interesting one): the opponent's
+   reply was modeled with `select_move_pair_fast`'s two-stage greedy
+   (commit to the single best first move, then pick the best second move
+   given it) — a scheme that function's own docstring already flags as
+   unsuitable for interactive play, because it can trap on a first move
+   that scores well alone but forces a poor follow-up. Using it for the
+   opponent made deep search's expectimax trust lines that only look good
+   against that crippled opponent — measured directly as deep search
+   **losing ~3:1 to plain shallow search using the identical weights**
+   (10-game paired-seed match, stopped early once the trend was
+   statistically clear — see `match_results.jsonl`, now stale/invalid,
+   from before this fix). Fixed by replacing the opponent's reply logic
+   with a small beam (`beam_k=3`, tunable) over first moves — full batch
+   over all first moves, top-3 by score, full second-move expansion for
+   each, best pair across the three beams. Same structure as the existing
+   `select_move_pair_beam`, returning a value instead of a move (needed
+   for the expectimax backup).
+3. Full battery re-passed clean after the opponent fix (0/125 invariance,
+   0/125 reduction — `select_move_pair_deep(k_me=1)` matches shallow
+   exactly, as it must by construction).
+
+**Cost measured directly** (`opp_cost_probe.py`, scratchpad, not
+committed) — answers "why not use exact pairwise search for the opponent
+too?": pair counts are large and roll-dependent (not just doubles — a
+non-double sample here had median 824 pairs, max 5359, vs. doubles' median
+312/max 1718, because two *different* die values cross-multiply piece/path
+options more than reusing one value twice). Extrapolated per-move cost of
+the opponent's full 21-roll sum: **exact pairwise ≈ 42s at k_me=8** (or
+~16s even cut to k_me=3) vs. **beam_k=3 ≈ 6.7s at k_me=8** — exact pairwise
+is 6-10x over the 3-4s/move budget at any reasonable k_me; beam_k=3 is
+close (~2x over), tunable down via `k_me` or `beam_k` if needed. Contended
+(shared with a live TD run) battery timing after the beam fix: median 7.5s.
+
+**Asymmetry worth remembering**: `k_me` (mine) truncates a beam over
+*already-fully-valued* complete pairs (shallow's exact pairwise search
+runs first, in full, then top-k_me of the result is deep-expanded) — it
+can only miss globally-worse pairs. `beam_k` (opponent's) truncates
+*before* the second move is known (ranks first moves alone, only expands
+the top 3) — a strictly weaker approximation, just less weak than the
+two-stage version it replaced. If deep search still underperforms after
+the opponent fix, this is the next place to look.
+
+**Not yet done**: the deep-vs-shallow strength match needs to be rerun
+with the corrected opponent — the existing `match_results.jsonl` (3:1
+favoring shallow) reflects the broken two-stage opponent and should be
+treated as invalid/superseded, not as a verdict on deep search itself.
+Resumable script at repo root: `match_deep.py` (paired seeds, appends to
+`match_results.jsonl`, skips already-recorded games — **delete or move
+aside `match_results.jsonl` before rerunning**, since its 10 stale games
+would otherwise be silently kept and mixed with fresh ones). Launch:
+```
+PYTHONHASHSEED=0 python -u match_deep.py > match_deep.log 2>&1 &
+```
+Once a clean verdict lands: if deep search wins convincingly, wire
+`select_move_pair_deep` into `app.py` as the play-time agent (this was the
+original motivation — it directly targets the pass-over-save and endgame
+offgoaling rough edges, independent of how the TD run itself fares).
 
 ## Next steps (in order)
 
-1. Let the full Mode A run proceed — watch `td_run.log` / the terminal for
-   per-iteration win rate and val loss trends to judge whether it's still
-   trending up or has stalled.
-2. On any crash/interrupt, just re-run the exact same launch command —
-   `run_full_td.py` resumes automatically from the latest `td_iterN.pt`.
-3. Once the run concludes (or is deliberately stopped), evaluate whether
+1. Rerun the deep-vs-shallow match with the corrected (beam_k=3) opponent
+   — move aside the stale `match_results.jsonl` first.
+2. Relaunch the TD run (iter7+) with the intervention package described
+   above — watch for whether the champion can now absorb an update, or
+   whether it reverts again (which would point at `epochs_per_iter` next).
+3. If deep search's rerun match is positive, wire it into `app.py` for
+   play/eval; if the TD run resumes cleanly, let it proceed and watch
+   `td_run.log` for per-iteration trend.
+4. Once TD is stable (promoting or plausibly plateaued), evaluate whether
    the known rough edges (pass-over-save-looking decisions, endgame
-   offgoaling, and the parked 2-4 goal-pair bias) persist post-TD before
-   considering any separate targeted debugging of them.
+   offgoaling, and the parked 2-4 goal-pair bias — see the UPDATE note
+   above, partially resolved already) persist, before considering any
+   separate targeted debugging of them.
 4. **Exploration as a separate, ceiling-raising lever (after TD, not
    during).** Self-play generation is currently *fully greedy* — move
    selection is 2-ply `argmax` over the value net (verified: no temperature,
