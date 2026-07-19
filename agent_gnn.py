@@ -797,8 +797,14 @@ class GNNAgent:
     # batch) x full second-move batch per beam entry -- same structure as
     # select_move_pair_beam, i.e. a 1-ply shallow opponent -- deliberately
     # NOT a recursive deep opponent (cost) and NOT full pair enumeration
-    # (budget: with k_me=8 candidates x 21 rolls, beam_k=3 keeps the
-    # opponent reply to one big batch + 3 small batches per roll).
+    # (measured prohibitive: ~42s/move at k_me=8; see CLAUDE.md).
+    #
+    # The LIVE path computes all 21 rolls at once via
+    # _opp_reply_values_batched (per-die first-move dedup + dice-scalar
+    # global-feature patching + a transposition cache on second-move
+    # leaves + exactly two forward passes per candidate, instead of ~84
+    # small ones). _opp_greedy_reply_raw is the sequential per-roll
+    # REFERENCE ORACLE the batched path is validated against.
     #
     # An earlier version used select_move_pair_fast's two-stage GREEDY
     # (commit to the single best first move before ever looking at second
@@ -888,36 +894,30 @@ class GNNAgent:
         board._reachable_cache.clear()
         board._blocked_key_cache.clear()
 
-    def _opp_greedy_reply_raw(self, board, opp, stand_pat_v=None, beam_k=3):
-        """With `board` at the start of the opponent's simulated turn
-        (current_player == opp, dice set, unused), find the opponent's best
-        PAIR-WISE reply (beam over first moves, full second-move batch per
-        beam entry -- same structure as select_move_pair_beam, but returns
-        the value instead of the move), and return the raw net value of the
-        resulting position FROM THE OPPONENT'S FRAME. All applied moves are
-        undone before returning. Terminal wins return the exact
-        training-convention value (score/NUM_PIECES); a legal draw call
-        floors the result at 0 (the opponent takes the draw if its best
-        continuation is worse than 0).
+    def _opp_greedy_reply_raw(self, board, opp, beam_k=3):
+        """REFERENCE ORACLE (sequential, one roll per call) for the batched
+        implementation below -- kept for validation, not used in the live
+        deep-search path. With `board` at the start of the opponent's
+        simulated turn (current_player == opp, dice set to one roll, both
+        unused), find the opponent's best PAIR-WISE reply (beam over first
+        moves, beam_k, full second-move batch per beam entry) and return
+        the raw net value of the resulting position FROM THE OPPONENT'S
+        FRAME. All applied moves are undone before returning.
 
-        NOTE: earlier version used select_move_pair_fast's two-stage greedy
-        (commit to the single best first move, then pick the best second
-        move given it) -- cheap, but that scheme is explicitly documented as
-        NOT for interactive play: it can trap on a first move whose own
-        score is highest but whose forced follow-up is poor, while a
-        slightly lower-scoring first move opens a much better pair. Using it
-        to model the opponent inside deep search made the opponent
-        systematically too weak (measured: a 20-game match at k_me=8 lost
-        ~25% to the plain shallow agent using the SAME weights, which should
-        be near-impossible if the opponent model were accurate). beam_k=3
-        keeps most of the two-stage version's speed (one full batch over all
-        first moves, then only 3 second-move batches, not one per first
-        move) while fixing the systematic-underestimate failure mode.
-
-        `stand_pat_v` is the (dice-independent) raw value of the unchanged
-        position from the opponent's frame -- the encoding reads only the
-        dice USED flags (both False here), never the numbers, so it is
-        identical for all 21 rolls and the caller computes it once."""
+        Semantics (mirrored exactly by _opp_reply_values_batched):
+        - Terminal WINS for the mover short-circuit by depth: any winning
+          first move makes the value the max such win; else any winning
+          second move (across all expanded beam entries) does. Max, not
+          first-found, so the result is enumeration-order-independent.
+        - Otherwise: max over stand-pat (if passing is legal or no moves),
+          stop-after-first (where legal), and second-move values.
+        - A legal draw call floors the non-win result at exactly 0.
+        - Stand-pat is evaluated PER ROLL with the roll's dice numbers set:
+          the encoding includes the dice numbers (global feats [0]/[1]),
+          so an unused 6 and an unused 1 are different positions to the
+          net. (An earlier version computed stand-pat once for all 21
+          rolls on the wrong assumption that only the used-flags are
+          encoded.)"""
         base_len = len(board.moves)
         moves = board.get_valid_moves()
         draw_legal = (1, 1, 1) in moves
@@ -932,29 +932,34 @@ class GNNAgent:
         best_v = None
         if pass_legal or not cand:
             # doing nothing is an option (or forced): value of standing pat
-            best_v = stand_pat_v if stand_pat_v is not None \
-                else self._raw_value(board, opp)
+            best_v = self._raw_value(board, opp)
         if cand:
-            # stage 1: batch all first moves
+            # stage 1: apply every first move once; collect terminal wins
+            # and encodings for the rest
+            win1 = None
             encs, keys = [], []
             for m in cand:
                 board.apply_move(m, switch_turn=False)
                 w, s = board.check_game_over()
                 if w == opp:
-                    undo_to(base_len)
-                    return float(s) / NUM_PIECES
-                encs.append(self.encoder.encode(board, opp))
-                keys.append(m)
+                    v = float(s) / NUM_PIECES
+                    win1 = v if win1 is None else max(win1, v)
+                else:
+                    encs.append(self.encoder.encode(board, opp))
+                    keys.append(m)
                 undo_to(base_len)
+            if win1 is not None:
+                return win1
             with torch.no_grad():
                 v1 = self.model(encs).view(-1)
             topk = torch.topk(v1, min(beam_k, len(v1))).indices.tolist()
 
+            win2 = None
             for b1 in topk:
                 v_after_first = float(v1[b1].item())
                 board.apply_move(keys[b1], switch_turn=False)
                 if all(d.used for d in board.dice):
-                    # single-die-ish turns: the pair IS the first move
+                    # complete turns (block-saves consume both dice)
                     if best_v is None or v_after_first > best_v:
                         best_v = v_after_first
                     undo_to(base_len)
@@ -977,19 +982,250 @@ class GNNAgent:
                         board.apply_move(m2, switch_turn=False)
                         w, s = board.check_game_over()
                         if w == opp:
-                            undo_to(base_len)
-                            return float(s) / NUM_PIECES
-                        encs2.append(self.encoder.encode(board, opp))
+                            v = float(s) / NUM_PIECES
+                            win2 = v if win2 is None else max(win2, v)
+                        else:
+                            encs2.append(self.encoder.encode(board, opp))
                         undo_to(mid_len)
-                    with torch.no_grad():
-                        v2 = self.model(encs2).view(-1)
-                    v_pair = float(v2.max().item())
-                    if best_v is None or v_pair > best_v:
-                        best_v = v_pair
+                    if encs2:
+                        with torch.no_grad():
+                            v2 = self.model(encs2).view(-1)
+                        v_pair = float(v2.max().item())
+                        if best_v is None or v_pair > best_v:
+                            best_v = v_pair
                 undo_to(base_len)
+            if win2 is not None:
+                return win2
         if draw_legal and best_v < 0.0:
             best_v = 0.0    # opponent prefers the exact-0 draw
         return best_v
+
+    def _position_key(self, board):
+        """Cheap transposition key: sorted piece placements. Two board
+        states with equal keys encode identically here (stages/blot/
+        distance features are all functions of placement, and encode
+        computes them fresh) -- dice are NOT in the key; callers add the
+        dice context themselves."""
+        ws, bs = board.white_saved, board.black_saved
+        wu, bu = board.white_unentered, board.black_unentered
+        parts = []
+        for p in board.pieces:
+            if p.tile is not None:
+                loc = (p.tile.ring, p.tile.pos)
+            elif p.rack is ws or p.rack is bs:
+                loc = 's'
+            elif p.rack is wu or p.rack is bu:
+                loc = 'u'
+            else:
+                loc = 'h'
+            parts.append((p.player, p.number, loc))
+        parts.sort()
+        return tuple(parts)
+
+    def _dice_variant(self, enc, d1, d2, u1, u2):
+        """Re-dice an encoding without re-encoding: the ONLY dice-dependent
+        features are global feats [0]=die1/6, [1]=die2/6, [2]=die1_used,
+        [3]=die2_used, so a variant shares every expensive tensor
+        (tile/piece features, edges) by reference and clones only the
+        11-float global vector."""
+        g = enc['global_feats'].clone()
+        g[0] = d1 / 6.0
+        g[1] = d2 / 6.0
+        g[2] = u1
+        g[3] = u2
+        out = dict(enc)
+        out['global_feats'] = g
+        return out
+
+    def _opp_reply_values_batched(self, board, opp, beam_k=3):
+        """All 21 rolls' opponent-reply values in one call -- semantically
+        identical to calling _opp_greedy_reply_raw once per roll (the
+        equivalence test enforces this), restructured around TWO batched
+        forward passes instead of ~84 small ones:
+
+        Phase A -- first moves are enumerated once PER DIE VALUE (a single
+        move's legality and resulting position depend only on its own die,
+        never the other's number) and base-encoded once; each roll's
+        candidate set is then assembled as per_die[d1] u per_die[d2] (u
+        block-saves and stand-pat, both roll-independent), with the dice
+        scalars patched into a cloned global vector per roll
+        (_dice_variant). One forward pass covers every (roll, first-move)
+        variant, all 21 stand-pat variants, and all block-save variants:
+        ~6x less enumeration/encoding than per-roll, and 1 dispatch.
+
+        Phase B -- for each roll not already decided by a first-move win:
+        take the top beam_k first moves by Phase A value, enumerate their
+        second moves with the real engine (this part is genuinely
+        per-roll: sum-move filtering depends on both dice), dedup
+        resulting positions through a transposition cache keyed by
+        (_position_key, roll) -- transposed (m1,m2)/(m2,m1) pairs collapse
+        here -- and run ONE forward pass over the novel leaves.
+
+        Caller must have the opponent's turn entered (current_player ==
+        opp). Dice are left dirty; _restore_turn_state puts them back."""
+        base_len = len(board.moves)
+        dice = board.dice
+
+        def undo_to(n):
+            while len(board.moves) > n:
+                board.undo_last_move()
+
+        # ---- roll-independent facts + per-die enumeration ----
+        # get_valid_moves adds (1,1,1) iff both dice unused and
+        # draw_callable, and (0,0,0)/block-saves on conditions that don't
+        # read dice numbers -- all roll-independent at turn start.
+        draw_legal = bool(board.draw_callable)
+        per_die = {}
+        pass_legal = False
+        block_saves = []
+        for d in range(1, 7):
+            dice[0].number = d; dice[0].used = False
+            dice[1].number = d; dice[1].used = False
+            mv = board.get_valid_moves()
+            pass_legal = (0, 0, 0) in mv
+            if not block_saves:
+                block_saves = [m for m in mv
+                               if isinstance(m, tuple) and len(m) == 3
+                               and m != (0, 0, 0) and m != (1, 1, 1)
+                               and m[1] == 0 and m[2] == 0]
+            per_die[d] = [m for m in mv
+                          if isinstance(m, tuple) and len(m) == 3
+                          and m not in ((0, 0, 0), (1, 1, 1))
+                          and m[2] == d]
+
+        # ---- Phase A base encodes ----
+        dice[0].used = False; dice[1].used = False
+        sp_enc = self.encoder.encode(board, opp)          # stand-pat base
+        fm_enc, fm_win = {}, {}
+        for d in range(1, 7):
+            dice[0].number = d; dice[0].used = False
+            dice[1].number = d; dice[1].used = False
+            for m in per_die[d]:
+                board.apply_move(m, switch_turn=False)
+                w, s = board.check_game_over()
+                if w == opp:
+                    fm_win[(d, m)] = float(s) / NUM_PIECES
+                else:
+                    fm_enc[(d, m)] = self.encoder.encode(board, opp)
+                undo_to(base_len)
+        bs_enc, bs_win = {}, {}
+        for m in block_saves:
+            board.apply_move(m, switch_turn=False)        # marks both dice
+            w, s = board.check_game_over()
+            if w == opp:
+                bs_win[m] = float(s) / NUM_PIECES
+            else:
+                bs_enc[m] = self.encoder.encode(board, opp)
+            undo_to(base_len)
+
+        # ---- Phase A variant assembly + single forward ----
+        A_encs = []
+        roll_entries = [[] for _ in self._DICE_ROLLS_21]  # (A-index|None, kind, d, m)
+        roll_win1 = [None] * len(self._DICE_ROLLS_21)
+        sp_idx = [None] * len(self._DICE_ROLLS_21)
+        for ri, (d1, d2, _w) in enumerate(self._DICE_ROLLS_21):
+            sp_idx[ri] = len(A_encs)
+            A_encs.append(self._dice_variant(sp_enc, d1, d2, 0.0, 0.0))
+            slots = [(d1, 1.0, 0.0)] if d1 == d2 else \
+                    [(d1, 1.0, 0.0), (d2, 0.0, 1.0)]
+            for d, u1, u2 in slots:
+                for m in per_die[d]:
+                    if (d, m) in fm_win:
+                        v = fm_win[(d, m)]
+                        roll_win1[ri] = v if roll_win1[ri] is None \
+                            else max(roll_win1[ri], v)
+                    else:
+                        roll_entries[ri].append((len(A_encs), 'fm', d, m))
+                        A_encs.append(self._dice_variant(
+                            fm_enc[(d, m)], d1, d2, u1, u2))
+            for m in block_saves:
+                if m in bs_win:
+                    v = bs_win[m]
+                    roll_win1[ri] = v if roll_win1[ri] is None \
+                        else max(roll_win1[ri], v)
+                else:
+                    roll_entries[ri].append((len(A_encs), 'bs', 0, m))
+                    A_encs.append(self._dice_variant(
+                        bs_enc[m], d1, d2, 1.0, 1.0))
+        with torch.no_grad():
+            A_vals = self.model(A_encs).view(-1)
+
+        # ---- Phase B: expand beams, dedup leaves, single forward ----
+        tcache = {}
+        B_encs = []
+        roll_best = [None] * len(self._DICE_ROLLS_21)     # running float max
+        roll_pending = [[] for _ in self._DICE_ROLLS_21]  # B indices
+        roll_win2 = [None] * len(self._DICE_ROLLS_21)
+        for ri, (d1, d2, _w) in enumerate(self._DICE_ROLLS_21):
+            if roll_win1[ri] is not None:
+                continue                                   # decided at depth 1
+            entries = roll_entries[ri]
+            if pass_legal or not entries:
+                roll_best[ri] = float(A_vals[sp_idx[ri]].item())
+            if not entries:
+                continue
+            ev = [float(A_vals[i].item()) for i, _k, _d, _m in entries]
+            order = sorted(range(len(entries)), key=lambda i: ev[i],
+                           reverse=True)[:min(beam_k, len(entries))]
+            for oi in order:
+                idx, kind, d, m = entries[oi]
+                v_first = ev[oi]
+                if kind == 'bs':
+                    # complete turn: the block-save IS the pair
+                    if roll_best[ri] is None or v_first > roll_best[ri]:
+                        roll_best[ri] = v_first
+                    continue
+                dice[0].number = d1; dice[0].used = False
+                dice[1].number = d2; dice[1].used = False
+                board.apply_move(m, switch_turn=False)
+                after_first = board.get_valid_moves()
+                second = [x for x in after_first
+                          if x not in ((0, 0, 0), (1, 1, 1))
+                          and isinstance(x, tuple) and len(x) == 3]
+                stop_allowed = (0, 0, 0) in after_first
+                if stop_allowed or not second:
+                    if roll_best[ri] is None or v_first > roll_best[ri]:
+                        roll_best[ri] = v_first
+                mid_len = len(board.moves)
+                for m2 in second:
+                    board.apply_move(m2, switch_turn=False)
+                    w, s = board.check_game_over()
+                    if w == opp:
+                        v = float(s) / NUM_PIECES
+                        roll_win2[ri] = v if roll_win2[ri] is None \
+                            else max(roll_win2[ri], v)
+                    else:
+                        key = (self._position_key(board), d1, d2)
+                        slot = tcache.get(key)
+                        if slot is None:
+                            slot = len(B_encs)
+                            tcache[key] = slot
+                            B_encs.append(self.encoder.encode(board, opp))
+                        roll_pending[ri].append(slot)
+                    undo_to(mid_len)
+                undo_to(base_len)
+        if B_encs:
+            with torch.no_grad():
+                B_vals = self.model(B_encs).view(-1)
+
+        # ---- assemble the 21 values ----
+        out = []
+        for ri in range(len(self._DICE_ROLLS_21)):
+            if roll_win1[ri] is not None:
+                out.append(roll_win1[ri])
+                continue
+            if roll_win2[ri] is not None:
+                out.append(roll_win2[ri])
+                continue
+            v = roll_best[ri]
+            for slot in roll_pending[ri]:
+                bv = float(B_vals[slot].item())
+                if v is None or bv > v:
+                    v = bv
+            if draw_legal and v < 0.0:
+                v = 0.0
+            out.append(v)
+        return out
 
     def select_move_pair_deep(self, moves, board, player, k_me=8,
                               return_scores=False):
@@ -1040,19 +1276,9 @@ class GNNAgent:
                     if m != (0, 0, 0):
                         board.apply_move(m, switch_turn=False)
                 saved = self._enter_opponent_turn_deterministic(board)
-                # Stand-pat leaf is dice-independent (encoding reads only the
-                # used flags, both False at turn start): compute once, not x21.
-                board.dice[0].used = False
-                board.dice[1].used = False
-                stand_pat_v = self._raw_value(board, opp)
-                exp_v = 0.0
-                for d1, d2, w in self._DICE_ROLLS_21:
-                    board.dice[0].number = d1
-                    board.dice[0].used = False
-                    board.dice[1].number = d2
-                    board.dice[1].used = False
-                    exp_v += w * (-self._opp_greedy_reply_raw(board, opp,
-                                                              stand_pat_v))
+                vals = self._opp_reply_values_batched(board, opp)
+                exp_v = sum(w * (-v) for (_d1, _d2, w), v
+                            in zip(self._DICE_ROLLS_21, vals))
                 self._restore_turn_state(board, saved)
                 while len(board.moves) > root_len:
                     board.undo_last_move()

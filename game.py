@@ -530,7 +530,17 @@ class Board:
         elif roll == self.dice[1].number and self.dice[1].used:
             self.dice[1].used = False
         self.firstMove = last_move['firstMove_before']
-        self.current_player = piece.player
+        if destination == 0:
+            # BUGFIX: block-save records carry the SAVED pieces' ids, which
+            # belong to the mover's OPPONENT -- restoring current_player to
+            # piece.player handed the turn to the wrong side after any
+            # probed block-save was undone, so every search that enumerated
+            # a block-save candidate then generated the wrong player's
+            # moves as follow-ups (and could select an illegal pair).
+            # Sibling of the block-save dice bug fixed above.
+            self.current_player = 'white' if piece.player == 'black' else 'black'
+        else:
+            self.current_player = piece.player
         if destination == 'save' or origin_rack is not None:
             self.game_stages[self.current_player] = self.get_game_stage(self.current_player)
 
