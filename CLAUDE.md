@@ -356,6 +356,85 @@ expected to self-resolve via the TD run.
 
 ## Current state
 
+- **SESSION UPDATE (2026-07-20).** Exploration/forking, a value-function
+  diagnostic, the deep-search verdict, and the auxiliary-head build.
+  - **On-goal value gap — new diagnostic, reframes the offgoaling edge.**
+    Owner playtest of the iter14 champion (won 8/10, but saw two endgame
+    blunders in one game: offgoaling a numbered piece, and capturing instead
+    of goaling). Reframed correctly: offgoaling is rare as a *move* but the
+    *position* contrast (numbered piece ON its save tile vs one tile OFF) is
+    common in training and should carry a LARGE value gap, so a persistent
+    blunder means the gap is too small — a TD-fixable representation deficit,
+    NOT "unreachable by TD" (an earlier mis-statement). Counterfactual probe
+    (`value_goalgap.py`, scratchpad/fixclone; 5152 on-goal pieces, relocate
+    ONE piece off its goal with distance caches cleared, score both boards):
+    median V(on)−V(off) in margin units — iter5 0.586 / iter1 0.664 / iter4
+    0.868 / iter10 0.821 / **iter14 0.571 (lineage low)**. neg% (values off ≥
+    on) 0.2–1.5% everywhere → sign always right, so it's a MAGNITUDE
+    regression. iter14's confidence-recalibration (see Interpretability probe)
+    was **indiscriminate** — it flattened this gap along with everything else.
+    So iter14 is stronger head-to-head (60.2% vs iter10) yet WORSE on the
+    dimension the blunders live on. Argmax compare corroborates weakly (iter14
+    declines an available save 31.7% vs iter10 28.3%; offgoal too rare to
+    register, 0/82 endgame positions both) — which is *why* the counterfactual
+    value probe, not win-rate, is the right instrument (aggregate metrics
+    can't see rare tactical fixes). See memory `ongoal-value-gap`.
+  - **Random-fork reverts LANDED** (`td_selfplay_loop.py` + `explore_run.py`,
+    commit `1844e15`). Motivated by the above: on a revert, roll the live
+    model back to a per-iteration-deterministic RANDOM choice among fork
+    points `{iter14 (=gate), iter10}` instead of always the champion. Re-
+    injects iter10's sharper on-goal calibration + policy diversity into
+    generation; the promotion GATE stays iter14 (a promotion must still beat
+    it). Lightweight league lever (roadmap item 7). Dormant until the explore
+    run next restarts (activates iter10+); gated so non-fork runs are
+    unaffected.
+  - **Exploration retry1 (ε=0.15) — no promotion through iter8, still
+    running.** After ε=0.20 degraded (41.3%→34.4%), retry at ε=0.15 (anneal to
+    0 by iter12) oscillates: iters 1-8 = 39.1/45.9/51.3(kept)/41.8/52.0(kept)/
+    41.0/44.6/48.4, none ≥55%. iter9 in progress and "looking great" per
+    owner. **Standing decision (owner):** if iter9 ≥50% (kept or promoted)
+    keep THIS run going; only <50% switches to the forked (random-fork) run.
+  - **Deep-vs-shallow match VERDICT: null.** The extended CRN match (iter14
+    deep vs shallow, common iter10 reference; `match_overnight.jsonl`) at
+    500/600 games: deep 57.8% vs shallow 55.8% vs REF (both beat iter10, as
+    expected), but the direct paired sign-test is deep+55/shallow+51,
+    **p=0.77** — a coin flip. The earlier 160-game lean (deep+20/shallow+12,
+    p=0.215) washed out with more data. So deep search is NOT wired into
+    `app.py` on strength grounds. Caveat: aggregate win-rate can't see rare
+    tactical fixes (same reason the value probe beat win-rate above), so deep
+    — or the margin-triggered adaptive-k variant — could still be worth
+    deploying as a targeted near-tie safety net for the specific offgoal/pass-
+    over-save blunders even at ~null aggregate ELO. Speed is NOT fully wrung
+    out: batched chance node landed (`d4016a0`, no CPU speedup but enables the
+    trigger); transposition cache, Star1 pruning, roll ordering, and the
+    margin-trigger itself remain available. The aux heads (below) attack the
+    same blunders via representation at ZERO play-time cost — likely the
+    better lever.
+  - **Auxiliary per-piece heads — built + smoke-passed, isolated on branch
+    `aux-head`** (worktree `../boardgame_auxhead`, commits `6246ec7`/
+    `31337df`); `td-lambda` untouched. Two per-piece predictions off each GNN
+    node embedding, `[B,P,2]` logits: **save** = P(piece saved by game end),
+    all pieces; **blot-hit** = P(captured before it leaves its current tile),
+    current blots only (label = lands on the home tile — the only route there
+    — before first departure; a capture from a NEW tile never counts).
+    Loss = value_MSE + `AUX_LOSS_WEIGHT`(0.2)·(save_BCE + hit_BCE), masked;
+    GATED so `aux_weight=0` is byte-identical to prior behavior
+    (`forward(return_aux=False)` proven allclose). Design settled with owner:
+    per-piece NODE attachment (not pooled); save head covers ALL piece types
+    incl. unnumbered (they're saveable; relative importance is the VALUE
+    head's job, not the save head's — do not restrict by number). Backward-
+    compat: pre-aux champions load `strict=False`; `aux_run.py` converts the
+    champion once so all downstream loads stay strict-clean. Runs as its own
+    clean experiment (greedy generation) via `aux_run.py` when CPU is free —
+    NOT during the live run. **OPEN save-head design decision:** smoke shows
+    save-by-end labels are ~90% positive even after masking already-SAVED
+    pieces, because in this game nearly all pieces get saved eventually — so
+    the target is imbalanced AND may not discriminate on-goal from off-goal
+    (both eventually saved). Leaning toward a NEAR-TERM save horizon (saved
+    within k≈2-3 turns) for balance + a sharp on-goal contrast; blot-hit head
+    is fine (0.274). See memory `aux-heads`. Metrics to check after a run:
+    rerun `value_goalgap.py` (on-goal gap) and d(value)/d(is_blot).
+
 - **SESSION UPDATE (night of 2026-07-18).** Not yet committed by owner.
   - **Block-save undo bug fixed and LANDED** (commit `912b222`, merged to
     `td-lambda` as `e24a960`, pushed). `undo_last_move` restored
