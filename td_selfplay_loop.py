@@ -112,7 +112,8 @@ def run_td_selfplay(model,
                     replay_iters=3,
                     save_prefix='td',
                     seed_base=10_000,
-                    explore_eps_fn=None):
+                    explore_eps_fn=None,
+                    revert_fork_sds=None):
     """Iterative TD(lambda) self-play. `model` is trained in place and is the
     current/live network; `champion_sd` is the promotion baseline (start it at
     iter5). `start_iter` lets a resumed run continue checkpoint numbering
@@ -126,7 +127,17 @@ def run_td_selfplay(model,
     improvement over the champion is kept for the next iteration to build on,
     while a below-coin-flip result is discarded rather than compounded (see
     the 'reverted' branch below for why: this is what stops a bad iteration
-    from cascading). Returns (model, champion_sd, history)."""
+    from cascading).
+
+    `revert_fork_sds` (optional dict {label: cpu_state_dict}) turns each revert
+    into a RANDOM restart point instead of always the champion: on a revert the
+    live model is rolled back to one of these state_dicts, chosen per-iteration
+    (seeded by `it`, so a resume reproduces the same choice). This is the
+    lightweight league / fork-diversity lever -- e.g. {'iter14': champion,
+    'iter10': older_champ} re-injects an older champion's policy (and its
+    sharper on-goal value calibration) into generation without touching the
+    promotion gate, which stays `champion_sd`. None -> legacy (always revert to
+    champion). Returns (model, champion_sd, history)."""
     assert next(model.parameters()).device.type == network.DEVICE.type, \
         f"model must be on {network.DEVICE} (got {next(model.parameters()).device})"
 
@@ -211,6 +222,7 @@ def run_td_selfplay(model,
         # 5. Promote on gate; always checkpoint.
         iter_path = f'{save_prefix}_iter{it}.pt'
         torch.save(_cpu_state_dict(model), iter_path)
+        fork_label = None            # set only when a random-fork revert fires
         promoted = wr >= promote_winrate
         if promoted:
             action = 'promoted'
@@ -242,14 +254,25 @@ def run_td_selfplay(model,
             # inconsistent applied to the reverted ones (same accepted
             # cold-restart cost as a resume; see run_full_td.py's docstring).
             action = 'reverted'
-            model.load_state_dict(champion_sd)
+            if revert_fork_sds:
+                # Random fork: restart this update from one of the fork points
+                # (per-iteration deterministic so a resume repeats the choice).
+                import random as _random
+                labels = sorted(revert_fork_sds.keys())
+                fork_label = _random.Random(it).choice(labels)
+                model.load_state_dict(revert_fork_sds[fork_label])
+                fork_note = f" reverted to fork '{fork_label}'"
+            else:
+                model.load_state_dict(champion_sd)
+                fork_note = " reverted live model to champion weights."
             optimizer = torch.optim.Adam(model.parameters(), lr=lr)
             print(f"  Not promoted (win rate {wr:.1%} <= {revert_below_winrate:.0%}). "
-                  f"Champion unchanged; reverted live model to champion weights.")
+                  f"Champion unchanged;{fork_note}")
 
         dt = time.time() - t0
         history.append({'iter': it, 'val_loss': best_val, 'winrate': wr,
                         'promoted': promoted, 'action': action, 'seconds': dt,
+                        'fork': fork_label,
                         'positions': len(records),
                         'train_positions': len(train_records)})
         print(f"  iter {it} done in {dt:.0f}s | val {best_val:.5f} | "

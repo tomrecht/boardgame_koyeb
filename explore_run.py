@@ -24,7 +24,8 @@ from td_selfplay_loop import run_td_selfplay
 from agent import get_weights
 
 SAVE_PREFIX = 'explore'
-WARM_START = 'td_champion_July19_iter14.pt'   # fork point: the plateau champion
+WARM_START = 'td_champion_July19_iter14.pt'   # fork point / gate: the plateau champion
+FORK_ALT = 'td_champion_July18_iter10.pt'     # older champ, sharper on-goal calibration
 TOTAL_ITERATIONS = 14
 SEED_BASE = 5_000_000                          # disjoint from the 'td' run (10_000)
 SMOKE = os.environ.get('EXPLORE_SMOKE') == '1'
@@ -78,6 +79,18 @@ def main():
     if remaining <= 0:
         print(f"Already completed {total} iterations."); return
 
+    # Random-fork revert pool: on a non-promoted iteration the live model is
+    # rolled back to a RANDOM choice of {iter14 (=gate), iter10}, re-injecting
+    # iter10's policy + its sharper on-goal value calibration (measured: on/off-
+    # goal value gap 0.82 @iter10 vs 0.57 @iter14) into generation. The gate
+    # (champion_sd) stays iter14, so a promotion must still beat iter14.
+    revert_fork_sds = {
+        'iter14': {k: v.cpu() for k, v in champion_sd.items()},
+        'iter10': torch.load(FORK_ALT, map_location='cpu'),
+    }
+    print(f"Random-fork reverts across: {sorted(revert_fork_sds)} "
+          f"(gate stays iter14)")
+
     kw = dict(games_per_iter=300, epochs_per_iter=8, eval_games=200)
     if SMOKE:
         kw = dict(games_per_iter=6, epochs_per_iter=2, eval_games=6)
@@ -90,6 +103,7 @@ def main():
         promote_winrate=0.55, replay_iters=3,
         save_prefix=SAVE_PREFIX, seed_base=SEED_BASE,
         explore_eps_fn=eps_schedule,
+        revert_fork_sds=revert_fork_sds,
         **kw,
     )
     print(f"\nExplore run time: {time.time()-t0:.0f}s")
