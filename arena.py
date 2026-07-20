@@ -14,13 +14,19 @@ quantity the value net predicts as raw*12). We then rate the field two ways:
 Also prints the raw win% and avg-margin matrices (who beats whom, by how much).
 
 Play is plain 2-ply shallow (the deployed policy). Parallel over a CPU pool.
-Resumable: appends to arena.jsonl, skips recorded games.
+
+Runs ROUNDS indefinitely (no count fixed in advance): each round is one paired,
+color-swapped game per champion pair. After every round it prints and saves the
+current standings (margin-Elo, win-Elo, W-L-D, avg-margin). Ctrl-C anytime;
+state lives in arena.jsonl so rerunning resumes seamlessly (finished rounds are
+skipped instantly). Add a champion (e.g. once aux promotes) and rerun -- only
+the new matchups get played.
 
 Usage:
-  python -u arena.py                 # run the round-robin (writes arena.jsonl)
-  python arena.py analyze            # ratings + matrices from arena.jsonl
-Env: N_SEEDS (pairs/​champ-pair, x2 colors; default 40), N_WORKERS (default 8),
-     CHAMPS_EXTRA="tag=path,tag=path" to add champions (e.g. aux champions).
+  python -u arena.py                 # play rounds forever; Ctrl-C to stop
+  python arena.py analyze            # full ratings + matrices from arena.jsonl
+Env: N_WORKERS (default 8), CHAMPS_EXTRA="tag=path,..." to add champions,
+     CHAMPS="tag,tag" to restrict the roster to a subset.
 """
 import os, sys, json, time, random, itertools
 import multiprocessing as mp
@@ -36,10 +42,15 @@ CHAMPIONS = {
 for kv in filter(None, os.environ.get('CHAMPS_EXTRA', '').split(',')):
     tag, path = kv.split('=', 1)
     CHAMPIONS[tag.strip()] = path.strip()
+# CHAMPS="iter10,iter14" restricts the roster to a subset (comma-separated tags).
+_only = [t.strip() for t in os.environ.get('CHAMPS', '').split(',') if t.strip()]
+if _only:
+    CHAMPIONS = {t: CHAMPIONS[t] for t in _only}
 
 N_SEEDS = int(os.environ.get('N_SEEDS', '40'))
 N_WORKERS = int(os.environ.get('N_WORKERS', '8'))
 RESULTS = os.environ.get('RESULTS', f'{REPO}/arena.jsonl')
+STANDINGS = os.environ.get('STANDINGS', f'{REPO}/arena_standings.txt')
 SEED_BASE = 4_400_000
 MAX_TURNS, STUCK_LIMIT = 200, 60
 
@@ -114,39 +125,64 @@ def arena_worker(task):
             'winner': winner, 'a_margin': a_margin}
 
 
-# -------------------- run --------------------
+# -------------------- run (unbounded round loop) --------------------
+def load_rows():
+    if not os.path.exists(RESULTS):
+        return []
+    with open(RESULTS) as f:
+        return [json.loads(l) for l in f if l.strip()]
+
+
 def run():
-    tags = list(CHAMPIONS)
-    done = set()
-    if os.path.exists(RESULTS):
-        with open(RESULTS) as f:
-            for line in f:
-                r = json.loads(line)
-                done.add((r['a'], r['b'], r['seed'], r['a_white']))
-    tasks = []
-    for a, b in itertools.combinations(tags, 2):
-        for k in range(N_SEEDS):
-            seed = SEED_BASE + k
-            for a_white in (True, False):
-                key = (a, b, seed, a_white)
-                if key not in done:
-                    tasks.append((a, CHAMPIONS[a], b, CHAMPIONS[b], seed, a_white))
-    print(f"{len(tags)} champions, {len(list(itertools.combinations(tags,2)))} pairs, "
-          f"{len(tasks)} games to play ({len(done)} already done)", flush=True)
-    if not tasks:
-        print("nothing to do."); return
-    t0 = time.time()
+    """Play round-robin ROUNDS forever until Ctrl-C. Each round = one paired,
+    color-swapped game per champion pair (seed = SEED_BASE + round). After each
+    round, recompute + print + save current standings. State lives entirely in
+    arena.jsonl, so aborting and rerunning resumes seamlessly (finished rounds
+    are skipped instantly). No round count is fixed in advance."""
+    pairs = list(itertools.combinations(list(CHAMPIONS), 2))
+    rows = load_rows()
+    done = {(r['a'], r['b'], r['seed'], r['a_white']) for r in rows}
+    max_round = max((r['seed'] - SEED_BASE for r in rows), default=-1)
+    complete_rounds = sum(
+        1 for k in range(max_round + 1)
+        if pairs and all((a, b, SEED_BASE + k, aw) in done
+                         for a, b in pairs for aw in (True, False)))
+    print(f"{len(CHAMPIONS)} champions, {len(pairs)} pairs "
+          f"({2*len(pairs)} games/round). Resuming: {len(rows)} games, "
+          f"{complete_rounds} full rounds done. Ctrl-C to stop.", flush=True)
+    if rows:
+        print(standings_str(rows), flush=True)
+
     ctx = mp.get_context('spawn')
-    n_done = 0
-    with ctx.Pool(N_WORKERS, initializer=_worker_init) as pool, open(RESULTS, 'a') as f:
-        for r in pool.imap_unordered(arena_worker, tasks, chunksize=1):
-            f.write(json.dumps(r) + '\n'); f.flush()
-            n_done += 1
-            if n_done % max(1, len(tasks) // 20) == 0:
-                el = time.time() - t0
-                print(f"  {n_done}/{len(tasks)} games ({el:.0f}s, "
-                      f"{el/n_done:.1f}s/game)", flush=True)
-    print(f"RUN COMPLETE: {n_done} games in {time.time()-t0:.0f}s", flush=True)
+    round_num = 0
+    try:
+        with ctx.Pool(N_WORKERS, initializer=_worker_init) as pool, \
+                open(RESULTS, 'a') as f:
+            while True:                       # unbounded; Ctrl-C to abort
+                seed = SEED_BASE + round_num
+                tasks = [(a, CHAMPIONS[a], b, CHAMPIONS[b], seed, aw)
+                         for a, b in pairs for aw in (True, False)
+                         if (a, b, seed, aw) not in done]
+                if tasks:
+                    t0 = time.time()
+                    for r in pool.imap_unordered(arena_worker, tasks, chunksize=1):
+                        f.write(json.dumps(r) + '\n'); f.flush()
+                        rows.append(r)
+                        done.add((r['a'], r['b'], r['seed'], r['a_white']))
+                    print(f"\n=== after round {round_num} "
+                          f"({len(rows)} games total, {time.time()-t0:.0f}s) ===",
+                          flush=True)
+                    print(standings_str(rows), flush=True)
+                    with open(STANDINGS, 'w') as sf:
+                        sf.write(f"after round {round_num} ({len(rows)} games)\n")
+                        sf.write(standings_str(rows) + '\n')
+                round_num += 1
+    except KeyboardInterrupt:
+        print(f"\n[aborted at round {round_num}] {len(rows)} games saved to "
+              f"{os.path.basename(RESULTS)}; rerun to resume.\n"
+              "Final standings (also in " + os.path.basename(STANDINGS) + "):",
+              flush=True)
+        print(standings_str(rows), flush=True)
 
 
 # -------------------- ratings --------------------
@@ -164,14 +200,16 @@ def _elo(scored, epochs=400, K=8):
     return r
 
 
-def analyze():
-    rows = [json.loads(l) for l in open(RESULTS)]
+def compute_ratings(rows):
+    """Aggregate rows -> (win_elo, marg_elo, wins, games, marg, idx). Only
+    champions currently in CHAMPIONS are rated; unknown tags in the jsonl are
+    ignored (safe when champions are added between runs)."""
     tags = list(CHAMPIONS)
     idx = {t: i for i, t in enumerate(tags)}
     n = len(tags)
-    wins = [[0] * n for _ in range(n)]      # wins[a][b] = a's wins vs b
+    wins = [[0] * n for _ in range(n)]
     games = [[0] * n for _ in range(n)]
-    marg = [[0] * n for _ in range(n)]      # sum of a's signed margin vs b
+    marg = [[0] * n for _ in range(n)]
     win_scored, marg_scored = [], []
     MAXM = 12.0
     for r in rows:
@@ -185,17 +223,35 @@ def analyze():
             aw = 1 if m > 0 else 0
             wins[ia][ib] += aw; wins[ib][ia] += (1 - aw)
             win_scored.append((a, b, float(aw)))
-        # margin score in [0,1] (draws -> 0.5); include draws for margin-Elo
-        s = min(1.0, max(0.0, 0.5 + m / (2 * MAXM)))
-        marg_scored.append((a, b, s))
-    win_elo = _elo(list(win_scored))
-    marg_elo = _elo(list(marg_scored))
+        marg_scored.append((a, b, min(1.0, max(0.0, 0.5 + m / (2 * MAXM)))))
+    return (_elo(list(win_scored)), _elo(list(marg_scored)),
+            wins, games, marg, idx)
 
-    order = sorted(tags, key=lambda t: marg_elo[t], reverse=True)
-    print(f"{len(rows)} games among {n} champions\n")
-    print(f"{'champ':8}{'margin-Elo':>12}{'win-Elo':>10}   (sorted by margin-Elo)")
+
+def standings_str(rows):
+    win_elo, marg_elo, wins, games, marg, idx = compute_ratings(rows)
+    order = sorted(CHAMPIONS, key=lambda t: marg_elo[t], reverse=True)
+    out = [f"{'champ':8}{'margin-Elo':>11}{'win-Elo':>9}{'  W-L-D':>9}"
+           f"{'  avg-marg':>10}   (by margin-Elo)"]
+    n = len(CHAMPIONS)
     for t in order:
-        print(f"{t:8}{marg_elo[t]:12.0f}{win_elo[t]:10.0f}")
+        i = idx[t]
+        g = sum(games[i])
+        w = sum(wins[i])                          # t's wins
+        losses = sum(wins[j][i] for j in range(n))  # opponents' wins over t
+        draws = g - w - losses
+        am = sum(marg[i]) / g if g else 0.0
+        out.append(f"{t:8}{marg_elo[t]:11.0f}{win_elo[t]:9.0f}"
+                   f"{f'{w}-{losses}-{draws}':>9}{am:+10.2f}")
+    return "\n".join(out)
+
+
+def analyze():
+    rows = load_rows()
+    win_elo, marg_elo, wins, games, marg, idx = compute_ratings(rows)
+    order = sorted(CHAMPIONS, key=lambda t: marg_elo[t], reverse=True)
+    print(f"{len(rows)} games among {len(CHAMPIONS)} champions\n")
+    print(standings_str(rows))
 
     print("\nWIN% matrix (row beats col):")
     print('       ' + ''.join(f'{t:>8}' for t in order))
