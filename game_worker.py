@@ -39,9 +39,26 @@ def worker_play(args):
     """
     Run one game and return (records, winner, score).
     args: (model_state_dict, heuristic_weights, seed, gnn_is_white,
-           use_heuristic_opp)
+           use_heuristic_opp[, explore_cfg])
+
+    explore_cfg: None = exact legacy greedy behavior (default; the 5-tuple
+    form is still accepted so every existing caller is untouched), or
+    {'eps': float} -- with probability eps a turn's move-pair is sampled
+    UNIFORMLY over the legal scored pairs (EXPLORATION_SPEC.md section 1).
+    Rules: the draw call is excluded from sampling (its value is exactly
+    known; randomly ending games teaches nothing), a guaranteed win is
+    never randomized, and exploration decisions use a DEDICATED RNG stream
+    derived from the game seed -- the global `random` dice stream is never
+    touched, so a game's dice are identical with exploration on or off.
+    Exploratory turns are tagged in the records ('explored': True) for
+    diagnostics and possible Watkins-style trace-cutting later.
     """
-    model_state_dict, heuristic_weights, seed, gnn_is_white, use_heuristic_opp = args
+    if len(args) == 6:
+        (model_state_dict, heuristic_weights, seed, gnn_is_white,
+         use_heuristic_opp, explore_cfg) = args
+    else:
+        model_state_dict, heuristic_weights, seed, gnn_is_white, use_heuristic_opp = args
+        explore_cfg = None
 
     # Force CPU-only — must be before any CUDA-touching import path
     os.environ["CUDA_VISIBLE_DEVICES"] = ""
@@ -113,8 +130,17 @@ def worker_play(args):
                 'raw_state':    pos['raw_state'],
                 'final_score':  final_score,
                 'ply_from_end': ply,
+                'explored':     pos.get('explored', False),
             })
         return recs
+
+    # Exploration RNG: separate stream, derived from (but not equal to) the
+    # game seed, so dice (global `random`, seeded below) are unaffected.
+    eps = 0.0
+    explore_rng = None
+    if explore_cfg and explore_cfg.get('eps', 0) > 0:
+        eps = float(explore_cfg['eps'])
+        explore_rng = random.Random((seed << 20) ^ 0xE5E5E5)
 
     random.seed(seed)
     board = Board()
@@ -156,11 +182,33 @@ def worker_play(args):
         raw_state = serialize_state(board)
         game_stage = board.game_stages.get(player, 'unknown')
         moves = board.get_valid_moves()
-        chosen = agents[player].select_move_pair(moves, board, player)
+        explored_turn = False
+        if (explore_rng is not None and explore_rng.random() < eps
+                and (not use_heuristic_opp or agents[player] is gnn_agent)):
+            # epsilon turn: uniform over legal scored pairs. return_scores
+            # costs the same forward pass as the argmax path (it always
+            # scores every pair anyway).
+            ranked = agents[player].select_move_pair(moves, board, player,
+                                                     return_scores=True)
+            if isinstance(ranked, tuple):            # defensive: bare pair
+                chosen = ranked
+            elif ranked[0][0] == float('inf'):       # guaranteed win: take it
+                chosen = ranked[0][1]
+            else:
+                draw_pair = ((1, 1, 1), (0, 0, 0))
+                pairs = [p for _s, p in ranked if p != draw_pair]
+                if pairs:
+                    chosen = explore_rng.choice(pairs)
+                    explored_turn = len(pairs) > 1   # a forced move isn't exploration
+                else:
+                    chosen = draw_pair
+        else:
+            chosen = agents[player].select_move_pair(moves, board, player)
 
         move_list = normalize_chosen(chosen)
         positions.append({'player': player, 'game_stage': game_stage,
-                          'move_index': turn, 'raw_state': raw_state})
+                          'move_index': turn, 'raw_state': raw_state,
+                          'explored': explored_turn})
         for move in move_list:
             if move != (0, 0, 0):
                 board.apply_move(move, switch_turn=False)
@@ -233,7 +281,8 @@ def generate_games_parallel(model, opp_state_dict_or_none,
                              heuristic_weights,
                              use_heuristic_opp=False,
                              n_workers=None,  # ignored if pool already running
-                             label=''):
+                             label='',
+                             explore_cfg=None):
     global _POOL
     if _POOL is None:
         init_pool(n_workers or 10)
@@ -242,7 +291,7 @@ def generate_games_parallel(model, opp_state_dict_or_none,
 
     args_list = [
         (current_sd, heuristic_weights, seed_offset + i,
-         i % 2 == 0, use_heuristic_opp)
+         i % 2 == 0, use_heuristic_opp, explore_cfg)
         for i in range(n_games)
     ]
 

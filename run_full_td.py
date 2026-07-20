@@ -23,7 +23,7 @@ from td_selfplay_loop import run_td_selfplay
 from agent import get_weights
 
 SAVE_PREFIX = 'td'
-TOTAL_ITERATIONS = 20
+TOTAL_ITERATIONS = 50
 WARM_START = 'best_iter5_m46.pt'
 
 

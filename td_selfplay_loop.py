@@ -111,7 +111,8 @@ def run_td_selfplay(model,
                     use_heuristic_opp=False,
                     replay_iters=3,
                     save_prefix='td',
-                    seed_base=10_000):
+                    seed_base=10_000,
+                    explore_eps_fn=None):
     """Iterative TD(lambda) self-play. `model` is trained in place and is the
     current/live network; `champion_sd` is the promotion baseline (start it at
     iter5). `start_iter` lets a resumed run continue checkpoint numbering
@@ -157,6 +158,13 @@ def run_td_selfplay(model,
         # Workers are CPU-only; ship a CPU state_dict. opp = self (None) unless
         # a heuristic opponent is explicitly requested.
         gen_sd_holder = _CpuSDModel(model)        # tiny adapter exposing .state_dict()
+        # Exploration (EXPLORATION_SPEC.md): generation-only; the eval call
+        # below never receives a cfg, so the promotion gate stays fully
+        # greedy. explore_eps_fn maps iteration -> epsilon (annealing lives
+        # in the caller); None or eps<=0 -> exact legacy greedy behavior.
+        eps_it = float(explore_eps_fn(it)) if explore_eps_fn else 0.0
+        if eps_it > 0:
+            print(f"  exploration: eps={eps_it:.3f} (generation only)")
         records = generate_games_parallel(
             gen_sd_holder, None,
             n_games=games_per_iter,
@@ -164,6 +172,7 @@ def run_td_selfplay(model,
             heuristic_weights=heuristic_weights,
             use_heuristic_opp=use_heuristic_opp,
             label=f'gen it{it}',
+            explore_cfg={'eps': eps_it} if eps_it > 0 else None,
         )
         print_data_stats(records, f'iter {it} generated')
 

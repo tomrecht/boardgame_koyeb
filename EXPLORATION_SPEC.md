@@ -154,3 +154,92 @@ stochastic rediscovery.
   the diagnostic instrumentation.
 - Board **automorphism** (goal-pair tile permutation) — only if §3 is built.
 - Sensible per-game-phase ε shape, if the flat ε turns out too blunt.
+
+---
+
+# REFRESH 2026-07-19 — exploration as the plateau response
+
+Two things changed since the design above was written; both simplify it.
+
+## What changed
+
+1. **The motivating visible gap (2&4 goal-pair monopoly) self-resolved.**
+   TD iterations perturbed the razor-thin value edge enough that the 2&4
+   obsession is no longer observed in play (see CLAUDE.md "Current benchmark"
+   UPDATE). Consequence: §2 (seeded starts) and §3 (symmetry augmentation)
+   have lost their motivating target and their required owner inputs (block
+   geometry, automorphism). Demote both to "targeted tools kept in reserve
+   if a *specific* named gap resurfaces." They are no longer the plan.
+
+2. **A plateau has appeared, which is the *invisible* face of the same
+   coverage problem.** iter14 (60.2%) has gone unbeaten for ~10 iterations
+   (15-24, oscillating 34-54.5%, no promotion). The momentum-instability and
+   data-staleness explanations were tested/considered and don't hold (see
+   CLAUDE.md); best fit is that greedy self-play has found a local box and TD
+   can only polish inside it — exactly the coverage collapse §1 predicts,
+   now with no symmetric twin to make it visible. So the plateau *is* the
+   signal to run exploration.
+
+## The plan is now just §1 (general ε-greedy), and it needs ZERO owner inputs
+
+§1 samples uniformly over legal move-pairs — no board geometry required.
+Everything geometry-dependent (§2/§3) is deferred. This is buildable and
+runnable immediately on a plateau call.
+
+- Config: ε ≈ 0.15-0.25 for the first ~5 iterations, annealed to 0 by
+  iter ~10-12; uniform over legal move-pairs; both self-play sides explore;
+  all game stages. Start with the *simple* version (no trace-cutting, accept
+  small pessimistic bias); add Watkins λ-trace-cutting only if the bias shows
+  (detectable as exploration-track TD targets drifting systematically below
+  the greedy control's).
+- Why ε-greedy and not temperature/softmax or Dirichlet: to *escape a
+  plateau* the useful strategy is by definition one the net currently
+  undervalues, so value-guided noise (softmax over the net's own values)
+  won't reach it; uniform-floor ε is value-agnostic and can. Root Dirichlet
+  noise is an MCTS-prior tool and we have no MCTS. (Argument unchanged from
+  the "Key trap" section above, now the deciding factor.)
+
+## The measurement problem is HARDER now — the fast diagnostic is gone
+
+The old fast falsifiable metric (goal-pair block frequency, with a known
+correct answer of "all three equal") died with the gap. Replacement cheap
+diagnostics, run on a single generation batch, greedy vs ε-greedy:
+
+- **Novel-state rate**: fraction of generated positions whose `_position_key`
+  never appeared in a same-size greedy baseline batch. Directly measures "are
+  we visiting new states." If ~0, ε is too low / not reaching new regions.
+- **Outcome-distribution spread**: log interpretable per-game features under
+  each policy — game length, margin distribution, max blot count, #blocks
+  formed, which goals get blocked. Broadening under ε = coverage expanding.
+- These replace the goal-pair smoke test as the "is exploration doing
+  anything at all" check *before* paying for a strength run.
+
+Strength verdict unchanged: fork from the iter14 champion, Track A =
+continue greedy (control — accounts for "iter14 might improve anyway"),
+Track B = ε-greedy exploration; K iterations each; then greedy-vs-greedy
+paired-seed eval (both eval greedy). Given eval noise (±3.5% at 200 games)
+near a plateau, budget enough K and eval games to detect a small gain.
+
+## Complementary lever surfaced by the interpretability probe
+
+The value head barely reads the `is_blot` input (d(value)/d(is_blot)≈0
+across all champions; see CLAUDE.md "Interpretability probe") — exposure is
+represented softly/diffusely, which is *why* capture-vs-save land as
+near-ties. Two orthogonal fixes, worth pairing with exploration:
+
+- Exploration naturally samples both sides of those capture/save near-ties;
+  margin outcomes then label which was better, sharpening the valuation over
+  iterations (coverage → calibration).
+- A cheap **auxiliary head predicting "will a blot of mine be hit next
+  turn"** (roadmap item 4) forces a sharp exposure representation directly,
+  and the interpretability table is the ready-made before/after metric.
+  Cheaper than exploration and independent of it — reasonable to try first
+  or in parallel.
+
+## Plateau call (when to pull the trigger)
+
+Concrete criterion: if ~8-10 further iterations from iter14 fail to promote a
+>55% champion, declare plateau and fork the Track A/B exploration run. We are
+already ~10 iterations in, so this is close; a couple more non-promotions
+makes the call. Keep the current run going until then (its data is clean and
+free); exploration is a fork, not a modification of the live run.

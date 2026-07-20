@@ -356,6 +356,96 @@ expected to self-resolve via the TD run.
 
 ## Current state
 
+- **SESSION UPDATE (night of 2026-07-18).** Not yet committed by owner.
+  - **Block-save undo bug fixed and LANDED** (commit `912b222`, merged to
+    `td-lambda` as `e24a960`, pushed). `undo_last_move` restored
+    `current_player = piece.player`, but block-save records carry the SAVED
+    (opponent) pieces' ids, so undoing a probed block-save flipped the turn.
+    Sibling of the `421c22f` dice bug. Corrupted BOTH shallow and deep
+    search: after a block-save undo the next candidate enumerated the
+    OPPONENT's pieces as its own second move — playable illegal pairs.
+    Owner hit it live (agent moved a human piece). Three-engine A/B: it was
+    UNREACHABLE in play until `421c22f`'s dice fix unmasked it last session
+    (pre-fix 0 illegal pairs but ~half of two-move pairs silently dropped ->
+    the historical pass-over-save/"declined a die" weakness; dice-fix-only
+    131/132 positions corrupted; both-fixed 0/96).
+  - **Batched deep-search chance node LANDED** (`d4016a0`): all 21 rolls in
+    2 forward passes, validated equivalent to the sequential oracle
+    (0/1554 rolls off) once the engine bug was fixed. No CPU speedup (0.76 vs
+    0.78s/candidate) but the structure enables the margin-trigger idea.
+  - **Blunder audit (1692 real positions, old-blind vs fixed vs deep).** The
+    fix resolves the general "declined a die" problem, surgically localized
+    to block-save-present positions (half-pass 10.7%->4.9%, one-directional;
+    block-save-absent byte-identical). Endgame offgoaling: no signal (rare,
+    owner confirms). Deep vs shallow save-flips are ALL near-ties (shallow
+    score gaps 0.001-0.033); ~half fit "shallow captures, deep declines the
+    recapturable-blot capture", half are advance-vs-save where deep banks the
+    save. Net has learned blot-avoidance to first order; lookahead only
+    tactically tie-breaks. **Validates the margin-trigger idea** (deep-search
+    only near-ties) — the histogram prereq passes. Expected strength edge:
+    small/infrequent (matches the 10-10 iter4 deep-vs-shallow head-to-head).
+  - **TD run continuing on the FIXED engine** (iters 11+ clean). iter10
+    promoted 56.3% -> **iter14 promoted 60.2% (current champion, strongest
+    jump in the lineage)**. Collapse regime (pre-intervention ~36%) is gone
+    -> the lr-5e-5 + engine-fix intervention worked. Iters 15-24 (10
+    iterations post-iter14): NO further promotion, oscillating 34.0-54.5%,
+    majority reverted (16,17,18,21,22,24) vs kept (15,19,20,23); iter23 came
+    close (54.5%) but iter24 immediately following it collapsed (38.5%) —
+    tentative pattern worth watching: updates built on a KEPT (non-champion)
+    model may be less stable than updates from the champion itself. Not yet
+    confirmed as a real effect (could still be noise); if the pattern
+    repeats, worth inspecting whether "kept" iterations should still train
+    from champion weights rather than continuing from the kept live model.
+    Training run auto-resumes (`td_live.pt`) — safe to leave running.
+  - **Momentum-instability hypothesis TESTED and NOT supported.** Suspected
+    that "kept" iterations (which carry Adam momentum forward across a chain
+    of non-champion models, vs reverts which reset to fresh Adam +champion
+    weights — see [td_selfplay_loop.py:236-237](td_selfplay_loop.py)) drive
+    the close-then-collapse pattern. Free observational test: partition all
+    post-intervention iters (7-24) by inherited momentum state (FRESH after
+    revert/resume, CARRIED after kept/promoted). Result: means identical
+    (fresh 48.9% / carried 47.8%), carried is if anything LESS variable (SD
+    4.9 vs 6.4), and BOTH promotions (56.3/60.2) plus the worst collapse
+    (iter17 34.0%) came from FRESH momentum. So carried momentum shows no
+    elevated collapse — the iter23->24 case that seeded the hypothesis is 1
+    of 6 carried iters, not a pattern. Caveats: tiny n (6 vs 12), and the
+    test can't separate momentum from starting-weights (revert couples both),
+    so it's "no signal" not "proven null" — but enough to NOT spend compute
+    on the seeded twin-run A/B. Best-fit explanation is now **plateau
+    variance**: iter14 sits near the current ceiling, updates from it are
+    noisy coin-flips around parity (fresh-from-champion iters span the full
+    34-60% range), and neither momentum nor data-staleness is a cleaner
+    culprit. Note the persistent optimizer state is never checkpointed at
+    all, so "restore the champion's momentum on revert" isn't even possible
+    without first saving optimizer state at promotion (a coherent but
+    unproven idea; the momentum-at-promotion points *past* the champion into
+    the region later iters failed in, so it may bias toward failed territory).
+  - **Champion lineage saved to separate files for interpretability**:
+    `best_iter5_m46.pt`, `td_champion_July17_iter1.pt`, `..._iter4.pt`,
+    `..._July18_iter10.pt`, `..._July19_iter14.pt`. See the new
+    "Interpretability probe" section below for what was learned by diffing
+    them — headline: iter14 is a confidence recalibration concentrated in
+    block-save positions (the bug-fix data), and the `is_blot` feature is
+    barely used by the value head despite blot counts clearly mattering.
+  - **Promotion gate is binary win-rate but training target is MARGIN**
+    (equity: `raw*NUM_PIECES` = expected final margin; `worker_eval` discards
+    the margin `check_game_over` returns). Tested: a paired margin-recording
+    eval (iter12 vs iter10, 400 games) found margin and win-rate gave
+    statistically indistinguishable discrimination (z=0.79 vs 0.75) on a
+    near-parity matchup — margin's CRN-paired SD (1.74/pair) is measured,
+    but the hoped-for "margin reveals what win-rate misses" did NOT show up
+    here. Calibrated threshold if pursued later: eps(90%)=0.16-0.22,
+    eps(95%)=0.20-0.29 depending on n=100-200 pairs. Verdict: not clearly
+    worth the SPRT-rebuild effort on current evidence; shelved, not killed.
+  - **Deep-vs-shallow match on iter14** (vs frozen iter10 reference,
+    CRN-paired, common-opponent design): at 160 games, paired sign-test
+    deep+20/shallow+12, p=0.215 — leaning toward a real lookahead edge but
+    not significant. Extended to 600 games (owner's call) to get a firmer
+    read; matches the audit finding that deep only overrides near-tied
+    shallow evaluations (score gaps 0.001-0.033), so any true edge is
+    expected to be small and need a large sample to separate from noise.
+    Result pending — check `match_overnight.jsonl` in the scratchpad
+    `fixclone` / rerun `analyze_overnight.py` for the current tally.
 - Mode B: complete, passed sanity check.
 - Hardware: MacBook Pro (Apple M3 Pro, 11 cores = 5 performance + 6
   efficiency, 36GB unified memory) has arrived and is now the active
@@ -549,6 +639,60 @@ concentrate within a small margin of shallow's top, the trigger is sound
 and the histogram calibrates δ; if deep often flips to moves far down the
 shallow ranking, a margin trigger would miss those and the idea needs
 rethinking. Cheap experiment, do it first.
+
+## Interpretability probe (checkpoint lineage differencing)
+
+Not mechanistic (no circuit-level GNN tooling exists or was attempted) but
+behaviorally informative, and cheap: the full champion lineage is on disk
+(`best_iter5_m46.pt`, `td_champion_July17_iter1.pt`, `..._iter4.pt`,
+`..._July18_iter10.pt`, `..._July19_iter14.pt`), so "what did training
+change" is answerable by direct comparison rather than guesswork. Two
+techniques, run together over the shared 1692-position bank (turn-start
+states from real iter10-champion self-play, encoder-labeled with stage/
+save-legality/block-save-legality/blot-counts via `audit_fixclone.json`):
+
+**A. Value differencing** — score every position with every champion
+(batched forward passes, cheap), diff successive pairs, bucket the diffs by
+position type. **B. Feature sensitivity** — autograd d(value)/d(input) on
+a position sample, per champion, split into global features and own-piece
+vs opponent-piece features (piece feature [0] is the is-opponent bit).
+Both are margin-scale (raw output × 12) so results read directly in game
+points. Script was a scratchpad one-off (`lineage_probe.py`, not committed);
+rerun after future promotions for a fresh time-lapse point — cheap, no
+training interference beyond CPU sharing.
+
+Findings (July 19, iter5→iter1→iter4→iter10→iter14):
+
+- **Successive champions are refinements, not rebuilds**: value correlation
+  0.95–0.98 pairwise on identical positions, mean |Δ| ~0.3 margin points —
+  except iter10→iter14 (corr 0.950, mean |Δ| 0.46), the single largest
+  jump in the lineage, matching it being the strongest promotion (60.2%).
+- **iter14 is a confidence recalibration, not new preferences**: every
+  top-disagreement position moves toward zero (e.g. +4.06→+1.97,
+  −4.19→−2.28), and value SD drops 1.68→1.32 after *rising* every prior
+  step (1.47→1.46→1.74→1.68). iter10 was overconfident; iter14 pulled back.
+- **The recalibration concentrates exactly where the engine bugs lived**:
+  block-save-legal positions show the largest per-bucket disagreement of
+  any transition (mean |Δ| 0.62). iter14's replay window (iters 12-14) is
+  the first fully post-fix data. Traceable on individual positions: several
+  consecutive-game positions pushed sharply negative by iter1→iter4
+  (trained on bug-corrupted search) get pulled back by iter10→iter14 —
+  visibly un-learning valuations formed on corrupted games.
+- **The dedicated `is_blot` feature is nearly dead weight**: d(value)/
+  d(is_blot) ≈ 0.00–0.03 across ALL five champions, own and opponent
+  pieces alike — negligible next to saved-piece counts (±0.7-1.0),
+  can-be-saved status (±0.2-0.3), or goal distance (±0.15-0.23). Blot risk
+  clearly reaches the net some other way (position-level bucket diffs DO
+  move with blot counts), but the purpose-built input contributes almost
+  nothing directly — consistent with the near-tie capture/save findings
+  above (soft, diffuse exposure representation, not a sharp one) and a
+  concrete candidate for roadmap item 4 (auxiliary blot-hit-prediction head
+  would force a sharper representation; this table is the ready-made
+  before/after metric for that experiment).
+- Caveat: the bank is iter10-lineage self-play, so diffs are cleanest for
+  recent transitions and mildly unfair to `iter5_m46`, whose own games
+  looked different. `lineage_values.json` (scratchpad, not committed) has
+  the raw per-position values for all 5 champions if reanalysis is wanted.
 
 ## Next steps (in order)
 
