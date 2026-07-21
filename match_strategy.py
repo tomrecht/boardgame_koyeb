@@ -73,6 +73,14 @@ def is_offgoal_move(board, m):
                and p.tile.number == pid[1])
 
 
+def is_blocksave(m):
+    """A block-save move: (pid, 0, 0) with pid a real piece -- saving an
+    opponent's 2+-piece field block (dissolves it, banks the pieces). Tests
+    hypothesis 2b: does iter14 beat iter10's blocks by SAVING them?"""
+    return (isinstance(m, tuple) and len(m) == 3
+            and m not in ((0, 0, 0), (1, 1, 1)) and m[1] == 0 and m[2] == 0)
+
+
 def is_capture_move(board, m, mover):
     """m lands on a field tile holding exactly one opponent piece -> a capture."""
     if not (isinstance(m, tuple) and len(m) == 3) or m in ((0, 0, 0), (1, 1, 1)):
@@ -114,6 +122,7 @@ def play_game(seed, white_agent, black_agent):
     offg = {'white': 0, 'black': 0}                  # offgoal moves made
     caps = {'white': 0, 'black': 0}                  # captures made
     lost = {'white': 0, 'black': 0}                  # own pieces captured
+    bsav = {'white': 0, 'black': 0}                  # block-saves made (dissolve opp block)
     passes = {'white': 0, 'black': 0}                # turns a die was left unused
     sums = {'white': [0, 0, 0], 'black': [0, 0, 0]}  # running [blots,parked,blocks]
     snaps = {'white': 0, 'black': 0}
@@ -152,6 +161,8 @@ def play_game(seed, white_agent, black_agent):
         for m in chosen:
             if is_offgoal_move(board, m):
                 offg[player] += 1
+            if is_blocksave(m):
+                bsav[player] += 1
             if is_capture_move(board, m, player):
                 caps[player] += 1
                 lost['black' if player == 'white' else 'white'] += 1
@@ -176,6 +187,7 @@ def play_game(seed, white_agent, black_agent):
         out[f'{col}_offgoals'] = offg[col]
         out[f'{col}_captures'] = caps[col]
         out[f'{col}_lost'] = lost[col]
+        out[f'{col}_blocksaves'] = bsav[col]
         out[f'{col}_passes'] = passes[col]
         out[f'{col}_style'] = style(col)
     return out
@@ -218,8 +230,9 @@ def analyze():
 
     def blank():
         return {'games': 0, 'wins': 0, 'margin': 0, 'offg': 0, 'caps': 0,
-                'lost': 0, 'passes': 0, 'anyblock': 0, 'pair': Counter(),
-                'blkturns': 0, 'blots': 0.0, 'parked': 0.0, 'fblocks': 0.0}
+                'lost': 0, 'bsav': 0, 'passes': 0, 'anyblock': 0,
+                'pair': Counter(), 'blkturns': 0, 'blots': 0.0, 'parked': 0.0,
+                'fblocks': 0.0}
     agg = {A_TAG: blank(), B_TAG: blank()}
     for r in rows:
         for col in ('white', 'black'):
@@ -228,6 +241,7 @@ def analyze():
             a['offg'] += r[f'{col}_offgoals']
             a['caps'] += r[f'{col}_captures']
             a['lost'] += r[f'{col}_lost']
+            a['bsav'] += r.get(f'{col}_blocksaves', 0)
             a['passes'] += r[f'{col}_passes']
             st = r[f'{col}_style']
             a['blots'] += st['blots_pt']; a['parked'] += st['parked_pt']
@@ -254,6 +268,8 @@ def analyze():
         print(f"  CAPTURING: captures/game {a['caps']/g:.2f}  "
               f"pieces-lost/game {a['lost']/g:.2f}  "
               f"net {(a['caps']-a['lost'])/g:+.2f}")
+        print(f"  BLOCK-SAVES/game {a['bsav']/g:.3f}  "
+              f"(dissolving the OTHER agent's blocks -- hypothesis 2b)")
         print(f"  EXPOSURE: blots/turn {a['blots']/g:.2f}  "
               f"parked-on-goal/turn {a['parked']/g:.2f}  "
               f"field-blocks/turn {a['fblocks']/g:.2f}")
