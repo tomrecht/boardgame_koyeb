@@ -5,6 +5,15 @@ responses, minimal surgical edits with unambiguous paste locations, full
 function rewrites over partial diffs for substantial changes, no rewriting
 of working code unnecessarily.
 
+**WORKSPACE CONSTRAINT (owner, 2026-07-21): work only inside this folder
+(`/Users/tomrecht/game/boardgame_koyeb`).** Reads/writes outside it trigger
+permission prompts. Do NOT create git worktrees or files in sibling dirs; run
+new experiments from a branch checked out *in this folder* (or keep files here).
+When you must inspect another branch's file, use `git show <branch>:<path>`;
+when you must read an out-of-folder artifact (e.g. a running worktree's log),
+`cp` it in first. (Some existing runs — e.g. the symmetry-aug worktree — predate
+this rule; monitor them by copying their logs in.)
+
 ## Project background
 
 Custom hub-and-spoke dice board game. Full stack built from scratch: game
@@ -355,6 +364,56 @@ fix, larger change to the loop). Still parked for now, but no longer
 expected to self-resolve via the TD run.
 
 ## Current state
+
+- **SESSION UPDATE (2026-07-21).** Aux-head run finished with TWO promotions;
+  symmetry augmentation built and running; several analysis tools landed.
+  - **Auxiliary-head run COMPLETE, 2 promotions (branch `aux-head`).** 14
+    iterations from iter14, gate=iter14, `AUX_LOSS_WEIGHT=0.001`. Promoted at
+    **iter8 (58.5% over lineage-iter14)** and again at **iter14 (55.1% over
+    aux-iter8)** = the run's final/strongest champion. The 3 per-piece/global
+    aux heads (save, blot-hit, roll-robustness) measurably sharpened the
+    representation *first* (on-goal gap 0.571→0.651 at the kept iter2, invisible
+    to win-rate) and eventually converted to agent-vs-agent wins — validating
+    the aux approach. Both promoted champions washed (aux heads stripped, re-
+    saved) into this folder: `td_champion_July21_aux_iter8.pt`,
+    `td_champion_July21_aux_iter14.pt` (uncommitted; `*.pt` is gitignored).
+    NOTE: `aux_champion.pt` in the aux worktree = the run's FINAL champion
+    (iter14), not iter8 — it advanced on the second promotion. See
+    memory `aux-heads`.
+  - **Symmetry augmentation BUILT + VALIDATED + RUNNING (branch `symmetry-aug`).**
+    D3 240° board automorphism (tile perm σ angle-matched from game.js geometry
+    + goal-number perm π {1:3,2:1,3:2,4:6,5:4,6:5}) as reusable `symmetry.py`.
+    Validated: structural all-pass (σ bijection, σ³=id, type/goal-number/
+    adjacency preserved); value-preservation gate on iter10 (signed gap ~0 =
+    safe); and owner's degenerate-block concern — INF-distance equivariance
+    3384/3384 exact, 172/172 2&4-blocks rotate to valid 1&6 blocks (saved pieces
+    are off-board so never counted as blocked). Training hook: each TRAINING
+    position rotated to a random 0/240/480° variant keeping the same td_target
+    (val + targets on the original), threaded via `encode_batch_with_targets(
+    augment=)`→run_td_epoch→train_on_records→run_td_selfplay. `symaug_run.py`:
+    warm-start iter10 (human-strongest), gate iter10, aug ON → aims for a
+    GENERALIST blocker (blocks 2&4/1&6/3&5 equally). Success metric = block
+    GENERALIZATION (per-goal INF-denial in its self-play), not just win-rate.
+    Each run ratchets against its OWN champion; cross-lineage "who's strongest"
+    is the arena's job. See memory `symmetry-aug`, `nontransitivity-blocking`.
+  - **Analysis tools landed on `td-lambda`:** `arena.py` (parallel round-robin,
+    unbounded round loop, live standings, abort/resume, margin-Elo + win-Elo +
+    matrices; `CHAMPS_EXTRA=` to add champions — designed to run on the iMac
+    with `BOARDGAME_DEVICE=cpu`); `match_strategy.py` (iter10-vs-iter14 style
+    profile: per-pair block freq, block-payoff conditional win-rates, captures/
+    exposure/offgoal/pass/**block-saves** — QUEUED, don't launch w/o owner);
+    `record_h2h.py` on branch `replay-viewer` (in-frontend replay: drives the
+    real game.js board via setup free-placement helpers, /?replay + file picker
+    — untested in a browser).
+  - **NON-TRANSITIVITY finding (memory `nontransitivity-blocking`):** human beats
+    iter14 (20/32) but loses to iter10 (12/32) though iter14>iter10 agent-to-
+    agent (60%) — iter10 is the human-strongest champion; the iter10→iter14
+    promotion REGRESSED vs the human target. Owner's hypothesis (motivating the
+    symmetry-aug run): blocking a goal-pair is strong; iter10 wields it a lot
+    (concentrated 2&4), iter14 rarely. Preliminary (n~14 h2h games): iter14
+    likely PREVENTS blocks (2a) rather than block-saving (2b) — 0 block-saves
+    observed. **Deep-vs-shallow match FINAL at 600 games: null (p=0.72)** — deep
+    search not deployed on strength grounds.
 
 - **SESSION UPDATE (2026-07-20).** Exploration/forking, a value-function
   diagnostic, the deep-search verdict, and the auxiliary-head build.

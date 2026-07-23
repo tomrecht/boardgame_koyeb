@@ -434,21 +434,23 @@ class Board:
                             tuples_list.append(((piece.player, piece.number), (destination.ring, destination.pos), roll))
         if not captured_pieces and not self.must_move_unentered():
             tuples_list.append((0, 0, 0))   # add the pass move
-            # add block saving moves
-            if (not self.dice[0].used and not self.dice[1].used 
+            # add single-piece block-save moves: peel ONE opponent piece off a
+            # block (a 2+ opponent stack on a field tile) into their own saved
+            # rack, at the cost of both dice. One move PER PIECE on the block --
+            # the attacker chooses which piece to gift (and thus which piece
+            # remains). Peeling one off a 2-stack leaves a blot (unblocks the
+            # route); off a 3+ stack leaves a smaller stack (still blocks).
+            if (not self.dice[0].used and not self.dice[1].used
                     and self.game_stages[self.current_player] != 'opening'
                     and not captured_pieces
                     and not self.must_move_unentered()):
-                opponent_pieces_on_blocks = [p for p in self.pieces 
-                    if p.player != self.current_player 
-                    and p.tile 
+                opponent_pieces_on_blocks = [p for p in self.pieces
+                    if p.player != self.current_player
+                    and p.tile
                     and p.tile.type == 'field'
                     and len(p.tile.pieces) > 1]
-                seen_tiles = set()
                 for piece in opponent_pieces_on_blocks:
-                    if piece.tile not in seen_tiles:
-                        seen_tiles.add(piece.tile)
-                        tuples_list.append(((piece.player, piece.number), 0, 0))
+                    tuples_list.append(((piece.player, piece.number), 0, 0))
         if (not self.dice[0].used and not self.dice[1].used) and self.draw_callable:
             tuples_list.append((1, 1, 1))   # add calling a draw
         return tuples_list
@@ -563,16 +565,18 @@ class Board:
         if not piece:
             print(f"No piece found for {piece_id}")
             return
-        if destination == 0 and roll == 0:      # save opponent's block
+        if destination == 0 and roll == 0:      # save ONE opponent piece from a block
+            # Peel exactly the named piece off the block into the opponent's own
+            # saved rack (a sacrifice by the mover). Costs both dice. Pushes a
+            # single undo record; the destination==0 branch of undo_last_move
+            # already restores exactly one piece to origin_tile.
             saved_rack = self.white_saved if piece.player == 'white' else self.black_saved
             origin_tile = piece.tile
-            block_pieces = origin_tile.pieces[:]
-            for p in block_pieces:
-                origin_tile.pieces.remove(p)
-                p.tile = None
-                p.rack = saved_rack
-                saved_rack.append(p)
-                self.save_move(((p.player, p.number), 0, 0), origin_tile, None, None, firstMove_before)
+            origin_tile.pieces.remove(piece)
+            piece.tile = None
+            piece.rack = saved_rack
+            saved_rack.append(piece)
+            self.save_move(((piece.player, piece.number), 0, 0), origin_tile, None, None, firstMove_before)
             for die in self.dice:
                 die.used = True
             self.game_stages[self.current_player] = self.get_game_stage(self.current_player)

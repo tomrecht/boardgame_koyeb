@@ -68,7 +68,7 @@ function getDieUsedAfter(game, executeFn) {
 
 // Record one half-move in agent format and push to _pendingMoves.
 // pieceColorNumber: [color_str, number]  e.g. ['white', 3]
-// target: [ring, sector] | 'save' | 0  (0 = block-save)
+// target: [ring, sector] | 'save' | 0  (0 = single-piece block-save)
 // die: numeric die value used
 function pushHumanMove(pieceColorNumber, target, die) {
     _pendingMoves.push([pieceColorNumber, target, die]);
@@ -602,7 +602,7 @@ class Piece {
             this.save(); // Save the piece if it can be saved
         }
         
-        // save opponent's blocking piece, unless you're in the opening or have a captured piece
+        // save a single opponent piece from a block, unless you're in the opening or have a captured piece
         const player = this.color === 0xffffff ? this.game.players[1] : this.game.players[0];
         if (this.player !== this.game.turn && this.currentTile && this.currentTile.type === 'field' && this.currentTile.pieces.length > 1 
             && player.getGamePhase() != 'opening' && this.game.dice.every(die => !die.used) ) {
@@ -614,17 +614,21 @@ class Piece {
                     console.log(this.player)
                     return;
                 }
-            console.log('Saving opponent block')
+            console.log('Saving one opponent piece from block')
             const savedRack = this.color === 0xffffff ? this.game.whiteSavedRack : this.game.blackSavedRack;
 
-            this.currentTile.pieces.forEach(piece => piece.moveToRack(savedRack));
+            // Peel ONLY the double-clicked piece into its own saved rack; the
+            // rest of the block stays (a 2-stack becomes a blot). The attacker
+            // chooses which piece to gift by which one they double-click.
+            this.moveToRack(savedRack);
             this.game.registerSave();   // no-save streak resets immediately
             this.game.dice.forEach(die => die.setUsed())
 
-            // Record human block-save as a complete move pair (matches agent encoding)
+            // Record human single-piece save as (save, pass) -- matches the agent
+            // encoding ((piece,0,0), (0,0,0)).
             if (this.game.turn === 'white') {
                 const rep = [this.player, this.number];
-                _pendingMoves = [[rep, 0, 0], [rep, 0, 0]];
+                _pendingMoves = [[rep, 0, 0], [0, 0, 0]];
             }
 
             // Check for the endgame condition
@@ -3005,6 +3009,7 @@ class InstructionsScene extends Phaser.Scene {
             'Unnumbered pieces can be saved from any goal tile, but numbered pieces must be saved from the goal tile that matches their number. \n\n' +
             'If you land on a field tile (one that isn\'t a goal tile or the home tile) occupied by one of your opponent\'s pieces, you capture that piece and send it back to the home tile. \n\n' +
             'If a field tile is occupied by two or more of your opponent\'s pieces, that tile is blocked and you cannot move through or into it. \n\n' +
+            'Once you are past the opening and have no captured pieces, you may double-click one of the pieces in an opponent\'s block to save that single piece to your opponent\'s rack, at the cost of both your dice. This turns a two-piece block into a lone piece you can then capture or pass. \n\n' +
             'If you have one or more captured pieces, you must move them out of the home tile before moving any other pieces. ' +
             'Otherwise, if you have one or more pieces on the side rack, you must move the first of these onto the board before moving any other pieces. \n\n' +
             'A piece must take the shortest available route to its destination tile, both when using one die and when using two dice. \n\n' +
@@ -3399,18 +3404,16 @@ if (movePair.some(m => Array.isArray(m) && m[0] === 1 && m[1] === 1 && m[2] === 
         // Check for saving opponent's piece
 
         if (targetRingSector === 0 && dieRoll === 0) {
-            console.log('Saving opponent block', pieceColorNumber);
+            console.log('Saving one opponent piece from block', pieceColorNumber);
             const piece = findPieceByColorAndNumber(pieceColorNumber[0], pieceColorNumber[1]);
             if (piece && piece.currentTile) {
-                // Highlight all pieces in the block
-                piece.currentTile.pieces.forEach(p => {
-                    p.isSelected = true;
-                    p.updateColor();
-                });
+                // Highlight only the single piece being peeled off the block
+                piece.isSelected = true;
+                piece.updateColor();
                 piece.currentTile.highlight();
                 setTimeout(() => {
                     const savedRack = piece.color === 0xffffff ? game.whiteSavedRack : game.blackSavedRack;
-                    [...piece.currentTile.pieces].forEach(p => p.moveToRack(savedRack));
+                    piece.moveToRack(savedRack);   // peel only the named piece; rest of the block stays
                     game.registerSave();   // no-save streak resets immediately
                     game.dice.forEach(die => die.setUsed());
                     game.checkWinCondition();
