@@ -927,6 +927,8 @@ class Piece {
 
     drawPiece() {
         this.circle = this.scene.add.circle(this.x, this.y, this.radius, this.color)
+            // border so white pieces read on white panels/tiles; subtle edge on black
+            .setStrokeStyle(2.5, this.color === 0xffffff ? 0x9aa5b4 : 0x2b3038, 1)
             .setInteractive()
             .on('pointerover', () => this.onHover())
             .on('pointerout', () => this.onOut())
@@ -1205,6 +1207,9 @@ class Tile {
     drawTile() {
         
         this.graphics.clear();
+        // nogo = "no board space": draw nothing so the background shows through
+        // and no nogo fill covers an adjacent field tile's border.
+        if (this.type === 'nogo') return;
         this.graphics.lineStyle(1.7, this.lineColor, 1);
         this.graphics.fillStyle(this.fillColor, 1);
 
@@ -1323,10 +1328,14 @@ class Rack {
     }
 
     drawBackground() {
-        this.background.fillStyle(0x008000, 1);
-        this.background.fillRect(this.x - PIECE_RADIUS_BASE, this.y - PIECE_RADIUS_BASE, this.cols * this.spacing + PIECE_RADIUS_BASE, this.rows * this.spacing + PIECE_RADIUS_BASE + this.verticalPadding);
-        this.background.lineStyle(2, 0x000000, 1);
-        this.background.strokeRect(this.x - PIECE_RADIUS_BASE, this.y - PIECE_RADIUS_BASE, this.cols * this.spacing + PIECE_RADIUS_BASE, this.rows * this.spacing + PIECE_RADIUS_BASE + this.verticalPadding);
+        // Clean Modern: white rounded panel with a soft border (was a green box)
+        const bx = this.x - PIECE_RADIUS_BASE, by = this.y - PIECE_RADIUS_BASE;
+        const bw = this.cols * this.spacing + PIECE_RADIUS_BASE;
+        const bh = this.rows * this.spacing + PIECE_RADIUS_BASE + this.verticalPadding;
+        this.background.fillStyle(0xffffff, 1);
+        this.background.fillRoundedRect(bx, by, bw, bh, 14);
+        this.background.lineStyle(1.5, 0xdbe1ea, 1);
+        this.background.strokeRoundedRect(bx, by, bw, bh, 14);
     }
 }
 
@@ -1371,12 +1380,13 @@ class Die {
     drawDieWithColor(dieColor, dotColor) {
         this.graphics.clear();
         this.graphics.fillStyle(dieColor, 1);
+        // Colour-coded border preserved: die A vs die B vs (both) -- rounded now.
         const borderColor = this.isFirstDie ? colorFirstDie : colorSecondDie;
         this.graphics.lineStyle(5, borderColor, 1);
-        this.graphics.fillRect(this.x, this.y, this.size, this.size);
-        this.graphics.strokeRect(this.x, this.y, this.size, this.size);
+        this.graphics.fillRoundedRect(this.x, this.y, this.size, this.size, 14);
+        this.graphics.strokeRoundedRect(this.x, this.y, this.size, this.size, 14);
 
-        const dotSize = 8; // Adjusted dot size
+        const dotSize = 9; // Adjusted dot size
         const dotOffset = this.size / 4;
 
         const drawDot = (dx, dy) => {
