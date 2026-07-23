@@ -1,14 +1,10 @@
 # Board Game GNN — TD(λ) Training Project
 
-Context for Claude Code picking up this project. Owner (Tom) prefers: terse
-responses, minimal surgical edits with unambiguous paste locations, full
-function rewrites over partial diffs for substantial changes, no rewriting
-of working code unnecessarily.
+Context for Claude Code picking up this project. Owner (Tom) prefers terse
+responses. Tom is the domain expert on the boardgame, you are the ML expert; make suggestions on training accordingly, but you may also suggest potential improvements to game rules and mechanics when relevant.
 
-**WORKSPACE CONSTRAINT (owner, 2026-07-21): work only inside this folder
-(`/Users/tomrecht/game/boardgame_koyeb`).** Reads/writes outside it trigger
-permission prompts. Do NOT create git worktrees or files in sibling dirs; run
-new experiments from a branch checked out *in this folder* (or keep files here).
+**WORKSPACE CONSTRAINT (owner, 2026-07-21): Ownder works on two machines, iMac and MacBook. 
+Work only inside this folder (`/Users/tomrecht/game/boardgame_koyeb` on MacBook, `/Users/tom/Game/BoardGame` on iMac).** Reads/writes outside it trigger permission prompts. Do NOT create git worktrees or files in sibling dirs; run new experiments from a branch checked out *in this folder* (or keep files here).
 When you must inspect another branch's file, use `git show <branch>:<path>`;
 when you must read an out-of-folder artifact (e.g. a running worktree's log),
 `cp` it in first. (Some existing runs — e.g. the symmetry-aug worktree — predate
@@ -19,12 +15,11 @@ this rule; monitor them by copying their logs in.)
 Custom hub-and-spoke dice board game. Full stack built from scratch: game
 engine (`game.py`), Flask backend (`app.py`), Phaser.js frontend (`game.js`).
 Current AI approach: GNN value network (`network.py`) driving 2-ply move
-selection (`agent_gnn.py`), trained via self-play. Strongest checkpoint to
-date: `best_iter5_m46.pt`.
+selection (`agent_gnn.py`), trained via self-play. Strongest checkpoint before TD(λ): `best_iter5_m46.pt`.
 
 An earlier heuristic evolutionary track (`train.py`) reached 90%+ vs.
 baseline but was recognized as fundamentally limited without a neural
-approach and is no longer the active line of work.
+approach and is no longer the active line of work. The heuristic agent is still used to filter top-K moves for the neural network, for speed.
 
 ## Current phase: TD(λ) fine-tuning
 
