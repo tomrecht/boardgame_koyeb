@@ -456,6 +456,76 @@ function hideDebugTip() {
     if (_dbgTip) _dbgTip.style.display = 'none';
 }
 
+// ── STACK PICKER (tap-to-pick for overflowed tiles) ─────────────────────
+// A tile that overflows hides its extra pieces behind a "+K" badge. Clicking
+// such a tile opens this popover listing ALL pieces on the tile; clicking a
+// chip selects that piece exactly as clicking it on the board would.
+let _stackPicker = null, _pickerOpenedAt = 0;
+function ensureStackPicker() {
+    if (_stackPicker) return _stackPicker;
+    const pop = document.createElement('div');
+    pop.style.cssText =
+        'position:absolute; display:none; z-index:50; background:#fff;' +
+        'border:1px solid #cfd6e0; border-radius:14px; padding:12px;' +
+        'box-shadow:0 12px 34px rgba(0,0,0,.22);';
+    document.body.appendChild(pop);
+    // any outside click dismisses (capture phase; skip the click that opened it)
+    document.addEventListener('pointerdown', (e) => {
+        if (!_stackPicker || _stackPicker.style.display === 'none') return;
+        if (_stackPicker.contains(e.target)) return;
+        if (performance.now() - _pickerOpenedAt < 60) return;
+        hideStackPicker();
+    }, true);
+    _stackPicker = pop;
+    return pop;
+}
+function hideStackPicker() { if (_stackPicker) _stackPicker.style.display = 'none'; }
+function openStackPicker(tile) {
+    const pop = ensureStackPicker();
+    pop.innerHTML = '';
+    const row = document.createElement('div');
+    row.style.cssText = 'display:flex; gap:8px; flex-wrap:wrap; max-width:320px;';
+    tile.pieces.forEach(piece => {
+        const isW = piece.color === 0xffffff;
+        const chip = document.createElement('div');
+        chip.style.cssText =
+            'width:44px; height:44px; border-radius:50%; display:grid; place-items:center;' +
+            'font-family:' + HUD_FONT + '; font-weight:700; font-size:16px; cursor:pointer; user-select:none;' +
+            'background:' + (isW ? 'radial-gradient(circle at 34% 27%,#fff,#e7ebf0)'
+                                 : 'radial-gradient(circle at 34% 27%,#5c5c5c,#171717)') + ';' +
+            'color:' + (isW ? '#28313b' : '#fff') + ';' +
+            'box-shadow:' + (isW ? 'inset 0 -2px 4px rgba(0,0,0,.12),0 2px 5px rgba(0,0,0,.2)'
+                                 : 'inset 0 -2px 4px rgba(0,0,0,.4),0 2px 5px rgba(0,0,0,.3)') + ';';
+        chip.textContent = piece.number <= 6 ? piece.number : '';   // unnumbered stay blank, as on the board
+        chip.onclick = (ev) => {
+            ev.stopPropagation();
+            hideStackPicker();
+            piece.handleClick({ rightButtonDown: () => false });   // select exactly like a board click
+        };
+        // double-click supports the block-save gesture on a hidden opponent piece
+        chip.ondblclick = (ev) => {
+            ev.stopPropagation();
+            hideStackPicker();
+            if (piece.currentTile) piece.handleDoubleClick();
+        };
+        row.appendChild(chip);
+    });
+    pop.appendChild(row);
+    pop.style.display = 'block';
+    _pickerOpenedAt = performance.now();
+
+    // position centred above the tile
+    const midR = (tile.innerRadius + tile.outerRadius) / 2;
+    const midA = (tile.startAngle + tile.endAngle) / 2;
+    const cxC = CENTER_X + midR * Math.cos(midA), cyC = CENTER_Y + midR * Math.sin(midA);
+    const canvas = document.querySelector('canvas'), rect = canvas.getBoundingClientRect();
+    const sx = rect.left + cxC * rect.width / canvas.width;
+    const sy = rect.top + cyC * rect.height / canvas.height;
+    const w = pop.offsetWidth, h = pop.offsetHeight;
+    pop.style.left = Math.max(8, Math.min(window.innerWidth - w - 8, sx - w / 2)) + 'px';
+    pop.style.top  = Math.max(8, sy - h - 14) + 'px';
+}
+
 function updateNoSaveDisplay() {
     const scene = gameInstance && gameInstance.scene && gameInstance.scene.scenes && gameInstance.scene.scenes[0];
     if (!scene || !scene.game || !scene.impasseText) return;
@@ -1135,6 +1205,7 @@ class Tile {
     } */
 
         onClick() {
+            hideStackPicker();   // any tile click dismisses an open picker first
             if (window.setupMode) {
                 if (_setupSelected && this.type !== 'nogo') {
                     _setupPlaceOnTile(_setupSelected, this);
@@ -1142,7 +1213,13 @@ class Tile {
                 }
                 return;
             }
-            if (this.game.gameOver) return; 
+            if (this.game.gameOver) return;
+            // Stacked tile with hidden overflow pieces + nothing selected yet:
+            // open the picker so a hidden piece can be chosen.
+            if (!this.game.selectedPiece && this.pieces.some(p => p.hidden)) {
+                openStackPicker(this);
+                return;
+            }
             if (this.game.selectedPiece && this.type !== "nogo") {
                 const piece = this.game.selectedPiece;
                 const diceBefore = this.game.dice.map(d => ({ value: d.value, used: d.used }));
