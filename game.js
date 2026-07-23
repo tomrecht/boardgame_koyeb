@@ -977,6 +977,7 @@ class Piece {
         this.rack.shiftPiecesUp();
         this.rack = null;
         this.move(homeTile, false);
+        this._turnStartTile = homeTile;   // an entering piece measures progress from home
         this.game.selectedPiece = this;
         this.isSelected = true;
     }
@@ -2121,8 +2122,8 @@ class Game {
         const d0 = this.dice[0], d1 = this.dice[1];
         if (d0.used && d1.used) return null;   // no available dice
 
-        const reachableByFirstDie  = d0.used ? [] : this.getReachableTiles(piece.currentTile, d0.value);
-        const reachableBySecondDie = d1.used ? [] : this.getReachableTiles(piece.currentTile, d1.value);
+        let reachableByFirstDie  = d0.used ? [] : this.getReachableTiles(piece.currentTile, d0.value);
+        let reachableBySecondDie = d1.used ? [] : this.getReachableTiles(piece.currentTile, d1.value);
         let reachableBySum = (!d0.used && !d1.used)
             ? this.getReachableTiles(piece.currentTile, d0.value + d1.value) : [];
 
@@ -2130,7 +2131,39 @@ class Game {
         if (homeTile.pieces.filter(p => p.color === piece.color).length > 1) {
             reachableBySum = [];   // >1 captured piece: no combined (sum) move
         }
+
+        // Shortest-path enforcement for a piece moved with both dice one-by-one:
+        // once it has advanced from its turn-start tile, the remaining die must
+        // keep going *forward* (to a tile whose shortest distance from the
+        // turn-start tile equals the cumulative pips), never backtrack.
+        const start = piece._turnStartTile;
+        if (start && piece.currentTile && start !== piece.currentTile) {
+            const dist = this._bfsDistances(start);
+            const moved = dist.get(piece.currentTile);
+            if (moved != null) {
+                const keep = (tiles, v) => tiles.filter(t => dist.get(t) === moved + v);
+                reachableByFirstDie  = keep(reachableByFirstDie,  d0.value);
+                reachableBySecondDie = keep(reachableBySecondDie, d1.value);
+                // reachableBySum is already [] here (both dice were needed to reach it)
+            }
+        }
         return { reachableByFirstDie, reachableBySecondDie, reachableBySum };
+    }
+
+    // Shortest (BFS) distance from startTile to every reachable tile, respecting
+    // the same blocked/nogo/home rules as movement.
+    _bfsDistances(startTile) {
+        const dist = new Map([[startTile, 0]]);
+        const queue = [startTile];
+        while (queue.length) {
+            const t = queue.shift(), d = dist.get(t);
+            t.neighbors.forEach(n => {
+                if (n.type !== 'nogo' && n.type !== 'home' && !this.isBlocked(n) && !dist.has(n)) {
+                    dist.set(n, d + 1); queue.push(n);
+                }
+            });
+        }
+        return dist;
     }
     
     
@@ -2378,7 +2411,9 @@ switchTurn() {
         this.rollDice();
         this.movedOnce = false;
         this.updateMovablePieces();
-        this.pieces.forEach(piece => piece.reachableTiles = null);
+        // record each piece's position at the turn start so a piece moved with
+        // both dice one-by-one must keep advancing (shortest path, no backtrack).
+        this.pieces.forEach(piece => { piece.reachableTiles = null; piece._turnStartTile = piece.currentTile || null; });
         this.state = this.captureState();
         this.undoStack = [];         // fresh per-move undo history each turn
         this.applyLastPieceRule();
