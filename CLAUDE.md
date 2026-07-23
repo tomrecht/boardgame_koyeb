@@ -10,6 +10,25 @@ when you must read an out-of-folder artifact (e.g. a running worktree's log),
 `cp` it in first. (Some existing runs — e.g. the symmetry-aug worktree — predate
 this rule; monitor them by copying their logs in.)
 
+**OVERNIGHT / AUTONOMOUS WORK RULES (owner, 2026-07-23, after a failure).**
+The agent only acts *while a turn is running* (issuing tool calls). The moment
+it ends a turn with a text message, it goes IDLE until the next user message or
+a scheduled/background event — there is NO background execution otherwise.
+A "continuing meanwhile…" sign-off followed by ending the turn = doing nothing.
+So, for any "work through the night / while I sleep" task:
+  1. NEVER promise to "keep going" and then end the turn. If work remains, keep
+     issuing tool calls until it is actually done or at a genuine checkpoint.
+  2. To truly run unattended, set up REAL continuation: launch long jobs as
+     tracked background processes (`run_in_background`) AND schedule a self-
+     wakeup (ScheduleWakeup / CronCreate) so the agent re-enters and continues;
+     verify the wakeup actually fires. Chain wakeups until the job is complete.
+  3. During an unattended window, do the DELEGATED autonomous task first (it is
+     the only thing that can't happen while the owner is asleep). Don't let
+     interactive polish requests displace it; run them in parallel via
+     background if needed.
+  4. Checkpoint durably every step (commit, update CLAUDE.md/memory) so progress
+     survives an interruption and is visible on waking.
+
 ## Project background
 
 Custom hub-and-spoke dice board game. Full stack built from scratch: game

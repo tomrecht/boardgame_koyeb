@@ -75,11 +75,17 @@ function pushHumanMove(pieceColorNumber, target, die) {
 }
 
 // ── HIDDEN DEBUG TOGGLE ─────────────────────────────────────────────────
+// Master switch for the hidden developer modes (triple-press D = debug,
+// E = eval readout, S = setup/free-placement). Set to false for public/casual
+// builds so players can never toggle them on. Flip to true for development.
+const ALLOW_DEV_MODES = false;
+
 window.debugMode = false;
 (function() {
     var tapCount = 0;
     var tapTimer = null;
     document.addEventListener('keydown', function(e) {
+        if (!ALLOW_DEV_MODES) return;
         if (e.key !== 'd' && e.key !== 'D') return;
         e.preventDefault();
         tapCount++;
@@ -103,6 +109,7 @@ window.showEvals = false;
     var tapCount = 0;
     var tapTimer = null;
     document.addEventListener('keydown', function(e) {
+        if (!ALLOW_DEV_MODES) return;
         if (e.key !== 'e' && e.key !== 'E') return;
         e.preventDefault();
         tapCount++;
@@ -260,6 +267,7 @@ function exportSetupState() {
 (function () {
     let n = 0, t = null;
     document.addEventListener('keydown', function (e) {
+        if (!ALLOW_DEV_MODES) return;
         if (e.key !== 's' && e.key !== 'S') return;
         if (e.ctrlKey || e.metaKey) return;     // leave Ctrl/Cmd+S alone
         e.preventDefault();
