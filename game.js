@@ -26,7 +26,9 @@ const NO_SAVE_TURNS_FOR_DRAW = 10;
 const DIE_1_POSITION= 400;
 const DIE_2_POSITION = 500;
 
-const BACKGROUND_COLOR = 0xfdf6e3; // Cream
+const BACKGROUND_COLOR = 0xd5dbe4; // Clean Modern page/background (nogo tiles blend into this)
+const GOAL_COLORS = { 1:0xe15b64, 2:0xf0a04b, 3:0xf7d154, 4:0x66b26a, 5:0x4a90d9, 6:0x9b6dc9 };
+const GRID_LINE = 0xc3ccd8; // subtle tile grid line
 const colorFirstDie = 0x40E0D0; // Turquoise
 const colorSecondDie = 0xFFC0CB; 
 const colorSum = 0xFFFF00; // Yellow
@@ -969,22 +971,24 @@ class Tile {
             this.reachableColor = null;
             this.lastClickTime = null;
     
-            this.lineColor = 0x000000;
+            this.lineColor = GRID_LINE;
             this.graphics = scene.add.graphics();
 
             switch (type) {
                 case "home":
-                    this.fillColor = 0xffff00;
+                    this.fillColor = 0xffd24d; this.lineColor = 0xe9b21e;
                     break;
                 case "save":
-                    this.fillColor = 0x00ff00;
+                    this.fillColor = GOAL_COLORS[number] || 0x4a90d9; this.lineColor = GRID_LINE;
                     break;
                 case "nogo":
-                    this.fillColor = ring === 7 ? BACKGROUND_COLOR : 0x000000; 
-                    this.lineColor = ring === 7 ? BACKGROUND_COLOR : 0x000000; // No border for 7th ring nogo tiles
+                    // Clean Modern: nogo = "no board space" -> blend into the
+                    // background with no visible border.
+                    this.fillColor = BACKGROUND_COLOR;
+                    this.lineColor = BACKGROUND_COLOR;
                     break;
                 case "field":
-                    this.fillColor = 0xffffff;
+                    this.fillColor = 0xffffff; this.lineColor = GRID_LINE;
                     break;
             }
 
