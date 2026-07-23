@@ -43,6 +43,32 @@ const colorFirstDie = 0x40E0D0; // Turquoise
 const colorSecondDie = 0xFFC0CB; 
 const colorSum = 0xFFFF00; // Yellow
 const FONT_FAMILY = 'Crimson Text';
+// Clean-Modern HUD: system sans-serif + palette (matches design/cm.html).
+const HUD_FONT = '"Segoe UI", system-ui, -apple-system, sans-serif';
+const HUD_ACCENT = '#3b6ea5';
+const HUD_INK = '#28313b';
+const HUD_PANEL_BORDER = 0xdbe1ea;
+
+// Rounded pill button with a soft shadow, matching the mockup .btn / .btn.ghost.
+// Returns the interactive Text object (callers attach their own pointer handlers);
+// a graphics background sits just behind it and tracks its bounds.
+function makeHudButton(scene, cx, cy, label, { ghost = false } = {}) {
+    const txt = scene.add.text(cx, cy, label, {
+        fontSize: '19px', fontFamily: HUD_FONT, fontStyle: 'bold',
+        color: ghost ? HUD_INK : '#ffffff', padding: { x: 16, y: 9 }
+    }).setOrigin(0.5).setDepth(2).setInteractive({ useHandCursor: true });
+    const b = txt.getBounds();
+    const r = 9;
+    const g = scene.add.graphics().setDepth(1);
+    g.fillStyle(0x000000, 0.12); g.fillRoundedRect(b.x, b.y + 2, b.width, b.height, r);
+    if (ghost) {
+        g.fillStyle(0xffffff, 1); g.fillRoundedRect(b.x, b.y, b.width, b.height, r);
+        g.lineStyle(1, HUD_PANEL_BORDER, 1); g.strokeRoundedRect(b.x, b.y, b.width, b.height, r);
+    } else {
+        g.fillStyle(0x3b6ea5, 1); g.fillRoundedRect(b.x, b.y, b.width, b.height, r);
+    }
+    return txt;
+}
 
 
 const scoreTracker = {
@@ -2595,39 +2621,20 @@ class MainGameScene extends Phaser.Scene {
         .setVisible(true);
 
 
-        // Add instructions button
-        const instructionsButton = this.add.text(150, 50, 'How to Play', {
-            fontSize: '24px',
-            fontFamily: FONT_FAMILY,
-            backgroundColor: '#87CEEB',
-            padding: { x: 15, y: 7.5 },
-            borderColor: '#000',
-            borderWidth: 1.5,
-            borderRadius: 3.75
-        }).setOrigin(0.5).setInteractive();
+        // Add new game button (accent) + instructions button (ghost)
+        const newGameButton = makeHudButton(this, 150, 52, 'New Game');
+        newGameButton.on('pointerdown', () => {
+            this.showNewGameConfirmationModal();
+        });
 
+        const instructionsButton = makeHudButton(this, 150, 104, 'How to Play', { ghost: true });
         instructionsButton.on('pointerdown', () => {
             this.scene.switch('InstructionsScene');
         });
 
-                // Add new game button under the instructions button
-                const newGameButton = this.add.text(150, 100, 'New Game', {
-                    fontSize: '24px',
-                    fontFamily: FONT_FAMILY,
-                    backgroundColor: '#87CEEB',
-                    padding: { x: 15, y: 7.5 },
-                    borderColor: '#000',
-                    borderWidth: 1.5,
-                    borderRadius: 3.75
-                }).setOrigin(0.5).setInteractive();
-        
-                newGameButton.on('pointerdown', () => {
-                    this.showNewGameConfirmationModal();
-                });
-
         // Add save game state button
         if(DEBUG_MODE) {
-        const saveGameStateButton = this.add.text(300, 100, 'Save Game', {
+        const saveGameStateButton = this.add.text(320, 104, 'Save Game', {
             fontSize: '24px',
             fontFamily: FONT_FAMILY,
             backgroundColor: '#87CEEB',
@@ -2644,14 +2651,12 @@ class MainGameScene extends Phaser.Scene {
 
         // Add score display text box
         this.scoreText = this.add.text(20, this.sys.game.config.height - 100, '', {
-            fontSize: '24px',
-            fontFamily: FONT_FAMILY,
-            color: '#000',
+            fontSize: '19px',
+            fontFamily: HUD_FONT,
+            color: HUD_INK,
             backgroundColor: '#ffffff',
-            padding: { x: 10, y: 5 },
-            borderColor: '#000',
-            borderWidth: 1.5,
-            borderRadius: 3.75
+            padding: { x: 14, y: 11 },
+            lineSpacing: 5
         }).setOrigin(0, 1);
 
         this.updateScoreText();
@@ -2714,18 +2719,18 @@ class MainGameScene extends Phaser.Scene {
         const textX = circleX + 30;
         const textY = circleY;
     
-        const circle = this.add.circle(circleX, circleY, 15, BLACK_IS_AI ? 0x87CEEB : 0xD3D3D3)
-            .setInteractive()
+        const circle = this.add.circle(circleX, circleY, 15, BLACK_IS_AI ? 0x3b6ea5 : 0xD3D3D3)
+            .setInteractive({ useHandCursor: true })
             .on('pointerdown', () => {
                 BLACK_IS_AI = !BLACK_IS_AI;
                 this.game.updateBlackPlayerAIStatus(BLACK_IS_AI);
-                circle.setFillStyle(BLACK_IS_AI ? 0x87CEEB : 0xD3D3D3);
+                circle.setFillStyle(BLACK_IS_AI ? 0x3b6ea5 : 0xD3D3D3);
             });
-    
+
         const text = this.add.text(textX, textY, 'Play Computer', {
-            fontSize: '24px',
-            fontFamily: FONT_FAMILY,
-            color: '#000'
+            fontSize: '20px',
+            fontFamily: HUD_FONT,
+            color: HUD_INK
         }).setOrigin(0, 0.5);
     }
     
