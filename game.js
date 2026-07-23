@@ -10,8 +10,13 @@ const DEBUG_MODE = false;
 const WHITE_IS_AI = false;
 let BLACK_IS_AI = true;
 
-const PIECE_RADIUS_BASE = 20; 
-const TILE_RADIUS_STEP = 60; 
+const PIECE_RADIUS_BASE = 20;
+// On-board stacking: pieces render at a fixed radius and pack into a polar
+// grid of slots sized from each tile's geometry; overflow folds into a "+K"
+// badge with a tap-to-pick picker (ported from design/stack.html).
+const STACK_PR = 17;
+const STACK_SLOT = STACK_PR * 2 + 4;
+const TILE_RADIUS_STEP = 60;
 const CENTER_X = 900;
 const CENTER_Y = 640; 
 const HOME_TILE_RADIUS = TILE_RADIUS_STEP * 1.5; 
@@ -706,7 +711,19 @@ class Piece {
             this.text.setFontSize(`${size * 1.7}px`);
         }
     }
-    
+
+    // Show/hide the whole piece. Overflow pieces on a stacked tile are hidden
+    // (still selectable via the tile's tap-to-pick picker); hiding disables the
+    // circle's pointer input so a hidden piece can't be clicked directly.
+    setVisible(v) {
+        this.hidden = !v;
+        this.body.setVisible(v);
+        this.sheen.setVisible(v);
+        this.circle.setVisible(v);
+        if (this.circle.input) this.circle.input.enabled = v;
+        if (this.text) this.text.setVisible(v);
+    }
+
 
     async debugShowPathInfo() {
         if (!this.currentTile) {
@@ -820,6 +837,7 @@ class Piece {
         if (this.text) {
             this.text.setPosition(this.x, this.y);
         }
+        this.setVisible(true);   // a piece hidden as tile overflow reappears in the rack
         if (addToFront) {
         rack.addPieceToFirstPosition(this);
         } else {
@@ -1194,70 +1212,71 @@ class Tile {
                 const angle = angularStep * index; // Calculate angle for each piece
                 const x = CENTER_X + homeTileRadius * Math.cos(angle); // Calculate x position
                 const y = CENTER_Y + homeTileRadius * Math.sin(angle); // Calculate y position
-                
-                piece.setPosition(x, y); // Set piece position
+
                 piece.setSize(PIECE_RADIUS_BASE); // Set piece size
+                piece.setPosition(x, y); // Set piece position
+                piece.setVisible(true);
             });
         } else {
-            const innerRadius = TILE_RADIUS_STEP * (this.ring - 1) + HOME_TILE_RADIUS;
-            const outerRadius = TILE_RADIUS_STEP * this.ring + HOME_TILE_RADIUS;
-            const arcLength = (this.endAngle - this.startAngle) * outerRadius; // Arc length of the segment
-            
-            let padding = 10;
-    
-            let maxPieceSize = PIECE_RADIUS_BASE;
-            let piecesPerArc = Math.floor(arcLength / (2 * maxPieceSize + padding));
-    
-            // Check if resizing is necessary
-            if (this.pieces.length > piecesPerArc) {
-                while (this.pieces.length > piecesPerArc && maxPieceSize > 10) { // Adjust minimum size threshold
-                    maxPieceSize -= 1;
-                    padding = 10 * (maxPieceSize / PIECE_RADIUS_BASE); // Adjust padding proportionally
-                    piecesPerArc = Math.floor(arcLength / (2 * maxPieceSize + padding));
+            // Capacity-based stacking: pack pieces into a polar grid of fixed-size
+            // slots computed from this tile's geometry. Numbered pieces (1-6) take
+            // visibility precedence; any overflow folds into a "+K" badge that the
+            // tap-to-pick picker expands.
+            const { slots, cap } = this.computeSlots();
+            const ord = [...this.pieces].sort((a, b) => (a.number > 6 ? 1 : 0) - (b.number > 6 ? 1 : 0));
+            const over = ord.length > cap;
+            const show = over ? cap - 1 : ord.length;
+            ord.forEach((piece, i) => {
+                if (i < show) {
+                    const sl = slots[i] || slots[slots.length - 1];
+                    piece.setSize(STACK_PR);
+                    piece.setPosition(CENTER_X + sl.r * Math.cos(sl.a), CENTER_Y + sl.r * Math.sin(sl.a));
+                    piece.setVisible(true);
+                } else {
+                    piece.setVisible(false);
                 }
-            }
-    
-            if (this.pieces.length > piecesPerArc) {
-                // If pieces are still too many, arrange in two rows
-   
-                const rowCount = 2; // Number of rows
-                const piecesPerRow = Math.ceil(this.pieces.length / rowCount);
-    
-                let rowRadius = (innerRadius + outerRadius) / 2;
-    
-                // Adjust piece size for two-row arrangement
-                while (true) {
-                    const arcPieceCount = Math.floor(arcLength / (2 * maxPieceSize + padding));
-                    if (arcPieceCount >= piecesPerRow || maxPieceSize <= 10) break; // Adjust minimum size threshold
-                    maxPieceSize -= 1;
-                    
-                }
-    
-                this.pieces.forEach((piece, index) => {
-                    const row = Math.floor(index / piecesPerRow);
-                    const angularStep = (this.endAngle - this.startAngle) / piecesPerRow;
-                    const angle = this.startAngle + angularStep * (index % piecesPerRow + 0.5);
-                    const radius = row === 0 ? rowRadius - maxPieceSize - padding : rowRadius + maxPieceSize + padding;
-    
-                    const x = CENTER_X + radius * Math.cos(angle);
-                    const y = CENTER_Y + radius * Math.sin(angle);
-    
-                    piece.setPosition(x, y);
-                    piece.setSize(maxPieceSize); // Set piece size
-                });
+            });
+            if (over) {
+                const sl = slots[cap - 1];
+                this.showBadge(CENTER_X + sl.r * Math.cos(sl.a), CENTER_Y + sl.r * Math.sin(sl.a),
+                               ord.length - (cap - 1));
             } else {
-                // Single row arrangement
-                const angularStep = (this.endAngle - this.startAngle) / this.pieces.length; // Angular step between pieces
-                this.pieces.forEach((piece, index) => {
-                    const angle = this.startAngle + angularStep * (index + 0.5);
-                    const x = CENTER_X + (innerRadius + outerRadius) / 2 * Math.cos(angle);
-                    const y = CENTER_Y + (innerRadius + outerRadius) / 2 * Math.sin(angle);
-                    
-                    piece.setPosition(x, y);
-                    piece.setSize(maxPieceSize); // Update the size of the piece
-                });
+                this.hideBadge();
             }
         }
+    }
+
+    // Polar grid of ~STACK_PR-radius slots filling this tile (number sits
+    // outside the tile, so the full radial extent is available for pieces).
+    computeSlots() {
+        const dth = this.endAngle - this.startAngle;
+        const ext = this.outerRadius - this.innerRadius;
+        const rows = Math.max(1, Math.round(ext / STACK_SLOT));
+        const slots = [];
+        for (let k = 0; k < rows; k++) {
+            const r = this.innerRadius + (k + 0.5) * (ext / rows);
+            const s = Math.max(1, Math.floor((r * dth) / STACK_SLOT));
+            for (let j = 0; j < s; j++) {
+                const a = this.startAngle + (j + 0.5) / s * dth;
+                slots.push({ r, a });
+            }
+        }
+        return { slots, cap: slots.length };
+    }
+
+    showBadge(x, y, k) {
+        if (!this.badgeCircle) {
+            this.badgeCircle = this.scene.add.circle(x, y, STACK_PR, 0x3b6ea5).setDepth(60);
+            this.badgeText = this.scene.add.text(x, y, '', {
+                fontSize: `${STACK_PR}px`, fontFamily: HUD_FONT, fontStyle: 'bold', color: '#ffffff'
+            }).setOrigin(0.5).setDepth(61);
+        }
+        this.badgeCircle.setPosition(x, y).setVisible(true);
+        this.badgeText.setPosition(x, y).setText('+' + k).setVisible(true);
+    }
+
+    hideBadge() {
+        if (this.badgeCircle) { this.badgeCircle.setVisible(false); this.badgeText.setVisible(false); }
     }
     
     
@@ -1348,6 +1367,7 @@ class Rack {
             const newX = this.x + this.horizontalPadding + (i % this.cols) * this.spacing;
             const newY = this.y + this.verticalPadding + Math.floor(i / this.cols) * this.spacing;
             piece.setPosition(newX, newY);
+            piece.setVisible(true);   // ensure a formerly-hidden overflow piece shows in the rack
                     // Force size reset when on rack
             if (this.type === 'unentered' || this.type === 'saved') {
                 piece.setSize(PIECE_RADIUS_BASE);
