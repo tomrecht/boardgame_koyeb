@@ -18,8 +18,10 @@ const STACK_PR = 17;
 const STACK_SLOT = STACK_PR * 2 + 4;
 const TILE_RADIUS_STEP = 60;
 const CENTER_X = 900;
-const CENTER_Y = 640; 
-const HOME_TILE_RADIUS = TILE_RADIUS_STEP * 1.5; 
+// Board vertical centre. 600 (canvas midpoint) keeps goal 2's number, at
+// CENTER_Y + outerRadius + 26, inside the 1200-tall canvas instead of clipping.
+const CENTER_Y = 600;
+const HOME_TILE_RADIUS = TILE_RADIUS_STEP * 1.5;
 
 const TOTAL_PIECES = 12;
 
@@ -28,8 +30,16 @@ const TOTAL_PIECES = 12;
 // player, either player may call a draw. Easily changed. Must match game.py.
 const NO_SAVE_TURNS_FOR_DRAW = 10;
 
-const DIE_1_POSITION= 400;
+const DIE_1_POSITION= 400;   // (still used to place the undo/end-turn arrows)
 const DIE_2_POSITION = 500;
+// Dice: ~1.5x bigger than before (80->120), anchored so the pair's top-right
+// corner stays put (die 2 right edge = 580, top = 50).
+const DIE_SIZE = 120;
+const DICE_Y = 50;
+const DICE_X2 = 580 - DIE_SIZE;         // second (right) die
+const DICE_X1 = DICE_X2 - DIE_SIZE - 20; // first die, 20px gap
+// Rack pieces render a touch larger than board pieces (mockup look).
+const RACK_PR = 22;
 
 const BACKGROUND_COLOR = 0xc9d1dc; // Clean Modern background (nogo tiles blend into this)
 const GOAL_COLOR = 0x4a90d9;        // all goal tiles are blue (as in the original)
@@ -42,7 +52,7 @@ const TILE_BORDER = 0x000000;       // black tile boundaries
 // would vanish, so white pieces use a defined rim + slight off-white body).
 const PIECE_WHITE_BODY = 0xf1f4f8;
 const PIECE_WHITE_RIM  = 0x5b6472;
-const PIECE_BLACK_BODY = 0x1d2024;
+const PIECE_BLACK_BODY = 0x000000;   // solid black (no sheen highlight)
 const PIECE_BLACK_RIM  = 0x0a0b0d;
 const colorFirstDie = 0x40E0D0; // Turquoise
 const colorSecondDie = 0xFFC0CB; 
@@ -900,7 +910,7 @@ class Piece {
         this.rack = rack;
         this.x = rack.nextX();
         this.y = rack.nextY();
-        this.setSize(PIECE_RADIUS_BASE);
+        this.setSize(RACK_PR);
         this.body.setPosition(this.x, this.y);
         this.circle.setPosition(this.x, this.y);
         this._layoutSheen();
@@ -1065,7 +1075,8 @@ class Piece {
         // (native shapes render reliably on any background, unlike a baked
         // white-on-white gradient texture).
         this.body = this.scene.add.circle(this.x, this.y, this.radius, this.bodyColor);
-        this.sheen = this.scene.add.circle(0, 0, this.radius * 0.42, 0xffffff, isWhite ? 0.55 : 0.30);
+        // white pieces get a soft sheen; black pieces are solid (no highlight).
+        this.sheen = this.scene.add.circle(0, 0, this.radius * 0.42, 0xffffff, isWhite ? 0.55 : 0);
         this._layoutSheen();
 
         // transparent interactive circle carries the border + pointer events.
@@ -1422,9 +1433,9 @@ class Rack {
         this.pieces = [];
         this.rows = rows;
         this.cols = 3;
-        this.spacing = PIECE_RADIUS_BASE * 2 + 10;
-        this.verticalPadding = 20;
-        this.horizontalPadding = 15;
+        this.spacing = RACK_PR * 2 + 12;
+        this.verticalPadding = 22;
+        this.horizontalPadding = 18;
         this.background = scene.add.graphics();
         this.drawBackground();
     }
@@ -1447,7 +1458,7 @@ class Rack {
             piece.setVisible(true);   // ensure a formerly-hidden overflow piece shows in the rack
                     // Force size reset when on rack
             if (this.type === 'unentered' || this.type === 'saved') {
-                piece.setSize(PIECE_RADIUS_BASE);
+                piece.setSize(RACK_PR);
             }
         }
     }
@@ -1484,9 +1495,9 @@ class Rack {
     drawBackground() {
         // Clean Modern (matches mockup): white rounded panel + soft shadow +
         // faint empty capacity slots. No text.
-        const bx = this.x - PIECE_RADIUS_BASE, by = this.y - PIECE_RADIUS_BASE;
-        const bw = this.cols * this.spacing + PIECE_RADIUS_BASE;
-        const bh = this.rows * this.spacing + PIECE_RADIUS_BASE + this.verticalPadding;
+        const bx = this.x - RACK_PR, by = this.y - RACK_PR;
+        const bw = this.cols * this.spacing + RACK_PR;
+        const bh = this.rows * this.spacing + RACK_PR + this.verticalPadding;
         this.background.fillStyle(0x000000, 0.07);
         this.background.fillRoundedRect(bx, by + 5, bw, bh, 16);      // soft drop shadow
         this.background.fillStyle(0xffffff, 1);
@@ -1498,7 +1509,7 @@ class Rack {
         for (let i = 0; i < this.cols * this.rows; i++) {
             const sx = this.x + this.horizontalPadding + (i % this.cols) * this.spacing;
             const sy = this.y + this.verticalPadding + Math.floor(i / this.cols) * this.spacing;
-            this.background.strokeCircle(sx, sy, PIECE_RADIUS_BASE);
+            this.background.strokeCircle(sx, sy, RACK_PR);
         }
     }
 }
@@ -1511,7 +1522,7 @@ class Die {
         this.value = Phaser.Math.Between(1, 6);
         this.x = x;
         this.y = y;
-        this.size = 80; // Smaller size
+        this.size = DIE_SIZE;
         this.used = false;
         this.isFirstDie = isFirstDie;
 
@@ -1552,7 +1563,7 @@ class Die {
         this.graphics.fillRoundedRect(this.x, this.y, this.size, this.size, 14);
         this.graphics.strokeRoundedRect(this.x, this.y, this.size, this.size, 14);
 
-        const dotSize = 9; // Adjusted dot size
+        const dotSize = this.size * 0.11; // scales with the die
         const dotOffset = this.size / 4;
 
         const drawDot = (dx, dy) => {
@@ -1587,7 +1598,7 @@ class Game {
         this.players = [new Player('white', WHITE_IS_AI), new Player('black', BLACK_IS_AI)];
         this.startingPlayer = startingPlayer;
         this.turn = this.startingPlayer;
-        this.dice = [new Die(scene, DIE_1_POSITION, 50, true), new Die(scene, DIE_2_POSITION, 50, false)];
+        this.dice = [new Die(scene, DICE_X1, DICE_Y, true), new Die(scene, DICE_X2, DICE_Y, false)];
         this.gameOver = false;
         this.score = { 'white': 0, 'black': 0 };
         this.selectedPiece = null;
@@ -1606,10 +1617,12 @@ class Game {
         // Initialize racks
         // saved rack sits flush beneath the unentered rack (panel height with
         // rows=4 is 240px), so each side's two racks touch like the mockup.
-        this.whiteUnenteredRack = new Rack(scene, 75, 150, 'white', 'unentered');
-        this.whiteSavedRack = new Rack(scene, 75, 390, 'white', 'saved');
-        this.blackUnenteredRack = new Rack(scene, 1545, 150, 'black', 'unentered');
-        this.blackSavedRack = new Rack(scene, 1545, 390, 'black', 'saved');
+        // Two racks per side, stacked flush and vertically centred on the board
+        // (panel height with rows=4 is 266px; block of two = 532, centred at 600).
+        this.whiteUnenteredRack = new Rack(scene, 75, 356, 'white', 'unentered');
+        this.whiteSavedRack = new Rack(scene, 75, 622, 'white', 'saved');
+        this.blackUnenteredRack = new Rack(scene, 1545, 356, 'black', 'unentered');
+        this.blackSavedRack = new Rack(scene, 1545, 622, 'black', 'saved');
 
         this.confirmationModal = null;
 
@@ -1656,11 +1669,13 @@ class Game {
         blackPieces = Phaser.Utils.Array.Shuffle(blackPieces);
 
         whitePieces.forEach(piece => {
+            piece.setSize(RACK_PR);
             piece.setPosition(this.whiteUnenteredRack.nextX(), this.whiteUnenteredRack.nextY());
             this.whiteUnenteredRack.addPiece(piece);
         });
 
         blackPieces.forEach(piece => {
+            piece.setSize(RACK_PR);
             piece.setPosition(this.blackUnenteredRack.nextX(), this.blackUnenteredRack.nextY());
             this.blackUnenteredRack.addPiece(piece);
         });
@@ -2751,13 +2766,11 @@ class MainGameScene extends Phaser.Scene {
     }
 
         // Add score display text box
-        this.scoreText = this.add.text(20, this.sys.game.config.height - 100, '', {
-            fontSize: '19px',
+        // Single-line counters directly on the background (no box), bottom-left.
+        this.scoreText = this.add.text(24, this.sys.game.config.height - 24, '', {
+            fontSize: '20px',
             fontFamily: HUD_FONT,
-            color: HUD_INK,
-            backgroundColor: '#ffffff',
-            padding: { x: 14, y: 11 },
-            lineSpacing: 5
+            color: HUD_INK
         }).setOrigin(0, 1);
 
         this.updateScoreText();
@@ -2791,21 +2804,18 @@ class MainGameScene extends Phaser.Scene {
     }
 
     updateScoreText() {
-            // Session total score (signed: + favours White). Shown with a
-            // leader label, replacing the old average-score line.
+            // Single line, interpunct-separated, directly on the background.
+            // Total score is signed (+ favours White), shown with a leader label.
             const total = scoreTracker.total_score;
-            let totalLine;
-            if (total === 0) {
-                totalLine = `Total Score: ${total}`;
-            } else {
-                const leaderLabel = total > 0 ? "White" : "Black";
-                totalLine = `Total Score: ${leaderLabel} +${Math.abs(total)}`;
-            }
-
+            const totalStr = total === 0 ? '0'
+                : `${total > 0 ? 'White' : 'Black'} +${Math.abs(total)}`;
+            const sep = '  \u00B7  ';
             this.scoreText.setText(
-                `Games Played: ${scoreTracker.games_played}\n` +
-                `White ${scoreTracker.white_wins}  \u00B7  Black ${scoreTracker.black_wins}  \u00B7  Draws ${scoreTracker.draws}\n` +
-                totalLine
+                [`Games ${scoreTracker.games_played}`,
+                 `White ${scoreTracker.white_wins}`,
+                 `Black ${scoreTracker.black_wins}`,
+                 `Draws ${scoreTracker.draws}`,
+                 `Total score ${totalStr}`].join(sep)
             );
         }
 
