@@ -559,19 +559,62 @@ function openStackPicker(tile) {
             chip.onmouseenter = () => { chip.style.transform = 'translateY(-3px)';
                 chip.style.boxShadow = baseShadow + ',0 0 0 3px ' + THEME.accentCss; };
             chip.onmouseleave = () => { chip.style.transform = ''; chip.style.boxShadow = baseShadow; };
-            chip.onclick = (ev) => {
+            // A plain click selects the piece; dragging the chip picks the (hidden)
+            // piece up and lets you drop it straight onto a board tile.
+            chip.onpointerdown = (ev) => {
+                if (ev.button !== 0) return;
+                ev.preventDefault(); ev.stopPropagation();
+                const canvas = document.querySelector('canvas');
+                const toGame = (cx, cy) => { const r = canvas.getBoundingClientRect();
+                    return [(cx - r.left) * canvas.width / r.width, (cy - r.top) * canvas.height / r.height]; };
+                const start = [ev.clientX, ev.clientY];
+                let dragging = false;
+                const selectPiece = () => {
+                    _clearSelection(game);
+                    piece.handleClick({ rightButtonDown: () => false });
+                    return game.selectedPiece === piece;
+                };
+                const cleanup = () => {
+                    document.removeEventListener('pointermove', onMove);
+                    document.removeEventListener('pointerup', onUp);
+                };
+                const onMove = (e) => {
+                    if (!dragging) {
+                        if (Math.hypot(e.clientX - start[0], e.clientY - start[1]) < 5) return;
+                        hideStackPicker();
+                        if (!selectPiece()) { cleanup(); return; }
+                        piece.setVisible(true); piece.setSize(STACK_PR);   // lift it out of the stack
+                        dragging = true;
+                    }
+                    const [x, y] = toGame(e.clientX, e.clientY);
+                    piece.setPosition(x, y);
+                };
+                const onUp = (e) => {
+                    cleanup();
+                    if (dragging) {
+                        const [x, y] = toGame(e.clientX, e.clientY);
+                        const target = game.tileAtPoint(x, y);
+                        const before = piece.currentTile;
+                        if (target) target.onClick();                 // move (or self-tile cancel)
+                        if (piece.currentTile === before) _clearSelection(game);  // no move -> deselect
+                        if (piece.currentTile) piece.currentTile.updatePositions();
+                        else if (piece.rack) piece.rack.shiftPiecesUp();
+                    } else {
+                        hideStackPicker();
+                        selectPiece();   // plain click -> select
+                    }
+                };
+                document.addEventListener('pointermove', onMove);
+                document.addEventListener('pointerup', onUp);
+            };
+        } else {
+            // opponent piece: double-click supports the block-save gesture
+            chip.ondblclick = (ev) => {
                 ev.stopPropagation();
                 hideStackPicker();
-                _clearSelection(game);                 // drop any prior selection first...
-                piece.handleClick({ rightButtonDown: () => false });   // ...then select this piece
+                if (piece.currentTile) piece.handleDoubleClick();
             };
         }
-        // double-click an opponent piece supports the block-save gesture
-        chip.ondblclick = (ev) => {
-            ev.stopPropagation();
-            hideStackPicker();
-            if (piece.currentTile) piece.handleDoubleClick();
-        };
         row.appendChild(chip);
     });
     pop.appendChild(row);
