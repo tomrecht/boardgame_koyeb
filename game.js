@@ -29,6 +29,16 @@ const DIE_2_POSITION = 500;
 const BACKGROUND_COLOR = 0xc9d1dc; // Clean Modern background (nogo tiles blend into this)
 const GOAL_COLOR = 0x4a90d9;        // all goal tiles are blue (as in the original)
 const TILE_BORDER = 0x000000;       // black tile boundaries
+
+// Baked radial-gradient sphere texture for a piece (matches the mockup's CSS
+// spheres, which Phaser vector circles can't reproduce). Cached per colour.
+// Piece colors: light body + soft sheen for a glossy 3D read that stays
+// visible on the white rack panels (a white gradient sphere on a white panel
+// would vanish, so white pieces use a defined rim + slight off-white body).
+const PIECE_WHITE_BODY = 0xf1f4f8;
+const PIECE_WHITE_RIM  = 0x5b6472;
+const PIECE_BLACK_BODY = 0x1d2024;
+const PIECE_BLACK_RIM  = 0x0a0b0d;
 const colorFirstDie = 0x40E0D0; // Turquoise
 const colorSecondDie = 0xFFC0CB; 
 const colorSum = 0xFFFF00; // Yellow
@@ -653,17 +663,21 @@ class Piece {
     setPosition(x, y) {
         this.x = x;
         this.y = y;
+        this.body.setPosition(x, y);
         this.circle.setPosition(x, y);
+        this._layoutSheen();
         if (this.text) {
             this.text.setPosition(x, y);
         }
     }
-    
+
     setSize(size) {
         this.radius = size;
+        this.body.setRadius(size);
         this.circle.setRadius(size);
+        this._layoutSheen();
         if (this.text) {
-            this.text.setFontSize(`${size * 1.5}px`);
+            this.text.setFontSize(`${size * 1.7}px`);
         }
     }
     
@@ -774,7 +788,9 @@ class Piece {
         this.x = rack.nextX();
         this.y = rack.nextY();
         this.setSize(PIECE_RADIUS_BASE);
+        this.body.setPosition(this.x, this.y);
         this.circle.setPosition(this.x, this.y);
+        this._layoutSheen();
         if (this.text) {
             this.text.setPosition(this.x, this.y);
         }
@@ -806,12 +822,13 @@ class Piece {
     }
 
     updateColor() {
+        if (!this.body) return;
+        // highlight (selected/hovered) recolors the body; the rim + sheen stay.
         if (this.isSelected || this.isHovered) {
-            this.circle.fillColor = this.color === 0xffffff ? 0x90ee90 : 0xee82ee;
+            this.body.setFillStyle(this.color === 0xffffff ? 0x90ee90 : 0xee82ee);
         } else {
-            this.circle.fillColor = this.originalColor;
+            this.body.setFillStyle(this.bodyColor);
         }
-        this.circle.setStrokeStyle(2, this.borderColor);
     }
 
 
@@ -926,9 +943,20 @@ class Piece {
     }
 
     drawPiece() {
-        this.circle = this.scene.add.circle(this.x, this.y, this.radius, this.color)
-            // border so white pieces read on white panels/tiles; subtle edge on black
-            .setStrokeStyle(2.5, this.color === 0xffffff ? 0x9aa5b4 : 0x2b3038, 1)
+        const isWhite = this.color === 0xffffff;
+        this.bodyColor = isWhite ? PIECE_WHITE_BODY : PIECE_BLACK_BODY;
+        const rimColor = isWhite ? PIECE_WHITE_RIM : PIECE_BLACK_RIM;
+
+        // flat sphere body + soft top-left sheen highlight for a glossy read
+        // (native shapes render reliably on any background, unlike a baked
+        // white-on-white gradient texture).
+        this.body = this.scene.add.circle(this.x, this.y, this.radius, this.bodyColor);
+        this.sheen = this.scene.add.circle(0, 0, this.radius * 0.42, 0xffffff, isWhite ? 0.55 : 0.30);
+        this._layoutSheen();
+
+        // transparent interactive circle carries the border + pointer events.
+        this.circle = this.scene.add.circle(this.x, this.y, this.radius, 0xffffff, 0)
+            .setStrokeStyle(2.5, rimColor, 1)
             .setInteractive()
             .on('pointerover', () => this.onHover())
             .on('pointerout', () => this.onOut())
@@ -941,16 +969,20 @@ class Piece {
             .on('pointermove', () => { if (window.debugMode && this.number > 6) showDebugTip(`${this.player} #${this.number}`); })
             .on('pointerout',  () => { hideDebugTip(); });
 
-        this.circle.setStrokeStyle(2, this.borderColor);
-
         if (this.number <= 6 || DEBUG_MODE) {
             this.text = this.scene.add.text(this.x, this.y, this.number, {
-                fontSize: `${this.radius * 1.5}px`,
-                color: `#${this.textColor.toString(16)}`
+                fontSize: `${this.radius * 1.7}px`,
+                color: `#${this.textColor.toString(16).padStart(6, '0')}`,
+                fontStyle: 'bold'
             }).setOrigin(0.5, 0.5);
         } else {
             this.text = null;
         }
+    }
+
+    _layoutSheen() {
+        this.sheen.setPosition(this.x - this.radius * 0.32, this.y - this.radius * 0.32);
+        this.sheen.setRadius(this.radius * 0.42);
     }
 }
 
@@ -1500,22 +1532,12 @@ class Game {
         blackPieces = Phaser.Utils.Array.Shuffle(blackPieces);
 
         whitePieces.forEach(piece => {
-            piece.x = this.whiteUnenteredRack.nextX();
-            piece.y = this.whiteUnenteredRack.nextY();
-            piece.circle.setPosition(piece.x, piece.y);
-            if (piece.text) {
-                piece.text.setPosition(piece.x, piece.y);
-            }
+            piece.setPosition(this.whiteUnenteredRack.nextX(), this.whiteUnenteredRack.nextY());
             this.whiteUnenteredRack.addPiece(piece);
         });
 
         blackPieces.forEach(piece => {
-            piece.x = this.blackUnenteredRack.nextX();
-            piece.y = this.blackUnenteredRack.nextY();
-            piece.circle.setPosition(piece.x, piece.y);
-            if (piece.text) {
-                piece.text.setPosition(piece.x, piece.y);
-            }
+            piece.setPosition(this.blackUnenteredRack.nextX(), this.blackUnenteredRack.nextY());
             this.blackUnenteredRack.addPiece(piece);
         });
 
@@ -2250,6 +2272,8 @@ endGame(winner, score = null, impasse_caller = null) {
         // Clear existing graphics
         this.tiles.forEach(tile => tile.graphics.clear());
         this.pieces.forEach(piece => {
+            piece.body.destroy();
+            piece.sheen.destroy();
             piece.circle.destroy();
             if (piece.text) {
                 piece.text.destroy();
