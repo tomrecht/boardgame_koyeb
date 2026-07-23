@@ -1108,6 +1108,10 @@ class Piece {
             .on('pointerover', () => this.onHover())
             .on('pointerout', () => this.onOut())
             .on('pointerdown', (pointer) => this.handleClick(pointer));
+        // drag-to-move (additive; click still works). The scene-level drag
+        // handlers (Game.setupDragging) reach the piece via __piece.
+        this.circle.__piece = this;
+        this.scene.input.setDraggable(this.circle);
 
         // Debug-mode tooltip: show the number of unnumbered pieces (numbered
         // pieces already display their number on the board).
@@ -1647,6 +1651,8 @@ class Game {
         this.blackSavedRack = new Rack(scene, 1545, 622, 'black', 'saved');
 
         this.confirmationModal = null;
+
+        this.setupDragging(scene);
 
         // Create buttons
         this.createSwitchTurnButton(scene);
@@ -2533,6 +2539,55 @@ endGame(winner, score = null, impasse_caller = null) {
     }
     
     
+    // Return the (non-nogo) tile whose annular wedge contains board point (x,y).
+    tileAtPoint(x, y) {
+        const dx = x - CENTER_X, dy = y - CENTER_Y;
+        const r = Math.hypot(dx, dy);
+        let a = Math.atan2(dy, dx); if (a < 0) a += 2 * Math.PI;
+        for (const t of this.tiles) {
+            if (t.type === 'nogo') continue;
+            if (t.type === 'home') { if (r <= t.outerRadius) return t; continue; }
+            if (r >= t.innerRadius && r <= t.outerRadius && a >= t.startAngle && a <= t.endAngle) return t;
+        }
+        return null;
+    }
+
+    // Drag-to-move, additive with click. A piece is selected by the pointerdown
+    // (its normal handleClick) before dragstart fires, so drag just moves the
+    // already-selected piece and drops it on the tile under the pointer, exactly
+    // as if that tile had been clicked. Invalid drops snap the piece back.
+    setupDragging(scene) {
+        if (scene._dragWired) return;
+        scene._dragWired = true;
+        scene.input.dragDistanceThreshold = 6;   // small moves stay clicks
+
+        scene.input.on('dragstart', (pointer, obj) => {
+            const piece = obj.__piece; if (!piece) return;
+            hideStackPicker();
+            // draggable only if the pointerdown actually selected this piece
+            piece._dragOK = (piece.game.selectedPiece === piece);
+            piece._originTile = piece.currentTile;
+            piece._snapRack = !!(piece.justMovedHome && piece.currentTile && piece.currentTile.type === 'home');
+        });
+
+        scene.input.on('drag', (pointer, obj, dragX, dragY) => {
+            const piece = obj.__piece; if (!piece || !piece._dragOK) return;
+            piece.setPosition(dragX, dragY);
+        });
+
+        scene.input.on('dragend', (pointer, obj) => {
+            const piece = obj.__piece; if (!piece || !piece._dragOK) return;
+            piece._dragOK = false;
+            const before = piece._originTile;
+            const target = piece.game.tileAtPoint(pointer.worldX, pointer.worldY);
+            if (target) target.onClick();          // moves the selected piece, with full rule checks
+            if (piece.currentTile === before) {     // move didn't happen -> snap back
+                if (piece._snapRack) piece.returnToRack();
+                else if (piece.currentTile) piece.currentTile.updatePositions();
+            }
+        });
+    }
+
     createUndoButton(scene) {
         const buttonSize = 64; // Adjust the button size as needed
         this.undoButton = scene.add.image(config.width - DIE_2_POSITION, 85, 'leftWavyArrow')
