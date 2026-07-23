@@ -44,8 +44,33 @@ SCHEMA_VERSION = 1
 # -------------------------
 
 current_weights = get_weights(weights_file='best_weights.json')
+
+# Opponent checkpoint is chosen WITHOUT editing this (tracked) file, so
+# swapping opponents never leaves uncommitted changes that block a branch
+# switch. Precedence: OPPONENT_MODEL env var > gitignored opponent_model.txt
+# > the default below.
+def _opponent_model_path():
+    import sys
+    for arg in sys.argv[1:]:
+        if arg.endswith('.pt'):
+            return arg
+    env = os.environ.get('OPPONENT_MODEL')
+    if env:
+        return env.strip()
+    try:
+        with open('opponent_model.txt') as f:
+            for line in f:
+                line = line.strip()
+                if line and not line.startswith('#'):
+                    return line
+    except FileNotFoundError:
+        pass
+    return 'td_champion_July18_iter10.pt'
+
+_model_path = _opponent_model_path()
+logger.info(f'Loading opponent model: {_model_path}')
 #agent = Agent(weights=current_weights, log_to_file=True)
-agent = GNNAgent(weights_path='td_champion_July21_aux_iter14.pt', use_prefilter=True, prefilter_top_k=40, heuristic_weights=current_weights)
+agent = GNNAgent(weights_path=_model_path, use_prefilter=True, prefilter_top_k=40, heuristic_weights=current_weights)
 agent.debug_pass_over_save = True 
 # Heuristic agent kept alongside the GNN so /evaluate_board can report both
 # evals for the same position (the GNN is the player; the heuristic is shown
