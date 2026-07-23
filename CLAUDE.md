@@ -365,6 +365,47 @@ expected to self-resolve via the TD run.
 
 ## Current state
 
+- **SESSION UPDATE (2026-07-22).** Game-rule decision, branch consolidation,
+  and repo cleanup. No training run active.
+  - **RULE DECISION: adopt single-piece block-save; PARK the "numbered-only
+    save" variant.** Two rule experiments were on separate branches:
+    `rule-single-piece-save` (peel ONE named opponent piece off a block into
+    their rack, same cost — see commit `0682ba8`) and `rule-numbered-win`
+    (save numbered pieces only). Owner playtested numbered-only and rejected
+    it: *less* strategic, not more — dropping the endgame save rule makes all
+    numbered pieces/goals equally important (loses a source of strategic
+    interest) and games become a short, fairly random race. Single-piece
+    block-save is KEPT (makes the near-dead whole-block-save mechanic roughly
+    break-even and strategically live). `rule-numbered-win` is parked, not
+    deleted.
+  - **`rule-single-piece-save` MERGED into `td-lambda`** (merge commit on
+    `td-lambda`). The only conflict was the `app.py` agent-load line; resolved
+    by keeping the command-line opponent chooser (`_opponent_model_path()`,
+    which supersedes `td-lambda`'s hardcoded-checkpoint `minor` commit).
+    `game.py`/`game.js` merged clean. **Next training run starts on
+    `td-lambda` with the single-piece-save rule.** NOTE: existing champions
+    (`td_champion_*`, iter5/iter10/iter14, aux) were trained under the OLD
+    whole-block-save rule — the rule change alters game dynamics, so the new
+    run effectively starts a fresh lineage; cross-rule champion comparisons
+    are no longer apples-to-apples.
+  - **Repo cleanup.** Removed 31 untracked cruft files (old `*_backup_*.py`,
+    throwaway `test*.py`, superseded experiment/benchmark scripts, junk like
+    `.DS_Store`/`game_log.json`/`profile_out`) into a gitignored `_attic/`
+    (reversible; delete when confirmed). Also `git rm`'d 5 stale *tracked*
+    scripts unreferenced by any kept code: `train.py` (retired heuristic
+    track), `train_gnn.py`, `test_game_optimization.py`, `smoke_test_td.py`,
+    `profile_worker.py` (recoverable via git history; historical CLAUDE.md
+    mentions of them are left as narrative).
+  - **PLANNED, NOT STARTED (await owner go-ahead on specifics):** (a) clean up
+    pre-Claude code `game.py`/`agent.py`/`game.js` — dead functions/vars +
+    comments; NOTE `agent.py` is NOT dead (imported by `app.py`'s
+    `/evaluate_board` + scripts), so internal-only cleanup, never deletion;
+    proof standard = byte-identical seeded-trajectory trace (`PYTHONHASHSEED=0`)
+    + existing tests. (b) frontend improvements — add piece DRAGGING alongside
+    click-to-move (Phaser has no drag today, only `handleClick`/tile `onClick`)
+    and review the overall move mechanics for intuitiveness; audit-first,
+    check with owner before any `game.js` change.
+
 - **SESSION UPDATE (2026-07-21).** Aux-head run finished with TWO promotions;
   symmetry augmentation built and running; several analysis tools landed.
   - **Auxiliary-head run COMPLETE, 2 promotions (branch `aux-head`).** 14

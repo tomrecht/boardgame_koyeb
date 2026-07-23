@@ -10,3 +10,5 @@ __pycache__/
 replays/
 training_data/
 weights*.json
+opponent_model.txt
+_attic/
