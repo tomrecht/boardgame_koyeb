@@ -513,6 +513,12 @@ function ensureStackPicker() {
 }
 function hideStackPicker() { if (_stackPicker) _stackPicker.style.display = 'none'; }
 function stackPickerOpen() { return !!(_stackPicker && _stackPicker.style.display !== 'none'); }
+// Ring the obligatory-to-move pieces so the player can see them.
+function updateMustMoveHighlights(game) {
+    if (!game || !game.pieces) return;
+    const must = game.mustMovePieces || [];
+    game.pieces.forEach(p => { if (p.setObligatory) p.setObligatory(must.includes(p)); });
+}
 // Clear any current board selection so a picker choice selects cleanly.
 function _clearSelection(game) {
     if (game.selectedPiece) {
@@ -637,10 +643,7 @@ class Piece {
         if (this.player !== this.game.turn) return;
         if (this.rack && this.rack.type === 'saved') return;
         if (this.rack && this.rack.type === 'unentered' && this.rack.pieces[0] !== this) return;
-        if (this.game.mustMovePieces.length > 0 && !this.game.mustMovePieces.includes(this)) {
-            console.log("Must move a piece from the mustMovePieces list");
-            return false;
-        }
+        if (!this.game.canSelectForMove(this)) return false;
         this.isHovered = true;
         this.updateColor();
     }
@@ -726,8 +729,8 @@ class Piece {
         // if (this.player !== this.game.turn) return; 
         if (this.rack && this.rack.type === 'saved') return;
         if (this.rack && this.rack.type === 'unentered' && this.rack.pieces[0] !== this) return;
-        if (this.player === this.game.turn && this.game.mustMovePieces.length > 0 && !this.game.mustMovePieces.includes(this)) {
-            console.log("Must move a piece from the mustMovePieces list");
+        if (this.player === this.game.turn && !this.game.canSelectForMove(this)) {
+            console.log("Must keep a die for the obligatory piece(s)");
             return false;
         }
 
@@ -791,6 +794,8 @@ class Piece {
                 }
             console.log('Saving one opponent piece from block')
             const savedRack = this.color === 0xffffff ? this.game.whiteSavedRack : this.game.blackSavedRack;
+
+            this.game.pushUndo();   // snapshot before the block-save
 
             // Peel ONLY the double-clicked piece into its own saved rack; the
             // rest of the block stays (a 2-stack becomes a blot). The attacker
@@ -999,6 +1004,15 @@ class Piece {
         }
     }
 
+    // Mark this piece as obligatory-to-move with a bright ring (or clear it).
+    setObligatory(v) {
+        if (!this.circle) return;
+        this.obligatory = v;
+        const rim = this.color === 0xffffff ? PIECE_WHITE_RIM : PIECE_BLACK_RIM;
+        if (v) this.circle.setStrokeStyle(4.5, 0xff8c1a, 1);   // bright orange ring
+        else this.circle.setStrokeStyle(2.5, rim, 1);
+    }
+
 
     highlightReachableTiles() {
 
@@ -1080,6 +1094,7 @@ class Piece {
             if (dieToUse) {
                 console.log(`Using die ${dieToUse.value} to save piece ${this.number}`);
                 const dieValue = dieToUse.value;
+                this.game.pushUndo();   // snapshot before the save so undo reverts just it
                 // Use the corresponding die
                 dieToUse.setUsed();
 
@@ -1746,6 +1761,7 @@ class Game {
 
         // Capture initial state
         this.state = this.captureState();
+        this.undoStack = [];         // per-move undo snapshots for the current turn
         this.turnStartState = null;  // populated after each rollDice in switchTurn
 
                 // Set players to endgame if debug mode is active
@@ -2090,11 +2106,6 @@ class Game {
     movePiece(piece, targetTile, getReachableTiles = false) {
         if (!piece || !targetTile) return false;
 
-        if (this.mustMovePieces.length > 0 && !this.mustMovePieces.includes(piece)) {
-            console.log("Must move a piece from the mustMovePieces list");
-            return false;
-        }
-    
         let reachableTiles = piece.reachableTiles;
 
         if (!reachableTiles && !getReachableTiles) return false;
@@ -2110,12 +2121,24 @@ class Game {
         const allReachableTiles = new Set([...reachableByFirstDie, ...reachableBySecondDie, ...reachableBySum]);
     
         if (allReachableTiles.has(targetTile)) {
-            
+
             if (this.isBlocked(targetTile)) {
                 return false; // Can't move to a tile with more than one opposing piece
             }
-            
-            
+
+            // Obligatory-move ordering: a non-obligatory move must leave a die for
+            // every still-pending obligatory piece.
+            if (this.mustMovePieces.length > 0 && !this.mustMovePieces.includes(piece)) {
+                const unused = this.dice.filter(d => !d.used).length;
+                const willUse = (reachableByFirstDie.includes(targetTile) ||
+                                 reachableBySecondDie.includes(targetTile)) ? 1 : 2;
+                if (unused - willUse < this.mustMovePieces.length) {
+                    console.log('Must keep a die for the obligatory piece(s)');
+                    return false;
+                }
+            }
+
+            this.pushUndo();   // snapshot BEFORE this move so undo can revert just it
 
             if (targetTile.type === 'field' && targetTile.pieces.length === 1 && targetTile.pieces[0].color !== piece.color) {
                 this.capturePiece(targetTile.pieces[0]); // Capture the opposing piece
@@ -2154,6 +2177,7 @@ class Game {
             if (this.mustMovePieces.includes(piece)) {
             this.mustMovePieces = this.mustMovePieces.filter(p => p !== piece);
             }
+            if (typeof updateMustMoveHighlights === 'function') updateMustMoveHighlights(this);
 
             refreshEvalReadout();  // update on-board eval after the move settles
             return true;
@@ -2225,6 +2249,17 @@ class Game {
         if (unenteredRack.pieces.length > 0) {
             this.mustMovePieces = [unenteredRack.pieces[0]]; // The first piece in the unentered rack must move
         }
+        if (typeof updateMustMoveHighlights === 'function') updateMustMoveHighlights(this);
+    }
+
+    // Obligatory-move ordering: an obligatory piece may always be selected. A
+    // NON-obligatory piece may be moved first only if, after a (single-die) move,
+    // a die still remains for every pending obligatory piece — so you can move a
+    // free piece first, but are then locked to the obligatory one(s).
+    canSelectForMove(piece) {
+        if (this.mustMovePieces.length === 0 || this.mustMovePieces.includes(piece)) return true;
+        const unused = this.dice.filter(d => !d.used).length;
+        return (unused - 1) >= this.mustMovePieces.length;
     }
 
     getTilesAndPieces(tiles, pieces) {
@@ -2306,8 +2341,10 @@ switchTurn() {
         this.updateMovablePieces();
         this.pieces.forEach(piece => piece.reachableTiles = null);
         this.state = this.captureState();
+        this.undoStack = [];         // fresh per-move undo history each turn
         this.applyLastPieceRule();
-        this.turnStartState = getGameState(this);  
+        this.turnStartState = getGameState(this);
+        if (typeof updateMustMoveHighlights === 'function') updateMustMoveHighlights(this);
         
         if (window.showEvals) refreshEvalReadout();
 
@@ -2494,15 +2531,16 @@ endGame(winner, score = null, impasse_caller = null) {
             noSaveTurns: this.noSaveTurns,
             drawCallable: this.drawCallable,
             lastTotalSaved: this.lastTotalSaved,
-            halfTurnsSinceRound: this._halfTurnsSinceRound
+            halfTurnsSinceRound: this._halfTurnsSinceRound,
+            mustMove: this.mustMovePieces.map(p => ({ color: p.color, number: p.number })),
+            movedOnce: this.movedOnce
         };
 
         return state;
     }
     
 
-    restoreState() {
-        const state = this.state;
+    restoreState(state = this.state) {
         if (!state) {
             console.error('No state to restore');
             return;
@@ -2599,6 +2637,12 @@ endGame(winner, score = null, impasse_caller = null) {
             this.lastTotalSaved = state.lastTotalSaved;
             this._halfTurnsSinceRound = state.halfTurnsSinceRound;
         }
+        // restore the obligatory-move list and the moved-this-turn flag
+        if (state.mustMove !== undefined) {
+            this.mustMovePieces = state.mustMove.map(m =>
+                this.pieces.find(p => p.color === m.color && p.number === m.number)).filter(Boolean);
+        }
+        if (state.movedOnce !== undefined) this.movedOnce = state.movedOnce;
         this.pieces.forEach(piece => piece.reachableTiles = null);
         this.updateDiceColors();
         this.unhighlightAllTiles();
@@ -2608,6 +2652,23 @@ endGame(winner, score = null, impasse_caller = null) {
         clearMoveRecording();
         refreshEvalReadout();  // update on-board eval after undo
         updateNoSaveDisplay(); // reflect restored no-save streak
+    }
+
+    // Undo one move at a time (one die), not the whole turn. Each committed move
+    // pushes its pre-move snapshot; undo pops and restores the most recent one.
+    undoOneMove() {
+        if (this.undoStack && this.undoStack.length > 0) {
+            this.restoreState(this.undoStack.pop());
+        } else {
+            this.restoreState();   // already at turn start -> revert to it (no-op-ish)
+        }
+        if (typeof updateMustMoveHighlights === 'function') updateMustMoveHighlights(this);
+    }
+
+    // Record the current state as an undo point (call BEFORE a move mutates).
+    pushUndo() {
+        if (!this.undoStack) this.undoStack = [];
+        this.undoStack.push(this.captureState());
     }
     
     
@@ -2673,10 +2734,11 @@ endGame(winner, score = null, impasse_caller = null) {
             .setDisplaySize(buttonSize, buttonSize)
             .setInteractive()
             .on('pointerdown', () => {
-                this.restoreState();
+                hideStackPicker();
+                this.undoOneMove();   // one die / one move at a time
                 clearMoveRecording();
             });
-    
+
         // Add tooltip for undo button
         const undoTooltip = scene.add.text(this.undoButton.x, this.undoButton.y, 'UNDO', {
             fontSize: '22px',
