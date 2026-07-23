@@ -15,8 +15,8 @@ const PIECE_RADIUS_BASE = 20;
 // of slots sized from each tile's geometry; overflow folds into a "+K" badge
 // with a tap-to-pick picker (ported from design/stack.html). On small tiles the
 // per-tile radius shrinks (Tile.tilePieceRadius) so >=2 pieces fit un-stacked.
-const STACK_PR = 20;
-const STACK_MIN_FIT = 2;   // small tiles shrink pieces until this many fit
+const STACK_PR = 20;       // default board-piece radius (used when it fits)
+const STACK_MIN_R = 10;    // pieces shrink no smaller than this before stacking
 const TILE_RADIUS_STEP = 60;
 const CENTER_X = 900;
 // Board vertical centre. 600 (canvas midpoint) keeps goal 2's number, at
@@ -527,6 +527,7 @@ function updateMustMoveHighlights(game) {
 function _clearSelection(game) {
     if (game.selectedPiece) {
         game.selectedPiece.isSelected = false;
+        game.selectedPiece.reachableTiles = null;
         game.selectedPiece.updateColor();
         game.unhighlightAllTiles();
         game.selectedPiece = null;
@@ -775,8 +776,19 @@ class Piece {
                 this.game._pendingPreMove = this.game.captureState();   // pre-move snapshot
                 this.game.selectedPiece = this;
                 this.reachableTiles = this.game.getReachableTilesByDice(this);
-                this.highlightReachableTiles();
+                // For a piece on its save tile a double-click means "save it", so
+                // defer the destination highlight briefly and cancel it on the
+                // second click — otherwise the destinations flash during the save.
+                clearTimeout(this._hlTimer);
+                if (this.canBeSaved()) {
+                    this._hlTimer = setTimeout(() => {
+                        if (this.isSelected && this.game.selectedPiece === this) this.highlightReachableTiles();
+                    }, 270);
+                } else {
+                    this.highlightReachableTiles();
+                }
             } else {
+                clearTimeout(this._hlTimer);
                 this.game.unhighlightAllTiles();
                 this.game.selectedPiece = null;
                 this.reachableTiles = null;
@@ -785,6 +797,11 @@ class Piece {
     }
 
     handleDoubleClick() {
+        // cancel any pending (deferred) destination highlight from the first click
+        // and clear highlights so a double-click save shows no destination flash.
+        clearTimeout(this._hlTimer);
+        this.game.unhighlightAllTiles();
+
         if (this.currentTile.type === 'save') {
             this.save(); // Save the piece if it can be saved
         }
@@ -1030,29 +1047,11 @@ class Piece {
 
         const { reachableByFirstDie, reachableBySecondDie, reachableBySum } = reachableTiles;
 
-        // reachableByFirstDie is computed for the FIRST UNUSED die, so colour it
-        // with that die's own colour; yellow is reserved for a genuine two-dice
-        // sum move (only possible while both dice are unused).
-        const dice = this.game.dice;
-        const bothUnused = !dice[0].used && !dice[1].used;
-        const firstUnusedColor = !dice[0].used ? colorFirstDie : colorSecondDie;
-
-        reachableByFirstDie.forEach(tile => {
-            tile.reachableColor = firstUnusedColor;
-            tile.highlight();
-        });
-
-        reachableBySecondDie.forEach(tile => {
-            tile.reachableColor = colorSecondDie;
-            tile.highlight();
-        });
-
-        if (bothUnused) {
-            reachableBySum.forEach(tile => {
-                tile.reachableColor = colorSum;
-                tile.highlight();
-            });
-        }
+        // Each die keeps its own colour (sets are empty for a used die); yellow
+        // (sum) is non-empty only while both dice are unused.
+        reachableByFirstDie.forEach(tile => { tile.reachableColor = colorFirstDie; tile.highlight(); });
+        reachableBySecondDie.forEach(tile => { tile.reachableColor = colorSecondDie; tile.highlight(); });
+        reachableBySum.forEach(tile => { tile.reachableColor = colorSum; tile.highlight(); });
     }
 
     canBeSaved() {
@@ -1090,20 +1089,29 @@ class Piece {
         if (this.player === this.game.turn && this.canBeSaved()) {
             const saveTileNumber = this.currentTile.number;
             const dice = this.game.dice.filter(die => !die.used);
-            let dieToUse = dice.find(die => die.value === saveTileNumber);
+            const isEndgame = player.getGamePhase() === 'endgame';
+            const endgameHigherOK = isEndgame && !this.game.isHigherNumberedGoalOccupied(player, saveTileNumber);
 
-
-            if (!dieToUse && this.number > 6) {
-                // If player is in the endgame they can save unnumbered pieces with higher die rolls
-                const isEndgame = player.getGamePhase() === 'endgame';
-                console.log(`Is player ${player.name} in endgame: ${isEndgame}`);
-
-                if (isEndgame && !this.game.isHigherNumberedGoalOccupied(player, saveTileNumber)) {
-                    console.log(`No higher-numbered goal occupied for player ${player.name}`);
-                    // Find the highest die value that is greater than the save tile number
-                    dieToUse = dice.filter(die => die.value > saveTileNumber)
-                                   .sort((a, b) => b.value - a.value)[0];
-                    console.log(`Die to use after endgame check: ${dieToUse ? dieToUse.value : 'None'}`);
+            let dieToUse;
+            if (this.number > 6) {
+                // Unnumbered piece: savable by the matching die (== goal number) or,
+                // in the endgame with no higher goal occupied, any higher die.
+                // Smart saving: prefer a die NOT uniquely needed by a numbered piece
+                // (a #N on goal N can ONLY be saved with an N), so we don't strand it.
+                const candidates = dice.filter(d =>
+                    d.value === saveTileNumber || (endgameHigherOK && d.value > saveTileNumber));
+                const notReserved = candidates.filter(d =>
+                    !this.game.numberedPieceNeedsDie(d.value, this.color));
+                const pool = notReserved.length ? notReserved : candidates;
+                // within the pool prefer the exact goal-number die, else the smallest
+                dieToUse = pool.find(d => d.value === saveTileNumber)
+                        || pool.sort((a, b) => a.value - b.value)[0];
+            } else {
+                // Numbered piece: only its own value (midgame), or a higher die in the
+                // endgame with no higher goal occupied.
+                dieToUse = dice.find(d => d.value === saveTileNumber);
+                if (!dieToUse && endgameHigherOK) {
+                    dieToUse = dice.filter(d => d.value > saveTileNumber).sort((a, b) => b.value - a.value)[0];
                 }
             }
 
@@ -1396,12 +1404,13 @@ class Tile {
             // angularly). Pieces use this tile's adaptive radius (shrunk on small
             // tiles so >=2 fit). Numbered pieces (1-6) take visibility precedence;
             // overflow folds into a "+K" badge that the tap-to-pick picker expands.
-            const pr = this.tilePieceRadius();
-            const cap = this.stackCapacity();
+            const n = this.pieces.length;
+            const pr = this.tilePieceRadius(n);   // size just enough to fit n (down to the min)
+            const cap = this._capacityAtSlot(pr * 2 + 4);
             const ord = [...this.pieces].sort((a, b) => (a.number > 6 ? 1 : 0) - (b.number > 6 ? 1 : 0));
             const over = ord.length > cap;
             const show = over ? cap - 1 : ord.length;
-            const pos = this.stackPositions(over ? cap : ord.length);
+            const pos = this.stackPositions(over ? cap : ord.length, pr);
             ord.forEach((piece, i) => {
                 if (i < show) {
                     const sl = pos[i] || pos[pos.length - 1];
@@ -1422,12 +1431,14 @@ class Tile {
         }
     }
 
-    // Board-piece radius for this tile: the default STACK_PR, shrunk on small
-    // tiles until at least STACK_MIN_FIT pieces fit un-stacked (as the original
-    // game.js resized pieces so a 2-stack fits on ring-1 tiles).
-    tilePieceRadius() {
+    // Board-piece radius for this tile given `n` pieces to show: the default
+    // STACK_PR, shrunk only as far as needed for all n to fit un-stacked (never
+    // below STACK_MIN_R). So a lone piece keeps full size, a ring-3 tile holds 3
+    // at a slightly smaller size, etc. — resize only when needed, prefer resizing
+    // to stacking. Beyond the min radius the extra pieces fold into the badge.
+    tilePieceRadius(n) {
         let r = STACK_PR;
-        while (r > 9 && this._capacityAtSlot(r * 2 + 4) < STACK_MIN_FIT) r -= 1;
+        while (r > STACK_MIN_R && this._capacityAtSlot(r * 2 + 4) < n) r -= 1;
         return r;
     }
 
@@ -1444,13 +1455,13 @@ class Tile {
         return cap;
     }
 
-    // Max pieces that fit at this tile's adaptive radius.
-    stackCapacity() { return this._capacityAtSlot(this.tilePieceRadius() * 2 + 4); }
+    // Max pieces that fit for a given count n (at the radius chosen for n).
+    stackCapacity(n = this.pieces.length) { return this._capacityAtSlot(this.tilePieceRadius(n) * 2 + 4); }
 
     // `count` piece positions, centred in the tile: rows straddle the mid radius
     // and each row is centred on the mid angle. One piece -> exact tile centre.
-    stackPositions(count) {
-        const slot = this.tilePieceRadius() * 2 + 4;
+    stackPositions(count, pr = this.tilePieceRadius(count)) {
+        const slot = pr * 2 + 4;
         const dth = this.endAngle - this.startAngle;
         const ext = this.outerRadius - this.innerRadius;
         const midR = (this.innerRadius + this.outerRadius) / 2;
@@ -2040,7 +2051,16 @@ class Game {
         }
         return false; // No higher-numbered goal occupied by the player's piece
     }
-    
+
+    // True if a numbered piece #dieValue of `color` is sitting on its own goal
+    // (goal dieValue) still awaiting a save — that piece can ONLY be saved with a
+    // die of exactly dieValue, so smart-saving reserves that value for it.
+    numberedPieceNeedsDie(dieValue, color) {
+        if (dieValue < 1 || dieValue > 6) return false;
+        return this.pieces.some(p => p.color === color && p.number === dieValue &&
+            p.currentTile && p.currentTile.type === 'save' && p.currentTile.number === dieValue);
+    }
+
     checkEndgame(player) {
         if (this.debug) {
             player.setGamePhase('endgame');
@@ -2092,47 +2112,25 @@ class Game {
     
     getReachableTilesByDice(piece) {
         if (!piece) return null;
-    
-        const dice = this.dice.filter(die => !die.used);
-        const diceValues = dice.map(die => die.value);
-    
-        if (diceValues.length === 0) {
-            console.log('No available dice');
-            return null; // No available dice
-        }
-    
-        const reachableByFirstDie = this.getReachableTiles(piece.currentTile, diceValues[0]);
-        const reachableBySecondDie = diceValues.length > 1 ? this.getReachableTiles(piece.currentTile, diceValues[1]) : [];
-        let reachableBySum = this.getReachableTiles(piece.currentTile, diceValues[0] + (diceValues[1] || 0));
-    
+
+        // Die-index aware: reachableByFirstDie is die[0] (teal), reachableBySecondDie
+        // is die[1] (pink), each empty if that die is already used; reachableBySum
+        // (yellow) exists only while BOTH dice are unused. Computed fresh every call
+        // (no stale-reachableTiles filtering) so re-selecting or a second-die move
+        // always sees the correct destinations.
+        const d0 = this.dice[0], d1 = this.dice[1];
+        if (d0.used && d1.used) return null;   // no available dice
+
+        const reachableByFirstDie  = d0.used ? [] : this.getReachableTiles(piece.currentTile, d0.value);
+        const reachableBySecondDie = d1.used ? [] : this.getReachableTiles(piece.currentTile, d1.value);
+        let reachableBySum = (!d0.used && !d1.used)
+            ? this.getReachableTiles(piece.currentTile, d0.value + d1.value) : [];
+
         const homeTile = this.tiles.find(tile => tile.type === 'home');
         if (homeTile.pieces.filter(p => p.color === piece.color).length > 1) {
-            console.log('Player has more than one captured piece');
-            reachableBySum = [];
+            reachableBySum = [];   // >1 captured piece: no combined (sum) move
         }
-
-        // Filter reachableByFirstDie and reachableBySecondDie based on piece.reachableTiles
-        if (piece.reachableTiles)  {
-
-            const reachableTilesSet = new Set(piece.reachableTiles.reachableBySum); // Assuming each tile has a unique id
-    
-            const filterTiles = (tiles) => tiles.filter(tile => reachableTilesSet.has(tile));
-    
-            const filteredReachableByFirstDie = filterTiles(reachableByFirstDie);
-            const filteredReachableBySecondDie = filterTiles(reachableBySecondDie);
-            const filteredReachableBySum = filterTiles(reachableBySum);
-    
-            return {
-                reachableByFirstDie: filteredReachableByFirstDie,
-                reachableBySecondDie: filteredReachableBySecondDie,
-                reachableBySum: filteredReachableBySum
-            };
-        }
-        return {
-            reachableByFirstDie: reachableByFirstDie,
-            reachableBySecondDie: reachableBySecondDie,
-            reachableBySum: reachableBySum
-        };
+        return { reachableByFirstDie, reachableBySecondDie, reachableBySum };
     }
     
     
@@ -2184,29 +2182,27 @@ class Game {
             
             
 
-            const dice = this.dice.filter(die => !die.used);
+            const d0 = this.dice[0], d1 = this.dice[1];
 
-            // check en route capture
-            if (dice.length > 1 && reachableBySum.includes(targetTile)) {
+            // check en route capture (only a genuine two-dice sum move)
+            if (reachableBySum.includes(targetTile)) {
                 this.checkEnRouteCapture(piece, targetTile);
             }
-    
-
-            
 
             piece.move(targetTile);
-    
+
             const homeTile = this.tiles.find(tile => tile.type === 'home');
             if (homeTile.pieces.includes(piece)) homeTile.removePiece(piece);
 
+            // reachableByFirstDie <-> die[0], reachableBySecondDie <-> die[1];
+            // anything else reachable is the sum (both dice).
             if (reachableByFirstDie.includes(targetTile)) {
-                dice[0].setUsed();
+                d0.setUsed();
             } else if (reachableBySecondDie.includes(targetTile)) {
-                dice[1].setUsed();
+                d1.setUsed();
             } else {
-
-                dice[0].setUsed();
-                if (dice.length > 1) dice[1].setUsed();
+                d0.setUsed();
+                d1.setUsed();
             }
     
             if (!this.movedOnce) this.movedOnce = true;
@@ -2733,11 +2729,14 @@ endGame(winner, score = null, impasse_caller = null) {
     // already-selected piece and drops it on the tile under the pointer, exactly
     // as if that tile had been clicked. Invalid drops snap the piece back.
     setupDragging(scene) {
+        // NB: Phaser clears scene.input listeners on shutdown/restart, so re-wire
+        // every time create() runs. The guard is reset on 'shutdown' (below) so a
+        // New Game (scene.restart) or end-game (scene.start) keeps pieces draggable.
         if (scene._dragWired) return;
         scene._dragWired = true;
         scene.input.dragDistanceThreshold = 6;   // small moves stay clicks
 
-        scene.input.on('dragstart', (pointer, obj) => {
+        const onDragStart = (pointer, obj) => {
             const piece = obj.__piece; if (!piece) return;
             hideStackPicker();
             piece._originTile = piece.currentTile;
@@ -2746,25 +2745,41 @@ endGame(winner, score = null, impasse_caller = null) {
                 // free placement: pointerdown already set _setupSelected via handleClick
                 piece._dragOK = (_setupSelected === piece);
                 piece._snapRack = false;
-                return;
+            } else {
+                // draggable only if the pointerdown actually selected this piece
+                piece._dragOK = (piece.game.selectedPiece === piece);
+                piece._snapRack = !!(piece.justMovedHome && piece.currentTile && piece.currentTile.type === 'home');
             }
-            // draggable only if the pointerdown actually selected this piece
-            piece._dragOK = (piece.game.selectedPiece === piece);
-            piece._snapRack = !!(piece.justMovedHome && piece.currentTile && piece.currentTile.type === 'home');
-        });
+            scene._draggingPiece = piece._dragOK ? piece : null;
+            // snap to the cursor immediately so an entering piece doesn't flash on
+            // the home tile (where handleClick placed it) before the first drag move.
+            if (piece._dragOK) piece.setPosition(pointer.worldX, pointer.worldY);
+        };
 
-        scene.input.on('drag', (pointer, obj) => {
+        const onDrag = (pointer, obj) => {
             const piece = obj.__piece; if (!piece || !piece._dragOK) return;
             // Centre the piece on the pointer. (dragX/dragY bake in the grab
             // offset from where the piece sat at dragstart — but rack pieces
             // teleport to home on pickup, making that offset huge, so the piece
             // would float far from the cursor. Following the pointer avoids that.)
             piece.setPosition(pointer.worldX, pointer.worldY);
-        });
+        };
 
-        scene.input.on('dragend', (pointer, obj) => {
+        // Also glue the dragged piece to the pointer each frame (after input is
+        // processed, just before render) so it doesn't lag a frame behind on
+        // fast moves — the batched 'drag' event alone feels laggy.
+        const onUpdate = () => {
+            const dp = scene._draggingPiece;
+            if (dp && dp._dragOK) {
+                const p = scene.input.activePointer;
+                dp.setPosition(p.worldX, p.worldY);
+            }
+        };
+
+        const onDragEnd = (pointer, obj) => {
             const piece = obj.__piece; if (!piece || !piece._dragOK) return;
             piece._dragOK = false;
+            scene._draggingPiece = null;
             const before = piece._originTile;
             const target = piece.game.tileAtPoint(pointer.worldX, pointer.worldY);
 
@@ -2789,6 +2804,19 @@ endGame(winner, score = null, impasse_caller = null) {
                     _clearSelection(piece.game);             // dropping cancels the selection
                 }
             }
+        };
+
+        scene.input.on('dragstart', onDragStart);
+        scene.input.on('drag', onDrag);
+        scene.input.on('dragend', onDragEnd);
+        scene.events.on('update', onUpdate);
+
+        // On scene shutdown/restart, drop the guard + the update listener so the
+        // next create() re-wires cleanly (input listeners are auto-removed).
+        scene.events.once('shutdown', () => {
+            scene._dragWired = false;
+            scene._draggingPiece = null;
+            scene.events.off('update', onUpdate);
         });
     }
 
