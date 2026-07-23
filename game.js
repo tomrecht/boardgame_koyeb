@@ -1328,14 +1328,24 @@ class Rack {
     }
 
     drawBackground() {
-        // Clean Modern: white rounded panel with a soft border (was a green box)
+        // Clean Modern (matches mockup): white rounded panel + soft shadow +
+        // faint empty capacity slots. No text.
         const bx = this.x - PIECE_RADIUS_BASE, by = this.y - PIECE_RADIUS_BASE;
         const bw = this.cols * this.spacing + PIECE_RADIUS_BASE;
         const bh = this.rows * this.spacing + PIECE_RADIUS_BASE + this.verticalPadding;
+        this.background.fillStyle(0x000000, 0.07);
+        this.background.fillRoundedRect(bx, by + 5, bw, bh, 16);      // soft drop shadow
         this.background.fillStyle(0xffffff, 1);
-        this.background.fillRoundedRect(bx, by, bw, bh, 14);
+        this.background.fillRoundedRect(bx, by, bw, bh, 16);
         this.background.lineStyle(1.5, 0xdbe1ea, 1);
-        this.background.strokeRoundedRect(bx, by, bw, bh, 14);
+        this.background.strokeRoundedRect(bx, by, bw, bh, 16);
+        // faint slot circles show the rack's capacity (like the mockup)
+        this.background.lineStyle(1.5, 0xdbe1ea, 0.85);
+        for (let i = 0; i < this.cols * this.rows; i++) {
+            const sx = this.x + this.horizontalPadding + (i % this.cols) * this.spacing;
+            const sy = this.y + this.verticalPadding + Math.floor(i / this.cols) * this.spacing;
+            this.background.strokeCircle(sx, sy, PIECE_RADIUS_BASE);
+        }
     }
 }
 
@@ -1379,6 +1389,8 @@ class Die {
 
     drawDieWithColor(dieColor, dotColor) {
         this.graphics.clear();
+        this.graphics.fillStyle(0x000000, 0.10);
+        this.graphics.fillRoundedRect(this.x, this.y + 4, this.size, this.size, 14);  // soft shadow
         this.graphics.fillStyle(dieColor, 1);
         // Colour-coded border preserved: die A vs die B vs (both) -- rounded now.
         const borderColor = this.isFirstDie ? colorFirstDie : colorSecondDie;
