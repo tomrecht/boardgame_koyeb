@@ -1,0 +1,32 @@
+<!doctype html><html><head><meta charset="utf8"><title>GUI Directions</title><style>
+  body{margin:0;font-family:system-ui,sans-serif;background:#0f1115;color:#e7ebf2}
+  header{padding:28px 40px;border-bottom:1px solid #232833}
+  h1{margin:0 0 6px;font-size:24px} .sub{color:#8b95a3;font-size:15px;max-width:820px;line-height:1.5}
+  .grid{display:grid;grid-template-columns:repeat(2,1fr);gap:2px;background:#232833}
+  figure{margin:0;background:#0f1115}
+  figcaption{padding:14px 20px}
+  figcaption b{font-size:17px} figcaption span{color:#8b95a3;font-size:14px}
+  img{width:100%;display:block;background:#1a1d24}
+  .note{padding:20px 40px;color:#8b95a3;font-size:14px;line-height:1.6;border-top:1px solid #232833}
+  code{background:#1a1d24;padding:2px 6px;border-radius:4px;color:#cdd5e0}
+  .base{padding:20px 40px;border-top:1px solid #232833}
+  .base img{max-width:520px;border:1px solid #232833;border-radius:8px}
+</style></head><body>
+<header>
+  <h1>Board GUI — 4 directions</h1>
+  <div class="sub">Same board <b>geometry preserved exactly</b> (rendered from the live game's extracted tile positions); each direction restyles the visual treatment + redesigns the racks / dice / buttons / HUD. Pick a direction (or a mix) and I'll implement it in the real game. For a live, resizable view open <code>design/mock.html?dir=A</code> (or B/C/D).</div>
+</header>
+<div class="grid">
+  <figure><img src="A.png"><figcaption><b>A · Clean Modern</b> <span>— soft light palette, crisp geometry, color-coded goals. Premium-app feel; most approachable.</span></figcaption></figure>
+  <figure><img src="B.png"><figcaption><b>B · Warm Classic</b> <span>— wood/cream tones, tactile pieces, serif type. Physical-tabletop feel.</span></figcaption></figure>
+  <figure><img src="C.png"><figcaption><b>C · Dark Premium</b> <span>— dark board, vivid goal accents, glowing hub. Sleek and modern.</span></figcaption></figure>
+  <figure><img src="D.png"><figcaption><b>D · Minimal / Bold</b> <span>— high-contrast black &amp; white with a single red accent. Editorial / graphic.</span></figcaption></figure>
+</div>
+<div class="base">
+  <div class="sub" style="margin-bottom:10px"><b>Before</b> (current):</div>
+  <img src="baseline.png">
+</div>
+<div class="note">
+  Notes: the 6 colour-coded goals in A/B/C are a functional bonus (each goal identifiable at a glance) but optional. The blocked "nogo" pinwheel is styled to stay clearly distinct from the playable path in every direction. Piece rendering, dice, rack trays, buttons, status bar and turn indicator are all restyled per direction; these are mockups of the look — final implementation ports the chosen direction into <code>game.js</code> with the tile centres asserted byte-identical to today's board.
+</div>
+</body></html>
