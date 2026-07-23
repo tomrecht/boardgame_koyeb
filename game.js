@@ -41,9 +41,28 @@ const DICE_X1 = DICE_X2 - DIE_SIZE - 20; // first die, 20px gap
 // Rack pieces render a touch larger than board pieces (mockup look).
 const RACK_PR = 22;
 
-const BACKGROUND_COLOR = 0xc9d1dc; // Clean Modern background (nogo tiles blend into this)
-const GOAL_COLOR = 0x4a90d9;        // all goal tiles are blue (as in the original)
-const TILE_BORDER = 0x000000;       // black tile boundaries
+// ── THEMES ──────────────────────────────────────────────────────────────
+// Board palette. Selectable at load with ?theme=slate|parchment|forest|dark
+// (default parchment). goalNum/accentCss/accentInk are CSS strings for text;
+// the rest are Phaser hex ints. nogo tiles blend into `bg`.
+const THEMES = {
+    parchment: { bg:0xece3d3, field:0xfffdf8, border:0x43392c, goal:0xc8663f, goalNum:'#3a2418',
+                 hub:0x2f9e8f, hubRing:0x1f7568, accent:0xb5623b, accentCss:'#b5623b', accentInk:'#ffffff',
+                 highlight:0xe9c9b0, bgInk:'#3a2418' },
+    slate:     { bg:0xdfe3ea, field:0xffffff, border:0x1e2733, goal:0x4a86c5, goalNum:'#0e1720',
+                 hub:0xffcf5c, hubRing:0xe0a92e, accent:0x35618e, accentCss:'#35618e', accentInk:'#ffffff',
+                 highlight:0xadd8e6, bgInk:'#28313b' },
+    forest:    { bg:0xe1e8e0, field:0xffffff, border:0x20302a, goal:0x3f8a5c, goalNum:'#0e1f16',
+                 hub:0xe8b23a, hubRing:0xc48f22, accent:0x2f7050, accentCss:'#2f7050', accentInk:'#ffffff',
+                 highlight:0xbfe3cd, bgInk:'#20302a' },
+    dark:      { bg:0x232a33, field:0xeef2f7, border:0x0c1117, goal:0x3fb1c8, goalNum:'#e6edf3',
+                 hub:0xf0b44a, hubRing:0xc98f2c, accent:0x3fb1c8, accentCss:'#3fb1c8', accentInk:'#06222a',
+                 highlight:0x9fc7d6, bgInk:'#e6edf3' },
+};
+const THEME = THEMES[new URLSearchParams(location.search).get('theme')] || THEMES.parchment;
+const BACKGROUND_COLOR = THEME.bg;   // nogo tiles blend into this
+const GOAL_COLOR = THEME.goal;        // all goal tiles a single colour
+const TILE_BORDER = THEME.border;     // tile boundaries
 
 // Baked radial-gradient sphere texture for a piece (matches the mockup's CSS
 // spheres, which Phaser vector circles can't reproduce). Cached per colour.
@@ -60,7 +79,10 @@ const colorSum = 0xFFFF00; // Yellow
 const FONT_FAMILY = 'Crimson Text';
 // Clean-Modern HUD: system sans-serif + palette (matches design/cm.html).
 const HUD_FONT = '"Segoe UI", system-ui, -apple-system, sans-serif';
-const HUD_ACCENT = '#3b6ea5';
+// Modal body text (option B: sans headings, serif body). System serif — no
+// web font needed.
+const BODY_FONT = 'Georgia, "Times New Roman", serif';
+const HUD_ACCENT = THEME.accentCss;
 const HUD_INK = '#28313b';
 const HUD_PANEL_BORDER = 0xdbe1ea;
 
@@ -70,7 +92,7 @@ const HUD_PANEL_BORDER = 0xdbe1ea;
 function makeHudButton(scene, cx, cy, label, { ghost = false } = {}) {
     const txt = scene.add.text(cx, cy, label, {
         fontSize: '19px', fontFamily: HUD_FONT, fontStyle: 'bold',
-        color: ghost ? HUD_INK : '#ffffff', padding: { x: 16, y: 9 }
+        color: ghost ? HUD_INK : THEME.accentInk, padding: { x: 16, y: 9 }
     }).setOrigin(0.5).setDepth(2).setInteractive({ useHandCursor: true });
     const b = txt.getBounds();
     const r = 9;
@@ -80,7 +102,7 @@ function makeHudButton(scene, cx, cy, label, { ghost = false } = {}) {
         g.fillStyle(0xffffff, 1); g.fillRoundedRect(b.x, b.y, b.width, b.height, r);
         g.lineStyle(1, HUD_PANEL_BORDER, 1); g.strokeRoundedRect(b.x, b.y, b.width, b.height, r);
     } else {
-        g.fillStyle(0x3b6ea5, 1); g.fillRoundedRect(b.x, b.y, b.width, b.height, r);
+        g.fillStyle(THEME.accent, 1); g.fillRoundedRect(b.x, b.y, b.width, b.height, r);
     }
     return txt;
 }
@@ -1126,16 +1148,16 @@ class Tile {
             this.innerRadius = innerRadius;
             this.outerRadius = outerRadius;
             this.neighbors = [];
-            this.highlightColor = 0xadd8e6; // Light blue
+            this.highlightColor = THEME.highlight;
             this.reachableColor = null;
             this.lastClickTime = null;
-    
+
             this.lineColor = TILE_BORDER;
             this.graphics = scene.add.graphics();
 
             switch (type) {
                 case "home":
-                    this.fillColor = 0xffd24d; this.lineColor = 0xe9b21e;
+                    this.fillColor = THEME.hub; this.lineColor = THEME.hubRing;
                     break;
                 case "save":
                     this.fillColor = GOAL_COLOR; this.lineColor = TILE_BORDER;
@@ -1147,7 +1169,7 @@ class Tile {
                     this.lineColor = BACKGROUND_COLOR;
                     break;
                 case "field":
-                    this.fillColor = 0xffffff; this.lineColor = TILE_BORDER;
+                    this.fillColor = THEME.field; this.lineColor = TILE_BORDER;
                     break;
             }
 
@@ -1199,7 +1221,7 @@ class Tile {
         const y = CENTER_Y + radius * Math.sin(angle);
         const text = this.scene.add.text(x, y, number.toString(), {
             fontSize: '46px',
-            color: '#000000',
+            color: THEME.goalNum,
             fontStyle: 'bold'
         }).setOrigin(0.5);
         text.setDepth(50);
@@ -1354,7 +1376,7 @@ class Tile {
 
     showBadge(x, y, k) {
         if (!this.badgeCircle) {
-            this.badgeCircle = this.scene.add.circle(x, y, STACK_PR, 0x3b6ea5).setDepth(60);
+            this.badgeCircle = this.scene.add.circle(x, y, STACK_PR, THEME.accent).setDepth(60);
             this.badgeText = this.scene.add.text(x, y, '', {
                 fontSize: `${STACK_PR}px`, fontFamily: HUD_FONT, fontStyle: 'bold', color: '#ffffff'
             }).setOrigin(0.5).setDepth(61);
@@ -2590,7 +2612,7 @@ endGame(winner, score = null, impasse_caller = null) {
 
         const text = this.scene.add.text(CENTER_X, CENTER_Y - 40, 'End your turn without using both dice?', {
             fontSize: '22px',
-            fontFamily: FONT_FAMILY,
+            fontFamily: HUD_FONT,
             color: '#000000',
             wordWrap: { width: modalWidth - 40 },
             align: 'center'
@@ -2599,7 +2621,7 @@ endGame(winner, score = null, impasse_caller = null) {
 
         const confirmButton = this.scene.add.text(CENTER_X - 60, CENTER_Y + 40, 'Yes', {
             fontSize: '28px',
-            fontFamily: FONT_FAMILY,
+            fontFamily: HUD_FONT,
             backgroundColor: '#00ff00',
             padding: { x: 20, y: 10 },
             borderColor: '#000',
@@ -2610,7 +2632,7 @@ endGame(winner, score = null, impasse_caller = null) {
 
         const cancelButton = this.scene.add.text(CENTER_X + 60, CENTER_Y + 40, 'No', {
             fontSize: '28px',
-            fontFamily: FONT_FAMILY,
+            fontFamily: HUD_FONT,
             backgroundColor: '#ff0000',
             padding: { x: 20, y: 10 },
             borderColor: '#000',
@@ -2752,7 +2774,7 @@ class MainGameScene extends Phaser.Scene {
         if(DEBUG_MODE) {
         const saveGameStateButton = this.add.text(320, 104, 'Save Game', {
             fontSize: '24px',
-            fontFamily: FONT_FAMILY,
+            fontFamily: HUD_FONT,
             backgroundColor: '#87CEEB',
             padding: { x: 15, y: 7.5 },
             borderColor: '#000',
@@ -2770,20 +2792,20 @@ class MainGameScene extends Phaser.Scene {
         this.scoreText = this.add.text(24, this.sys.game.config.height - 24, '', {
             fontSize: '20px',
             fontFamily: HUD_FONT,
-            color: HUD_INK
+            color: THEME.bgInk
         }).setOrigin(0, 1);
 
         this.updateScoreText();
 
         // In MainGameScene.create(), replace the old impasseText and callDrawButton with:
         this.impasseText = this.add.text(20, this.sys.game.config.height - 280, '', {
-            fontSize: '24px', fontFamily: FONT_FAMILY, color: '#a00',
+            fontSize: '24px', fontFamily: HUD_FONT, color: '#a00',
             backgroundColor: '#fff', padding: { x: 8, y: 4 },
             borderColor: '#000', borderWidth: 1.5, borderRadius: 3.75
         }).setOrigin(0, 1).setVisible(false);
 
         this.callDrawButton = this.add.text(0, 0, 'Call draw', {
-            fontSize: '24px', fontFamily: FONT_FAMILY, color: '#fff',
+            fontSize: '24px', fontFamily: HUD_FONT, color: '#fff',
             backgroundColor: '#a00', padding: { x: 10, y: 5 },
             borderColor: '#000', borderWidth: 1.5, borderRadius: 3.75
         }).setOrigin(0, 1).setVisible(false).setInteractive({ useHandCursor: true });
@@ -2825,18 +2847,18 @@ class MainGameScene extends Phaser.Scene {
         const textX = circleX + 30;
         const textY = circleY;
     
-        const circle = this.add.circle(circleX, circleY, 15, BLACK_IS_AI ? 0x3b6ea5 : 0xD3D3D3)
+        const circle = this.add.circle(circleX, circleY, 15, BLACK_IS_AI ? THEME.accent : 0xD3D3D3)
             .setInteractive({ useHandCursor: true })
             .on('pointerdown', () => {
                 BLACK_IS_AI = !BLACK_IS_AI;
                 this.game.updateBlackPlayerAIStatus(BLACK_IS_AI);
-                circle.setFillStyle(BLACK_IS_AI ? 0x3b6ea5 : 0xD3D3D3);
+                circle.setFillStyle(BLACK_IS_AI ? THEME.accent : 0xD3D3D3);
             });
 
         const text = this.add.text(textX, textY, 'Play Computer', {
             fontSize: '20px',
             fontFamily: HUD_FONT,
-            color: HUD_INK
+            color: THEME.bgInk
         }).setOrigin(0, 0.5);
     }
     
@@ -2856,7 +2878,7 @@ class MainGameScene extends Phaser.Scene {
 
         const label = this.add.text(circleX + 25, circleY, 'Evaluate Position', {
             fontSize: '22px',
-            fontFamily: FONT_FAMILY,
+            fontFamily: HUD_FONT,
             color: '#cc4400'
         }).setOrigin(0, 0.5).setVisible(false);
 
@@ -3007,7 +3029,7 @@ class MainGameScene extends Phaser.Scene {
 
         const text = this.add.text(CENTER_X, CENTER_Y - 40, 'Start a new game?', {
             fontSize: '22px',
-            fontFamily: FONT_FAMILY,
+            fontFamily: HUD_FONT,
             color: '#000000',
             wordWrap: { width: modalWidth - 40 },
             align: 'center'
@@ -3016,7 +3038,7 @@ class MainGameScene extends Phaser.Scene {
 
         const confirmButton = this.add.text(CENTER_X - 60, CENTER_Y + 40, 'Yes', {
             fontSize: '28px',
-            fontFamily: FONT_FAMILY,
+            fontFamily: HUD_FONT,
             backgroundColor: '#00ff00',
             padding: { x: 20, y: 10 },
             borderColor: '#000',
@@ -3027,7 +3049,7 @@ class MainGameScene extends Phaser.Scene {
 
         const cancelButton = this.add.text(CENTER_X + 60, CENTER_Y + 40, 'No', {
             fontSize: '28px',
-            fontFamily: FONT_FAMILY,
+            fontFamily: HUD_FONT,
             backgroundColor: '#ff0000',
             padding: { x: 20, y: 10 },
             borderColor: '#000',
@@ -3127,12 +3149,12 @@ class EndGameScene extends Phaser.Scene {
     }
         this.add.text(CENTER_X, CENTER_Y - 50, message, {
             fontSize: '48px',
-            fontFamily: FONT_FAMILY,
+            fontFamily: HUD_FONT,
             color: '#ff0000'
         }).setOrigin(0.5);
         const restartButton = this.add.text(CENTER_X, CENTER_Y + 50, 'Restart', {
             fontSize: '32px',
-            fontFamily: FONT_FAMILY,
+            fontFamily: HUD_FONT,
             backgroundColor: '#008000',
             padding: { x: 20, y: 10 }
         }).setOrigin(0.5).setInteractive();
@@ -3153,7 +3175,7 @@ class EndGameScene extends Phaser.Scene {
         });
         const quitButton = this.add.text(CENTER_X, CENTER_Y + 120, 'Quit', {
             fontSize: '32px',
-            fontFamily: FONT_FAMILY,
+            fontFamily: HUD_FONT,
             backgroundColor: '#800000',
             padding: { x: 20, y: 10 }
         }).setOrigin(0.5).setInteractive();
@@ -3192,14 +3214,14 @@ class InstructionsScene extends Phaser.Scene {
         // Add instructions text
         this.add.text(CENTER_X, 50, 'How to Play', {
             fontSize: '48px',
-            fontFamily: FONT_FAMILY,
+            fontFamily: HUD_FONT,
             color: '#000000'
         }).setOrigin(0.5);
 
         // Create a text box for the instructions
         const textBox = this.add.text(CENTER_X, 300, instructions, {
             fontSize: '26px',
-            fontFamily: FONT_FAMILY,
+            fontFamily: BODY_FONT,
             color: '#000000',
             align: 'left',
             wordWrap: { width: config.width - 100 }
@@ -3217,7 +3239,7 @@ class InstructionsScene extends Phaser.Scene {
         // Add a button to go back to the main game
         const backButton = this.add.text(CENTER_X, config.height - 70, 'Back to Game', {
             fontSize: '32px',
-            fontFamily: FONT_FAMILY,
+            fontFamily: HUD_FONT,
             backgroundColor: '#ffcc00',
             padding: { x: 20, y: 10 },
             borderColor: '#000',
