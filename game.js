@@ -2759,6 +2759,17 @@ endGame(winner, score = null, impasse_caller = null) {
         return null;
     }
 
+    // Return the rack whose panel contains point (x,y), or null (used by setup drag).
+    rackAtPoint(x, y) {
+        const racks = [this.whiteUnenteredRack, this.whiteSavedRack, this.blackUnenteredRack, this.blackSavedRack];
+        for (const r of racks) {
+            const bx = r.x - RACK_PR, by = r.y - RACK_PR;
+            const bw = r.cols * r.spacing + RACK_PR, bh = r.rows * r.spacing + RACK_PR + r.verticalPadding;
+            if (x >= bx && x <= bx + bw && y >= by && y <= by + bh) return r;
+        }
+        return null;
+    }
+
     // Drag-to-move, additive with click. A piece is selected by the pointerdown
     // (its normal handleClick) before dragstart fires, so drag just moves the
     // already-selected piece and drops it on the tile under the pointer, exactly
@@ -2819,9 +2830,14 @@ endGame(winner, score = null, impasse_caller = null) {
             const target = piece.game.tileAtPoint(pointer.worldX, pointer.worldY);
 
             if (window.setupMode) {
-                // free placement: drop on a tile places the piece there; an
+                // free placement: drop on a rack panel puts the piece in that rack
+                // (to/from/between racks); drop on a tile places it there; an
                 // off-board drop snaps it back to where it came from.
-                if (target && target.type !== 'nogo') {
+                const rack = piece.game.rackAtPoint(pointer.worldX, pointer.worldY);
+                if (rack) {
+                    _setupPlaceInRack(piece, rack, false);
+                    _setupClearSelection();
+                } else if (target && target.type !== 'nogo') {
                     target.onClick();
                 } else {
                     if (piece._originTile) piece._originTile.updatePositions();
