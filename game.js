@@ -1094,9 +1094,8 @@ class Tile {
     }
 
     addNumberText(number, angle, radius) {
-        // radius is passed as the tile's MID radius -> number sits at the centre
-        // of the goal tile (not its outer edge). Black, large, rounded, and on a
-        // high depth so pieces rarely obscure it.
+        // radius is passed just OUTSIDE the goal tile's outer edge so the number
+        // never gets obscured by pieces sitting on the goal. Black, large, bold.
         const x = CENTER_X + radius * Math.cos(angle);
         const y = CENTER_Y + radius * Math.sin(angle);
         const text = this.scene.add.text(x, y, number.toString(), {
@@ -1307,7 +1306,7 @@ class Tile {
 
                             // Add number to "save" tiles
         if (this.type === 'save' && this.number !== undefined) {
-            this.addNumberText(this.number, (this.startAngle + this.endAngle) / 2, (this.innerRadius + this.outerRadius) / 2);
+            this.addNumberText(this.number, (this.startAngle + this.endAngle) / 2, this.outerRadius + 26);
         }
         }
     }
@@ -1318,7 +1317,7 @@ class Tile {
 }
 
 class Rack {
-    constructor(scene, x, y, color, type, rows = 5) {
+    constructor(scene, x, y, color, type, rows = 4) {
         this.scene = scene;
         this.x = x;
         this.y = y;
@@ -1508,10 +1507,12 @@ class Game {
 
 
         // Initialize racks
+        // saved rack sits flush beneath the unentered rack (panel height with
+        // rows=4 is 240px), so each side's two racks touch like the mockup.
         this.whiteUnenteredRack = new Rack(scene, 75, 150, 'white', 'unentered');
-        this.whiteSavedRack = new Rack(scene, 75, 600, 'white', 'saved');
+        this.whiteSavedRack = new Rack(scene, 75, 390, 'white', 'saved');
         this.blackUnenteredRack = new Rack(scene, 1545, 150, 'black', 'unentered');
-        this.blackSavedRack = new Rack(scene, 1545, 600, 'black', 'saved');
+        this.blackSavedRack = new Rack(scene, 1545, 390, 'black', 'saved');
 
         this.confirmationModal = null;
 
@@ -2329,7 +2330,10 @@ endGame(winner, score = null, impasse_caller = null) {
                 piece.selected = false;
                 piece.color = pieceState.color;
                 piece.number = pieceState.number;
-                piece.setPosition(pieceState.x, pieceState.y);
+                // set coords directly (body/sheen/circle were just destroyed
+                // above; drawPiece below recreates them at this position).
+                piece.x = pieceState.x;
+                piece.y = pieceState.y;
                 piece.rack = pieceState.rack ? (pieceState.rack === 'unentered' ? (piece.color === 0xffffff ? this.whiteUnenteredRack : this.blackUnenteredRack) : (piece.color === 0xffffff ? this.whiteSavedRack : this.blackSavedRack)) : null;
                 piece.currentTile = pieceState.currentTile ? this.tiles.find(tile => tile.ring === pieceState.currentTile.ring && tile.sector === pieceState.currentTile.sector) : null;
                 piece.drawPiece();
@@ -2690,26 +2694,21 @@ class MainGameScene extends Phaser.Scene {
     }
 
     updateScoreText() {
-
-            const averageScore = calculateAverageScore();
-            const displayValue = Math.abs(averageScore).toFixed(2);
-
-            let finalScoreLine;
-            if (averageScore === 0) {
-                // If the score is 0, just show the number
-                finalScoreLine = `Average Score: ${displayValue}`;
+            // Session total score (signed: + favours White). Shown with a
+            // leader label, replacing the old average-score line.
+            const total = scoreTracker.total_score;
+            let totalLine;
+            if (total === 0) {
+                totalLine = `Total Score: ${total}`;
             } else {
-                // Otherwise, show the leader label
-                const leaderLabel = averageScore > 0 ? "White" : "Black";
-                finalScoreLine = `Average Score: ${leaderLabel}: ${displayValue}`;
+                const leaderLabel = total > 0 ? "White" : "Black";
+                totalLine = `Total Score: ${leaderLabel} +${Math.abs(total)}`;
             }
 
             this.scoreText.setText(
                 `Games Played: ${scoreTracker.games_played}\n` +
-                `White Wins: ${scoreTracker.white_wins}\n` +
-                `Black Wins: ${scoreTracker.black_wins}\n` +
-                `Draws: ${scoreTracker.draws}\n` +
-                finalScoreLine
+                `White ${scoreTracker.white_wins}  \u00B7  Black ${scoreTracker.black_wins}  \u00B7  Draws ${scoreTracker.draws}\n` +
+                totalLine
             );
         }
 
