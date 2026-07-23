@@ -1034,17 +1034,18 @@ class Tile {
     }
 
     addNumberText(number, angle, radius) {
-        const textRadius = radius + 20; // Adjust the offset distance as needed
-        const x = CENTER_X + textRadius * Math.cos(angle);
-        const y = CENTER_Y + textRadius * Math.sin(angle);
+        // radius is passed as the tile's MID radius -> number sits at the centre
+        // of the goal tile (not its outer edge). Black, large, rounded, and on a
+        // high depth so pieces rarely obscure it.
+        const x = CENTER_X + radius * Math.cos(angle);
+        const y = CENTER_Y + radius * Math.sin(angle);
         const text = this.scene.add.text(x, y, number.toString(), {
-            fontSize: '36px',
-            color: '#000',
+            fontSize: '46px',
+            color: '#000000',
+            fontFamily: '"Avenir Next", "Futura", "Segoe UI", sans-serif',
             fontStyle: 'bold'
         }).setOrigin(0.5);
-        
-
-        
+        text.setDepth(50);
         text.setAngle(0);
     }
 
@@ -1244,7 +1245,7 @@ class Tile {
 
                             // Add number to "save" tiles
         if (this.type === 'save' && this.number !== undefined) {
-            this.addNumberText(this.number, (this.startAngle + this.endAngle) / 2, this.outerRadius);
+            this.addNumberText(this.number, (this.startAngle + this.endAngle) / 2, (this.innerRadius + this.outerRadius) / 2);
         }
         }
     }
