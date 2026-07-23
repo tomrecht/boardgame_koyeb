@@ -11,11 +11,12 @@ const WHITE_IS_AI = false;
 let BLACK_IS_AI = true;
 
 const PIECE_RADIUS_BASE = 20;
-// On-board stacking: pieces render at a fixed radius and pack into a polar
-// grid of slots sized from each tile's geometry; overflow folds into a "+K"
-// badge with a tap-to-pick picker (ported from design/stack.html).
-const STACK_PR = 17;
-const STACK_SLOT = STACK_PR * 2 + 4;
+// On-board stacking: default board-piece radius. Pieces pack into a polar grid
+// of slots sized from each tile's geometry; overflow folds into a "+K" badge
+// with a tap-to-pick picker (ported from design/stack.html). On small tiles the
+// per-tile radius shrinks (Tile.tilePieceRadius) so >=2 pieces fit un-stacked.
+const STACK_PR = 20;
+const STACK_MIN_FIT = 2;   // small tiles shrink pieces until this many fit
 const TILE_RADIUS_STEP = 60;
 const CENTER_X = 900;
 // Board vertical centre. 600 (canvas midpoint) keeps goal 2's number, at
@@ -32,9 +33,9 @@ const NO_SAVE_TURNS_FOR_DRAW = 10;
 
 const DIE_1_POSITION= 400;   // (still used to place the undo/end-turn arrows)
 const DIE_2_POSITION = 500;
-// Dice: ~1.5x bigger than before (80->120), anchored so the pair's top-right
-// corner stays put (die 2 right edge = 580, top = 50).
-const DIE_SIZE = 120;
+// Dice: halfway between the original 80 and the 120 try, anchored so the pair's
+// top-right corner stays put (die 2 right edge = 580, top = 50).
+const DIE_SIZE = 100;
 const DICE_Y = 50;
 const DICE_X2 = 580 - DIE_SIZE;         // second (right) die
 const DICE_X1 = DICE_X2 - DIE_SIZE - 20; // first die, 20px gap
@@ -501,10 +502,13 @@ function ensureStackPicker() {
         'border:1px solid #cfd6e0; border-radius:14px; padding:12px;' +
         'box-shadow:0 12px 34px rgba(0,0,0,.22);';
     document.body.appendChild(pop);
-    // any outside click dismisses (capture phase; skip the click that opened it)
+    // any outside click dismisses (capture phase; skip the click that opened it).
+    // Canvas clicks are left to the Phaser objects (tiles call hideStackPicker,
+    // the badge toggles) so the badge can close a picker it opened.
     document.addEventListener('pointerdown', (e) => {
         if (!_stackPicker || _stackPicker.style.display === 'none') return;
         if (_stackPicker.contains(e.target)) return;
+        if (e.target && e.target.tagName === 'CANVAS') return;
         if (performance.now() - _pickerOpenedAt < 60) return;
         hideStackPicker();
     }, true);
@@ -659,6 +663,7 @@ class Piece {
     }
 
     handleClick(pointer) {
+        hideStackPicker();   // clicking a piece dismisses an open overflow picker
 
         if (window.setupMode) {
             const now = Date.now();
@@ -752,6 +757,9 @@ class Piece {
     
     onClick() {
         if (this.rack && this.rack.type === 'unentered' && this.game.turn === this.rack.color) {
+            // snapshot the pre-entry state (piece still on the rack) so undoing
+            // the entry move returns the piece to the top of the rack, not home.
+            this.game._pendingPreMove = this.game.captureState();
             this.moveFromRack();
             this.justMovedHome = true;
             this.game.selectedPiece = this;
@@ -764,6 +772,7 @@ class Piece {
             this.isSelected = !this.isSelected;
             this.updateColor();
             if (this.isSelected) {
+                this.game._pendingPreMove = this.game.captureState();   // pre-move snapshot
                 this.game.selectedPiece = this;
                 this.reachableTiles = this.game.getReachableTilesByDice(this);
                 this.highlightReachableTiles();
@@ -1021,22 +1030,29 @@ class Piece {
 
         const { reachableByFirstDie, reachableBySecondDie, reachableBySum } = reachableTiles;
 
-    
-        // Highlight tiles and set the color attribute
+        // reachableByFirstDie is computed for the FIRST UNUSED die, so colour it
+        // with that die's own colour; yellow is reserved for a genuine two-dice
+        // sum move (only possible while both dice are unused).
+        const dice = this.game.dice;
+        const bothUnused = !dice[0].used && !dice[1].used;
+        const firstUnusedColor = !dice[0].used ? colorFirstDie : colorSecondDie;
+
         reachableByFirstDie.forEach(tile => {
-            tile.reachableColor = colorFirstDie;
+            tile.reachableColor = firstUnusedColor;
             tile.highlight();
         });
-    
+
         reachableBySecondDie.forEach(tile => {
             tile.reachableColor = colorSecondDie;
             tile.highlight();
         });
-    
-        reachableBySum.forEach(tile => {
-            tile.reachableColor = colorSum;
-            tile.highlight();
-        });
+
+        if (bothUnused) {
+            reachableBySum.forEach(tile => {
+                tile.reachableColor = colorSum;
+                tile.highlight();
+            });
+        }
     }
 
     canBeSaved() {
@@ -1377,8 +1393,10 @@ class Tile {
             });
         } else {
             // Capacity-based stacking, centred in the tile (both radially and
-            // angularly). Numbered pieces (1-6) take visibility precedence; any
+            // angularly). Pieces use this tile's adaptive radius (shrunk on small
+            // tiles so >=2 fit). Numbered pieces (1-6) take visibility precedence;
             // overflow folds into a "+K" badge that the tap-to-pick picker expands.
+            const pr = this.tilePieceRadius();
             const cap = this.stackCapacity();
             const ord = [...this.pieces].sort((a, b) => (a.number > 6 ? 1 : 0) - (b.number > 6 ? 1 : 0));
             const over = ord.length > cap;
@@ -1387,7 +1405,7 @@ class Tile {
             ord.forEach((piece, i) => {
                 if (i < show) {
                     const sl = pos[i] || pos[pos.length - 1];
-                    piece.setSize(STACK_PR);
+                    piece.setSize(pr);
                     piece.setPosition(CENTER_X + sl.r * Math.cos(sl.a), CENTER_Y + sl.r * Math.sin(sl.a));
                     piece.setVisible(true);
                 } else {
@@ -1397,38 +1415,50 @@ class Tile {
             if (over) {
                 const sl = pos[pos.length - 1];
                 this.showBadge(CENTER_X + sl.r * Math.cos(sl.a), CENTER_Y + sl.r * Math.sin(sl.a),
-                               ord.length - (cap - 1));
+                               ord.length - (cap - 1), pr);
             } else {
                 this.hideBadge();
             }
         }
     }
 
-    // Max pieces that fit in this tile's polar grid (rows straddle the mid radius).
-    stackCapacity() {
+    // Board-piece radius for this tile: the default STACK_PR, shrunk on small
+    // tiles until at least STACK_MIN_FIT pieces fit un-stacked (as the original
+    // game.js resized pieces so a 2-stack fits on ring-1 tiles).
+    tilePieceRadius() {
+        let r = STACK_PR;
+        while (r > 9 && this._capacityAtSlot(r * 2 + 4) < STACK_MIN_FIT) r -= 1;
+        return r;
+    }
+
+    _capacityAtSlot(slot) {
         const dth = this.endAngle - this.startAngle;
         const ext = this.outerRadius - this.innerRadius;
         const midR = (this.innerRadius + this.outerRadius) / 2;
-        const maxRows = Math.max(1, Math.floor(ext / STACK_SLOT));
+        const maxRows = Math.max(1, Math.floor(ext / slot));
         let cap = 0;
         for (let k = 0; k < maxRows; k++) {
-            const r = midR + (k - (maxRows - 1) / 2) * STACK_SLOT;
-            cap += Math.max(1, Math.floor((r * dth) / STACK_SLOT));
+            const r = midR + (k - (maxRows - 1) / 2) * slot;
+            cap += Math.max(1, Math.floor((r * dth) / slot));
         }
         return cap;
     }
 
+    // Max pieces that fit at this tile's adaptive radius.
+    stackCapacity() { return this._capacityAtSlot(this.tilePieceRadius() * 2 + 4); }
+
     // `count` piece positions, centred in the tile: rows straddle the mid radius
     // and each row is centred on the mid angle. One piece -> exact tile centre.
     stackPositions(count) {
+        const slot = this.tilePieceRadius() * 2 + 4;
         const dth = this.endAngle - this.startAngle;
         const ext = this.outerRadius - this.innerRadius;
         const midR = (this.innerRadius + this.outerRadius) / 2;
         const midA = (this.startAngle + this.endAngle) / 2;
-        const maxRows = Math.max(1, Math.floor(ext / STACK_SLOT));
+        const maxRows = Math.max(1, Math.floor(ext / slot));
         const rowInfo = (rows, k) => {
-            const r = midR + (k - (rows - 1) / 2) * STACK_SLOT;
-            return { r, cap: Math.max(1, Math.floor((r * dth) / STACK_SLOT)) };
+            const r = midR + (k - (rows - 1) / 2) * slot;
+            return { r, cap: Math.max(1, Math.floor((r * dth) / slot)) };
         };
         // fewest rows that hold `count`
         let rows = 1;
@@ -1450,27 +1480,30 @@ class Tile {
         }
         const positions = [];
         for (let k = 0; k < rows; k++) {
-            const m = sizes[k], r = info[k].r, pitch = STACK_SLOT / r;
+            const m = sizes[k], r = info[k].r, pitch = slot / r;
             for (let i = 0; i < m; i++) positions.push({ r, a: midA + (i - (m - 1) / 2) * pitch });
         }
         return positions;
     }
 
-    showBadge(x, y, k) {
+    showBadge(x, y, k, pr = STACK_PR) {
         if (!this.badgeCircle) {
             // interactive so the badge itself is a reliable tap target for the picker
-            this.badgeCircle = this.scene.add.circle(x, y, STACK_PR, THEME.accent).setDepth(60)
+            this.badgeCircle = this.scene.add.circle(x, y, pr, THEME.accent).setDepth(60)
                 .setInteractive({ useHandCursor: true })
                 // with a piece selected, the badge acts as the tile (drop/move here);
-                // otherwise it opens the overflow picker.
-                .on('pointerdown', () => { if (this.game.selectedPiece) this.onClick(); else openStackPicker(this); });
+                // otherwise it toggles the overflow picker open/closed.
+                .on('pointerdown', () => {
+                    if (this.game.selectedPiece) { this.onClick(); return; }
+                    if (stackPickerOpen()) hideStackPicker(); else openStackPicker(this);
+                });
             this.badgeText = this.scene.add.text(x, y, '', {
-                fontSize: `${STACK_PR}px`, fontFamily: HUD_FONT, fontStyle: 'bold', color: '#ffffff'
+                fontFamily: HUD_FONT, fontStyle: 'bold', color: '#ffffff'
             }).setOrigin(0.5).setDepth(61);
         }
-        this.badgeCircle.setPosition(x, y).setVisible(true);
+        this.badgeCircle.setPosition(x, y).setRadius(pr).setVisible(true);
         if (this.badgeCircle.input) this.badgeCircle.input.enabled = true;
-        this.badgeText.setPosition(x, y).setText('+' + k).setVisible(true);
+        this.badgeText.setPosition(x, y).setFontSize(`${pr}px`).setText('+' + k).setVisible(true);
     }
 
     hideBadge() {
@@ -1762,6 +1795,7 @@ class Game {
         // Capture initial state
         this.state = this.captureState();
         this.undoStack = [];         // per-move undo snapshots for the current turn
+        this._pendingPreMove = null; // pre-selection snapshot for the next move
         this.turnStartState = null;  // populated after each rollDice in switchTurn
 
                 // Set players to endgame if debug mode is active
@@ -2138,7 +2172,11 @@ class Game {
                 }
             }
 
-            this.pushUndo();   // snapshot BEFORE this move so undo can revert just it
+            // snapshot BEFORE this move so undo reverts just it. Prefer the
+            // pre-selection snapshot (captured while an entering piece was still
+            // on the rack) so undoing an entry returns it to the rack, not home.
+            this.undoStack.push(this._pendingPreMove || this.captureState());
+            this._pendingPreMove = null;
 
             if (targetTile.type === 'field' && targetTile.pieces.length === 1 && targetTile.pieces[0].color !== piece.color) {
                 this.capturePiece(targetTile.pieces[0]); // Capture the opposing piece
@@ -2178,6 +2216,11 @@ class Game {
             this.mustMovePieces = this.mustMovePieces.filter(p => p !== piece);
             }
             if (typeof updateMustMoveHighlights === 'function') updateMustMoveHighlights(this);
+
+            // clear the now-stale reachability so the next selection recomputes
+            // it fresh (a leftover set from before the move otherwise wrongly
+            // filters the second-die reachable tiles down to nothing).
+            piece.reachableTiles = null;
 
             refreshEvalReadout();  // update on-board eval after the move settles
             return true;
@@ -2697,9 +2740,16 @@ endGame(winner, score = null, impasse_caller = null) {
         scene.input.on('dragstart', (pointer, obj) => {
             const piece = obj.__piece; if (!piece) return;
             hideStackPicker();
+            piece._originTile = piece.currentTile;
+            piece._originRack = piece.rack;
+            if (window.setupMode) {
+                // free placement: pointerdown already set _setupSelected via handleClick
+                piece._dragOK = (_setupSelected === piece);
+                piece._snapRack = false;
+                return;
+            }
             // draggable only if the pointerdown actually selected this piece
             piece._dragOK = (piece.game.selectedPiece === piece);
-            piece._originTile = piece.currentTile;
             piece._snapRack = !!(piece.justMovedHome && piece.currentTile && piece.currentTile.type === 'home');
         });
 
@@ -2717,6 +2767,20 @@ endGame(winner, score = null, impasse_caller = null) {
             piece._dragOK = false;
             const before = piece._originTile;
             const target = piece.game.tileAtPoint(pointer.worldX, pointer.worldY);
+
+            if (window.setupMode) {
+                // free placement: drop on a tile places the piece there; an
+                // off-board drop snaps it back to where it came from.
+                if (target && target.type !== 'nogo') {
+                    target.onClick();
+                } else {
+                    if (piece._originTile) piece._originTile.updatePositions();
+                    else if (piece._originRack) piece._originRack.shiftPiecesUp();
+                    _setupClearSelection();
+                }
+                return;
+            }
+
             if (target) target.onClick();          // moves the selected piece, with full rule checks
             if (piece.currentTile === before) {     // move didn't happen -> snap back + deselect
                 if (piece._snapRack) piece.returnToRack();   // returns to rack (also deselects)
