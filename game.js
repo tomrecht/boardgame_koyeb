@@ -43,24 +43,47 @@ const DICE_X1 = DICE_X2 - DIE_SIZE - 20; // first die, 20px gap
 const RACK_PR = 22;
 
 // ── THEMES ──────────────────────────────────────────────────────────────
-// Board palette. Selectable at load with ?theme=slate|parchment|forest|dark
-// (default parchment). goalNum/accentCss/accentInk are CSS strings for text;
-// the rest are Phaser hex ints. nogo tiles blend into `bg`.
+// Board palette. Chosen via the in-game dropdown (persisted in localStorage) or
+// ?theme=<key> (default parchment). goalNum/accentCss/accentInk/bgInk are CSS
+// strings for text; the rest are Phaser hex ints. nogo tiles blend into `bg`.
 const THEMES = {
-    parchment: { bg:0xece3d3, field:0xfffdf8, border:0x43392c, goal:0xc8663f, goalNum:'#3a2418',
+    parchment: { label:'Parchment',
+                 bg:0xece3d3, field:0xfffdf8, border:0x43392c, goal:0xc8663f, goalNum:'#3a2418',
                  hub:0x2f9e8f, hubRing:0x1f7568, accent:0xb5623b, accentCss:'#b5623b', accentInk:'#ffffff',
                  highlight:0xe9c9b0, bgInk:'#3a2418' },
-    slate:     { bg:0xdfe3ea, field:0xffffff, border:0x1e2733, goal:0x4a86c5, goalNum:'#0e1720',
+    slate:     { label:'Slate',
+                 bg:0xdfe3ea, field:0xffffff, border:0x1e2733, goal:0x4a86c5, goalNum:'#0e1720',
                  hub:0xffcf5c, hubRing:0xe0a92e, accent:0x35618e, accentCss:'#35618e', accentInk:'#ffffff',
                  highlight:0xadd8e6, bgInk:'#28313b' },
-    forest:    { bg:0xe1e8e0, field:0xffffff, border:0x20302a, goal:0x3f8a5c, goalNum:'#0e1f16',
+    forest:    { label:'Forest',
+                 bg:0xe1e8e0, field:0xffffff, border:0x20302a, goal:0x3f8a5c, goalNum:'#0e1f16',
                  hub:0xe8b23a, hubRing:0xc48f22, accent:0x2f7050, accentCss:'#2f7050', accentInk:'#ffffff',
                  highlight:0xbfe3cd, bgInk:'#20302a' },
-    dark:      { bg:0x232a33, field:0xeef2f7, border:0x0c1117, goal:0x3fb1c8, goalNum:'#e6edf3',
+    dark:      { label:'Dark Slate',
+                 bg:0x232a33, field:0xeef2f7, border:0x0c1117, goal:0x3fb1c8, goalNum:'#e6edf3',
                  hub:0xf0b44a, hubRing:0xc98f2c, accent:0x3fb1c8, accentCss:'#3fb1c8', accentInk:'#06222a',
                  highlight:0x9fc7d6, bgInk:'#e6edf3' },
+    rose:      { label:'Rose',
+                 bg:0xefe3e8, field:0xfffafc, border:0x3f2630, goal:0xb5566e, goalNum:'#3a1f27',
+                 hub:0x6d8f8a, hubRing:0x4f716c, accent:0xa04d63, accentCss:'#a04d63', accentInk:'#ffffff',
+                 highlight:0xf0cdd8, bgInk:'#3a1f27' },
+    ocean:     { label:'Ocean',
+                 bg:0xdce7ec, field:0xffffff, border:0x14313a, goal:0x2f7d95, goalNum:'#08222a',
+                 hub:0xf2a65a, hubRing:0xcf8038, accent:0x2f6d85, accentCss:'#2f6d85', accentInk:'#ffffff',
+                 highlight:0xbfe0ea, bgInk:'#123039' },
+    sand:      { label:'Sand',
+                 bg:0xe8dcc0, field:0xfffcf3, border:0x40331f, goal:0xc1666b, goalNum:'#3a2016',
+                 hub:0x4d7c8a, hubRing:0x386070, accent:0xa15c4a, accentCss:'#a15c4a', accentInk:'#ffffff',
+                 highlight:0xecd7a8, bgInk:'#40331f' },
+    plum:      { label:'Plum Night',
+                 bg:0x241f31, field:0xeee7f2, border:0x0f0b16, goal:0xc77dff, goalNum:'#f1e7f8',
+                 hub:0xffd166, hubRing:0xcf9f33, accent:0xc77dff, accentCss:'#c77dff', accentInk:'#241432',
+                 highlight:0xb28dc9, bgInk:'#efe6f6' },
 };
-const THEME = THEMES[new URLSearchParams(location.search).get('theme')] || THEMES.parchment;
+const _themeKey = new URLSearchParams(location.search).get('theme')
+    || (typeof localStorage !== 'undefined' && localStorage.getItem('boardTheme'))
+    || 'parchment';
+const THEME = THEMES[_themeKey] || THEMES.parchment;
 const BACKGROUND_COLOR = THEME.bg;   // nogo tiles blend into this
 const GOAL_COLOR = THEME.goal;        // all goal tiles a single colour
 const TILE_BORDER = THEME.border;     // tile boundaries
@@ -86,6 +109,36 @@ const BODY_FONT = 'Georgia, "Times New Roman", serif';
 const HUD_ACCENT = THEME.accentCss;
 const HUD_INK = '#28313b';
 const HUD_PANEL_BORDER = 0xdbe1ea;
+
+// Unobtrusive theme picker (top-right). Colours are baked at load, so a change
+// is persisted to localStorage and the page reloads.
+function createThemeDropdown() {
+    if (document.getElementById('themeSelect')) return;
+    const sel = document.createElement('select');
+    sel.id = 'themeSelect';
+    sel.title = 'Theme';
+    sel.style.cssText =
+        'position:fixed; top:10px; right:12px; z-index:40; font-family:' + HUD_FONT + ';' +
+        'font-size:13px; padding:4px 8px; border-radius:8px; border:1px solid rgba(0,0,0,.15);' +
+        'background:rgba(255,255,255,.72); color:#28313b; cursor:pointer; opacity:.55; transition:opacity .15s;';
+    sel.addEventListener('mouseenter', () => sel.style.opacity = '1');
+    sel.addEventListener('mouseleave', () => sel.style.opacity = '.55');
+    Object.keys(THEMES).forEach(k => {
+        const o = document.createElement('option');
+        o.value = k; o.textContent = THEMES[k].label;
+        if (k === _themeKey) o.selected = true;
+        sel.appendChild(o);
+    });
+    sel.addEventListener('change', () => {
+        try { localStorage.setItem('boardTheme', sel.value); } catch (e) {}
+        // keep any ?theme= from overriding the new choice on reload
+        const u = new URL(location.href); u.searchParams.delete('theme');
+        location.href = u.toString();
+    });
+    document.body.appendChild(sel);
+}
+if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', createThemeDropdown);
+else createThemeDropdown();
 
 // Rounded pill button with a soft shadow, matching the mockup .btn / .btn.ghost.
 // Returns the interactive Text object (callers attach their own pointer handlers);
