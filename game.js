@@ -245,8 +245,12 @@ function recordMatchGame(winner, score) {
         if (m.gamesPlayed >= m.target) {
             if (m.whiteScore > m.blackScore) { m.over = true; m.winner = 'white'; }
             else if (m.blackScore > m.whiteScore) { m.over = true; m.winner = 'black'; }
+            // score tied -> break by number of wins
+            else if (m.whiteWins > m.blackWins) { m.over = true; m.winner = 'white'; }
+            else if (m.blackWins > m.whiteWins) { m.over = true; m.winner = 'black'; }
+            // score AND wins tied -> draw or extend by a pair (same criteria)
             else if (m.tieRule === 'draw') { m.over = true; m.winner = 'draw'; }
-            else { m.target += 2; }   // tied -> play another pair until decided
+            else { m.target += 2; }
         }
     }
     return m.over;
@@ -288,8 +292,8 @@ function showMatchSetup() {
     const btnCss = 'font-family:' + HUD_FONT + '; font-weight:700; font-size:15px; padding:9px 18px;' +
         'border-radius:9px; border:none; cursor:pointer;';
     box.innerHTML =
-        '<div style="background:#fff; color:#28313b; border-radius:16px; padding:22px 26px; width:360px;' +
-        'box-shadow:0 18px 50px rgba(0,0,0,.3);">' +
+        '<div style="background:#fff; color:#28313b; border-radius:16px; padding:22px 26px;' +
+        'width:min(360px,90vw); box-sizing:border-box; box-shadow:0 18px 50px rgba(0,0,0,.3);">' +
           '<h2 style="margin:0 0 14px; font-size:22px;">New match</h2>' +
           '<label style="display:flex; gap:8px; align-items:center; margin:6px 0; font-size:15px;">' +
             '<input type="radio" name="mmode" value="games" checked> Set number of games (by total score)</label>' +
