@@ -2943,6 +2943,14 @@ endGame(winner, score = null, impasse_caller = null) {
                 return;
             }
 
+            // Dropping a savable piece on your own saved rack saves it (same as
+            // the double-click gesture).
+            const rackDrop = piece.game.rackAtPoint(pointer.worldX, pointer.worldY);
+            const mySaved = piece.player === 'white' ? piece.game.whiteSavedRack : piece.game.blackSavedRack;
+            if (rackDrop === mySaved && piece.canBeSaved && piece.canBeSaved() && piece.save()) {
+                return;   // save() relocates the piece and clears selection
+            }
+
             if (target) target.onClick();          // moves the selected piece, with full rule checks
             if (piece.currentTile === before) {     // move didn't happen -> snap back + deselect
                 if (piece._snapRack) piece.returnToRack();   // returns to rack (also deselects)
