@@ -204,6 +204,137 @@ const scoreTracker = {
     total_score: 0
     };
 
+// ── MATCH SYSTEM ────────────────────────────────────────────────────────
+// null = casual single games. When a match is active the bottom score line
+// shows this match's running score/wins (resets when a new match starts).
+let matchTracker = null;
+const MATCH_DEFAULT_GAMES = 6;
+const MATCH_DEFAULT_RACE  = 21;
+
+function _cap(s) { return s.charAt(0).toUpperCase() + s.slice(1); }
+
+// cfg: { mode:'games'|'race', target:int, tieRule:'extra'|'draw' } -> returns game-1 starter
+function startNewMatch(cfg) {
+    const first = Math.random() < 0.5 ? 'white' : 'black';
+    matchTracker = {
+        mode: cfg.mode, target: cfg.target, tieRule: cfg.tieRule || 'extra',
+        gamesPlayed: 0, whiteScore: 0, blackScore: 0,
+        whiteWins: 0, blackWins: 0, draws: 0,
+        firstStarter: first, over: false, winner: null,
+    };
+    return first;
+}
+// Starter of the k-th game (0-indexed) in the match: alternates from firstStarter.
+function matchStarterForGame(k) {
+    if (!matchTracker) return (scoreTracker.games_played % 2 === 0) ? 'white' : 'black';
+    return (k % 2 === 0) ? matchTracker.firstStarter
+                         : (matchTracker.firstStarter === 'white' ? 'black' : 'white');
+}
+// Record a finished game into the active match; returns true if the match is over.
+function recordMatchGame(winner, score) {
+    const m = matchTracker; if (!m || m.over) return !!(m && m.over);
+    m.gamesPlayed += 1;
+    if (winner === 'white') { m.whiteScore += score; m.whiteWins += 1; }
+    else if (winner === 'black') { m.blackScore += score; m.blackWins += 1; }
+    else { m.draws += 1; }
+
+    if (m.mode === 'race') {
+        if (m.whiteScore >= m.target && m.whiteScore >= m.blackScore) { m.over = true; m.winner = 'white'; }
+        else if (m.blackScore >= m.target) { m.over = true; m.winner = 'black'; }
+    } else { // games: winner by total score after `target` games
+        if (m.gamesPlayed >= m.target) {
+            if (m.whiteScore > m.blackScore) { m.over = true; m.winner = 'white'; }
+            else if (m.blackScore > m.whiteScore) { m.over = true; m.winner = 'black'; }
+            else if (m.tieRule === 'draw') { m.over = true; m.winner = 'draw'; }
+            else { m.target += 2; }   // tied -> play another pair until decided
+        }
+    }
+    return m.over;
+}
+// Bottom score line while a match is active (null otherwise).
+function matchScoreLine() {
+    const m = matchTracker; if (!m) return null;
+    const sep = '  \u00B7  ';
+    const parts = [`White ${m.whiteScore} (${m.whiteWins}W)`,
+                   `Black ${m.blackScore} (${m.blackWins}W)`];
+    if (m.draws) parts.push(`Draws ${m.draws}`);
+    parts.push(m.mode === 'race' ? `race to ${m.target}`
+                                 : `game ${Math.min(m.gamesPlayed + (m.over ? 0 : 1), m.target)} of ${m.target}`);
+    const prefix = m.over
+        ? (m.winner === 'draw' ? 'Match drawn' : `${_cap(m.winner)} wins the match`)
+        : 'Match';
+    return prefix + sep + parts.join(sep);
+}
+
+// Start a fresh game as the first game of a match (called after startNewMatch).
+function _startMatchFirstGame(starter) {
+    if (currentGameId) {
+        fetch(`${SERVER_URL}/abort_game`, { method: 'POST',
+            headers: { 'Content-Type': 'application/json' }, credentials: 'include' }).catch(() => {});
+        currentGameId = null; moveCounter = 0; clearMoveRecording();
+    }
+    if (typeof gameInstance !== 'undefined' && gameInstance && gameInstance.scene) {
+        gameInstance.scene.start('MainGameScene', { startingPlayer: starter });
+    }
+}
+
+// DOM modal to configure and start a new match.
+function showMatchSetup() {
+    const old = document.getElementById('matchSetup'); if (old) old.remove();
+    const box = document.createElement('div');
+    box.id = 'matchSetup';
+    box.style.cssText = 'position:fixed; inset:0; z-index:60; display:grid; place-items:center;' +
+        'background:rgba(0,0,0,.42); font-family:' + HUD_FONT + ';';
+    const btnCss = 'font-family:' + HUD_FONT + '; font-weight:700; font-size:15px; padding:9px 18px;' +
+        'border-radius:9px; border:none; cursor:pointer;';
+    box.innerHTML =
+        '<div style="background:#fff; color:#28313b; border-radius:16px; padding:22px 26px; width:360px;' +
+        'box-shadow:0 18px 50px rgba(0,0,0,.3);">' +
+          '<h2 style="margin:0 0 14px; font-size:22px;">New match</h2>' +
+          '<label style="display:flex; gap:8px; align-items:center; margin:6px 0; font-size:15px;">' +
+            '<input type="radio" name="mmode" value="games" checked> Set number of games (by total score)</label>' +
+          '<div id="gamesOpts" style="margin:2px 0 12px 26px; font-size:14px;">' +
+            'Games: <input id="mGames" type="number" min="2" step="2" value="' + MATCH_DEFAULT_GAMES + '" style="width:56px;">' +
+            '<div style="margin-top:8px;">On a tie: ' +
+              '<label style="margin-left:4px;"><input type="radio" name="mtie" value="extra" checked> extra pair</label>' +
+              '<label style="margin-left:10px;"><input type="radio" name="mtie" value="draw"> draw</label></div></div>' +
+          '<label style="display:flex; gap:8px; align-items:center; margin:6px 0; font-size:15px;">' +
+            '<input type="radio" name="mmode" value="race"> Race to a total score</label>' +
+          '<div id="raceOpts" style="margin:2px 0 12px 26px; font-size:14px; opacity:.5;">' +
+            'Target: <input id="mRace" type="number" min="1" value="' + MATCH_DEFAULT_RACE + '" style="width:56px;" disabled></div>' +
+          '<div style="display:flex; gap:10px; justify-content:flex-end; margin-top:12px;">' +
+            '<button id="mCancel" style="' + btnCss + 'background:#eef1f4; color:#28313b;">Cancel</button>' +
+            '<button id="mStart" style="' + btnCss + 'background:' + THEME.accentCss + '; color:#fff;">Start match</button>' +
+          '</div></div>';
+    document.body.appendChild(box);
+    const $ = (s) => box.querySelector(s);
+    const modeRadios = box.querySelectorAll('input[name=mmode]');
+    const sync = () => {
+        const mode = [...modeRadios].find(r => r.checked).value;
+        $('#gamesOpts').style.opacity = mode === 'games' ? '1' : '.5';
+        $('#mGames').disabled = mode !== 'games';
+        box.querySelectorAll('input[name=mtie]').forEach(r => r.disabled = mode !== 'games');
+        $('#raceOpts').style.opacity = mode === 'race' ? '1' : '.5';
+        $('#mRace').disabled = mode !== 'race';
+    };
+    modeRadios.forEach(r => r.addEventListener('change', sync)); sync();
+    $('#mCancel').onclick = () => box.remove();
+    $('#mStart').onclick = () => {
+        const mode = [...modeRadios].find(r => r.checked).value;
+        let target, tieRule = 'extra';
+        if (mode === 'games') {
+            target = Math.max(2, parseInt($('#mGames').value) || MATCH_DEFAULT_GAMES);
+            if (target % 2 !== 0) target += 1;                       // keep it even
+            tieRule = [...box.querySelectorAll('input[name=mtie]')].find(r => r.checked).value;
+        } else {
+            target = Math.max(1, parseInt($('#mRace').value) || MATCH_DEFAULT_RACE);
+        }
+        box.remove();
+        const starter = startNewMatch({ mode, target, tieRule });
+        _startMatchFirstGame(starter);
+    };
+}
+
 let extraMoveRequested = false;
 
 // ── DATA COLLECTION GLOBALS ─────────────────────────────────────────────
@@ -2689,8 +2820,13 @@ endGame(winner, score = null, impasse_caller = null) {
         scoreTracker.black_wins += 1;
     }
     scoreTracker.games_played += 1;
+    // Fold this game into the active match (if any) before showing the result.
+    const matchOver = matchTracker ? recordMatchGame(winner, score) : false;
     this.scene.updateScoreText();
-    this.scene.scene.start('EndGameScene', { winner: winner, score: score, impasse_caller: impasse_caller });
+    this.scene.scene.start('EndGameScene', {
+        winner: winner, score: score, impasse_caller: impasse_caller,
+        inMatch: !!matchTracker, matchOver: matchOver
+    });
 }
 
     captureState() {
@@ -3247,6 +3383,9 @@ class MainGameScene extends Phaser.Scene {
             this.scene.switch('InstructionsScene');
         });
 
+        const newMatchButton = makeHudButton(this, 150, 156, 'New Match', { ghost: true });
+        newMatchButton.on('pointerdown', () => { showMatchSetup(); });
+
         // Add save game state button
         if(DEBUG_MODE) {
         const saveGameStateButton = this.add.text(320, 104, 'Save Game', {
@@ -3303,6 +3442,11 @@ class MainGameScene extends Phaser.Scene {
     }
 
     updateScoreText() {
+            // During a match the line shows that match's running score/wins;
+            // otherwise the session totals.
+            const matchLine = matchScoreLine();
+            if (matchLine) { this.scoreText.setText(matchLine); return; }
+
             // Single line, interpunct-separated, directly on the background.
             // Total score is signed (+ favours White), shown with a leader label.
             const total = scoreTracker.total_score;
@@ -3613,52 +3757,64 @@ class EndGameScene extends Phaser.Scene {
         this.winner = data.winner;
         this.score = data.score;
         this.impasse_caller = data.impasse_caller;
+        this.inMatch = data.inMatch;
+        this.matchOver = data.matchOver;
     }
 
     create() {
         let message;
         if (this.winner === 'draw') {
-        const caller = this.impasse_caller || 'A player';
-        const formattedCaller = caller.charAt(0).toUpperCase() + caller.slice(1);
-        message = `${formattedCaller} calls a draw!`;
-    } else {
-        message = `${this.winner} wins with a score of ${this.score}!`;
-    }
-        this.add.text(CENTER_X, CENTER_Y - 50, message, {
-            fontSize: '48px',
-            fontFamily: HUD_FONT,
-            color: '#ff0000'
-        }).setOrigin(0.5);
-        const restartButton = this.add.text(CENTER_X, CENTER_Y + 50, 'Restart', {
-            fontSize: '32px',
-            fontFamily: HUD_FONT,
-            backgroundColor: '#008000',
-            padding: { x: 20, y: 10 }
-        }).setOrigin(0.5).setInteractive();
-        restartButton.on('pointerdown', () => {
-            // Abort current game before restarting
+            const caller = this.impasse_caller || 'A player';
+            message = `${_cap(caller)} calls a draw!`;
+        } else {
+            message = `${_cap(this.winner)} wins the game (${this.score})`;
+        }
+
+        const mkButton = (y, text, bg, cb) => {
+            const btn = this.add.text(CENTER_X, y, text, {
+                fontSize: '30px', fontFamily: HUD_FONT, fontStyle: 'bold',
+                backgroundColor: bg, color: '#ffffff', padding: { x: 22, y: 11 }
+            }).setOrigin(0.5).setInteractive({ useHandCursor: true });
+            btn.on('pointerdown', cb); return btn;
+        };
+        const abortAndClear = () => {
             if (currentGameId) {
-                fetch(`${SERVER_URL}/abort_game`, {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    credentials: 'include'
-                }).catch(e => console.warn('abort_game failed:', e));
-                currentGameId = null;
-                moveCounter = 0;
-                clearMoveRecording();
+                fetch(`${SERVER_URL}/abort_game`, { method: 'POST',
+                    headers: { 'Content-Type': 'application/json' }, credentials: 'include' }).catch(() => {});
+                currentGameId = null; moveCounter = 0; clearMoveRecording();
             }
-            const nextStarter = (scoreTracker.games_played % 2 === 0) ? 'white' : 'black';
-            this.scene.start('MainGameScene', { startingPlayer: nextStarter });
-        });
-        const quitButton = this.add.text(CENTER_X, CENTER_Y + 120, 'Quit', {
-            fontSize: '32px',
-            fontFamily: HUD_FONT,
-            backgroundColor: '#800000',
-            padding: { x: 20, y: 10 }
-        }).setOrigin(0.5).setInteractive();
-        quitButton.on('pointerdown', () => {
-            this.game.destroy(true);
-        });
+        };
+        const startGame = (starter) => { abortAndClear(); this.scene.start('MainGameScene', { startingPlayer: starter }); };
+
+        if (this.inMatch && matchTracker) {
+            const m = matchTracker;
+            this.add.text(CENTER_X, CENTER_Y - 100, message,
+                { fontSize: '38px', fontFamily: HUD_FONT, color: THEME.accentCss }).setOrigin(0.5);
+            if (this.matchOver) {
+                const mres = m.winner === 'draw' ? 'The match is a draw!' : `${_cap(m.winner)} wins the match!`;
+                this.add.text(CENTER_X, CENTER_Y - 34, mres,
+                    { fontSize: '54px', fontFamily: HUD_FONT, fontStyle: 'bold', color: '#c0392b' }).setOrigin(0.5);
+                this.add.text(CENTER_X, CENTER_Y + 26,
+                    `White ${m.whiteScore} (${m.whiteWins}W)      Black ${m.blackScore} (${m.blackWins}W)      ${m.gamesPlayed} games`,
+                    { fontSize: '22px', fontFamily: HUD_FONT, color: '#333' }).setOrigin(0.5);
+                mkButton(CENTER_Y + 96, 'New Match', '#2f7050', () => { abortAndClear(); matchTracker = null; showMatchSetup(); });
+                mkButton(CENTER_Y + 162, 'Casual Game', '#3b6ea5', () => { matchTracker = null; startGame('white'); });
+            } else {
+                const status = `Match  —  White ${m.whiteScore} (${m.whiteWins}W)   Black ${m.blackScore} (${m.blackWins}W)   ` +
+                    (m.mode === 'race' ? `race to ${m.target}` : `game ${m.gamesPlayed + 1} of ${m.target}`);
+                this.add.text(CENTER_X, CENTER_Y - 34, status,
+                    { fontSize: '24px', fontFamily: HUD_FONT, color: '#333' }).setOrigin(0.5);
+                mkButton(CENTER_Y + 56, 'Next Game', '#2f7050', () => startGame(matchStarterForGame(m.gamesPlayed)));
+            }
+            return;
+        }
+
+        // Casual single-game flow.
+        this.add.text(CENTER_X, CENTER_Y - 60, message,
+            { fontSize: '48px', fontFamily: HUD_FONT, color: '#c0392b' }).setOrigin(0.5);
+        mkButton(CENTER_Y + 30, 'New Game', '#2f7050',
+            () => startGame((scoreTracker.games_played % 2 === 0) ? 'white' : 'black'));
+        mkButton(CENTER_Y + 96, 'New Match', '#3b6ea5', () => { abortAndClear(); showMatchSetup(); });
     }
 
 }
