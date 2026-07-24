@@ -137,8 +137,42 @@ function createThemeDropdown() {
     });
     document.body.appendChild(sel);
 }
-if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', createThemeDropdown);
-else createThemeDropdown();
+
+// AI difficulty (1 = full strength / argmax; lower = weaker via top-p sampling).
+function getAIDifficulty() {
+    let v = 1.0;
+    try { const s = localStorage.getItem('aiDifficulty'); if (s !== null) v = parseFloat(s); } catch (e) {}
+    return isFinite(v) ? Math.min(1, Math.max(0, v)) : 1.0;
+}
+function createDifficultySlider() {
+    if (document.getElementById('difficultyWrap')) return;
+    const wrap = document.createElement('div');
+    wrap.id = 'difficultyWrap';
+    wrap.style.cssText =
+        'position:fixed; top:46px; right:12px; z-index:40; font-family:' + HUD_FONT + ';' +
+        'font-size:11px; color:#28313b; background:rgba(255,255,255,.72); padding:5px 8px;' +
+        'border-radius:8px; border:1px solid rgba(0,0,0,.15); opacity:.55; transition:opacity .15s;' +
+        'display:flex; align-items:center; gap:6px;';
+    wrap.addEventListener('mouseenter', () => wrap.style.opacity = '1');
+    wrap.addEventListener('mouseleave', () => wrap.style.opacity = '.55');
+    const label = document.createElement('span'); label.textContent = 'Difficulty';
+    const slider = document.createElement('input');
+    slider.type = 'range'; slider.min = '0'; slider.max = '100'; slider.step = '5';
+    slider.value = String(Math.round(getAIDifficulty() * 100));
+    slider.style.cssText = 'width:88px; cursor:pointer;';
+    const val = document.createElement('span'); val.style.cssText = 'width:30px; text-align:right;';
+    const labelFor = (d) => d >= 0.99 ? 'Max' : d <= 0.01 ? 'Easy' : Math.round(d * 100) + '%';
+    val.textContent = labelFor(getAIDifficulty());
+    slider.addEventListener('input', () => {
+        const d = parseInt(slider.value) / 100; val.textContent = labelFor(d);
+        try { localStorage.setItem('aiDifficulty', String(d)); } catch (e) {}
+    });
+    wrap.appendChild(label); wrap.appendChild(slider); wrap.appendChild(val);
+    document.body.appendChild(wrap);
+}
+function _initHudMenus() { createThemeDropdown(); createDifficultySlider(); }
+if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', _initHudMenus);
+else _initHudMenus();
 
 // Rounded pill button with a soft shadow, matching the mockup .btn / .btn.ghost.
 // Returns the interactive Text object (callers attach their own pointer handlers);
@@ -3718,6 +3752,8 @@ function evaluateBoard(gameState) {
 
 
 function getAgentMoves(gameState) {
+    // difficulty 1 = full strength (argmax); lower = more top-p sampling (weaker)
+    gameState = Object.assign({}, gameState, { difficulty: getAIDifficulty() });
     console.log('Sending game state to agent:', gameState);
     return fetch(`${SERVER_URL}/select_moves`, {
         method: 'POST',

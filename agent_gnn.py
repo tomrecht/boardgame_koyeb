@@ -145,6 +145,35 @@ class GNNAgent:
         final_score = raw_score * SCORE_SCALE
         return final_score, {'gnn_raw': raw_score, 'gnn_score': final_score, '_player': player}
 
+    def _pick_move_index(self, final_scores):
+        """Difficulty-controlled index over candidate scores (a 1-D torch tensor).
+
+        self.difficulty in [0, 1]: 1 (default) = argmax / full strength; lower =
+        top-p sampling over a scale-invariant softmax (z-scored by the candidate
+        spread), so the agent plays visibly weaker without picking terrible moves.
+        """
+        d = getattr(self, 'difficulty', 1.0)
+        n = int(final_scores.shape[0])
+        if n <= 1 or d is None or float(d) >= 0.999:
+            return int(final_scores.argmax().item())
+        d = max(0.0, min(1.0, float(d)))
+        s = final_scores.detach().float().flatten()
+        std = s.std().item()
+        if not (std > 1e-6):
+            std = 1.0
+        temp  = 0.4 + (1.0 - d) * 2.6      # 0.4 (hard) .. 3.0 (easy)
+        top_p = 0.25 + (1.0 - d) * 0.75    # 0.25 (hard) .. 1.0 (easy)
+        z = (s - s.max()) / (std * temp)
+        probs = torch.softmax(z, dim=0)
+        sorted_probs, sorted_idx = torch.sort(probs, descending=True)
+        cum = torch.cumsum(sorted_probs, dim=0)
+        k = int((cum < top_p).sum().item()) + 1
+        k = max(1, min(k, n))
+        keep_probs = sorted_probs[:k]
+        keep_probs = keep_probs / keep_probs.sum()
+        choice = int(torch.multinomial(keep_probs, 1).item())
+        return int(sorted_idx[choice].item())
+
     def select_move_pair(self, moves, board, player, return_scores=False):
         """
         2-ply move selection using batched GNN evaluation.
@@ -307,10 +336,16 @@ class GNNAgent:
             return ranked
 
         # A draw's true value is exactly 0, in the same raw*SCORE_SCALE units
-        # as final_scores -- compare directly, no encoding needed.
+        # as final_scores -- compare directly, no encoding needed. (Use the true
+        # best, not a difficulty-sampled pick, so lowering difficulty never makes
+        # the agent resign a game it shouldn't.)
         if draw_legal and 0.0 >= final_scores[best_idx].item():
             return draw_pair
 
+        # Difficulty: at full strength take the argmax; below that, sample among
+        # the top candidates (top-p over a scale-invariant softmax) so the agent
+        # plays visibly weaker without ever making obviously terrible moves.
+        best_idx = self._pick_move_index(final_scores)
         chosen = move_keys[best_idx]
 
         # --- Diagnostic: localize pass-over-save -------------------------------

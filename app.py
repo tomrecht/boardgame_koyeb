@@ -207,6 +207,12 @@ def select_moves():
             'draw_callable': shared_board.draw_callable,
         }
 
+        # Difficulty (1 = full strength / argmax; lower = weaker via top-p sampling).
+        try:
+            agent.difficulty = float(state.get('difficulty', 1.0))
+        except (TypeError, ValueError):
+            agent.difficulty = 1.0
+
         moves = shared_board.get_valid_moves()
         logger.debug(f"select_moves: got {len(moves)} valid moves")
         if moves:
