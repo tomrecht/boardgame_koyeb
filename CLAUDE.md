@@ -419,11 +419,41 @@ expected to self-resolve via the TD run.
       can't move behind the popup — Play runs the coin flip then starts a
       *fresh* game (fresh dice/rack). `_startMatchFirstGame` likewise defers
       `scene.start` until after the coin flip.
-    - **Interactive tutorial** (`startTutorial`, 6 scripted steps: enter /
-      move / capture / go-around-a-wall / save / free-play finish). Positions
-      self-configure via `getReachableTilesByDice`; instruction bubble
-      auto-advances on a polled success condition; Skip always available; AI
-      suppressed via `window._tutorialActive`.
+    - **Interactive tutorial** (`startTutorial`) — REWRITTEN 2026-07-25 to
+      owner's script: **10 steps walking one continuous game from the opening
+      to a win** (enter two / sum-move the 6 to its goal / two captures /
+      build a wall / save / the long way into a walled-off goal / block-save
+      to open a sealed one / endgame / deliberate pass / last-piece rule),
+      plus a closing panel. Each step is a **declarative position spec**
+      (board+saved+rack per side, dice) laid out by `_tutApply` — a complete
+      legal 12-a-side position, so Skip and replay are safe. **Hard-blocked**:
+      `_tutMoveOK` is consulted inside `getReachableTilesByDice`, so
+      off-script destinations are neither highlighted nor accepted;
+      `_tutSaveOK`/`_tutBlockSaveOK` gate the save gestures; `switchTurn` is
+      short-circuited (script owns dice + turn order), `endGame` intercepted,
+      risky-end-turn confirm suppressed, HUD New Game/New Match hidden (they
+      restart the scene out from under the runner). Black's replies are
+      scripted slides, not the AI. The bubble reserves space by shrinking
+      Phaser's fit box (`_tutFitBoard`: resize poll parked, canvas pinned top,
+      `updateBounds()` after — else pointer mapping goes stale) because it
+      otherwise covered goals 2/4 where most of the script happens.
+      **Every position was verified against `game.py`** (legal moves, forced
+      orderings, and step 7's "useless" roll brute-forced over all 21 rolls),
+      then the whole thing driven through the real UI code paths in headless
+      Chrome over CDP (scratchpad drivers; `cdp.js` + `run_tutorial.js` —
+      Node 24's built-in WebSocket, no Playwright needed on the iMac).
+    - **Two bugs this surfaced, both fixed:** (1) `game.js`'s `save()` let a
+      **numbered** piece go out on a higher endgame die — that rule is
+      blank-only (`game.py`'s `get_saving_die` gates on `number > 6`, and
+      `sumSave` already did), so the frontend had been playing a different
+      rule from the engine/agent; (2) `index.html` declared **no charset**, so
+      any server omitting one made the browser decode `game.js` as latin-1 —
+      every em dash/curly quote/arrow in the UI rendered as mojibake.
+    - Known asymmetry (not a blocker, noted while scripting step 3): the
+      frontend lets the obligatory rack piece move **either first or second**
+      (`canSelectForMove`), while `game.py`'s `must_move_unentered` forces it
+      first — the agent therefore can't generate orderings where a board move
+      precedes the entry. Same reachable pair set in practice.
     - **Polish**: move-slide animation (`Piece.animateFrom`, snaps to exact
       layout) + capture/save ring flash (`fxBurst`), both under the effects
       toggle; turn/thinking status pill (`updateTurnStatus`); keyboard
