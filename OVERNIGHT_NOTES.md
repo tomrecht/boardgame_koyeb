@@ -72,8 +72,7 @@ small change). I kept it tight and concrete:
 >
 > **Getting on the board**
 > Pieces enter through the yellow hub in the middle. Only the front piece on your
-> rack can enter, and you must keep entering until your rack is empty before you
-> do anything else.
+> rack can enter, and you must enter at least one piece per turn until your rack is empty (unless you have a captured piece, in which case you must enter that).
 >
 > **Capturing & blocking**
 > Land on a field tile holding a single enemy piece and you capture it — it goes
@@ -95,10 +94,10 @@ small change). I kept it tight and concrete:
 >
 > **A couple of special moves**
 > • Break a wall: past the opening and with no captured pieces, double-click (or
->   drag from the picker) one piece of an enemy two-stack to hand it back to
->   them — it costs both your dice but turns the wall into a lone piece.
+>   drag from the picker) one piece of an enemy two-stack to save it for
+>   them — it costs both your dice and hands the opponent a piece, but turns the wall into a lone piece.
 > • Last piece: if you start a turn with a single piece left and it's a numbered
->   one sitting on its goal, it becomes blank (savable by any high roll).
+>   one sitting on its goal, it becomes blank (savable by any roll of that goal number or higher).
 >
 > **Stalemate**
 > If 10 full rounds pass with nobody saving a piece, either player may call a
@@ -191,6 +190,40 @@ Grouped by the image they lean on. My top picks: **Whirligig**, **Sundial**,
 If it were mine I'd shortlist **Whirligig** (fun, unique, matches the board),
 **Sundial** (elegant, matches the hub), and **Sixhaven** (says what you do). Happy
 to riff further once you pick a direction (whimsical vs. elegant vs. descriptive).
+
+### D2. Latin / Greek roots (six · twelve · save · haven · home)
+
+Roots to draw on: **six** — L. *sex* / *senarius* ("of six"), Gk *hex*;
+**twelve** — L. *duodecim*, Gk *dodeka*; **save/safe** — L. *salvus*, *servare*;
+**haven/harbour** — L. *portus*, *sinus* (a bay), *statio* (anchorage);
+**refuge/sanctuary** — L. *asylum*, *refugium*, *sanctum*; **home/hearth** —
+L. *domus*, *focus* (hearth), *lares*/*penates* (household guardians), Gk
+*hestia* (hearth goddess), *nostos* ("homecoming" — the Odyssey word).
+
+My top picks:
+
+- **Sextant** — a real word, and the best fit: L. *sextans* (a sixth) + it's a
+  *radial navigation instrument* that literally looks like the spoked board. Six,
+  the wheel, and "finding your way home" in one familiar-but-fresh word. My #1.
+- **Nostos** — Gk "homecoming" (the safe return, as in the *Odyssey*). Elegant,
+  literary, and exactly the game's arc: get every piece home. Short, memorable.
+- **Hexad** / **Sena** — "a group of six" (Gk *hexad*; L. *sena* = "six each").
+  Clean and abstract; **Sena** is soft and unusual, **Hexad** sharper/modern.
+
+Other strong candidates by root:
+
+- *Six / twelve:* **Senary**, **Senarius**, **Dodeca**, **Duodena**, **Hexa**.
+- *Save / safe:* **Salvus**, **Salveo** ("be well/safe"), **Servo**.
+- *Haven / harbour:* **Portus**, **Sinus**, **Statio**.
+- *Refuge / sanctuary:* **Asylon**, **Sanctum**, **Refugium**.
+- *Home / hearth:* **Hestia**, **Lares**, **Penates**, **Focus**, **Domus**.
+- *Coined blends:* **Senhaven**, **Hexhaven**, **Portua** (from *portus*),
+  **Senportus** (clunkier).
+
+If you want one word that says *both* halves of the game — the six-spoked board
+**and** bringing pieces safely home — **Sextant** and **Nostos** are the two I'd
+build the box around. **Sena** / **Hexad** if you'd rather it be short and
+abstract.
 
 ## E. Tutorial — roadmap (not started, per your note)
 
