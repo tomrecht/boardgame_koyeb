@@ -24,6 +24,23 @@ NUM_PIECES      = 12       # margin display unit (raw * NUM_PIECES = expected ma
 GNN_WEIGHTS     = 'gnn_weights.pt'
 
 
+def _position_key(board):
+    """Signature of everything the heuristic reads: where every piece sits, plus
+    the dice. board.pieces order is fixed for the whole search, so no sort is
+    needed. Two states differing only by swapping identical blank pieces get
+    different keys -- a missed hit, never a wrong one."""
+    saved = (board.white_saved, board.black_saved)
+    locs = []
+    for p in board.pieces:
+        if p.tile is not None:
+            locs.append(p.tile.index)
+        elif p.rack is saved[0] or p.rack is saved[1]:
+            locs.append(-2)
+        else:
+            locs.append(-1)
+    return (tuple(locs), board.dice[0].used, board.dice[1].used)
+
+
 def _top_indices(values, k):
     """Indices of the k largest values, best first (numpy stand-in for topk)."""
     v = np.asarray(values).reshape(-1)
@@ -151,15 +168,16 @@ class GNNAgent:
         final_score = raw_score * SCORE_SCALE
         return final_score, {'gnn_raw': raw_score, 'gnn_score': final_score, '_player': player}
 
-    def _pick_move_index(self, final_scores):
+    def _pick_move_index(self, final_scores, difficulty=None):
         """Difficulty-controlled index over candidate scores (a 1-D array).
 
-        self.difficulty in [0, 1]: 1 (default) = argmax / full strength; lower =
+        `difficulty` (else self.difficulty) in [0, 1]: 1 = argmax / full
+        strength; lower =
         top-p sampling over a scale-invariant softmax (z-scored by the candidate
         spread), so the agent plays visibly weaker without picking terrible moves.
         """
         s = np.asarray(final_scores, dtype=np.float64).reshape(-1)
-        d = getattr(self, 'difficulty', 1.0)
+        d = difficulty if difficulty is not None else getattr(self, 'difficulty', 1.0)
         n = s.shape[0]
         if n <= 1 or d is None or float(d) >= 0.999:
             return int(np.argmax(s))
@@ -182,7 +200,7 @@ class GNNAgent:
         choice = int(np.random.choice(k, p=keep))
         return int(order[choice])
 
-    def select_move_pair(self, moves, board, player, return_scores=False):
+    def select_move_pair(self, moves, board, player, return_scores=False, difficulty=None):
         """
         2-ply move selection using batched GNN evaluation.
 
@@ -219,10 +237,20 @@ class GNNAgent:
         encoded_list = []   # corresponding encoded positions (filled when NOT prefiltering)
         scored       = []   # (heuristic_score, pair)        (filled when prefiltering)
 
+        # Move orders transpose heavily -- about half of a midgame turn's
+        # candidate pairs land on a position some other pair already reached --
+        # and the heuristic prefilter is by far the most expensive part of a
+        # move, so remember its verdict per position for this turn.
+        eval_cache = {}
+
         def record(pair):
             # board is currently IN the resulting position for `pair`
             if prefilter:
-                s, _ = self.heuristic.evaluate(board, player)   # cheap; returns (score, components)
+                key = _position_key(board)
+                s = eval_cache.get(key)
+                if s is None:
+                    s, _ = self.heuristic.evaluate(board, player)   # returns (score, components)
+                    eval_cache[key] = s
                 scored.append((s, pair))
             else:
                 move_keys.append(pair)
@@ -351,7 +379,7 @@ class GNNAgent:
         # Difficulty: at full strength take the argmax; below that, sample among
         # the top candidates (top-p over a scale-invariant softmax) so the agent
         # plays visibly weaker without ever making obviously terrible moves.
-        best_idx = self._pick_move_index(final_scores)
+        best_idx = self._pick_move_index(final_scores, difficulty)
         chosen = move_keys[best_idx]
 
         # --- Diagnostic: localize pass-over-save -------------------------------

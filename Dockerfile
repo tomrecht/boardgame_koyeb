@@ -14,7 +14,9 @@ COPY . .
 # image needs neither torch nor any .pt checkpoint.
 ENV OPPONENT_MODEL=model.onnx
 
-# One worker, one thread on purpose: app.py keeps a single shared Board and a
-# single agent instance across requests, so concurrent handlers would corrupt
-# each other's state. A move takes ~0.1-0.5s, so requests just queue.
-CMD gunicorn --bind 0.0.0.0:$PORT --timeout 120 --workers 1 --threads 1 app:app
+# Move selection is CPU-bound Python, so real parallelism comes from workers
+# (separate processes, ~90 MB each); threads only let a second player's request
+# start while another is mid-move. Both are safe now that the board is
+# per-thread and difficulty is passed per call. Raise WEB_WORKERS if the
+# instance has the memory.
+CMD gunicorn --bind 0.0.0.0:$PORT --timeout 120 --workers ${WEB_WORKERS:-2} --threads 2 app:app

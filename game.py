@@ -95,6 +95,7 @@ class Board:
         self._blot_cache = {}          # NEW: cache for count_enemy_blots_on_shortest_path
         self._reachable_cache = {}
         self._blocked_key_cache = {}
+        self._blot_key_cache = {}
         self.log_callback = None
         self.endgame_reward_applied = {'white': False, 'black': False}
         self.offgoals = {'white': 0, 'black': 0}
@@ -197,6 +198,22 @@ class Board:
             )
         return self._blocked_key_cache[player]
 
+    def _get_blot_key(self, player):
+        """Tiles holding exactly one enemy piece -- the other half of what a
+        blot count depends on. Kept alongside _get_blocked_key and invalidated
+        with it, so blot counts can be cached on a complete key and survive the
+        apply/undo churn of a candidate search (a search that moves only my own
+        pieces doesn't change this set at all, which is where the reuse comes
+        from)."""
+        if player not in self._blot_key_cache:
+            self._blot_key_cache[player] = frozenset(
+                t.index for t in self.tiles
+                if t.type == 'field'
+                and len(t.pieces) == 1
+                and t.pieces[0].player != player
+            )
+        return self._blot_key_cache[player]
+
     def update_state(self, game_state_details):
         self.current_player = game_state_details['currentTurn']
         # BUGFIX: this was never invalidated here, so a reused Board (training
@@ -205,6 +222,7 @@ class Board:
         # features were then computed against stale blocking. The bk-keyed
         # value caches (_distance_cache etc.) stay valid once the key is fresh.
         self._blocked_key_cache.clear()
+        self._blot_key_cache.clear()
         self.clear()
         for die, die_details in zip(self.dice, game_state_details['dice']):
             die.number = die_details['value']
@@ -278,6 +296,7 @@ class Board:
         self._blot_cache.clear()      # clear blot cache
         self._reachable_cache.clear()
         self._blocked_key_cache.clear()
+        self._blot_key_cache.clear()
         self.update_no_save_counter()
         self.firstMove = None  
         for die in self.dice:
@@ -477,12 +496,13 @@ class Board:
         # already relies on exactly this purity (it too keeps the distance
         # cache), so keeping the entries lets the 2-ply search reuse BFS
         # results across all of a turn's candidates instead of recomputing
-        # per undo. _blot_cache does NOT get this treatment: its key reuses
-        # the distance key, but blot counts depend on single-piece placements
-        # the blocked set doesn't capture, so it must stay conservatively
-        # cleared here.
+        # per undo. _blot_cache now gets the same treatment: its key carries
+        # the enemy-blot set as well as the blocked set, so it too is a pure
+        # function of the position and survives the undo. (Clearing it here is
+        # what used to make the heuristic prefilter re-run a BFS per piece per
+        # candidate -- 94% of a midgame move.)
         self._blocked_key_cache.clear()
-        self._blot_cache.clear()
+        self._blot_key_cache.clear()
         piece = last_move['piece']
         origin_tile = last_move['origin_tile']
         origin_rack = last_move['origin_rack']
@@ -561,6 +581,7 @@ class Board:
             return
         firstMove_before = self.firstMove
         self._blocked_key_cache.clear()
+        self._blot_key_cache.clear()
         piece = self.piece_lookup.get(piece_id)
         if not piece:
             print(f"No piece found for {piece_id}")
@@ -744,10 +765,14 @@ class Board:
         if piece.can_be_saved():
             return 0
         start_tile = piece.tile if piece.tile else self.home_tile
-        # Use same cache key as shortest_route_to_goal
-        cache_key = (start_tile.index, piece.player, 
+        # Keyed on everything the count depends on: where we start, which tiles
+        # are walled, and where the enemy blots are. That makes it a pure
+        # function of the position, so the entry stays valid across the search's
+        # apply/undo cycles (it used to be cleared on every undo).
+        cache_key = (start_tile.index, piece.player,
                      piece.number if piece.number <= 6 else 'any',
-                     self._get_blocked_key(piece.player))
+                     self._get_blocked_key(piece.player),
+                     self._get_blot_key(piece.player))
         if cache_key in self._blot_cache:
             return self._blot_cache[cache_key]
 

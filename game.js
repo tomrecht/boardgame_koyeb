@@ -69,7 +69,7 @@ const THEMES = {
                  hub:0xe8b23a, hubRing:0xc48f22, accent:0x2f7050, accentCss:'#2f7050', accentInk:'#ffffff',
                  highlight:0xbfe3cd, bgInk:'#20302a' },
     dark:      { label:'Dark Slate',
-                 bg:0x232a33, field:0xeef2f7, border:0x0c1117, goal:0x3fb1c8, goalNum:'#e6edf3',
+                 bg:0x232a33, field:0xeef2f7, border:0x0c1117, goal:0x3fb1c8, goalNum:'#ffffff',
                  hub:0xf0b44a, hubRing:0xc98f2c, accent:0x3fb1c8, accentCss:'#3fb1c8', accentInk:'#06222a',
                  highlight:0x9fc7d6, bgInk:'#e6edf3' },
     rose:      { label:'Rose',
@@ -85,16 +85,19 @@ const THEMES = {
                  hub:0x4d7c8a, hubRing:0x386070, accent:0xa15c4a, accentCss:'#a15c4a', accentInk:'#ffffff',
                  highlight:0xecd7a8, bgInk:'#40331f' },
     plum:      { label:'Plum Night',
-                 bg:0x241f31, field:0xeee7f2, border:0x0f0b16, goal:0xc77dff, goalNum:'#f1e7f8',
+                 bg:0x241f31, field:0xeee7f2, border:0x0f0b16, goal:0xc77dff, goalNum:'#ffffff',
                  hub:0xffd166, hubRing:0xcf9f33, accent:0xc77dff, accentCss:'#c77dff', accentInk:'#241432',
                  highlight:0xb28dc9, bgInk:'#efe6f6' },
     // Colour-blind-safe: Okabe-Ito blue/orange, distinguishable under
     // deuteranopia/protanopia/tritanopia (no red-green reliance).
     access:    { label:'High-Contrast (CB-safe)',
-                 bg:0xe7eaee, field:0xffffff, border:0x101418, goal:0x0072b2, goalNum:'#ffffff',
+                 bg:0xe7eaee, field:0xffffff, border:0x101418, goal:0x0072b2, goalNum:'#101418',
                  hub:0xe69f00, hubRing:0xb37c00, accent:0x0072b2, accentCss:'#0072b2', accentInk:'#ffffff',
                  highlight:0x9ecae1, bgInk:'#101418' },
 };
+// Phaser hex int -> CSS colour string
+function _cssHex(n) { return '#' + n.toString(16).padStart(6, '0'); }
+
 const _themeKey = new URLSearchParams(location.search).get('theme')
     || (typeof localStorage !== 'undefined' && localStorage.getItem('boardTheme'))
     || 'parchment';
@@ -243,15 +246,16 @@ function createSettingsPanel() {
         if (css) e.style.cssText = css; if (txt != null) e.textContent = txt; return e; };
 
     const gear = mk('button',
-        'position:fixed; top:10px; right:12px; z-index:41; width:32px; height:32px;' +
-        'border-radius:8px; border:1px solid rgba(0,0,0,.15); background:rgba(255,255,255,.75);' +
-        'color:#28313b; font-size:17px; cursor:pointer; opacity:.6; transition:opacity .15s;', '⚙');
+        'position:fixed; top:10px; right:12px; z-index:41; width:64px; height:64px;' +
+        'border-radius:14px; border:1px solid rgba(0,0,0,.15); background:rgba(255,255,255,.75);' +
+        'color:#28313b; font-size:34px; line-height:1; cursor:pointer; opacity:.6;' +
+        'display:grid; place-items:center; transition:opacity .15s;', '⚙');
     gear.id = 'settingsGear'; gear.title = 'Settings';
     gear.onmouseenter = () => gear.style.opacity = '1';
     gear.onmouseleave = () => gear.style.opacity = '.6';
 
     const panel = mk('div',
-        'position:fixed; top:48px; right:12px; z-index:41; display:none;' +
+        'position:fixed; top:82px; right:12px; z-index:41; display:none;' +
         'background:#fff; color:#28313b; font-family:' + HUD_FONT + '; font-size:13px;' +
         'border:1px solid rgba(0,0,0,.15); border-radius:12px; padding:12px 14px; width:216px;' +
         'box-shadow:0 12px 34px rgba(0,0,0,.22);');
@@ -2469,6 +2473,10 @@ class Tile {
             color: THEME.goalNum,
             fontStyle: 'bold'
         }).setOrigin(0.5);
+        // Halo in the board colour: the number sits just outside its goal wedge,
+        // so on the darker themes it was reading as washed out against the
+        // bright wedge beside it.
+        text.setStroke(_cssHex(THEME.bg), 6);
         text.setDepth(50);
         text.setAngle(0);
         this._numberText = text;   // kept so a live theme switch can recolour it
@@ -2484,7 +2492,10 @@ class Tile {
             case 'nogo': this.fillColor = BACKGROUND_COLOR; this.lineColor = BACKGROUND_COLOR; break;
             case 'field': this.fillColor = THEME.field; this.lineColor = TILE_BORDER; break;
         }
-        if (this._numberText) this._numberText.setColor(THEME.goalNum);
+        if (this._numberText) {
+            this._numberText.setColor(THEME.goalNum);
+            this._numberText.setStroke(_cssHex(THEME.bg), 6);
+        }
         this.drawTile();
     }
 

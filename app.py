@@ -14,6 +14,7 @@ import json
 import uuid
 import time
 import logging
+import threading
 from game import Board, NO_SAVE_TURNS_FOR_DRAW
 from agent import Agent, get_weights
 from agent_gnn import GNNAgent
@@ -89,7 +90,21 @@ agent.debug_pass_over_save = True
 heur_agent = Agent(weights=current_weights)
 
 # Reuse a single board to keep caches across moves (optional, can be per‑request)
-shared_board = Board()
+# One Board per thread, not one per process: update_state rebuilds it from the
+# posted state, so it is only ever a scratch buffer -- but two requests sharing
+# one buffer would interleave and corrupt each other. (Constructing a Board
+# re-reads tile_neighbors.json, so we keep one per thread rather than one per
+# request.) Separate gunicorn workers are separate processes and so are
+# independent regardless.
+_thread_local = threading.local()
+
+
+def get_board():
+    b = getattr(_thread_local, 'board', None)
+    if b is None:
+        b = Board()
+        _thread_local.board = b
+    return b
 
 # -------------------------
 # DATA COLLECTION HELPERS
@@ -211,6 +226,7 @@ def select_moves():
     try:
         state = request.json
         logger.debug("select_moves: received state")
+        shared_board = get_board()
         shared_board.update_state(state)
 
         # The no-save draw counter is owned by the frontend and arrives inside
@@ -222,16 +238,19 @@ def select_moves():
             'draw_callable': shared_board.draw_callable,
         }
 
-        # Difficulty (1 = full strength / argmax; lower = weaker via top-p sampling).
+        # Difficulty (1 = full strength / argmax; lower = weaker via top-p
+        # sampling). Passed per call -- setting it on the shared agent would let
+        # one player's setting leak into another's move.
         try:
-            agent.difficulty = float(state.get('difficulty', 1.0))
+            difficulty = float(state.get('difficulty', 1.0))
         except (TypeError, ValueError):
-            agent.difficulty = 1.0
+            difficulty = 1.0
 
         moves = shared_board.get_valid_moves()
         logger.debug(f"select_moves: got {len(moves)} valid moves")
         if moves:
-            chosen_moves = agent.select_move_pair(moves, shared_board, shared_board.current_player)
+            chosen_moves = agent.select_move_pair(moves, shared_board, shared_board.current_player,
+                                                  difficulty=difficulty)
             logger.debug(f"select_moves: selected {chosen_moves}")
 
             # Record black's position server-side
