@@ -1157,8 +1157,12 @@ class Piece {
 
         if (this.currentTile.type === 'save') {
             this.save(); // Save the piece if it can be saved
+        } else if (this.player === this.game.turn && this.game.sumSave(this)) {
+            // not on a goal yet, but one die reaches the goal and the other saves
+            // it this turn -> do both at once.
+            return;
         }
-        
+
         // save a single opponent piece from a block, unless you're in the opening or have a captured piece
         const player = this.color === 0xffffff ? this.game.players[1] : this.game.players[0];
         if (this.player !== this.game.turn && this.currentTile && this.currentTile.type === 'field' && this.currentTile.pieces.length > 1 
@@ -2611,7 +2615,42 @@ class Game {
         console.log('Target tile is not reachable by the available dice rolls');
         return false;
     }
-    
+
+    // If a piece (not yet on a goal) can reach its goal with one die AND be saved
+    // with the other in the same turn, do both at once — so a single double-click
+    // or a drag to the saved rack saves it without first parking it on the goal.
+    // Returns true if it happened.
+    sumSave(piece) {
+        if (!piece.currentTile || piece.currentTile.type === 'save') return false;
+        if (piece.player !== this.turn) return false;
+        if (this.dice[0].used || this.dice[1].used) return false;   // need both dice
+        const player = piece.color === 0xffffff ? this.players[0] : this.players[1];
+        if (player.getGamePhase() === 'opening') return false;
+
+        const goals = this.tiles.filter(t => t.type === 'save' &&
+            (piece.number > 6 ? true : t.number === piece.number));
+        const r = this.getReachableTilesByDice(piece);
+        if (!r) return false;
+        piece.reachableTiles = r;
+
+        const canSaveFrom = (goal, dieVal) => {
+            if (dieVal === goal.number) return true;
+            return piece.number > 6 && player.getGamePhase() === 'endgame' &&
+                dieVal > goal.number && !this.isHigherNumberedGoalOccupied(player, goal.number);
+        };
+        for (const goal of goals) {
+            // movePiece consumes die[0] if the goal is reachable by it, else die[1];
+            // the *other* die must then be able to save from the goal.
+            const byFirst = r.reachableByFirstDie.includes(goal);
+            const bySecond = r.reachableBySecondDie.includes(goal);
+            const saveDieVal = byFirst ? this.dice[1].value : (bySecond ? this.dice[0].value : null);
+            if (saveDieVal !== null && canSaveFrom(goal, saveDieVal)) {
+                if (this.movePiece(piece, goal) && piece.save()) return true;
+            }
+        }
+        return false;
+    }
+
     capturePiece(piece) {
         const homeTile = this.tiles.find(tile => tile.type === 'home');
         if (homeTile) {
@@ -3209,8 +3248,11 @@ endGame(winner, score = null, impasse_caller = null) {
             // the double-click gesture).
             const rackDrop = piece.game.rackAtPoint(pointer.worldX, pointer.worldY);
             const mySaved = piece.player === 'white' ? piece.game.whiteSavedRack : piece.game.blackSavedRack;
-            if (rackDrop === mySaved && piece.canBeSaved && piece.canBeSaved() && piece.save()) {
-                return;   // save() relocates the piece and clears selection
+            if (rackDrop === mySaved) {
+                // already on its goal -> save; otherwise try a reach-goal-and-save
+                // (sum-save) in one drop.
+                if (piece.canBeSaved && piece.canBeSaved() && piece.save()) return;
+                if (piece.game.sumSave(piece)) return;
             }
 
             if (target) target.onClick();          // moves the selected piece, with full rule checks
