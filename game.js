@@ -315,6 +315,37 @@ function _startMatchFirstGame(starter) {
     if (typeof gameInstance !== 'undefined' && gameInstance && gameInstance.scene) {
         gameInstance.scene.start('MainGameScene', { startingPlayer: starter });
     }
+    showCoinFlip(starter);   // reveal who goes first
+}
+
+// A quick coin-flip overlay landing on the player who goes first.
+function showCoinFlip(starter, onDone) {
+    const old = document.getElementById('coinFlip'); if (old) old.remove();
+    const box = document.createElement('div');
+    box.id = 'coinFlip';
+    box.style.cssText = 'position:fixed; inset:0; z-index:65; display:grid; place-items:center;' +
+        'background:rgba(0,0,0,.4); font-family:' + HUD_FONT + ';';
+    const coin = document.createElement('div');
+    coin.style.cssText = 'width:120px; height:120px; position:relative; transform-style:preserve-3d;';
+    const faceCss = (bg, fg) => 'position:absolute; inset:0; border-radius:50%; backface-visibility:hidden;' +
+        'display:grid; place-items:center; font-weight:700; font-size:19px;' +
+        'box-shadow:0 6px 18px rgba(0,0,0,.4); background:' + bg + '; color:' + fg + ';';
+    const white = document.createElement('div');
+    white.style.cssText = faceCss('radial-gradient(circle at 35% 30%,#fff,#dfe3e8)', '#28313b'); white.textContent = 'White';
+    const black = document.createElement('div');
+    black.style.cssText = faceCss('radial-gradient(circle at 35% 30%,#555,#111)', '#fff') + 'transform:rotateY(180deg);'; black.textContent = 'Black';
+    coin.appendChild(white); coin.appendChild(black);
+    const caption = document.createElement('div');
+    caption.style.cssText = 'position:absolute; bottom:34%; color:#fff; font-size:22px; font-weight:600; opacity:0; transition:opacity .3s;';
+    box.appendChild(coin); box.appendChild(caption); document.body.appendChild(box);
+
+    const total = 5 * 360 + (starter === 'white' ? 0 : 180);
+    try { coin.animate([{ transform: 'rotateY(0deg)' }, { transform: 'rotateY(' + total + 'deg)' }],
+        { duration: 1400, easing: 'cubic-bezier(.2,.8,.2,1)', fill: 'forwards' }); }
+    catch (e) { coin.style.transform = 'rotateY(' + (starter === 'white' ? 0 : 180) + 'deg)'; }
+    setTimeout(() => { caption.textContent = _cap(starter) + ' goes first'; caption.style.opacity = '1'; }, 1250);
+    setTimeout(() => { box.style.transition = 'opacity .4s'; box.style.opacity = '0';
+        setTimeout(() => { box.remove(); if (onDone) onDone(); }, 400); }, 2500);
 }
 
 // Small themed confirm dialog.
@@ -3842,7 +3873,7 @@ class EndGameScene extends Phaser.Scene {
             const caller = this.impasse_caller || 'A player';
             message = `${_cap(caller)} calls a draw!`;
         } else {
-            message = `${_cap(this.winner)} wins the game (${this.score})`;
+            message = `${_cap(this.winner)} wins the game with a score of ${this.score}`;
         }
 
         const mkButton = (y, text, bg, cb) => {
@@ -3866,7 +3897,9 @@ class EndGameScene extends Phaser.Scene {
             this.add.text(CENTER_X, CENTER_Y - 100, message,
                 { fontSize: '38px', fontFamily: HUD_FONT, color: THEME.accentCss }).setOrigin(0.5);
             if (this.matchOver) {
-                const mres = m.winner === 'draw' ? 'The match is a draw!' : `${_cap(m.winner)} wins the match!`;
+                const mScore = m.winner === 'white' ? m.whiteScore : m.blackScore;
+                const mres = m.winner === 'draw' ? 'The match is a draw!'
+                    : `${_cap(m.winner)} wins the match with a score of ${mScore}`;
                 this.add.text(CENTER_X, CENTER_Y - 34, mres,
                     { fontSize: '54px', fontFamily: HUD_FONT, fontStyle: 'bold', color: '#c0392b' }).setOrigin(0.5);
                 this.add.text(CENTER_X, CENTER_Y + 26,
