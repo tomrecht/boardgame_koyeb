@@ -30,10 +30,16 @@ CORS(app, supports_credentials=True)
 # DATA COLLECTION SETUP
 # -------------------------
 
+# Human-play recording is off by default: the collected data has served its
+# purpose, the agent trains from self-play, and on a deployed instance the disk
+# is ephemeral anyway. RECORD_TRAINING=1 turns it back on for a local run.
+RECORD_TRAINING = os.environ.get('RECORD_TRAINING', '') == '1'
+
 DATA_DIR = 'training_data'
 POSITIONS_FILE = os.path.join(DATA_DIR, 'positions_with_moves.jsonl')
 CONTRASTIVE_FILE = os.path.join(DATA_DIR, 'contrastive_pairs.jsonl')
-os.makedirs(DATA_DIR, exist_ok=True)
+if RECORD_TRAINING:
+    os.makedirs(DATA_DIR, exist_ok=True)
 
 active_games = {}  # game_id -> {'positions': [], 'start_time': ...}
 MAX_MOVES_IN_MEMORY = 200
@@ -90,10 +96,14 @@ shared_board = Board()
 # -------------------------
 
 def save_position_to_disk(position_data):
+    if not RECORD_TRAINING:      # belt and braces: the endpoints already refuse
+        return
     with open(POSITIONS_FILE, 'a') as f:
         f.write(json.dumps(position_data) + '\n')
 
 def save_contrastive_pair(record):
+    if not RECORD_TRAINING:
+        return
     with open(CONTRASTIVE_FILE, 'a') as f:
         f.write(json.dumps(record) + '\n')
 
@@ -288,6 +298,8 @@ def update_impasse():
 
 @app.route('/record_position', methods=['POST'])
 def record_position():
+    if not RECORD_TRAINING:
+        return jsonify({"message": "recording disabled"}), 200
     try:
         data = request.json
         raw_state = data.get('state')
@@ -516,6 +528,8 @@ def record_contrastive_pair():
     Record a disagreement between human and agent move choices.
     final_score is added post-game via a labeling pass (join by game_id + move_index).
     """
+    if not RECORD_TRAINING:
+        return jsonify({"message": "recording disabled"}), 200
     try:
         data = request.json
         game_id = session.get('game_id')

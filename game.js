@@ -6,7 +6,13 @@ const SERVER_URL = IS_LOCAL
     ? 'http://localhost:10000' 
     : window.location.origin;
 
-const DEBUG_MODE = false; 
+const DEBUG_MODE = false;
+// Every human turn used to be posted to the backend and appended to
+// training_data/*.jsonl. The training data that mattered has been collected and
+// the agent is trained from self-play now, so this is off; the server side is
+// gated too (RECORD_TRAINING=1 there re-enables it for a local collection run).
+const RECORD_TRAINING_DATA = false;
+
 const WHITE_IS_AI = false;
 let BLACK_IS_AI = (function () {
     try { const s = localStorage.getItem('playVsComputer'); return s === null ? true : s === '1'; }
@@ -4824,6 +4830,7 @@ function getAgentMoves(gameState) {
 }
 
 function recordTurnPosition(game, player, source, movePair) {
+    if (!RECORD_TRAINING_DATA) return;
     if (!currentGameId) {
         console.warn('No active game ID, skipping position recording');
         return;
@@ -4857,6 +4864,7 @@ function recordTurnPosition(game, player, source, movePair) {
 }
 
 async function queryAndRecordContrastive(preState, humanPair, player, moveIndex) {
+    if (!RECORD_TRAINING_DATA) return;
     if (!currentGameId) return;
     try {
         const game = gameInstance.scene.scenes[0].game;
