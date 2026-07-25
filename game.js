@@ -284,11 +284,82 @@ function createSettingsPanel() {
     }, true);
     refreshSettingsMatchState();
 }
+// A small always-available "?" legend (bottom-right) explaining the few board
+// symbols a newcomer can't name: the hub, the goal wedges, greyed dice, +N.
+function createLegendButton() {
+    if (document.getElementById('legendBtn')) return;
+    const mk = (tag, css, txt) => { const e = document.createElement(tag);
+        if (css) e.style.cssText = css; if (txt != null) e.innerHTML = txt; return e; };
+
+    const btn = mk('button',
+        'position:fixed; bottom:12px; right:12px; z-index:41; width:30px; height:30px;' +
+        'border-radius:50%; border:1px solid rgba(0,0,0,.15); background:rgba(255,255,255,.75);' +
+        'color:#28313b; font-size:15px; font-weight:700; cursor:pointer; opacity:.55; transition:opacity .15s;', '?');
+    btn.id = 'legendBtn'; btn.title = 'Legend';
+    btn.onmouseenter = () => btn.style.opacity = '1';
+    btn.onmouseleave = () => btn.style.opacity = '.55';
+
+    const pop = mk('div',
+        'position:fixed; bottom:50px; right:12px; z-index:41; display:none; width:250px;' +
+        'background:#fff; color:#28313b; font-family:' + HUD_FONT + '; font-size:12.5px; line-height:1.45;' +
+        'border:1px solid rgba(0,0,0,.15); border-radius:12px; padding:12px 14px;' +
+        'box-shadow:0 12px 34px rgba(0,0,0,.22);');
+    pop.id = 'legendPop';
+    const dot = (c) => '<span style="display:inline-block; width:11px; height:11px; border-radius:50%;' +
+        'background:' + c + '; border:1px solid rgba(0,0,0,.35); vertical-align:middle; margin-right:7px;"></span>';
+    const cssHex = (n) => '#' + n.toString(16).padStart(6, '0');
+    pop.innerHTML =
+        '<div style="font-weight:700; margin-bottom:7px;">Legend</div>' +
+        '<div style="margin-bottom:6px;">' + dot(cssHex(THEME.hub)) + '<b>Hub</b> — the disc at the centre; pieces enter here.</div>' +
+        '<div style="margin-bottom:6px;">' + dot(cssHex(THEME.goal)) + '<b>Goals</b> — the six numbered wedges on the rim; save pieces here.</div>' +
+        '<div style="margin-bottom:6px;">' + dot('#c9ced6') + '<b>Greyed die</b> — already used this turn.</div>' +
+        '<div>' + dot('#e7ebf1') + '<b>+N badge</b> — a stack; tap to pick a piece out of it.</div>';
+
+    btn.onclick = () => { pop.style.display = pop.style.display === 'none' ? 'block' : 'none'; };
+    document.addEventListener('pointerdown', (e) => {
+        if (pop.style.display === 'block' && e.target !== btn && !pop.contains(e.target)) pop.style.display = 'none';
+    }, true);
+    document.body.appendChild(btn); document.body.appendChild(pop);
+}
+
+// One-time toast for brand-new visitors, pointing at How to Play.
+function maybeShowFirstRunNudge() {
+    let seen = false;
+    try { seen = localStorage.getItem('seenNudge') === '1'; } catch (e) {}
+    if (seen || document.getElementById('firstRunNudge')) return;
+    try { localStorage.setItem('seenNudge', '1'); } catch (e) {}
+
+    const t = document.createElement('div');
+    t.id = 'firstRunNudge';
+    t.style.cssText = 'position:fixed; left:50%; bottom:18px; transform:translateX(-50%) translateY(12px);' +
+        'z-index:55; background:#28313b; color:#fff; font-family:' + HUD_FONT + '; font-size:13.5px;' +
+        'padding:11px 16px; border-radius:11px; box-shadow:0 12px 30px rgba(0,0,0,.3);' +
+        'display:flex; align-items:center; gap:12px; opacity:0; transition:opacity .3s, transform .3s; max-width:90vw;';
+    const msg = document.createElement('span');
+    msg.textContent = 'New here? ';
+    const link = document.createElement('button');
+    link.textContent = 'How to Play';
+    link.style.cssText = 'background:' + THEME.accentCss + '; color:#fff; border:none; border-radius:7px;' +
+        'padding:5px 11px; font-weight:700; font-size:13px; cursor:pointer; font-family:' + HUD_FONT + ';';
+    const dismiss = () => { t.style.opacity = '0'; t.style.transform = 'translateX(-50%) translateY(12px)';
+        setTimeout(() => t.remove(), 320); };
+    link.onclick = () => { dismiss(); showInstructions(); };
+    const x = document.createElement('button');
+    x.textContent = '✕';
+    x.style.cssText = 'background:none; border:none; color:#aab3bf; font-size:14px; cursor:pointer; padding:0 2px;';
+    x.onclick = dismiss;
+    t.appendChild(msg); t.appendChild(link); t.appendChild(x);
+    document.body.appendChild(t);
+    requestAnimationFrame(() => { t.style.opacity = '1'; t.style.transform = 'translateX(-50%) translateY(0)'; });
+    setTimeout(() => { if (document.body.contains(t)) dismiss(); }, 11000);
+}
+
 // Defer to after the whole script has run (this file `defer`s, so the DOM is
 // ready; setTimeout ensures later `let` globals like matchTracker are initialised
 // before createSettingsPanel -> refreshSettingsMatchState touches them).
-if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', createSettingsPanel);
-else setTimeout(createSettingsPanel, 0);
+function _initChrome() { createSettingsPanel(); createLegendButton(); maybeShowFirstRunNudge(); }
+if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', _initChrome);
+else setTimeout(_initChrome, 0);
 
 // Rounded pill button with a soft shadow, matching the mockup .btn / .btn.ghost.
 // Returns the interactive Text object (callers attach their own pointer handlers);
