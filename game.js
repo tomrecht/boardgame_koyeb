@@ -272,6 +272,14 @@ function createSettingsPanel() {
     toggle('End turn automatically when both dice used', getAutoEndTurn, 'autoEndTurn', true);
     toggle('Confirm ending a turn with a move left', getConfirmRiskyEnd, 'confirmRiskyEnd', false);
 
+    // Interactive tutorial launcher
+    const tut = mk('button',
+        'width:100%; margin-top:12px; padding:8px 0; border-radius:8px; border:none; cursor:pointer;' +
+        'font-family:' + HUD_FONT + '; font-weight:700; font-size:13px; background:' + THEME.accentCss + '; color:#fff;',
+        'Interactive tutorial');
+    tut.onclick = () => { panel.style.display = 'none'; startTutorial(); };
+    panel.appendChild(tut);
+
     document.body.appendChild(gear); document.body.appendChild(panel);
     gear.onclick = (e) => { e.stopPropagation();
         const show = panel.style.display === 'none';
@@ -352,6 +360,215 @@ function maybeShowFirstRunNudge() {
     document.body.appendChild(t);
     requestAnimationFrame(() => { t.style.opacity = '1'; t.style.transform = 'translateX(-50%) translateY(0)'; });
     setTimeout(() => { if (document.body.contains(t)) dismiss(); }, 11000);
+}
+
+// ── Guided interactive tutorial ─────────────────────────────────────────────
+// A small step-runner over scripted mini-positions. Each step builds a position
+// with the free-placement helpers, shows an instruction bubble, and polls for a
+// success condition to auto-advance. A Next button is always available so the
+// player is never stuck; the AI is suppressed while the tutorial is active
+// (see the !window._tutorialActive guard in switchTurn).
+const _tut = { active: false, step: 0, timer: null, bubble: null, mover: null, startTile: null, target: null };
+
+function _tutRack(game, player, kind) {
+    if (kind === 'saved') return player === 'white' ? game.whiteSavedRack : game.blackSavedRack;
+    return player === 'white' ? game.whiteUnenteredRack : game.blackUnenteredRack;
+}
+function _tutHub(game) { return game.tiles.find(t => t.type === 'home'); }
+function _tutEntryTiles(game) { return _tutHub(game).neighbors.filter(t => t.type === 'field'); }
+function _tutGoal(game, n) { return game.tiles.find(t => t.type === 'save' && t.number === n); }
+
+function _tutClearBoard(game) {
+    game.pieces.slice().forEach(p => {
+        _setupPlaceInRack(p, _tutRack(game, p.player, 'unentered'), false);
+        p.justMovedHome = false; p.isSelected = false; if (p.updateColor) p.updateColor();
+    });
+    game.selectedPiece = null;
+    if (game.unhighlightAllTiles) game.unhighlightAllTiles();
+    game.players[0].setGamePhase('opening');
+    game.players[1].setGamePhase('opening');
+}
+function _tutSetDice(game, a, b) {
+    game.dice[0].value = a; game.dice[0].used = false;
+    game.dice[1].value = b; game.dice[1].used = false;
+    game.dice.forEach(d => d.updateColor('white'));
+}
+// Re-derive per-turn state after a hand-built position so the board is playable.
+function _tutRefresh(game) {
+    game.turn = 'white';
+    game.movedOnce = false;
+    game.pieces.forEach(p => { p.reachableTiles = null; p._turnStartTile = p.currentTile || null; });
+    if (game.updateMovablePieces) game.updateMovablePieces();
+    if (typeof updateMustMoveHighlights === 'function') updateMustMoveHighlights(game);
+    if (typeof updateTurnStatus === 'function') updateTurnStatus(game);
+    game.dice.forEach(d => d.updateColor('white'));
+}
+// Park every white piece except `keep` in the saved rack, so the unentered rack
+// is empty (no forced-entry obligation) and white counts as past the opening.
+function _tutParkWhites(game, keep) {
+    game.pieces.filter(p => p.player === 'white' && p !== keep)
+        .forEach(p => _setupPlaceInRack(p, _tutRack(game, 'white', 'saved'), false));
+    game.players[0].setGamePhase('midgame');
+}
+
+const _tutSteps = [
+    {
+        title: 'Enter a piece',
+        text: 'Your pieces start on the rack. Tap your front piece to send it onto the hub, then tap a highlighted tile to move it out onto the board.',
+        build(game) {
+            _tutClearBoard(game);           // all white pieces waiting on the rack
+            _tutSetDice(game, 4, 3);
+            _tutRefresh(game);
+        },
+        done(game) { return game.pieces.some(p => p.player === 'white' && p.currentTile && p.currentTile.type === 'field'); },
+    },
+    {
+        title: 'Move with both dice',
+        text: 'This piece is already on the board. Each die moves it that many tiles — use them one at a time, or pick a far tile to spend both at once. It always takes the shortest route and can’t double back.',
+        build(game) {
+            _tutClearBoard(game);
+            const mover = game.pieces.find(p => p.player === 'white');
+            _setupPlaceOnTile(mover, _tutEntryTiles(game)[0]);
+            _tutParkWhites(game, mover);
+            _tutSetDice(game, 3, 2);
+            _tutRefresh(game);
+            _tut.mover = mover; _tut.startTile = mover.currentTile;
+        },
+        done(game) { return _tut.mover && _tut.mover.currentTile && _tut.mover.currentTile !== _tut.startTile && game.dice.every(d => d.used); },
+    },
+    {
+        title: 'Capture a lone piece',
+        text: 'Land exactly on a tile holding a single enemy piece to capture it — it’s sent back to their hub to start over. Take the highlighted enemy piece.',
+        build(game) {
+            _tutClearBoard(game);
+            const mover = game.pieces.find(p => p.player === 'white');
+            _setupPlaceOnTile(mover, _tutEntryTiles(game)[0]);
+            _tutParkWhites(game, mover);
+            _tutSetDice(game, 3, 2);
+            _tutRefresh(game);
+            const r = game.getReachableTilesByDice(mover);
+            const spot = [...r.reachableByFirstDie, ...r.reachableBySecondDie]
+                .find(t => t.type === 'field' && t.pieces.length === 0);
+            const target = game.pieces.find(p => p.player === 'black');
+            if (spot) _setupPlaceOnTile(target, spot);
+            _tut.target = target;
+            _tutRefresh(game);
+        },
+        done(game) { return _tut.target && _tut.target.currentTile === _tutHub(game); },
+    },
+    {
+        title: 'Go around a wall',
+        text: 'Two or more enemy pieces on one tile form a wall — you can’t enter or pass through it. The direct tile is walled off; move your piece around it another way.',
+        build(game) {
+            _tutClearBoard(game);
+            const mover = game.pieces.find(p => p.player === 'white');
+            _setupPlaceOnTile(mover, _tutEntryTiles(game)[0]);
+            _tutParkWhites(game, mover);
+            _tutSetDice(game, 3, 2);
+            _tutRefresh(game);
+            const r = game.getReachableTilesByDice(mover);
+            const wallSpot = r.reachableByFirstDie.find(t => t.type === 'field' && t.pieces.length === 0);
+            const blacks = game.pieces.filter(p => p.player === 'black');
+            if (wallSpot) { _setupPlaceOnTile(blacks[0], wallSpot); _setupPlaceOnTile(blacks[1], wallSpot); }
+            _tut.mover = mover; _tut.startTile = mover.currentTile; _tut.target = wallSpot;
+            _tutRefresh(game);
+        },
+        done(game) { return _tut.mover && _tut.mover.currentTile && _tut.mover.currentTile.type === 'field'
+            && _tut.mover.currentTile !== _tut.startTile && _tut.mover.currentTile !== _tut.target; },
+    },
+    {
+        title: 'Save a piece',
+        text: 'Numbered pieces are saved from their matching goal. This piece sits on its goal and a die shows its number — double-click it (or drag it to your saved rack) to save it and score it.',
+        build(game) {
+            _tutClearBoard(game);
+            const mover = game.pieces.find(p => p.player === 'white' && p.number === 3)
+                || game.pieces.find(p => p.player === 'white');
+            _setupPlaceOnTile(mover, _tutGoal(game, 3));
+            _tutParkWhites(game, mover);
+            _tutSetDice(game, 3, 5);
+            _tutRefresh(game);
+            _tut.mover = mover;
+        },
+        done(game) { return _tut.mover && _tut.mover.rack === game.whiteSavedRack; },
+    },
+    {
+        title: 'You’re ready',
+        text: 'That’s the core of the game: enter, move, capture, block, and save. There are a couple of special moves in How to Play — but you know enough to play. Press Finish to start a real game.',
+        finish: true,
+        build() { /* nothing to build; the finish button ends the tutorial */ },
+        done() { return false; },
+    },
+];
+
+function _tutBubble() {
+    if (_tut.bubble) return _tut.bubble;
+    const b = document.createElement('div');
+    b.id = 'tutBubble';
+    b.style.cssText = 'position:fixed; left:50%; bottom:20px; transform:translateX(-50%);' +
+        'z-index:58; width:min(460px,92vw); box-sizing:border-box; background:#fff; color:#28313b;' +
+        'font-family:' + HUD_FONT + '; border-radius:14px; padding:15px 18px;' +
+        'box-shadow:0 16px 44px rgba(0,0,0,.3);';
+    document.body.appendChild(b);
+    _tut.bubble = b;
+    return b;
+}
+function _tutRender() {
+    const game = _setupGame(); if (!game) return;
+    const step = _tutSteps[_tut.step];
+    try { step.build(game); } catch (e) { console.warn('[TUTORIAL] build failed:', e); }
+    const b = _tutBubble();
+    const done = _tut.step >= _tutSteps.length - 1;
+    b.innerHTML =
+        '<div style="font-size:12px; letter-spacing:.04em; text-transform:uppercase; color:#8b95a3; margin-bottom:3px;">' +
+            'Tutorial · Step ' + (_tut.step + 1) + ' of ' + _tutSteps.length + '</div>' +
+        '<div style="font-weight:700; font-size:17px; margin-bottom:5px;">' + step.title + '</div>' +
+        '<div style="font-family:' + BODY_FONT + '; font-size:14.5px; line-height:1.5; color:#33404b;">' + step.text + '</div>' +
+        '<div id="tutBtns" style="display:flex; gap:8px; margin-top:13px; justify-content:flex-end;"></div>';
+    const btns = b.querySelector('#tutBtns');
+    const mkBtn = (label, primary, fn) => {
+        const el = document.createElement('button');
+        el.textContent = label;
+        el.style.cssText = 'padding:7px 15px; border-radius:8px; cursor:pointer; font-family:' + HUD_FONT + ';' +
+            'font-weight:700; font-size:13px; border:' + (primary ? 'none' : '1px solid #cfd6e0') + ';' +
+            'background:' + (primary ? THEME.accentCss : '#fff') + '; color:' + (primary ? '#fff' : '#5a6473') + ';';
+        el.onclick = fn; btns.appendChild(el); return el;
+    };
+    mkBtn('Exit', false, () => _tutEnd(false));
+    if (step.finish) mkBtn('Finish', true, () => _tutEnd(true));
+    else mkBtn('Skip →', true, _tutNext);
+}
+function _tutNext() {
+    if (_tut.step >= _tutSteps.length - 1) { _tutEnd(true); return; }
+    _tut.step += 1; _tut.mover = _tut.startTile = _tut.target = null; _tutRender();
+}
+function _tutPoll() {
+    if (!_tut.active) return;
+    const game = _setupGame(); if (!game) return;
+    const step = _tutSteps[_tut.step];
+    try {
+        if (step.done && step.done(game)) {
+            // brief pause so the player sees the result, then advance
+            _tut.active = false; clearInterval(_tut.timer);
+            const b = _tutBubble();
+            const btns = b.querySelector('#tutBtns');
+            if (btns) btns.innerHTML = '<span style="color:#3a9e6a; font-weight:700; font-size:14px;">✓ Nice!</span>';
+            setTimeout(() => { _tut.active = true; _tut.timer = setInterval(_tutPoll, 350); _tutNext(); }, 900);
+        }
+    } catch (e) { /* a transient half-built state; ignore */ }
+}
+function startTutorial() {
+    if (_tut.active) return;
+    _tut.active = true; window._tutorialActive = true; _tut.step = 0;
+    _tut.mover = _tut.startTile = _tut.target = null;
+    _tutRender();
+    clearInterval(_tut.timer); _tut.timer = setInterval(_tutPoll, 350);
+}
+function _tutEnd(startGame) {
+    _tut.active = false; window._tutorialActive = false;
+    clearInterval(_tut.timer); _tut.timer = null;
+    if (_tut.bubble) { _tut.bubble.remove(); _tut.bubble = null; }
+    const scene = _setupScene();
+    if (scene && scene.scene) scene.scene.restart({ startingPlayer: nextCasualStarter() });
 }
 
 // Defer to after the whole script has run (this file `defer`s, so the DOM is
@@ -3087,7 +3304,7 @@ switchTurn() {
 
         // If it's the agent's turn, ask the backend for its moves.
         const currentPlayerObject = this.players.find(player => player.name === this.turn);
-        if (currentPlayerObject && currentPlayerObject.isAI) {
+        if (currentPlayerObject && currentPlayerObject.isAI && !window._tutorialActive) {
             this.scene.showThinkingIcon();
             setTimeout(() => {
                 getAgentMoves(getGameState(this));
