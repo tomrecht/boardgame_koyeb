@@ -535,7 +535,7 @@ function _tutFitBoard() {
     }
     if (_tut.resizeInterval === undefined) _tut.resizeInterval = s.resizeInterval;
     s.resizeInterval = Number.MAX_SAFE_INTEGER;
-    const reserve = Math.round(_tut.bubble.getBoundingClientRect().height) + 26;
+    const reserve = (_tut.bubbleH || Math.round(_tut.bubble.getBoundingClientRect().height)) + 26;
     s.setParentSize(window.innerWidth, Math.max(260, window.innerHeight - reserve));
     // CENTER_BOTH still centres the canvas in the *window*, which would hang it
     // back over the bubble; pin it to the top of the reserved area instead — and
@@ -547,7 +547,7 @@ function _tutHudVisible(on) {
     const scene = _setupScene();
     if (scene && scene.hudButtons) scene.hudButtons.forEach(b => b.setHudVisible && b.setHudVisible(on));
 }
-window.addEventListener('resize', () => { if (_tut.active) setTimeout(_tutFitBoard, 60); });
+window.addEventListener('resize', () => { if (_tut.active) setTimeout(() => { _tutMeasureBubble(); _tutFitBoard(); }, 60); });
 
 function _tutNudge() {
     const b = _tut.bubble; if (!b) return;
@@ -660,7 +660,7 @@ const _tutSteps = [
     },
     {
         title: 'Some dice do nothing',
-        text: 'The <b>4</b> takes your last blank off goal 3. Your 2 can’t use the 5 — a numbered piece only ever goes out on its own number, and you haven’t rolled a 2. Nothing else to do: end your turn.',
+        text: 'The <b>4</b> takes your last blank off goal 3. Your 2 can’t use the 5 — a numbered piece only ever goes out on its own number, and you haven’t rolled a 2. Nothing else to do, so end your turn yourself: the right-hand arrow above the board (or the Enter key).',
         dice: [4, 5],
         pos: { white: { board: [[2, [7, 4]], [11, [7, 8]]],
                         saved: [1, 3, 4, 5, 6, 7, 8, 9, 10, 12] },
@@ -683,7 +683,7 @@ const _tutSteps = [
         done: g => _tutSavedCount(g, 'white') >= 12,
     },
     {
-        title: 'You win',
+        title: 'You win!',
         text: 'All twelve saved. The game ends the moment your last piece is off the board, and you score the number of pieces your opponent still had out — four. That’s the whole game: enter, move, capture, wall, save.',
         finish: true,
         done: () => false,
@@ -691,17 +691,41 @@ const _tutSteps = [
 ];
 
 // ── runner ───────────────────────────────────────────────────────────────────
+const _TUT_BUBBLE_CSS = 'position:fixed; left:50%; bottom:20px; transform:translateX(-50%);' +
+    'z-index:58; width:min(640px,92vw); box-sizing:border-box; background:#fff; color:#28313b;' +
+    'font-family:' + HUD_FONT + '; border-radius:14px; padding:15px 18px;' +
+    'box-shadow:0 16px 44px rgba(0,0,0,.3); display:flex; flex-direction:column;';
 function _tutBubble() {
     if (_tut.bubble) return _tut.bubble;
     const b = document.createElement('div');
     b.id = 'tutBubble';
-    b.style.cssText = 'position:fixed; left:50%; bottom:20px; transform:translateX(-50%);' +
-        'z-index:58; width:min(500px,92vw); box-sizing:border-box; background:#fff; color:#28313b;' +
-        'font-family:' + HUD_FONT + '; border-radius:14px; padding:15px 18px;' +
-        'box-shadow:0 16px 44px rgba(0,0,0,.3);';
+    b.style.cssText = _TUT_BUBBLE_CSS;
     document.body.appendChild(b);
     _tut.bubble = b;
     return b;
+}
+function _tutStepHtml(step, idx) {
+    return '<div style="font-size:12px; letter-spacing:.04em; text-transform:uppercase; color:#8b95a3; margin-bottom:3px;">' +
+            'Tutorial · Step ' + (idx + 1) + ' of ' + _tutSteps.length + '</div>' +
+        '<div style="font-weight:700; font-size:17px; margin-bottom:5px;">' + step.title + '</div>' +
+        '<div style="font-family:' + BODY_FONT + '; font-size:14.5px; line-height:1.5; color:#33404b;">' + step.text + '</div>' +
+        '<div id="tutBtns" style="display:flex; gap:8px; margin-top:auto; padding-top:13px;' +
+            'justify-content:flex-end; min-height:32px; align-items:center;"></div>';
+}
+// The board must not resize from step to step, so the bubble reserves the same
+// height throughout: measure the tallest step once (off-screen, at the real
+// width) and pin the bubble to it. Re-measured on resize, where text rewraps.
+function _tutMeasureBubble() {
+    const probe = document.createElement('div');
+    probe.style.cssText = _TUT_BUBBLE_CSS + 'visibility:hidden; bottom:auto; top:0;';
+    document.body.appendChild(probe);
+    let max = 0;
+    _tutSteps.forEach((step, i) => {
+        probe.innerHTML = _tutStepHtml(step, i);
+        max = Math.max(max, probe.offsetHeight);
+    });
+    probe.remove();
+    _tut.bubbleH = max;
 }
 function _tutRender() {
     const game = _setupGame(); if (!game) return;
@@ -714,12 +738,7 @@ function _tutRender() {
         if (step.after) { try { step.after(game); } catch (e) { console.warn('[TUTORIAL] after() failed:', e); } }
     }
     const b = _tutBubble();
-    b.innerHTML =
-        '<div style="font-size:12px; letter-spacing:.04em; text-transform:uppercase; color:#8b95a3; margin-bottom:3px;">' +
-            'Tutorial · Step ' + (_tut.step + 1) + ' of ' + _tutSteps.length + '</div>' +
-        '<div style="font-weight:700; font-size:17px; margin-bottom:5px;">' + step.title + '</div>' +
-        '<div style="font-family:' + BODY_FONT + '; font-size:14.5px; line-height:1.5; color:#33404b;">' + step.text + '</div>' +
-        '<div id="tutBtns" style="display:flex; gap:8px; margin-top:13px; justify-content:flex-end; min-height:32px; align-items:center;"></div>';
+    b.innerHTML = _tutStepHtml(step, _tut.step);
     const btns = b.querySelector('#tutBtns');
     const mkBtn = (label, primary, fn) => {
         const el = document.createElement('button');
@@ -729,10 +748,13 @@ function _tutRender() {
             'background:' + (primary ? THEME.accentCss : '#fff') + '; color:' + (primary ? '#fff' : '#5a6473') + ';';
         el.onclick = fn; btns.appendChild(el); return el;
     };
-    mkBtn('Exit', false, () => _tutEnd(false));
-    if (step.finish) mkBtn('Finish', true, () => _tutEnd(true));
-    else mkBtn('Skip →', true, _tutNext);
-    requestAnimationFrame(_tutFitBoard);     // re-fit: this step's text may be taller
+    if (step.finish) {
+        mkBtn('Finish', true, () => _tutEnd(true));       // Exit would do the same thing
+        if (typeof updateTurnStatus === 'function') updateTurnStatus('');   // the game is over
+    } else {
+        mkBtn('Exit', false, () => _tutEnd(false));
+        mkBtn('Skip →', true, _tutNext);
+    }
 }
 function _tutNote(html) {
     const b = _tut.bubble; if (!b) return;
@@ -785,7 +807,10 @@ function startTutorial() {
     const welcome = document.getElementById('welcomeScreen');
     if (welcome) welcome.remove();     // reachable from the settings panel too
     _tutHudVisible(false);
+    _tutBubble();
+    _tutMeasureBubble();
     _tutRender();
+    _tutFitBoard();
     clearInterval(_tut.timer); _tut.timer = setInterval(_tutPoll, 300);
 }
 function _tutEnd(startGame) {
@@ -4352,12 +4377,12 @@ class MainGameScene extends Phaser.Scene {
 
         // No-save counter: a quiet HUD line (not a boxed red warning), with the
         // draw offer as a standard ghost pill underneath it when it applies.
-        this.impasseText = this.add.text(30, this.sys.game.config.height - 250, '', {
+        this.impasseText = this.add.text(24, this.sys.game.config.height - 58, '', {
             fontSize: '21px', fontFamily: HUD_FONT, color: THEME.bgInk
         }).setOrigin(0, 1).setVisible(false).setAlpha(0.75);
         _themedRedraws.push(() => this.impasseText.setColor(THEME.bgInk));
 
-        this.callDrawButton = makeHudButton(this, 100, this.sys.game.config.height - 205,
+        this.callDrawButton = makeHudButton(this, 85, this.sys.game.config.height - 115,
             'Call draw', { ghost: true });
         this.callDrawButton.setHudVisible(false);
 
