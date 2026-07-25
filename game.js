@@ -353,7 +353,9 @@ function createLegendButton() {
 function maybeShowFirstRunNudge() {
     let seen = false;
     try { seen = localStorage.getItem('seenNudge') === '1'; } catch (e) {}
-    if (seen || document.getElementById('firstRunNudge')) return;
+    // The welcome screen already offers How to Play / Tutorial, so don't stack a
+    // nudge on top of it.
+    if (seen || document.getElementById('firstRunNudge') || document.getElementById('welcomeScreen')) return;
     try { localStorage.setItem('seenNudge', '1'); } catch (e) {}
 
     const t = document.createElement('div');
@@ -728,6 +730,39 @@ function _startMatchFirstGame(starter) {
         gameInstance.scene.start('MainGameScene', { startingPlayer: starter });
     }
     showCoinFlip(starter);   // reveal who goes first
+}
+
+// First-load landing screen: a short greeting with Play / How to Play / Tutorial,
+// so the session doesn't drop the player straight into the coin flip. Choosing
+// Play runs the coin flip to reveal who starts.
+function showWelcome(starter) {
+    if (document.getElementById('welcomeScreen')) return;
+    const raced = document.getElementById('firstRunNudge'); if (raced) raced.remove();
+    const box = document.createElement('div');
+    box.id = 'welcomeScreen';
+    box.style.cssText = 'position:fixed; inset:0; z-index:56; display:grid; place-items:center;' +
+        'background:rgba(0,0,0,.55); font-family:' + HUD_FONT + ';';
+    const card = document.createElement('div');
+    card.style.cssText = 'background:#fff; color:#28313b; border-radius:18px; padding:30px 34px;' +
+        'width:min(420px,92vw); box-sizing:border-box; text-align:center; box-shadow:0 20px 55px rgba(0,0,0,.35);';
+    card.innerHTML =
+        '<div style="font-size:26px; font-weight:800; margin-bottom:6px;">Ready to play?</div>' +
+        '<div style="font-family:' + BODY_FONT + '; font-size:15px; line-height:1.5; color:#5a6473; margin-bottom:22px;">' +
+        'Race your pieces around the board and bring them all safely home. New to it? Take a quick tour first.</div>' +
+        '<div id="welBtns" style="display:flex; flex-direction:column; gap:10px;"></div>';
+    box.appendChild(card); document.body.appendChild(box);
+    const holder = card.querySelector('#welBtns');
+    const mkBtn = (label, primary, fn) => {
+        const el = document.createElement('button');
+        el.textContent = label;
+        el.style.cssText = 'padding:11px 0; border-radius:10px; cursor:pointer; font-family:' + HUD_FONT + ';' +
+            'font-weight:700; font-size:15px; border:' + (primary ? 'none' : '1px solid #cfd6e0') + ';' +
+            'background:' + (primary ? THEME.accentCss : '#fff') + '; color:' + (primary ? '#fff' : '#5a6473') + ';';
+        el.onclick = fn; holder.appendChild(el);
+    };
+    mkBtn('Play', true, () => { box.remove(); showCoinFlip(starter); });
+    mkBtn('How to Play', false, () => showInstructions());
+    mkBtn('Interactive tutorial', false, () => { box.remove(); startTutorial(); });
 }
 
 // A quick coin-flip overlay landing on the player who goes first.
@@ -4130,10 +4165,11 @@ class MainGameScene extends Phaser.Scene {
         // Call notifyStartGame when game is created
         notifyStartGame();
 
-        // First casual game of a session: reveal the random starter with a coin flip.
+        // First casual game of a session: greet with a start screen, then the
+        // coin flip (on Play) reveals the random starter.
         if (this._coinFlipOnStart && !matchTracker) {
             this._coinFlipOnStart = false;
-            showCoinFlip(this.startingPlayer);
+            showWelcome(this.startingPlayer);
         }
         if (typeof updateTurnStatus === 'function') updateTurnStatus(this.game);
     }
