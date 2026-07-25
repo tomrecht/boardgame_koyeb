@@ -864,7 +864,8 @@ function showInstructions() {
         'width:min(560px,92vw); max-height:86vh; overflow:hidden; box-sizing:border-box;' +
         'box-shadow:0 18px 50px rgba(0,0,0,.3);';
     const body = document.createElement('div');
-    body.style.cssText = 'padding:22px 26px; max-height:86vh; overflow-y:auto; -webkit-overflow-scrolling:touch;';
+    body.style.cssText = 'padding:22px 26px; max-height:86vh; box-sizing:border-box;' +
+        'overflow-y:auto; -webkit-overflow-scrolling:touch;';
     body.innerHTML = html;
     const close = document.createElement('button');
     close.setAttribute('aria-label', 'Close');
@@ -1346,9 +1347,16 @@ function updateMustMoveHighlights(game) {
 // Clear any current board selection so a picker choice selects cleanly.
 function _clearSelection(game) {
     if (game.selectedPiece) {
-        game.selectedPiece.isSelected = false;
-        game.selectedPiece.reachableTiles = null;
-        game.selectedPiece.updateColor();
+        const p = game.selectedPiece;
+        // A piece that only tentatively entered (sitting on the home tile from
+        // this click) belongs back on its rack when the selection is cleared —
+        // e.g. pressing Esc — not stranded on the home tile.
+        if (p.currentTile && p.currentTile.type === 'home' && p.justMovedHome) {
+            p.returnToRack();
+        }
+        p.isSelected = false;
+        p.reachableTiles = null;
+        p.updateColor();
         game.unhighlightAllTiles();
         game.selectedPiece = null;
     }
