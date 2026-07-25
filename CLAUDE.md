@@ -379,6 +379,40 @@ expected to self-resolve via the TD run.
 
 ## Current state
 
+- **SESSION UPDATE (2026-07-25) — DEPLOYMENT: ONNX + BRANCHES MERGED.**
+  `main` == `td-lambda` == `frontend-overhaul` == commit `ddd9c00`, all pushed.
+  main was a June snapshot 89 commits behind; its two unique commits were
+  already superseded on td-lambda (captured-piece fix, unnumbered dedupe), so
+  the merge took td-lambda's tree wholesale (`-s ours` + `read-tree`). Koyeb
+  tracks main, so pushing it deploys.
+  - **Torch-free inference.** `encoder.py` = the encoding half of network.py,
+    pure numpy (proven identical on 120 positions: zero array mismatches).
+    `network.py` re-exports it and wraps output back into tensors, so training
+    imports are unchanged. `gnn_backend.py` = TorchBackend / OnnxBackend behind
+    one call, each owning its encoder; scores always numpy. `agent_gnn.py` goes
+    through the backend and does top-k / argmax / difficulty-softmax in numpy.
+  - **`onnx_export.py`** exports a checkpoint, re-expressing the forward pass
+    with shape-derived sizes (traced as-is, B/T/P bake in as constants and the
+    graph accepts only one batch size). It self-verifies: rewrite vs real
+    forward (exact), written graph vs torch (6e-08). `model.onnx` = 1.66 MB,
+    exported from `td_champion_July21_aux_iter14.pt`.
+  - **Proof of equivalence:** 40 turns of seeded self-play give an identical
+    move-pair trace for pre-refactor torch, post-refactor torch, and onnx —
+    including from a venv with **no torch installed** — and both servers answer
+    /select_moves identically. Measured: **87 MB resident, ~0.1 s/move** (torch
+    ~0.06 s). app.py defaults to model.onnx when present.
+  - **Dockerfile** moved off pypy (onnxruntime, like torch, has no PyPy wheels
+    — the old base could never have installed either). One worker/one thread on
+    purpose: app.py shares a single Board and agent across requests.
+    `.dockerignore` keeps checkpoints, design assets and training data out.
+  - **Human-play recording is off** (frontend `RECORD_TRAINING_DATA`, server
+    `RECORD_TRAINING=1` to re-enable): the data served its purpose and the disk
+    is ephemeral in deployment.
+  - **Tutorial finished** (10 steps + closing panel) — see the entry below; the
+    late additions were: ends at the start screen rather than a running game,
+    "Black's turn" pill during scripted replies, no status pill before a game
+    starts, How to Play as one wider column at 18px.
+
 - **SESSION UPDATE (2026-07-24/25) — FRONTEND OVERHAUL (branch
   `frontend-overhaul`).** A large, professional GUI redesign of the web client,
   entirely on `frontend-overhaul` (NOT merged to any training branch; the
