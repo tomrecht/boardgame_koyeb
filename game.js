@@ -82,6 +82,12 @@ const THEMES = {
                  bg:0x241f31, field:0xeee7f2, border:0x0f0b16, goal:0xc77dff, goalNum:'#f1e7f8',
                  hub:0xffd166, hubRing:0xcf9f33, accent:0xc77dff, accentCss:'#c77dff', accentInk:'#241432',
                  highlight:0xb28dc9, bgInk:'#efe6f6' },
+    // Colour-blind-safe: Okabe-Ito blue/orange, distinguishable under
+    // deuteranopia/protanopia/tritanopia (no red-green reliance).
+    access:    { label:'High-Contrast (CB-safe)',
+                 bg:0xe7eaee, field:0xffffff, border:0x101418, goal:0x0072b2, goalNum:'#ffffff',
+                 hub:0xe69f00, hubRing:0xb37c00, accent:0x0072b2, accentCss:'#0072b2', accentInk:'#ffffff',
+                 highlight:0x9ecae1, bgInk:'#101418' },
 };
 const _themeKey = new URLSearchParams(location.search).get('theme')
     || (typeof localStorage !== 'undefined' && localStorage.getItem('boardTheme'))
