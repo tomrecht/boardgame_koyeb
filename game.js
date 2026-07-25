@@ -723,16 +723,19 @@ function matchScoreLine() {
 }
 
 // Start a fresh game as the first game of a match (called after startNewMatch).
+// The coin flip runs first, then the fresh game is started — so nothing (incl.
+// a black/AI opener) moves until the flip resolves, mirroring the casual path.
 function _startMatchFirstGame(starter) {
     if (currentGameId) {
         fetch(`${SERVER_URL}/abort_game`, { method: 'POST',
             headers: { 'Content-Type': 'application/json' }, credentials: 'include' }).catch(() => {});
         currentGameId = null; moveCounter = 0; clearMoveRecording();
     }
-    if (typeof gameInstance !== 'undefined' && gameInstance && gameInstance.scene) {
-        gameInstance.scene.start('MainGameScene', { startingPlayer: starter });
-    }
-    showCoinFlip(starter);   // reveal who goes first
+    showCoinFlip(starter, () => {   // reveal who goes first, then start the game
+        if (typeof gameInstance !== 'undefined' && gameInstance && gameInstance.scene) {
+            gameInstance.scene.start('MainGameScene', { startingPlayer: starter });
+        }
+    });
 }
 
 // First-load landing screen: a short greeting with Play / How to Play / Tutorial,
@@ -751,7 +754,7 @@ function showWelcome(starter) {
     card.innerHTML =
         '<div style="font-size:26px; font-weight:800; margin-bottom:6px;">Ready to play?</div>' +
         '<div style="font-family:' + BODY_FONT + '; font-size:15px; line-height:1.5; color:#5a6473; margin-bottom:22px;">' +
-        'Race your pieces around the board and bring them all safely home. New to it? Take a quick tour first.</div>' +
+        'Race your pieces around the board and bring them all safely home. Play a single game or a multi-game match — new to it? Take a quick tour first.</div>' +
         '<div id="welBtns" style="display:flex; flex-direction:column; gap:10px;"></div>';
     box.appendChild(card); document.body.appendChild(box);
     const holder = card.querySelector('#welBtns');
@@ -763,10 +766,10 @@ function showWelcome(starter) {
             'background:' + (primary ? THEME.accentCss : '#fff') + '; color:' + (primary ? '#fff' : '#5a6473') + ';';
         el.onclick = fn; holder.appendChild(el);
     };
-    // Play: reveal the starter with the coin flip, then start a *fresh* game
-    // (new dice + rack) for that starter — nothing about the game is committed,
-    // and the AI never moves, until this point.
-    mkBtn('Play', true, () => {
+    // Single game: reveal the starter with the coin flip, then start a *fresh*
+    // game (new dice + rack) for that starter — nothing about the game is
+    // committed, and the AI never moves, until this point.
+    mkBtn('Single game', true, () => {
         box.remove();
         showCoinFlip(starter, () => {
             if (currentGameId) {
@@ -778,6 +781,9 @@ function showWelcome(starter) {
             if (sc && sc.scene) sc.scene.restart({ startingPlayer: starter });
         });
     });
+    // Match: configure a multi-game match; its own setup handles the coin flip
+    // and the fresh first game.
+    mkBtn('Play a match', true, () => { box.remove(); showMatchSetup(() => showWelcome(starter)); });
     mkBtn('How to Play', false, () => showInstructions());
     mkBtn('Interactive tutorial', false, () => { box.remove(); startTutorial(); });
 }
@@ -881,8 +887,10 @@ function showInstructions() {
     box.addEventListener('pointerdown', (e) => { if (e.target === box) box.remove(); });
 }
 
-// DOM modal to configure and start a new match.
-function showMatchSetup() {
+// DOM modal to configure and start a new match. onCancel (optional) runs when
+// the user backs out — used by the welcome screen to return to it, since the
+// first-load game is still frozen and not yet playable.
+function showMatchSetup(onCancel) {
     const old = document.getElementById('matchSetup'); if (old) old.remove();
     const box = document.createElement('div');
     box.id = 'matchSetup';
@@ -921,7 +929,7 @@ function showMatchSetup() {
         $('#mRace').disabled = mode !== 'race';
     };
     modeRadios.forEach(r => r.addEventListener('change', sync)); sync();
-    $('#mCancel').onclick = () => box.remove();
+    $('#mCancel').onclick = () => { box.remove(); if (onCancel) onCancel(); };
     $('#mStart').onclick = () => {
         const mode = [...modeRadios].find(r => r.checked).value;
         let target, tieRule = 'extra';
