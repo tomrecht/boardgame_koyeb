@@ -2275,6 +2275,8 @@ class Tile {
         if (this.game.gameOver) return;
         if (this.type === "nogo") return;
         if (stackPickerOpen()) return;   // don't highlight tiles while the picker is up
+        // Not the human's turn (computer thinking): no hover highlight.
+        if (this.game.currentPlayerIsHuman && !this.game.currentPlayerIsHuman()) return;
         this.highlight();
         if (DEBUG_MODE) console.log(this.ring, this.sector)
     }
