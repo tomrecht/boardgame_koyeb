@@ -119,10 +119,15 @@ const colorSecondDie = 0xFFC0CB;
 const colorSum = 0xFFFF00; // Yellow
 const FONT_FAMILY = 'Crimson Text';
 // Clean-Modern HUD: system sans-serif + palette (matches design/cm.html).
-const HUD_FONT = '"Segoe UI", system-ui, -apple-system, sans-serif';
+// Single-quoted family names on purpose: these strings get interpolated into
+// HTML style="..." attributes, and a double quote there ends the attribute and
+// silently drops the whole declaration (which is what used to happen to the
+// confirm dialog's buttons, the welcome sub-line, the How-to-Play body and the
+// tutorial bubble). Single quotes are equally valid CSS and safe in both.
+const HUD_FONT = "'Segoe UI', system-ui, -apple-system, sans-serif";
 // Modal body text (option B: sans headings, serif body). System serif — no
 // web font needed.
-const BODY_FONT = 'Georgia, "Times New Roman", serif';
+const BODY_FONT = "Georgia, 'Times New Roman', serif";
 const HUD_ACCENT = THEME.accentCss;
 const HUD_INK = '#28313b';
 const HUD_PANEL_BORDER = 0xdbe1ea;
@@ -796,6 +801,21 @@ function _initChrome() { createSettingsPanel(); createLegendButton(); maybeShowF
 if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', _initChrome);
 else setTimeout(_initChrome, 0);
 
+// Small themed pill shown on hover (undo / end-turn arrows). Phaser text can't
+// round its own background, so — as with makeHudButton — a graphics rounded
+// rect sits behind the label.
+function makeHudTip(scene, cx, cy, label) {
+    const txt = scene.add.text(cx, cy, label, {
+        fontSize: '17px', fontFamily: HUD_FONT, fontStyle: 'bold',
+        color: '#ffffff', padding: { x: 10, y: 5 }
+    }).setOrigin(0.5).setDepth(6).setVisible(false);
+    const b = txt.getBounds();
+    const g = scene.add.graphics().setDepth(5).setVisible(false);
+    g.fillStyle(0x28313b, 0.92);
+    g.fillRoundedRect(b.x, b.y, b.width, b.height, 7);
+    return { show: v => { txt.setVisible(v); g.setVisible(v); } };
+}
+
 // Rounded pill button with a soft shadow, matching the mockup .btn / .btn.ghost.
 // Returns the interactive Text object (callers attach their own pointer handlers);
 // a graphics background sits just behind it and tracks its bounds.
@@ -1013,7 +1033,7 @@ function showCoinFlip(starter, onDone) {
 }
 
 // Small themed confirm dialog.
-function showConfirm(message, onConfirm) {
+function showConfirm(message, onConfirm, confirmLabel) {
     const old = document.getElementById('confirmDlg'); if (old) old.remove();
     const box = document.createElement('div');
     box.id = 'confirmDlg';
@@ -1027,7 +1047,8 @@ function showConfirm(message, onConfirm) {
         '<div style="font-size:16px; line-height:1.5; margin-bottom:16px;">' + message + '</div>' +
         '<div style="display:flex; gap:10px; justify-content:flex-end;">' +
         '<button id="cNo" style="' + btn + 'background:#eef1f4; color:#28313b;">Cancel</button>' +
-        '<button id="cYes" style="' + btn + 'background:' + THEME.accentCss + '; color:#fff;">Yes</button>' +
+        '<button id="cYes" style="' + btn + 'background:' + THEME.accentCss + '; color:#fff;">' +
+        (confirmLabel || 'Yes') + '</button>' +
         '</div></div>';
     document.body.appendChild(box);
     box.querySelector('#cNo').onclick = () => box.remove();
@@ -1673,7 +1694,7 @@ function updateNoSaveDisplay() {
     const show = window.setupMode || game.bothInMidgame();
     if (!show) {
         scene.impasseText.setVisible(false);
-        scene.callDrawButton.setVisible(false);
+        scene.callDrawButton.setHudVisible(false);
         return;
     }
 
@@ -1683,12 +1704,7 @@ function updateNoSaveDisplay() {
 
     // Offer the button on a human player's turn when callable.
     const humanCanCall = game.drawCallable && game.currentPlayerIsHuman() && !game.gameOver;
-    if (humanCanCall) {
-        const b = scene.impasseText.getBounds();
-        scene.callDrawButton.setPosition(b.right + 10, b.bottom).setVisible(true);
-    } else {
-        scene.callDrawButton.setVisible(false);
-    }
+    scene.callDrawButton.setHudVisible(!!humanCanCall);
 }
 
 class Piece {
@@ -2903,8 +2919,6 @@ class Game {
         this.blackUnenteredRack = new Rack(scene, 1545, 356, 'black', 'unentered');
         this.blackSavedRack = new Rack(scene, 1545, 622, 'black', 'saved');
 
-        this.confirmationModal = null;
-
         this.setupDragging(scene);
 
         // Create buttons
@@ -4102,21 +4116,9 @@ endGame(winner, score = null, impasse_caller = null) {
                 clearMoveRecording();
             });
 
-        // Add tooltip for undo button
-        const undoTooltip = scene.add.text(this.undoButton.x, this.undoButton.y, 'UNDO', {
-            fontSize: '22px',
-            fontFamily: 'Arial, sans-serif',
-            fill: '#000000',
-            backgroundColor: 'rgba(0, 0, 0, 0)'
-        }).setOrigin(0.5).setVisible(false);
-    
-        this.undoButton.on('pointerover', () => {
-            undoTooltip.setVisible(true);
-        });
-    
-        this.undoButton.on('pointerout', () => {
-            undoTooltip.setVisible(false);
-        });
+        const undoTooltip = makeHudTip(scene, this.undoButton.x, this.undoButton.y + 46, 'Undo');
+        this.undoButton.on('pointerover', () => undoTooltip.show(true));
+        this.undoButton.on('pointerout',  () => undoTooltip.show(false));
     }
 
     createSwitchTurnButton(scene) {
@@ -4136,87 +4138,20 @@ endGame(winner, score = null, impasse_caller = null) {
                 }
             });
     
-        // Add tooltip for switch turn button
-        const switchTurnTooltip = scene.add.text(this.switchTurnButton.x, this.switchTurnButton.y, 'END TURN', {
-            fontSize: '22px',
-            fontFamily: 'Arial, sans-serif',
-            fill: '#000000',
-            backgroundColor: 'rgba(0, 0, 0, 0)'
-        }).setOrigin(0.5).setVisible(false);
-    
-        this.switchTurnButton.on('pointerover', () => {
-            switchTurnTooltip.setVisible(true);
-        });
-    
-        this.switchTurnButton.on('pointerout', () => {
-            switchTurnTooltip.setVisible(false);
-        });
+        const switchTurnTooltip = makeHudTip(scene, this.switchTurnButton.x, this.switchTurnButton.y + 46, 'End turn');
+        this.switchTurnButton.on('pointerover', () => switchTurnTooltip.show(true));
+        this.switchTurnButton.on('pointerout',  () => switchTurnTooltip.show(false));
     }
     
+    // Ending a turn with a die still live: the shared DOM dialog (was a
+    // hand-drawn Phaser rectangle with bright green/red Yes/No buttons).
     showConfirmationModal() {
-        if (this.confirmationModal) {
-            this.confirmationModal.destroy(true);
-        }
-        const modalWidth = 400;
-        const modalHeight = 200;
-        const modalX = CENTER_X - modalWidth / 2;
-        const modalY = CENTER_Y - modalHeight / 2;
-
-        this.confirmationModal = this.scene.add.container(0, 0); // Create a container for modal elements
-
-        const modalBackground = this.scene.add.graphics();
-        modalBackground.fillStyle(0xffffff, 1);
-        modalBackground.fillRect(modalX, modalY, modalWidth, modalHeight);
-        modalBackground.lineStyle(2, 0x000000, 1);
-        modalBackground.strokeRect(modalX, modalY, modalWidth, modalHeight);
-        this.confirmationModal.add(modalBackground);
-
-        const text = this.scene.add.text(CENTER_X, CENTER_Y - 40, 'End your turn without using both dice?', {
-            fontSize: '22px',
-            fontFamily: HUD_FONT,
-            color: '#000000',
-            wordWrap: { width: modalWidth - 40 },
-            align: 'center'
-        }).setOrigin(0.5);
-        this.confirmationModal.add(text);
-
-        const confirmButton = this.scene.add.text(CENTER_X - 60, CENTER_Y + 40, 'Yes', {
-            fontSize: '28px',
-            fontFamily: HUD_FONT,
-            backgroundColor: '#00ff00',
-            padding: { x: 20, y: 10 },
-            borderColor: '#000',
-            borderWidth: 1.5,
-            borderRadius: 3.75
-        }).setOrigin(0.5).setInteractive();
-        this.confirmationModal.add(confirmButton);
-
-        const cancelButton = this.scene.add.text(CENTER_X + 60, CENTER_Y + 40, 'No', {
-            fontSize: '28px',
-            fontFamily: HUD_FONT,
-            backgroundColor: '#ff0000',
-            padding: { x: 20, y: 10 },
-            borderColor: '#000',
-            borderWidth: 1.5,
-            borderRadius: 3.75
-        }).setOrigin(0.5).setInteractive();
-        this.confirmationModal.add(cancelButton);
-
-        confirmButton.on('pointerdown', () => {
-            this.hideConfirmationModal();
-            this.switchTurn();
-        });
-
-        cancelButton.on('pointerdown', () => {
-            this.hideConfirmationModal();
-        });
+        showConfirm('End your turn without using both dice?',
+            () => this.switchTurn(), 'End turn');
     }
 
     hideConfirmationModal() {
-        if (this.confirmationModal) {
-            this.confirmationModal.destroy(true);
-            this.confirmationModal = null;
-        }
+        const dlg = document.getElementById('confirmDlg'); if (dlg) dlg.remove();
     }
 
     updateBlackPlayerAIStatus(isAI) {
@@ -4391,20 +4326,17 @@ class MainGameScene extends Phaser.Scene {
 
         this.updateScoreText();
 
-        // In MainGameScene.create(), replace the old impasseText and callDrawButton with:
-        this.impasseText = this.add.text(20, this.sys.game.config.height - 280, '', {
-            fontSize: '24px', fontFamily: HUD_FONT, color: '#a00',
-            backgroundColor: '#fff', padding: { x: 8, y: 4 },
-            borderColor: '#000', borderWidth: 1.5, borderRadius: 3.75
-        }).setOrigin(0, 1).setVisible(false);
+        // No-save counter: a quiet HUD line (not a boxed red warning), with the
+        // draw offer as a standard ghost pill underneath it when it applies.
+        this.impasseText = this.add.text(30, this.sys.game.config.height - 250, '', {
+            fontSize: '21px', fontFamily: HUD_FONT, color: THEME.bgInk
+        }).setOrigin(0, 1).setVisible(false).setAlpha(0.75);
+        _themedRedraws.push(() => this.impasseText.setColor(THEME.bgInk));
 
-        this.callDrawButton = this.add.text(0, 0, 'Call draw', {
-            fontSize: '24px', fontFamily: HUD_FONT, color: '#fff',
-            backgroundColor: '#a00', padding: { x: 10, y: 5 },
-            borderColor: '#000', borderWidth: 1.5, borderRadius: 3.75
-        }).setOrigin(0, 1).setVisible(false).setInteractive({ useHandCursor: true });
-        
-        // ... rest of event listeners stay the same
+        this.callDrawButton = makeHudButton(this, 100, this.sys.game.config.height - 205,
+            'Call draw', { ghost: true });
+        this.callDrawButton.setHudVisible(false);
+
             this.callDrawButton.on('pointerdown', () => {
                 fetch(`${SERVER_URL}/call_draw`, { method: 'POST', credentials: 'include' })
                     .catch(e => console.warn('call_draw failed:', e));
@@ -4615,56 +4547,9 @@ class MainGameScene extends Phaser.Scene {
         this.thinkingIcon.setVisible(false);
     }
     
+    // Same shared dialog as every other confirmation in the app.
     showNewGameConfirmationModal() {
-        if (this.confirmationModal) {
-            this.confirmationModal.destroy(true);
-        }
-        const modalWidth = 400;
-        const modalHeight = 200;
-        const modalX = CENTER_X - modalWidth / 2;
-        const modalY = CENTER_Y - modalHeight / 2;
-
-        this.confirmationModal = this.add.container(0, 0); // Create a container for modal elements
-
-        const modalBackground = this.add.graphics();
-        modalBackground.fillStyle(0xffffff, 1);
-        modalBackground.fillRect(modalX, modalY, modalWidth, modalHeight);
-        modalBackground.lineStyle(2, 0x000000, 1);
-        modalBackground.strokeRect(modalX, modalY, modalWidth, modalHeight);
-        this.confirmationModal.add(modalBackground);
-
-        const text = this.add.text(CENTER_X, CENTER_Y - 40, 'Start a new game?', {
-            fontSize: '22px',
-            fontFamily: HUD_FONT,
-            color: '#000000',
-            wordWrap: { width: modalWidth - 40 },
-            align: 'center'
-        }).setOrigin(0.5);
-        this.confirmationModal.add(text);
-
-        const confirmButton = this.add.text(CENTER_X - 60, CENTER_Y + 40, 'Yes', {
-            fontSize: '28px',
-            fontFamily: HUD_FONT,
-            backgroundColor: '#00ff00',
-            padding: { x: 20, y: 10 },
-            borderColor: '#000',
-            borderWidth: 1.5,
-            borderRadius: 3.75
-        }).setOrigin(0.5).setInteractive();
-        this.confirmationModal.add(confirmButton);
-
-        const cancelButton = this.add.text(CENTER_X + 60, CENTER_Y + 40, 'No', {
-            fontSize: '28px',
-            fontFamily: HUD_FONT,
-            backgroundColor: '#ff0000',
-            padding: { x: 20, y: 10 },
-            borderColor: '#000',
-            borderWidth: 1.5,
-            borderRadius: 3.75
-        }).setOrigin(0.5).setInteractive();
-        this.confirmationModal.add(cancelButton);
-
-        confirmButton.on('pointerdown', () => {
+        showConfirm('Start a new game?', () => {
             if (!this.game.gameOver && currentGameId) {
                 fetch(`${SERVER_URL}/abort_game`, {
                     method: 'POST',
@@ -4676,19 +4561,7 @@ class MainGameScene extends Phaser.Scene {
                 clearMoveRecording();
             }
             this.scene.restart({ startingPlayer: nextCasualStarter() });
-            this.hideConfirmationModal();
-        });
-
-        cancelButton.on('pointerdown', () => {
-            this.hideConfirmationModal();
-        });
-    }
-
-    hideConfirmationModal() {
-        if (this.confirmationModal) {
-            this.confirmationModal.destroy(true);
-            this.confirmationModal = null;
-        }
+        }, 'New game');
     }
 
     saveGameState(game) {
@@ -4755,13 +4628,6 @@ class EndGameScene extends Phaser.Scene {
             message = `${_cap(this.winner)} wins the game with a score of ${this.score}`;
         }
 
-        const mkButton = (y, text, bg, cb) => {
-            const btn = this.add.text(CENTER_X, y, text, {
-                fontSize: '30px', fontFamily: HUD_FONT, fontStyle: 'bold',
-                backgroundColor: bg, color: '#ffffff', padding: { x: 22, y: 11 }
-            }).setOrigin(0.5).setInteractive({ useHandCursor: true });
-            btn.on('pointerdown', cb); return btn;
-        };
         const abortAndClear = () => {
             if (currentGameId) {
                 fetch(`${SERVER_URL}/abort_game`, { method: 'POST',
@@ -4770,38 +4636,65 @@ class EndGameScene extends Phaser.Scene {
             }
         };
         const startGame = (starter) => { abortAndClear(); this.scene.start('MainGameScene', { startingPlayer: starter }); };
+        updateTurnStatus('');   // the game is over: drop the turn/thinking pill
+
+        // Card, headline, sub-line and pill buttons — the same vocabulary as the
+        // welcome / match-setup overlays (this screen used to be bare text on the
+        // background with square green and blue buttons).
+        const card = (h) => {
+            const w = 820, x = CENTER_X - w / 2, y = CENTER_Y - h / 2;
+            const g = this.add.graphics();
+            g.fillStyle(0x000000, 0.10); g.fillRoundedRect(x, y + 6, w, h, 22);
+            g.fillStyle(0xffffff, 1);    g.fillRoundedRect(x, y, w, h, 22);
+            return y;
+        };
+        const headline = (y, text, size) => this.add.text(CENTER_X, y, text, {
+            fontSize: size + 'px', fontFamily: HUD_FONT, fontStyle: 'bold',
+            color: HUD_INK, align: 'center', wordWrap: { width: 720 }
+        }).setOrigin(0.5);
+        const subline = (y, text, size) => this.add.text(CENTER_X, y, text, {
+            fontSize: (size || 23) + 'px', fontFamily: HUD_FONT, color: '#5a6473',
+            align: 'center', wordWrap: { width: 720 }
+        }).setOrigin(0.5);
+        const button = (x, y, label, ghost, cb) => {
+            const b = makeHudButton(this, x, y, label, { ghost });
+            b.on('pointerdown', cb);
+            return b;
+        };
 
         if (this.inMatch && matchTracker) {
             const m = matchTracker;
-            this.add.text(CENTER_X, CENTER_Y - 100, message,
-                { fontSize: '38px', fontFamily: HUD_FONT, color: THEME.accentCss }).setOrigin(0.5);
             if (this.matchOver) {
                 const mScore = m.winner === 'white' ? m.whiteScore : m.blackScore;
                 const mres = m.winner === 'draw' ? 'The match is a draw!'
                     : `${_cap(m.winner)} wins the match with a score of ${mScore}`;
-                this.add.text(CENTER_X, CENTER_Y - 34, mres,
-                    { fontSize: '54px', fontFamily: HUD_FONT, fontStyle: 'bold', color: '#c0392b' }).setOrigin(0.5);
-                this.add.text(CENTER_X, CENTER_Y + 26,
-                    `White ${m.whiteScore} (${m.whiteWins}W)      Black ${m.blackScore} (${m.blackWins}W)      ${m.gamesPlayed} games`,
-                    { fontSize: '22px', fontFamily: HUD_FONT, color: '#333' }).setOrigin(0.5);
-                mkButton(CENTER_Y + 96, 'New Match', '#2f7050', () => { abortAndClear(); matchTracker = null; refreshSettingsMatchState(); showMatchSetup(); });
-                mkButton(CENTER_Y + 162, 'Casual Game', '#3b6ea5', () => { matchTracker = null; refreshSettingsMatchState(); startGame('white'); });
+                const top = card(340);
+                subline(top + 58, message, 21);
+                headline(top + 118, mres, 34);
+                subline(top + 182,
+                    `White ${m.whiteScore} (${m.whiteWins}W)   ·   Black ${m.blackScore} (${m.blackWins}W)   ·   ${m.gamesPlayed} games`, 21);
+                button(CENTER_X - 105, top + 262, 'New Match', false,
+                    () => { abortAndClear(); matchTracker = null; refreshSettingsMatchState(); showMatchSetup(); });
+                button(CENTER_X + 105, top + 262, 'Single Game', true,
+                    () => { matchTracker = null; refreshSettingsMatchState(); startGame('white'); });
             } else {
-                const status = `Match  —  White ${m.whiteScore} (${m.whiteWins}W)   Black ${m.blackScore} (${m.blackWins}W)   ` +
-                    (m.mode === 'race' ? `race to ${m.target}` : `game ${m.gamesPlayed + 1} of ${m.target}`);
-                this.add.text(CENTER_X, CENTER_Y - 34, status,
-                    { fontSize: '24px', fontFamily: HUD_FONT, color: '#333' }).setOrigin(0.5);
-                mkButton(CENTER_Y + 56, 'Next Game', '#2f7050', () => startGame(matchStarterForGame(m.gamesPlayed)));
+                const status = m.mode === 'race' ? `race to ${m.target}`
+                    : `game ${m.gamesPlayed + 1} of ${m.target}`;
+                const top = card(290);
+                headline(top + 78, message, 34);
+                subline(top + 142,
+                    `White ${m.whiteScore} (${m.whiteWins}W)   ·   Black ${m.blackScore} (${m.blackWins}W)   ·   ${status}`, 21);
+                button(CENTER_X, top + 218, 'Next Game', false,
+                    () => startGame(matchStarterForGame(m.gamesPlayed)));
             }
             return;
         }
 
         // Casual single-game flow.
-        this.add.text(CENTER_X, CENTER_Y - 60, message,
-            { fontSize: '48px', fontFamily: HUD_FONT, color: '#c0392b' }).setOrigin(0.5);
-        mkButton(CENTER_Y + 30, 'New Game', '#2f7050',
-            () => startGame(nextCasualStarter()));
-        mkButton(CENTER_Y + 96, 'New Match', '#3b6ea5', () => { abortAndClear(); showMatchSetup(); });
+        const top = card(250);
+        headline(top + 80, message, 36);
+        button(CENTER_X - 105, top + 176, 'New Game', false, () => startGame(nextCasualStarter()));
+        button(CENTER_X + 105, top + 176, 'New Match', true, () => { abortAndClear(); showMatchSetup(); });
     }
 
 }
