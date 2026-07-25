@@ -477,8 +477,14 @@ function _tutRefresh(game) {
     game.gameOver = false;
     _tut.turnEnded = false;
     game.undoStack = [];
+    game._pendingPreMove = null;
     if (typeof clearMoveRecording === 'function') clearMoveRecording();
     game.pieces.forEach(p => { p.reachableTiles = null; p._turnStartTile = p.currentTile || null; });
+    // switchTurn is short-circuited during the tutorial, so nothing else
+    // refreshes game.state -- without this, undo would restore the stale
+    // snapshot from the last real turn (the untouched opening position, with
+    // the racks in their original order) instead of this step's start.
+    game.state = game.captureState();
     if (game.updateMovablePieces) game.updateMovablePieces();
     if (typeof updateMustMoveHighlights === 'function') updateMustMoveHighlights(game);
     if (typeof updateTurnStatus === 'function') updateTurnStatus(game);
@@ -1805,6 +1811,11 @@ class Piece {
 
 
 
+        // Saved pieces are out of play: checked before the selection handover
+        // below, which would otherwise make one the selected piece -- and with
+        // that, draggable back onto the board.
+        if (this.rack && this.rack.type === 'saved') return;
+
         if (this.game.selectedPiece && this.game.selectedPiece !== this) {
 
             // If this piece is on a field tile, treat as tile click instead
@@ -1822,7 +1833,6 @@ class Piece {
             this.isSelected = false;
         }
         // if (this.player !== this.game.turn) return; 
-        if (this.rack && this.rack.type === 'saved') return;
         if (this.rack && this.rack.type === 'unentered' && this.rack.pieces[0] !== this) return;
         if (this.player === this.game.turn && !this.game.canSelectForMove(this)) {
             console.log("Must keep a die for the obligatory piece(s)");
@@ -1890,6 +1900,11 @@ class Piece {
         // and clear highlights so a double-click save shows no destination flash.
         clearTimeout(this._hlTimer);
         this.game.unhighlightAllTiles();
+
+        // A piece on a rack has nothing to double-click on. Reachable whenever a
+        // tentatively-entered piece goes back to its rack between the two clicks
+        // (a refused destination, Esc, undo) -- this used to throw.
+        if (!this.currentTile) return;
 
         if (this.currentTile.type === 'save') {
             this.save(); // Save the piece if it can be saved
@@ -2193,7 +2208,7 @@ class Piece {
     }
 
     save() {
-        if (_tut.active && !_tutSaveOK(this)) { _tutNudge(); return false; }
+        if (_tut.active && !_tutSaveOK(this)) { _tutNudge(); _clearSelection(this.game); return false; }
         const player = this.color === 0xffffff ? this.game.players[0] : this.game.players[1];
         console.log(`Attempting to save piece ${this.number} for player ${player.name} in phase ${player.getGamePhase()}`);
         
@@ -3397,7 +3412,13 @@ class Game {
         }
     
         console.log('Target tile is not reachable by the available dice rolls');
-        if (_tut.active) _tutNudge();      // off-script move: shake the instructions
+        if (_tut.active) {
+            // Shake the instructions, and drop the selection: a still-selected
+            // piece turns the next click on a board piece into a tile click, so
+            // the player could not then pick the piece the step asks for.
+            _tutNudge();
+            _clearSelection(this);
+        }
         return false;
     }
 
@@ -4086,6 +4107,9 @@ endGame(winner, score = null, impasse_caller = null) {
                 if (piece._snapRack) piece.returnToRack();   // returns to rack (also deselects)
                 else {
                     if (piece.currentTile) piece.currentTile.updatePositions();
+                    // a piece dragged out of a rack has no tile to snap back to;
+                    // without this it just stays wherever it was dropped
+                    else if (piece.rack) piece.rack.shiftPiecesUp();
                     _clearSelection(piece.game);             // dropping cancels the selection
                 }
             }
@@ -4701,71 +4725,6 @@ class EndGameScene extends Phaser.Scene {
 
 
 
-class InstructionsScene extends Phaser.Scene {
-    constructor() {
-        super({ key: 'InstructionsScene' });
-    }
-
-    create() {
-        const instructions = 'Win the game by saving all your pieces before your opponent does. Your score is the number of pieces your opponent has left. \n\n' +
-            'Pieces begin on the side rack and enter the game through the yellow central home tile. Only the first piece on the side rack may enter the board. You may begin saving pieces once all your pieces have moved onto the board.  \n\n' +
-            'To save a piece, move it to one of the green goal tiles and roll the number of that tile to move it off the board. ' +
-            'Unnumbered pieces can be saved from any goal tile, but numbered pieces must be saved from the goal tile that matches their number. \n\n' +
-            'If you land on a field tile (one that isn\'t a goal tile or the home tile) occupied by one of your opponent\'s pieces, you capture that piece and send it back to the home tile. \n\n' +
-            'If a field tile is occupied by two or more of your opponent\'s pieces, that tile is blocked and you cannot move through or into it. \n\n' +
-            'Once you are past the opening and have no captured pieces, you may double-click one of the pieces in an opponent\'s block to save that single piece to your opponent\'s rack, at the cost of both your dice. This turns a two-piece block into a lone piece you can then capture or pass. \n\n' +
-            'If you have one or more captured pieces, you must move them out of the home tile before moving any other pieces. ' +
-            'Otherwise, if you have one or more pieces on the side rack, you must move the first of these onto the board before moving any other pieces. \n\n' +
-            'A piece must take the shortest available route to its destination tile, both when using one die and when using two dice. \n\n' +
-            'You may pass your turn without using one or both dice. \n\n' +
-            'When all your pieces are either saved or on goal tiles from which they can be saved, you are in the endgame. In the endgame, you may save unnumbered pieces using a higher roll than the goal tile number, as long as you don\'t have any pieces on higher-numbered goals. \n\n' +
-            'If you have only one piece left at the start of your turn, and it\'s a numbered piece which is on its goal, that piece becomes unnumbered.\n\n' +
-            'Once both players have moved all their pieces onto the board, if ' + NO_SAVE_TURNS_FOR_DRAW + ' full rounds (each round being one turn for each player) pass without either player saving a piece, either player may call a draw on their turn. Saving any piece resets the count. \n\n' +
-            'Click the back arrow to undo your moves or the right arrow to end your turn. \n\n' +
-            'Good luck!'
-
-        // Add instructions text
-        this.add.text(CENTER_X, 50, 'How to Play', {
-            fontSize: '48px',
-            fontFamily: HUD_FONT,
-            color: '#000000'
-        }).setOrigin(0.5);
-
-        // Create a text box for the instructions
-        const textBox = this.add.text(CENTER_X, 300, instructions, {
-            fontSize: '26px',
-            fontFamily: BODY_FONT,
-            color: '#000000',
-            align: 'left',
-            wordWrap: { width: config.width - 100 }
-        }).setOrigin(0.5, 0);
-
-        // Calculate the total height of the instructions text
-        const instructionsHeight = textBox.height;
-
-        // Adjust the position if the text exceeds the available space
-        const maxY = config.height - 100 - 200; // Adjust maxY based on backButton position
-        if (300 + instructionsHeight > maxY) {
-            textBox.setY((config.height - instructionsHeight) / 2); // Center vertically if overflowing
-        }
-
-        // Add a button to go back to the main game
-        const backButton = this.add.text(CENTER_X, config.height - 70, 'Back to Game', {
-            fontSize: '32px',
-            fontFamily: HUD_FONT,
-            backgroundColor: '#ffcc00',
-            padding: { x: 20, y: 10 },
-            borderColor: '#000',
-            borderWidth: 1.5,
-            borderRadius: 3.75
-        }).setOrigin(0.5).setInteractive();
-
-        backButton.on('pointerdown', () => {
-            this.scene.switch('MainGameScene'); // Resume the MainGameScene
-        });
-    }
-}
-
 function calculateAverageScore() {
     if (scoreTracker.games_played === 0) {
         return 0; // Avoid division by zero
@@ -5280,7 +5239,7 @@ const config = {
         mode: Phaser.Scale.FIT, 
         autoCenter: Phaser.Scale.CENTER_BOTH
     },
-    scene: [MainGameScene, InstructionsScene, EndGameScene],
+    scene: [MainGameScene, EndGameScene],
 };
 
 const gameInstance = new Phaser.Game(config);
