@@ -8,7 +8,10 @@ const SERVER_URL = IS_LOCAL
 
 const DEBUG_MODE = false; 
 const WHITE_IS_AI = false;
-let BLACK_IS_AI = true;
+let BLACK_IS_AI = (function () {
+    try { const s = localStorage.getItem('playVsComputer'); return s === null ? true : s === '1'; }
+    catch (e) { return true; }
+})();
 
 const PIECE_RADIUS_BASE = 20;
 // On-board stacking: default board-piece radius. Pieces pack into a polar grid
@@ -116,10 +119,19 @@ function getAIDifficulty() {
     try { const s = localStorage.getItem('aiDifficulty'); if (s !== null) v = parseFloat(s); } catch (e) {}
     return isFinite(v) ? Math.min(1, Math.max(0, v)) : 1.0;
 }
-// Move/capture visual+sound feedback (default on).
-function getFeedbackEnabled() {
-    try { const s = localStorage.getItem('fxEnabled'); return s === null ? true : s === '1'; }
-    catch (e) { return true; }
+// Boolean settings persisted in localStorage, with a default when unset.
+function _boolSetting(key, dflt) {
+    try { const s = localStorage.getItem(key); return s === null ? dflt : s === '1'; }
+    catch (e) { return dflt; }
+}
+function getFeedbackEnabled()   { return _boolSetting('fxEnabled', true); }      // move/capture effects
+function getAutoEndTurn()       { return _boolSetting('autoEndTurn', false); }   // end turn when both dice used
+function getConfirmRiskyEnd()   { return _boolSetting('confirmRiskyEnd', true); } // confirm ending with a move left
+
+// The live Game instance (for settings that act on the running game).
+function _currentGame() {
+    try { const sc = gameInstance.scene.getScene('MainGameScene'); return sc && sc.game; }
+    catch (e) { return null; }
 }
 // Difficulty is locked while a match is ongoing; reflect that in the panel.
 function refreshSettingsMatchState() {
@@ -180,12 +192,29 @@ function createSettingsPanel() {
     dnote.id = 'settingsDiffNote'; drow.appendChild(dnote);
     panel.appendChild(drow);
 
-    // Effects toggle
-    const frow = mk('label', 'display:flex; align-items:center; gap:8px; cursor:pointer;');
-    const fx = mk('input'); fx.type = 'checkbox'; fx.checked = getFeedbackEnabled();
-    fx.onchange = () => { try { localStorage.setItem('fxEnabled', fx.checked ? '1' : '0'); } catch (e) {} };
-    frow.appendChild(fx); frow.appendChild(mk('span', null, 'Move & capture effects'));
-    panel.appendChild(frow);
+    // Play vs computer toggle
+    const crow = mk('label', 'display:flex; align-items:center; gap:8px; cursor:pointer; margin-bottom:8px;');
+    const pc = mk('input'); pc.type = 'checkbox'; pc.checked = BLACK_IS_AI;
+    pc.onchange = () => {
+        BLACK_IS_AI = pc.checked;
+        try { localStorage.setItem('playVsComputer', BLACK_IS_AI ? '1' : '0'); } catch (e) {}
+        const g = _currentGame(); if (g && g.updateBlackPlayerAIStatus) g.updateBlackPlayerAIStatus(BLACK_IS_AI);
+    };
+    crow.appendChild(pc); crow.appendChild(mk('span', null, 'Play vs computer'));
+    panel.appendChild(crow);
+
+    // Boolean toggles
+    const toggle = (labelText, get, key, marginBottom) => {
+        const row = mk('label', 'display:flex; align-items:center; gap:8px; cursor:pointer;' +
+            (marginBottom ? ' margin-bottom:8px;' : ''));
+        const cb = mk('input'); cb.type = 'checkbox'; cb.checked = get();
+        cb.onchange = () => { try { localStorage.setItem(key, cb.checked ? '1' : '0'); } catch (e) {} };
+        row.appendChild(cb); row.appendChild(mk('span', null, labelText));
+        panel.appendChild(row);
+    };
+    toggle('Move & capture effects', getFeedbackEnabled, 'fxEnabled', true);
+    toggle('End turn automatically when both dice used', getAutoEndTurn, 'autoEndTurn', true);
+    toggle('Confirm ending a turn with a move left', getConfirmRiskyEnd, 'confirmRiskyEnd', false);
 
     document.body.appendChild(gear); document.body.appendChild(panel);
     gear.onclick = (e) => { e.stopPropagation();
@@ -244,6 +273,14 @@ const scoreTracker = {
 let matchTracker = null;
 const MATCH_DEFAULT_GAMES = 6;
 const MATCH_DEFAULT_RACE  = 21;
+
+// Casual (non-match) play: the first game of a session picks its starter with a
+// coin flip; subsequent New Games alternate from the previous starter.
+let _lastGameStarter = null;
+function otherPlayer(p) { return p === 'white' ? 'black' : 'white'; }
+function nextCasualStarter() {
+    return _lastGameStarter ? otherPlayer(_lastGameStarter) : (Math.random() < 0.5 ? 'white' : 'black');
+}
 
 function _cap(s) { return s.charAt(0).toUpperCase() + s.slice(1); }
 
@@ -1200,6 +1237,7 @@ class Piece {
 
             // Check for the win condition
             this.game.checkWinCondition();
+            this.game.maybeAutoEndTurn();
         }
     }
 
@@ -1497,6 +1535,7 @@ class Piece {
                 this.game.checkWinCondition();
 
                 refreshEvalReadout();  // update on-board eval after the save settles
+                this.game.maybeAutoEndTurn();
                 return true;
             } else {
                 console.log(`No available die roll corresponds to the save tile's number ${saveTileNumber}, piece ${this.number} cannot be saved`);
@@ -2609,6 +2648,7 @@ class Game {
             piece.reachableTiles = null;
 
             refreshEvalReadout();  // update on-board eval after the move settles
+            this.maybeAutoEndTurn();
             return true;
         }
     
@@ -2649,6 +2689,39 @@ class Game {
             }
         }
         return false;
+    }
+
+    // Does the current player have any legal move left with the unused dice?
+    // (Used to decide whether ending the turn is "risky".)
+    hasAnyLegalMove() {
+        if (this.dice.every(d => d.used)) return false;
+        const color = this.turn === 'white' ? 0xffffff : 0x000000;
+        const candidates = this.mustMovePieces.length > 0
+            ? this.mustMovePieces.slice()
+            : this.pieces.filter(p => p.color === color &&
+                (p.currentTile || (p.rack && p.rack.type === 'unentered' && p.rack.pieces[0] === p)));
+        for (const p of candidates) {
+            if (p.rack && p.rack.type === 'unentered' && p.rack.pieces[0] !== p) continue;
+            const rt = this.getReachableTilesByDice(p);
+            if (rt && (rt.reachableByFirstDie.length || rt.reachableBySecondDie.length || rt.reachableBySum.length)) return true;
+            if (p.currentTile && p.currentTile.type === 'save' && p.canBeSaved && p.canBeSaved()) return true;
+        }
+        return false;
+    }
+
+    // If the setting is on and both dice are used, end the turn automatically
+    // (after a short beat so the last move is visible).
+    maybeAutoEndTurn() {
+        if (!getAutoEndTurn() || this.gameOver) return;
+        if (!this.dice.every(d => d.used)) return;
+        if (this.mustMovePieces && this.mustMovePieces.length > 0) return;
+        if (this._autoEndScheduled) return;
+        this._autoEndScheduled = true;
+        const t = this.turn;
+        setTimeout(() => {
+            this._autoEndScheduled = false;
+            if (!this.gameOver && this.turn === t && this.dice.every(d => d.used)) this.switchTurn();
+        }, 550);
     }
 
     capturePiece(piece) {
@@ -3315,7 +3388,9 @@ endGame(winner, score = null, impasse_caller = null) {
             .on('pointerdown', () => {
                 // Only the human whose turn it is may end the turn.
                 if (this.gameOver || !this.currentPlayerIsHuman()) return;
-                if (this.dice.some(die => !die.used)) {
+                // Confirm only if the setting is on AND ending is actually risky
+                // (a die is unused and a legal move still exists).
+                if (this.dice.some(die => !die.used) && getConfirmRiskyEnd() && this.hasAnyLegalMove()) {
                     this.showConfirmationModal();
                 } else {
                     this.switchTurn();
@@ -3479,7 +3554,14 @@ class MainGameScene extends Phaser.Scene {
     }
 
     init(data) {
-        this.startingPlayer = data.startingPlayer || 'white';
+        if (data && data.startingPlayer) {
+            this.startingPlayer = data.startingPlayer;
+        } else {
+            // initial page-load casual game: random first player, revealed by a coin flip
+            this.startingPlayer = Math.random() < 0.5 ? 'white' : 'black';
+            this._coinFlipOnStart = true;
+        }
+        _lastGameStarter = this.startingPlayer;
     }
 
     preload() {
@@ -3494,7 +3576,9 @@ class MainGameScene extends Phaser.Scene {
 
         this.game = new Game(this, this.startingPlayer, debugMode);
 
-        this.createRadioButton();
+        // "Play vs computer" now lives in the settings panel; make sure the game
+        // reflects the persisted choice.
+        this.game.updateBlackPlayerAIStatus(BLACK_IS_AI);
         this.createEvalButton();
 
         const iconSize = 192;
@@ -3587,6 +3671,11 @@ class MainGameScene extends Phaser.Scene {
         // Call notifyStartGame when game is created
         notifyStartGame();
 
+        // First casual game of a session: reveal the random starter with a coin flip.
+        if (this._coinFlipOnStart && !matchTracker) {
+            this._coinFlipOnStart = false;
+            showCoinFlip(this.startingPlayer);
+        }
     }
 
     updateScoreText() {
@@ -3838,8 +3927,7 @@ class MainGameScene extends Phaser.Scene {
                 moveCounter = 0;
                 clearMoveRecording();
             }
-            this.startingPlayer = (scoreTracker.games_played % 2 === 0) ? 'white' : 'black';
-            this.scene.restart();
+            this.scene.restart({ startingPlayer: nextCasualStarter() });
             this.hideConfirmationModal();
         });
 
@@ -3963,7 +4051,7 @@ class EndGameScene extends Phaser.Scene {
         this.add.text(CENTER_X, CENTER_Y - 60, message,
             { fontSize: '48px', fontFamily: HUD_FONT, color: '#c0392b' }).setOrigin(0.5);
         mkButton(CENTER_Y + 30, 'New Game', '#2f7050',
-            () => startGame((scoreTracker.games_played % 2 === 0) ? 'white' : 'black'));
+            () => startGame(nextCasualStarter()));
         mkButton(CENTER_Y + 96, 'New Match', '#3b6ea5', () => { abortAndClear(); showMatchSetup(); });
     }
 
