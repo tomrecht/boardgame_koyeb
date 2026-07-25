@@ -157,7 +157,8 @@ function _currentGame() {
 
 // ── TURN / THINKING INDICATOR ───────────────────────────────────────────
 function turnStatusText(game) {
-    if (!game || game.gameOver) return '';
+    // nothing to say before the player has started a game (welcome screen up)
+    if (!game || game.gameOver || _gameFrozen) return '';
     const p = game.turn;
     const isAI = (p === 'black' && BLACK_IS_AI) || (p === 'white' && WHITE_IS_AI);
     if (isAI) return 'Computer thinking…';
