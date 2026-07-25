@@ -4,7 +4,8 @@
 *.pkl
 *.pt
 *.pth
-.DS_Store.venv/
+.DS_Store
+.venv/
 .ipynb_checkpoints/
 __pycache__/
 replays/

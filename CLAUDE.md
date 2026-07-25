@@ -379,6 +379,73 @@ expected to self-resolve via the TD run.
 
 ## Current state
 
+- **SESSION UPDATE (2026-07-24/25) — FRONTEND OVERHAUL (branch
+  `frontend-overhaul`).** A large, professional GUI redesign of the web client,
+  entirely on `frontend-overhaul` (NOT merged to any training branch; the
+  training lineage above is untouched). Owner switching machines (iMac);
+  everything below is committed — resume on `frontend-overhaul`.
+  - **How to run/play it:** Flask serves the app at `localhost:10000`
+    (`.venv/bin/python app.py`); a static server on `:8000` also works for
+    frontend-only. The board is Phaser 3.55.2 (CDN) driven by `game.js`; the
+    AI still comes from the Flask `/select_moves` endpoint (`app.py` →
+    `agent_gnn`). Playwright + CDP was the test harness this session (drive
+    globals like `_setupGame()`, `startTutorial()`, inspect DOM overlays).
+  - **What shipped (all in `game.js` unless noted):**
+    - **8 themes** (Parchment/Slate/Forest/Dark/Rose/Ocean/Sand/Plum) + a
+      9th **High-Contrast CB-safe** (Okabe-Ito blue/orange). Chosen from a
+      settings `<select>`; persisted to localStorage; `?theme=` still works.
+      **Theme switching is LIVE** — no reload, no new game: `THEME` is a
+      mutable copy, `applyThemeLive()` recolours tiles (`Tile.applyThemeColors`),
+      background, goal numbers, HUD buttons (`makeHudButton` `recolor` hook +
+      `_themedRedraws` registry), and score line. Pieces/dice are
+      theme-neutral by design.
+    - **Difficulty slider** (settings) → sends `difficulty` with each AI
+      request; **backend**: `agent_gnn._pick_move_index` top-p samples over a
+      z-scored softmax (argmax at Max, weaker-but-never-silly below; draw
+      decisions always use the true best move), `app.py /select_moves` reads
+      `agent.difficulty`. Slider locked during a match.
+    - **Match system**: N-games-by-total-score OR race-to-a-target; random
+      first game then alternating starters; tiebreak score→wins→draw/extend;
+      per-match scoreline that resets. Setup modal (`showMatchSetup`),
+      match-aware EndGameScene.
+    - **Settings gear** (top-right) holds theme, difficulty, Play-vs-computer,
+      move/capture effects, auto-end-turn, confirm-risky-end-turn, and an
+      **Interactive tutorial** launcher. HUD buttons: New Game / New Match /
+      How to Play (New Game hidden during a match; New Match confirms).
+    - **Welcome / start screen** on first load (`showWelcome`): **Single game**
+      / **Play a match** / How to Play / Interactive tutorial. IMPORTANT design
+      fix: the first-load game is **frozen** (`_gameFrozen`; guards
+      `checkInitialAIReady` + the `switchTurn` AI trigger) so a black/AI opener
+      can't move behind the popup — Play runs the coin flip then starts a
+      *fresh* game (fresh dice/rack). `_startMatchFirstGame` likewise defers
+      `scene.start` until after the coin flip.
+    - **Interactive tutorial** (`startTutorial`, 6 scripted steps: enter /
+      move / capture / go-around-a-wall / save / free-play finish). Positions
+      self-configure via `getReachableTilesByDice`; instruction bubble
+      auto-advances on a polled success condition; Skip always available; AI
+      suppressed via `window._tutorialActive`.
+    - **Polish**: move-slide animation (`Piece.animateFrom`, snaps to exact
+      layout) + capture/save ring flash (`fxBurst`), both under the effects
+      toggle; turn/thinking status pill (`updateTurnStatus`); keyboard
+      shortcuts (Z undo / Enter·Space end / Esc deselect — Esc also returns a
+      tentatively-entered piece to its rack); first-run nudge; always-available
+      **legend** (`?`, bottom-right); sum-save gesture (reach goal + save in one
+      double-click/drag); no tile hover-highlight during the AI's turn.
+    - **Mobile** (`index.html`): pinch-zoom enabled, `touch-action:pinch-zoom`,
+      one-finger drag, portrait "rotate to landscape" hint.
+    - **How to Play**: sectioned scrollable DOM overlay; X-close top-right;
+      "hub" renamed → "home tile" throughout; colour-name references removed.
+  - **Reference docs added:** `OVERNIGHT_NOTES.md` (what shipped + GUI ideas +
+    hosting analysis + **name ideas incl. Latin/Greek §D2** + tutorial roadmap
+    §E) and `TODO.md` (durable parked items — headline: **ONNX export** for
+    cheap hosting, ~1.6MB model but torch is the size blocker; serve via
+    `onnxruntime` to fit a 512MB tier).
+  - **NOT yet done / open:** ONNX export (parked); a full manual
+    click-through of the tutorial on a real browser (positions + auto-advance
+    verified programmatically, but not hand-played); game name still undecided
+    (owner considering Latin/Greek — Sextant/Nostos/Hexad are the standout
+    picks). Frontend is NOT merged to `td-lambda`/training branches.
+
 - **SESSION UPDATE (2026-07-22).** Game-rule decision, branch consolidation,
   and repo cleanup. No training run active.
   - **RULE DECISION: adopt single-piece block-save; PARK the "numbered-only
