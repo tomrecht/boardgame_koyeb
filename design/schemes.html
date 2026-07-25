@@ -1,0 +1,96 @@
+<!doctype html><html><head><meta charset="utf8"><title>Colour schemes</title>
+<script src="geomdata.js"></script>
+<style>
+  body{margin:0;background:#20242b;color:#e7ebf2;font-family:"Segoe UI",system-ui,sans-serif}
+  h1{font-size:20px;margin:22px 30px 4px}
+  .sub{color:#95a0af;font-size:14px;margin:0 30px 18px;max-width:900px;line-height:1.5}
+  .grid{display:grid;grid-template-columns:repeat(2,1fr);gap:2px;background:#2c313a}
+  .cell{padding:0}
+  .cap{padding:12px 18px 4px;font-size:16px;font-weight:700}
+  .cap span{font-weight:400;color:#95a0af;font-size:13px}
+  canvas{width:100%;display:block}
+</style></head>
+<body>
+<h1>Board colour schemes — 4 suggestions</h1>
+<div class="sub">Same geometry and Clean-Modern layout; only the palette changes (background, goal fill, hub, tile borders, and the HUD accent shown on the sample button + dice). All goals a single colour, as requested. Pick one (or mix — e.g. a palette's background with another's goal) and I'll wire it into game.js.</div>
+<div class="grid" id="grid"></div>
+<script>
+const SCHEMES = [
+  { name:'Slate & Amber', note:'cooler, refined take on the current look',
+    bg:'#dfe3ea', field:'#ffffff', border:'#1e2733', grid:'#1e2733',
+    goal:'#4a86c5', goalNum:'#0e1720', hub:'#ffcf5c', hubRing:'#e0a92e',
+    accent:'#35618e', accentInk:'#ffffff' },
+  { name:'Warm Parchment', note:'physical-tabletop, cream + terracotta',
+    bg:'#ece3d3', field:'#fffdf8', border:'#43392c', grid:'#43392c',
+    goal:'#c8663f', goalNum:'#3a2418', hub:'#2f9e8f', hubRing:'#1f7568',
+    accent:'#b5623b', accentInk:'#ffffff' },
+  { name:'Forest & Gold', note:'calm sage + green with gold hub',
+    bg:'#e1e8e0', field:'#ffffff', border:'#20302a', grid:'#20302a',
+    goal:'#3f8a5c', goalNum:'#0e1f16', hub:'#e8b23a', hubRing:'#c48f22',
+    accent:'#2f7050', accentInk:'#ffffff' },
+  { name:'Dark Slate', note:'dark theme — light tiles on a deep board',
+    bg:'#232a33', field:'#eef2f7', border:'#0c1117', grid:'#c3ccd8',
+    goal:'#3fb1c8', goalNum:'#08222a', hub:'#f0b44a', hubRing:'#c98f2c',
+    accent:'#3fb1c8', accentInk:'#06222a', darkText:true },
+];
+const CX=BOARD.cx, CY=BOARD.cy;
+const maxOuter=Math.max(...GEOM.tiles.map(t=>t.outerRadius));
+const TMAP={}; GEOM.tiles.forEach(t=>TMAP[t.ring+'_'+t.sector]=t);
+const typeAt=(r,s)=>(TMAP[r+'_'+s]||{}).type;
+
+function drawScheme(cv, P){
+  const ctx=cv.getContext('2d');
+  const M=46, R=maxOuter+M;
+  cv.width=cv.height=2*R;
+  const ox=R-CX, oy=R-CY;                    // board (900,640) -> canvas centre
+  const cx0=CX+ox, cy0=CY+oy;
+  const pt=(r,a)=>[cx0+r*Math.cos(a), cy0+r*Math.sin(a)];
+  ctx.fillStyle=P.bg; ctx.fillRect(0,0,cv.width,cv.height);
+  const wedge=(t,c)=>{ctx.beginPath();ctx.arc(cx0,cy0,t.outerRadius,t.startAngle,t.endAngle);
+    ctx.arc(cx0,cy0,t.innerRadius,t.endAngle,t.startAngle,true);ctx.closePath();ctx.fillStyle=c;ctx.fill();};
+  const edges=(t,drawOuter)=>{ctx.strokeStyle=P.grid;ctx.lineWidth=1.6;ctx.lineCap='round';
+    ctx.beginPath();ctx.arc(cx0,cy0,t.innerRadius,t.startAngle,t.endAngle);ctx.stroke();
+    if(drawOuter){ctx.beginPath();ctx.arc(cx0,cy0,t.outerRadius,t.startAngle,t.endAngle);ctx.stroke();}
+    for(const a of [t.startAngle,t.endAngle]){const [x1,y1]=pt(t.innerRadius,a),[x2,y2]=pt(t.outerRadius,a);
+      ctx.beginPath();ctx.moveTo(x1,y1);ctx.lineTo(x2,y2);ctx.stroke();}};
+  for(const t of GEOM.tiles) if(t.type==='field') wedge(t,P.field);
+  for(const t of GEOM.tiles) if(t.type==='field') edges(t, ['field','save'].includes(typeAt(t.ring+1,t.sector)));
+  for(const t of GEOM.tiles){ if(t.type!=='save')continue; wedge(t,P.goal);
+    edges(t,false);
+    const gr=t.outerRadius+30, [gx,gy]=pt(gr,(t.startAngle+t.endAngle)/2);
+    ctx.fillStyle=P.goalNum; ctx.font='800 46px "Segoe UI",sans-serif';
+    ctx.textAlign='center'; ctx.textBaseline='middle'; ctx.fillText(t.number,gx,gy);}
+  const h=GEOM.tiles.find(t=>t.type==='home');
+  ctx.beginPath();ctx.arc(cx0,cy0,h.outerRadius,0,7);ctx.fillStyle=P.hub;ctx.fill();
+  ctx.lineWidth=5;ctx.strokeStyle=P.hubRing;ctx.stroke();
+  // sample pieces
+  const sphere=(bx,by,white,label)=>{const [x,y]=[bx+ox,by+oy],r=20;
+    const g=ctx.createRadialGradient(x-r*.32,y-r*.4,r*.2,x,y,r);
+    if(white){g.addColorStop(0,'#fff');g.addColorStop(1,'#e7ebf0');}else{g.addColorStop(0,'#000');g.addColorStop(1,'#000');}
+    ctx.save();ctx.shadowColor='rgba(0,0,0,.3)';ctx.shadowBlur=5;ctx.shadowOffsetY=2;
+    ctx.beginPath();ctx.arc(x,y,r,0,7);ctx.fillStyle=g;ctx.fill();ctx.restore();
+    ctx.lineWidth=2;ctx.strokeStyle=white?'#5b6472':'#0a0b0d';ctx.stroke();
+    if(label){ctx.fillStyle=white?'#28313b':'#fff';ctx.font='700 24px "Segoe UI",sans-serif';
+      ctx.textAlign='center';ctx.textBaseline='middle';ctx.fillText(label,x,y);}};
+  sphere(CX+150,CY-40,true,'3'); sphere(CX+195,CY-40,false,'5'); sphere(CX-260,CY+120,true,'1');
+  // accent button + dice swatch
+  const bx=ox+CX-250, by=oy+CY-maxOuter-6;
+  const rr=(x,y,w,h,r,c)=>{ctx.beginPath();ctx.moveTo(x+r,y);ctx.arcTo(x+w,y,x+w,y+h,r);ctx.arcTo(x+w,y+h,x,y+h,r);
+    ctx.arcTo(x,y+h,x,y,r);ctx.arcTo(x,y,x+w,y,r);ctx.closePath();ctx.fillStyle=c;ctx.fill();};
+  rr(bx,by,150,46,10,P.accent); ctx.fillStyle=P.accentInk;ctx.font='700 20px "Segoe UI",sans-serif';
+  ctx.textAlign='center';ctx.textBaseline='middle';ctx.fillText('New Game',bx+75,by+23);
+  const die=(x,y,brd)=>{rr(x,y,60,60,12,'#ffffff');ctx.lineWidth=4;ctx.strokeStyle=brd;
+    ctx.beginPath();ctx.moveTo(x+12,y);ctx.arcTo(x+60,y,x+60,y+60,12);ctx.arcTo(x+60,y+60,x,y+60,12);
+    ctx.arcTo(x,y+60,x,y,12);ctx.arcTo(x,y,x+60,y,12);ctx.stroke();
+    ctx.fillStyle='#28313b';[[20,20],[40,40],[30,30]].forEach(([dx,dy])=>{ctx.beginPath();ctx.arc(x+dx,y+dy,5,0,7);ctx.fill();});};
+  die(bx+180,by-6,'#40E0D0'); die(bx+252,by-6,'#FFC0CB');
+}
+const grid=document.getElementById('grid');
+SCHEMES.forEach(P=>{
+  const cell=document.createElement('div'); cell.className='cell';
+  cell.innerHTML=`<div class="cap">${P.name} <span>— ${P.note}</span></div>`;
+  const cv=document.createElement('canvas'); cell.appendChild(cv); grid.appendChild(cell);
+  drawScheme(cv,P);
+});
+</script>
+</body></html>

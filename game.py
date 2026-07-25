@@ -4,6 +4,9 @@ import json
 import itertools
 
 NUM_PIECES = 12
+# After this many two-player turns with no save (once both players are in
+# midgame), either player may call a draw. Easily tunable.
+NO_SAVE_TURNS_FOR_DRAW = 10
 
 class Die:
     def __init__(self, board):
@@ -77,6 +80,17 @@ class Board:
         self.piece_lookup = {(p.player, p.number): p for p in self.pieces}
         self.firstMove = None
         self.moves = []
+        # No-save draw rule (counts FULL ROUNDS = two player-turns). The
+        # counter is maintained here in switch_turn so it works for every play
+        # path including agent-vs-agent self-play and RL (no frontend needed).
+        # A "save" is any increase in total saved pieces (own save or saving an
+        # opponent's block); any save resets the streak. Counting only runs
+        # once both players have left the opening (both_in_midgame).
+        self.no_save_turns = 0          # completed rounds with no save
+        self.draw_callable = False
+        self._last_total_saved = 0      # snapshot of saved count at last turn boundary
+        self._half_turns_since_round = 0  # 2 player-turns = 1 round
+        self.draw_called = False
         self._distance_cache = {}
         self._blot_cache = {}          # NEW: cache for count_enemy_blots_on_shortest_path
         self._reachable_cache = {}
@@ -85,26 +99,33 @@ class Board:
         self.endgame_reward_applied = {'white': False, 'black': False}
         self.offgoals = {'white': 0, 'black': 0}
 
+    def both_in_midgame(self):
+        """True once neither player has pieces left in their unentered rack
+        (i.e. both have left the opening). The no-save draw counter only runs
+        from this point on."""
+        return len(self.white_unentered) == 0 and len(self.black_unentered) == 0
 
-    def all_goal_distances(self, piece):
-        """
-        Return dict {goal_num: distance} for goals 1-6.
-        """
-        distances = {}
-        
-        # Get the tile for each goal (assumes goal tiles exist)
-        # This assumes you have goal tiles indexed 1-6
-        for goal_num in range(1, 7):
-            try:
-                # Try to find the goal tile for this goal number
-                goal_tile = next(t for t in self.tiles if t.type == 'save' and t.index == goal_num)
-                # Use get_reachable_tiles to compute distance
-                dist = self.shortest_route_to_tile(piece.tile, goal_tile) if piece.tile else float('inf')
-                distances[goal_num] = dist if dist is not None else float('inf')
-            except StopIteration:
-                distances[goal_num] = float('inf')
-        
-        return distances
+    def total_saved(self):
+        return len(self.white_saved) + len(self.black_saved)
+
+    def update_no_save_counter(self):
+        """Called once per player-turn at the real turn boundary (switch_turn).
+        Resets the streak on any save; otherwise advances the round counter
+        (2 player-turns = 1 round) once both players are in midgame. Robust to
+        the agent's apply/undo search, which never calls switch_turn and leaves
+        total_saved() unchanged across a probe+undo."""
+        current_saved = self.total_saved()
+        if current_saved > self._last_total_saved:
+            # A piece was saved during the turn that just ended -> reset streak.
+            self.no_save_turns = 0
+            self._half_turns_since_round = 0
+        elif self.both_in_midgame():
+            self._half_turns_since_round += 1
+            if self._half_turns_since_round >= 2:
+                self._half_turns_since_round = 0
+                self.no_save_turns += 1
+        self._last_total_saved = current_saved
+        self.draw_callable = self.no_save_turns >= NO_SAVE_TURNS_FOR_DRAW
 
     def __repr__(self):
         board_repr = "White unentered: " + str(self.white_unentered) + "\n"
@@ -178,6 +199,12 @@ class Board:
 
     def update_state(self, game_state_details):
         self.current_player = game_state_details['currentTurn']
+        # BUGFIX: this was never invalidated here, so a reused Board (training
+        # target/input encoding loops over records, and the Flask app between
+        # requests) kept the PREVIOUS state's blocked-tile snapshot -- distance
+        # features were then computed against stale blocking. The bk-keyed
+        # value caches (_distance_cache etc.) stay valid once the key is fresh.
+        self._blocked_key_cache.clear()
         self.clear()
         for die, die_details in zip(self.dice, game_state_details['dice']):
             die.number = die_details['value']
@@ -216,6 +243,18 @@ class Board:
         self.game_stages['black'] = self.get_game_stage('black')
         self.apply_last_piece_rule()
 
+        # In live play the frontend owns the live no-save counter (so it can
+        # reset instantly on a save and be undo-sensitive). Adopt whatever it
+        # reports if present; fall back to this board's own counter otherwise
+        # (e.g. agent-vs-agent paths that never go through update_state).
+        if 'noSaveTurns' in game_state_details:
+            self.no_save_turns = int(game_state_details.get('noSaveTurns', 0))
+            self.draw_callable = bool(game_state_details.get(
+                'drawCallable', self.no_save_turns >= NO_SAVE_TURNS_FOR_DRAW))
+            self._half_turns_since_round = 0
+        # keep the saved-count snapshot consistent with the rebuilt board
+        self._last_total_saved = self.total_saved()
+
     def assign_tile_indices(self):
         for i in range(len(self.tiles)):
             self.tiles[i].index = i
@@ -239,13 +278,17 @@ class Board:
         self._blot_cache.clear()      # clear blot cache
         self._reachable_cache.clear()
         self._blocked_key_cache.clear()
+        self.update_no_save_counter()
         self.firstMove = None  
         for die in self.dice:
             die.roll()
         self.current_player = 'white' if self.current_player == 'black' else 'black'
         self.apply_last_piece_rule()
+        
 
     def check_game_over(self):
+        if self.draw_called:
+            return 'draw', 0
         white_saved_count = len(self.white_saved)
         black_saved_count = len(self.black_saved)
         if white_saved_count == NUM_PIECES:
@@ -364,9 +407,7 @@ class Board:
             if unentered_piece:
                 player_pieces.append(unentered_piece)
 
-            # Deduplicate: among unnumbered pieces (number > 6) on the same tile since they're interchangeable
-            # first try this only for second move (firstMove is not None) to reduce possible bugs
-         #   if self.firstMove is not None:
+            # Deduplicate among unnumbered pieces (number > 6) on the same tile since they're interchangeable
             deduped = []
             seen_tiles = {}
             for piece in player_pieces:
@@ -392,21 +433,26 @@ class Board:
                         else:
                             tuples_list.append(((piece.player, piece.number), (destination.ring, destination.pos), roll))
         if not captured_pieces and not self.must_move_unentered():
-            tuples_list.append((0, 0, 0))
-            if (not self.dice[0].used and not self.dice[1].used 
+            tuples_list.append((0, 0, 0))   # add the pass move
+            # add single-piece block-save moves: peel ONE opponent piece off a
+            # block (a 2+ opponent stack on a field tile) into their own saved
+            # rack, at the cost of both dice. One move PER PIECE on the block --
+            # the attacker chooses which piece to gift (and thus which piece
+            # remains). Peeling one off a 2-stack leaves a blot (unblocks the
+            # route); off a 3+ stack leaves a smaller stack (still blocks).
+            if (not self.dice[0].used and not self.dice[1].used
                     and self.game_stages[self.current_player] != 'opening'
                     and not captured_pieces
                     and not self.must_move_unentered()):
-                opponent_pieces_on_blocks = [p for p in self.pieces 
-                    if p.player != self.current_player 
-                    and p.tile 
+                opponent_pieces_on_blocks = [p for p in self.pieces
+                    if p.player != self.current_player
+                    and p.tile
                     and p.tile.type == 'field'
                     and len(p.tile.pieces) > 1]
-                seen_tiles = set()
                 for piece in opponent_pieces_on_blocks:
-                    if piece.tile not in seen_tiles:
-                        seen_tiles.add(piece.tile)
-                        tuples_list.append(((piece.player, piece.number), 0, 0))
+                    tuples_list.append(((piece.player, piece.number), 0, 0))
+        if (not self.dice[0].used and not self.dice[1].used) and self.draw_callable:
+            tuples_list.append((1, 1, 1))   # add calling a draw
         return tuples_list
 
     def save_move(self, move, origin_tile=None, origin_rack=None, captured_piece=None, firstMove_before=None):
@@ -425,9 +471,18 @@ class Board:
         if not self.moves:
             return
         last_move = self.moves.pop()
+        # _distance_cache entries embed the blocked frozenset in their keys,
+        # making them pure functions of (start, player, class, blocking) --
+        # piece positions don't otherwise affect route distances. apply_move
+        # already relies on exactly this purity (it too keeps the distance
+        # cache), so keeping the entries lets the 2-ply search reuse BFS
+        # results across all of a turn's candidates instead of recomputing
+        # per undo. _blot_cache does NOT get this treatment: its key reuses
+        # the distance key, but blot counts depend on single-piece placements
+        # the blocked set doesn't capture, so it must stay conservatively
+        # cleared here.
         self._blocked_key_cache.clear()
-        self._distance_cache.clear()
-        self._blot_cache.clear()   # clear blot cache
+        self._blot_cache.clear()
         piece = last_move['piece']
         origin_tile = last_move['origin_tile']
         origin_rack = last_move['origin_rack']
@@ -446,6 +501,18 @@ class Board:
             piece.rack = None
             piece.tile = origin_tile
             origin_tile.pieces.append(piece)
+            # BUGFIX: block-saves marked BOTH dice used on apply, but their
+            # roll is 0, which can never match a die number in the generic
+            # unmark below -- so undoing a block-save left both dice
+            # permanently 'used'. Every search that probed a block-save
+            # candidate then ran the rest of its enumeration with corrupted
+            # dice (dropping all two-move pairs and mis-encoding used-flags).
+            # Block-saves are only legal when both dice are unused
+            # (get_valid_moves gates on exactly that), so unconditionally
+            # clearing both is exact; repeated clears while unwinding the
+            # rest of the block's per-piece entries are harmless no-ops.
+            self.dice[0].used = False
+            self.dice[1].used = False
         else:
             new_tile = self.get_tile(*destination)
             new_tile.pieces.remove(piece)
@@ -465,7 +532,17 @@ class Board:
         elif roll == self.dice[1].number and self.dice[1].used:
             self.dice[1].used = False
         self.firstMove = last_move['firstMove_before']
-        self.current_player = piece.player
+        if destination == 0:
+            # BUGFIX: block-save records carry the SAVED pieces' ids, which
+            # belong to the mover's OPPONENT -- restoring current_player to
+            # piece.player handed the turn to the wrong side after any
+            # probed block-save was undone, so every search that enumerated
+            # a block-save candidate then generated the wrong player's
+            # moves as follow-ups (and could select an illegal pair).
+            # Sibling of the block-save dice bug fixed above.
+            self.current_player = 'white' if piece.player == 'black' else 'black'
+        else:
+            self.current_player = piece.player
         if destination == 'save' or origin_rack is not None:
             self.game_stages[self.current_player] = self.get_game_stage(self.current_player)
 
@@ -479,27 +556,32 @@ class Board:
             if switch_turn:
                 self.current_player = 'white' if self.current_player == 'black' else 'black'
             return
+        if move == (1, 1, 1):                    # call a draw (no piece involved)
+            self.draw_called = True
+            return
         firstMove_before = self.firstMove
         self._blocked_key_cache.clear()
         piece = self.piece_lookup.get(piece_id)
         if not piece:
             print(f"No piece found for {piece_id}")
             return
-        if destination == 0 and roll == 0:
+        if destination == 0 and roll == 0:      # save ONE opponent piece from a block
+            # Peel exactly the named piece off the block into the opponent's own
+            # saved rack (a sacrifice by the mover). Costs both dice. Pushes a
+            # single undo record; the destination==0 branch of undo_last_move
+            # already restores exactly one piece to origin_tile.
             saved_rack = self.white_saved if piece.player == 'white' else self.black_saved
             origin_tile = piece.tile
-            block_pieces = origin_tile.pieces[:]
-            for p in block_pieces:
-                origin_tile.pieces.remove(p)
-                p.tile = None
-                p.rack = saved_rack
-                saved_rack.append(p)
-                self.save_move(((p.player, p.number), 0, 0), origin_tile, None, None, firstMove_before)
+            origin_tile.pieces.remove(piece)
+            piece.tile = None
+            piece.rack = saved_rack
+            saved_rack.append(piece)
+            self.save_move(((piece.player, piece.number), 0, 0), origin_tile, None, None, firstMove_before)
             for die in self.dice:
                 die.used = True
             self.game_stages[self.current_player] = self.get_game_stage(self.current_player)
             return
-        elif destination == 'save':
+        elif destination == 'save':             # save a piece
             saved_rack = self.white_saved if piece.player == 'white' else self.black_saved
             saved_rack.append(piece)
             if piece.tile:
@@ -508,7 +590,7 @@ class Board:
             piece.tile = None
             piece.rack = saved_rack
             self.game_stages[self.current_player] = self.get_game_stage(self.current_player)
-        else:
+        else:                                   # move a piece
             ring, pos = destination
             new_tile = self.get_tile(ring, pos)
             if piece.rack:
@@ -546,9 +628,10 @@ class Board:
         if piece.can_be_saved():
             return 0
         start_tile = piece.tile if piece.tile else self.home_tile
-        cache_key = (start_tile.index, piece.player, 
+        blocked_key = self._get_blocked_key(piece.player)
+        cache_key = (start_tile.index, piece.player,
                      piece.number if piece.number <= 6 else 'any',
-                     self._get_blocked_key(piece.player))
+                     blocked_key)
         if cache_key in self._distance_cache:
             return self._distance_cache[cache_key]
         queue = deque([(start_tile, 0)])
@@ -561,7 +644,9 @@ class Board:
                     if neighbor.type == 'save' and (piece.number > 6 or piece.number == neighbor.number):
                         self._distance_cache[cache_key] = distance + 1
                         return distance + 1
-                    if neighbor.type not in ['nogo', 'home'] and not neighbor.is_blocked(piece.player):
+                    # blocked_key IS the frozenset of blocked tile indices for
+                    # this player, so membership == is_blocked (and is O(1))
+                    if neighbor.type not in ['nogo', 'home'] and neighbor.index not in blocked_key:
                         queue.append((neighbor, distance + 1))
         self._distance_cache[cache_key] = float('inf')
         return float('inf')
@@ -589,15 +674,26 @@ class Board:
                 result[piece.tile.number] = 0
             return result
 
-        # Numbered piece can only reach its own goal
+        # Numbered piece can only reach its own goal. Cache the result dict
+        # like the unnumbered path does (callers only read it) -- rebuilding
+        # it per call was pure overhead at millions of calls per game.
         if piece.number <= 6:
+            blocked_key = self._get_blocked_key(piece.player)
+            cache_key = ('num_goals', piece.tile.index if piece.tile else -1,
+                         piece.player, piece.number, blocked_key)
+            cached = self._distance_cache.get(cache_key)
+            if cached is not None:
+                return cached
             dist = self.shortest_route_to_goal(piece)
-            return {n: (dist if n == piece.number else float('inf'))
-                    for n in goal_numbers}
+            full_result = {n: (dist if n == piece.number else float('inf'))
+                           for n in goal_numbers}
+            self._distance_cache[cache_key] = full_result
+            return full_result
 
         # Unnumbered piece: single BFS collecting all 6 goal distances
+        blocked_key = self._get_blocked_key(piece.player)
         cache_key = ('all_goals', piece.tile.index if piece.tile else -1,
-                     piece.player, self._get_blocked_key(piece.player))
+                     piece.player, blocked_key)
         if cache_key in self._distance_cache:
             return self._distance_cache[cache_key]
 
@@ -613,7 +709,7 @@ class Board:
                     visited.add(neighbor)
                     if neighbor.type == 'save' and neighbor.number not in result:
                         result[neighbor.number] = distance + 1
-                    if neighbor.type not in ['nogo', 'home'] and not neighbor.is_blocked(piece.player):
+                    if neighbor.type not in ['nogo', 'home'] and neighbor.index not in blocked_key:
                         queue.append((neighbor, distance + 1))
 
         # Fill unreachable goals with inf
@@ -713,119 +809,6 @@ class Board:
                 new_key = (piece.player, piece.number)
                 self.piece_lookup[new_key] = piece
 
-    def get_all_possible_moves(self):
-        destination_tiles = [tile.index for tile in self.tiles if tile.type in ['field','save']]
-        pieces = range(len(self.pieces))
-        all_possible_moves = list(itertools.product(pieces, destination_tiles))
-        all_possible_moves.insert(0, (0, 0))
-        for destination in destination_tiles:
-            all_possible_moves.append((0, destination))
-        return all_possible_moves
-        
-    def encode_state(self):
-        def normalize(value, min_val, max_val):
-            return (value - min_val) / (max_val - min_val)
-        player = self.current_player
-        opponent = 'white' if player == 'black' else 'black'
-        player_saved_rack = self.white_saved if player == 'white' else self.black_saved
-        opponent_saved_rack = self.white_saved if player == 'black' else self.black_saved
-        player_unentered_rack = self.white_unentered if player == 'white' else self.black_unentered
-        opponent_unentered_rack = self.white_unentered if player == 'black' else self.black_unentered
-        player_pieces = [piece for piece in self.pieces if piece.player == player]
-        opponent_pieces = [piece for piece in self.pieces if piece.player == opponent]
-        state = []
-        for piece in player_pieces:
-            if piece in player_unentered_rack:
-                rack_position = player_unentered_rack.index(piece)
-                state.append(normalize(rack_position, 0, 100)) 
-            elif piece in player_saved_rack:
-                state.append(1)
-            else:
-                tile_position = piece.tile.index + 28
-                state.append(normalize(tile_position, 0, 100))
-        for piece in opponent_pieces:
-            if piece in opponent_unentered_rack:
-                rack_position = opponent_unentered_rack.index(piece) + NUM_PIECES
-                state.append(normalize(rack_position, 0, 100)) 
-            elif piece in opponent_saved_rack:
-                state.append(1)
-            else:
-                tile_position = piece.tile.index + 28           
-                state.append(normalize(tile_position, 0, 100))
-        for rack in [player_saved_rack, opponent_saved_rack]:
-            state.append(normalize(len(rack), 0, NUM_PIECES))
-        for tile in self.tiles:
-            if tile.type == 'field':
-                state.append(int(tile.is_blocked() == True))
-        for player in [player, opponent]:
-            stage = self.game_stages[player]
-            state.append(0 if stage == 'opening' else 0.5 if stage == 'midgame' else 1)
-        for die in self.dice:
-            state.append(normalize(die.number, 1, 6) if die.used else 0)
-        return state
-
-    def step(self, move_and_player, transition_factor=0.1):
-        piece, destination, roll, player = move_and_player
-        move = (piece, destination, roll)
-        if move == (0, 0, 0):
-            self.apply_move(move)
-            next_state = self.encode_state()
-            reward = 0
-            done = False
-            return next_state, reward, done
-        piece_object = next((p for p in self.pieces if (p.player, p.number) == piece), None)
-        start_distance_to_goal = self.shortest_route_to_goal(piece_object)
-        start_within_reach = True if start_distance_to_goal <= 6 else False
-        intermediate_reward = 0
-        if destination == 'save':
-            intermediate_reward += 5000             
-            if piece_object.number <= 6:
-                intermediate_reward += piece_object.number * 1000
-        if isinstance(destination, tuple):   
-            tile = self.get_tile(*destination)
-            if piece_object.can_be_saved() and tile.type != 'save':
-                self.offgoals[player] += 1
-                print("Offgoal. Move:", move, self.game_stages[player], piece, piece_object.rack, piece_object.tile, tile, roll)
-                intermediate_reward -= 30000
-                if piece_object.number <= 6:
-                    intermediate_reward -= piece_object.number * 6000
-            if tile.pieces and tile.pieces[0].player != player:
-                intermediate_reward += 500
-            elif tile.pieces and len(tile.pieces) == 1:
-                intermediate_reward += 500
-        self.apply_move(move)
-        winner, score = self.check_game_over()
-        next_state = self.encode_state()
-        if score is None:
-            score = 0
-        if winner:
-            print(f"*** Game over! {winner} wins with a score of {score}.")
-            done = True
-            reward = score * 1000000 if winner == player else score * -1000000
-            return next_state, reward, done
-        if isinstance(destination, tuple):   
-            if piece_object.can_be_saved():
-                intermediate_reward += 5000             
-                if piece_object.number <= 6:
-                    intermediate_reward += piece_object.number * 1000
-                self.game_stages[player] = self.get_game_stage(player)
-                if self.game_stages[player] == 'endgame' and not self.endgame_reward_applied[player]:
-                    intermediate_reward += 50000
-                    self.endgame_reward_applied[player] = True
-            else:
-                end_distance_to_goal = self.shortest_route_to_goal(piece_object)
-                end_within_reach = True if end_distance_to_goal <= 6 else False
-                if not start_within_reach and end_within_reach:
-                    intermediate_reward += 1000
-                    if piece_object.number <= 6:
-                        intermediate_reward -= piece_object.number * 200
-                elif start_within_reach and not end_within_reach:
-                    intermediate_reward -= 1000
-                    if piece_object.number <= 6:
-                        intermediate_reward -= piece_object.number * 200
-        reward = (1 - transition_factor) * intermediate_reward + transition_factor * score
-        done = False   
-        return next_state, reward, done
 
 def text_interface(board):
     while True:

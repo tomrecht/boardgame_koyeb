@@ -1,0 +1,187 @@
+<!doctype html><html><head><meta charset="utf8"><title>Clean Modern</title>
+<script src="geomdata.js"></script>
+<style>
+  :root{
+    --bg:#eef1f4; --ink:#28313b; --muted:#8b95a3;
+    --panel:#ffffff; --panelBorder:#dbe1ea; --panelInk:#28313b;
+    --accent:#3b6ea5; --accentInk:#fff;
+    --font:"Segoe UI",system-ui,-apple-system,sans-serif;
+  }
+  *{box-sizing:border-box}
+  html,body{margin:0;height:100%}
+  body{background:var(--bg);color:var(--ink);font-family:var(--font);overflow:hidden}
+  .app{display:flex;flex-direction:column;height:100vh}
+  .header{flex:0 0 auto;height:82px;display:flex;align-items:center;gap:18px;padding:0 30px}
+  .title{font-weight:700;font-size:21px;letter-spacing:-.01em;margin-right:auto}
+  .dice{display:flex;gap:9px}
+  .die{width:44px;height:44px;border-radius:10px;background:var(--panel);border:1px solid var(--panelBorder);
+       box-shadow:0 2px 6px rgba(0,0,0,.10);position:relative}
+  .die.active{border-color:var(--accent);box-shadow:0 0 0 2px rgba(59,110,165,.25)}
+  .pip{position:absolute;width:7px;height:7px;border-radius:50%;background:var(--ink);transform:translate(-50%,-50%)}
+  .btn{font-family:var(--font);font-weight:600;font-size:14px;padding:9px 16px;border-radius:9px;border:none;cursor:pointer;
+       background:var(--accent);color:var(--accentInk);box-shadow:0 2px 6px rgba(0,0,0,.12)}
+  .btn.ghost{background:var(--panel);color:var(--panelInk);border:1px solid var(--panelBorder);box-shadow:none}
+  .main{flex:1 1 auto;display:grid;grid-template-columns:186px minmax(0,1fr) 186px;gap:14px;align-items:center;
+        padding:2px 24px;min-height:0}
+  .board-wrap{grid-column:2;justify-self:center;align-self:center;height:100%;width:100%;display:grid;place-items:center;min-height:0;min-width:0}
+  canvas{max-width:100%;max-height:calc(100vh - 164px);object-fit:contain}
+  .panel{background:var(--panel);border:1px solid var(--panelBorder);border-radius:15px;
+         box-shadow:0 6px 22px rgba(0,0,0,.08),0 1px 2px rgba(0,0,0,.05);padding:14px}
+  .rack .who{display:flex;align-items:center;gap:8px;font-weight:600;font-size:15px;color:var(--panelInk);margin-bottom:11px}
+  .swatch{width:15px;height:15px;border-radius:50%;box-shadow:inset 0 -1px 2px rgba(0,0,0,.25)}
+  .swatch.w{background:radial-gradient(circle at 35% 28%,#fff,#dfe3e8)}
+  .swatch.b{background:radial-gradient(circle at 35% 28%,#5a5a5a,#161616)}
+  .tray{display:grid;grid-template-columns:repeat(3,1fr);gap:7px}
+  .cell{aspect-ratio:1;border-radius:50%}
+  .cell.empty{border:1.5px dashed var(--panelBorder)}
+  .pc{width:100%;aspect-ratio:1;border-radius:50%;display:grid;place-items:center;font-weight:700;font-size:15px}
+  .pc.w{background:radial-gradient(circle at 34% 27%,#fff,#e7ebf0);color:#28313b;
+        box-shadow:inset 0 -2px 4px rgba(0,0,0,.12),0 2px 4px rgba(0,0,0,.18)}
+  .pc.b{background:radial-gradient(circle at 34% 27%,#5c5c5c,#171717);color:#fff;
+        box-shadow:inset 0 -2px 4px rgba(0,0,0,.4),0 2px 4px rgba(0,0,0,.28)}
+  .sub{font-size:11.5px;color:var(--muted);text-transform:uppercase;letter-spacing:.05em;margin:13px 0 7px}
+  .tray.saved{background:rgba(0,0,0,.035);border-radius:10px;padding:8px;min-height:46px}
+  .footer{flex:0 0 auto;height:58px;display:flex;align-items:center;justify-content:space-between;padding:0 30px}
+  .status{font-size:14px;color:var(--muted)} .status b{color:var(--ink)}
+  .turn{display:flex;align-items:center;gap:9px;font-weight:600;font-size:15px}
+  .turn .dot{width:15px;height:15px;border-radius:50%}
+</style></head>
+<body>
+<div class="app">
+  <div class="header">
+    <div class="title" id="title">Hub &amp; Spoke</div>
+    <div class="dice"><div class="die active" id="d1"></div><div class="die" id="d2"></div></div>
+    <button class="btn">New Game</button>
+    <button class="btn ghost">How to Play</button>
+  </div>
+  <div class="main">
+    <div class="panel rack" style="grid-column:1">
+      <div class="who"><span class="swatch w"></span>White</div>
+      <div class="tray" id="wrack"></div>
+      <div class="sub">Saved</div><div class="tray saved" id="wsaved"></div>
+    </div>
+    <div class="board-wrap"><canvas id="c"></canvas></div>
+    <div class="panel rack" style="grid-column:3">
+      <div class="who"><span class="swatch b"></span>Black</div>
+      <div class="tray" id="brack"></div>
+      <div class="sub">Saved</div><div class="tray saved" id="bsaved"></div>
+    </div>
+  </div>
+  <div class="footer">
+    <div class="status">Games <b>3</b> · White <b>2</b> · Black <b>1</b> · Draws <b>0</b></div>
+    <div class="turn"><span class="dot" id="turndot"></span> <span id="turntxt">Black to move</span></div>
+  </div>
+</div>
+
+<script>
+const V = (new URLSearchParams(location.search).get('v')||'a').toLowerCase();
+// ---- palette (version a = light; version b = background+nogo black) ----
+const goalColors={1:'#e15b64',2:'#f0a04b',3:'#f7d154',4:'#66b26a',5:'#4a90d9',6:'#9b6dc9'};
+const P = (V==='b')
+ ? {bg:'#000000', field:'#ffffff', grid:'#d7dde6', nogo:'#000000',
+    home:'#ffd24d', homeRing:'#e3ad1e', onbgInk:'#eef1f4', onbgMuted:'#9aa3b0'}
+ : {bg:'#eef1f4', field:'#ffffff', grid:'#d3dae4', nogo:'#eef1f4',
+    home:'#ffd24d', homeRing:'#e9b21e', onbgInk:'#28313b', onbgMuted:'#8b95a3'};
+document.documentElement.style.setProperty('--bg', P.bg);
+document.documentElement.style.setProperty('--ink', P.onbgInk);
+document.documentElement.style.setProperty('--muted', P.onbgMuted);
+
+// ---- board render ----
+const cv=document.getElementById('c'), ctx=cv.getContext('2d');
+const maxOuter=Math.max(...GEOM.tiles.map(t=>t.outerRadius));
+const R=maxOuter+42; cv.width=cv.height=2*R;
+const OX=R-BOARD.cx, OY=R-BOARD.cy;
+const CX=BOARD.cx+OX, CY=BOARD.cy+OY;
+const key=(r,s)=>r+'_'+s;
+const TMAP={}; GEOM.tiles.forEach(t=>TMAP[key(t.ring,t.sector)]=t.type);
+const beyond=(t)=>{const x=TMAP[key(t.ring+1,t.sector)]; return x==='field'||x==='save';};
+function pt(r,a){return [CX+r*Math.cos(a), CY+r*Math.sin(a)];}
+function fillWedge(t,color){
+  ctx.beginPath();
+  ctx.arc(CX,CY,t.outerRadius,t.startAngle,t.endAngle);
+  ctx.arc(CX,CY,t.innerRadius,t.endAngle,t.startAngle,true);
+  ctx.closePath(); ctx.fillStyle=color; ctx.fill();
+}
+function strokeEdges(t,drawOuter){
+  ctx.strokeStyle=P.grid; ctx.lineWidth=1.4; ctx.lineCap='round';
+  // inner arc
+  ctx.beginPath(); ctx.arc(CX,CY,t.innerRadius,t.startAngle,t.endAngle); ctx.stroke();
+  if(drawOuter){ ctx.beginPath(); ctx.arc(CX,CY,t.outerRadius,t.startAngle,t.endAngle); ctx.stroke(); }
+  // radial edges
+  for(const a of [t.startAngle,t.endAngle]){
+    const [x1,y1]=pt(t.innerRadius,a),[x2,y2]=pt(t.outerRadius,a);
+    ctx.beginPath(); ctx.moveTo(x1,y1); ctx.lineTo(x2,y2); ctx.stroke();
+  }
+}
+function drawBoard(){
+  ctx.clearRect(0,0,cv.width,cv.height);
+  ctx.fillStyle=P.bg; ctx.fillRect(0,0,cv.width,cv.height);
+  // fields first (fill), then goals, then home; nogo skipped (= background)
+  for(const t of GEOM.tiles){ if(t.type==='field') fillWedge(t,P.field); }
+  for(const t of GEOM.tiles){ if(t.type==='field') strokeEdges(t, beyond(t)); }
+  for(const t of GEOM.tiles){
+    if(t.type!=='save') continue;
+    fillWedge(t, goalColors[t.number]||'#888');
+    ctx.strokeStyle='rgba(0,0,0,.10)'; ctx.lineWidth=1.4;
+    ctx.beginPath();
+    ctx.arc(CX,CY,t.outerRadius,t.startAngle,t.endAngle);
+    ctx.arc(CX,CY,t.innerRadius,t.endAngle,t.startAngle,true);
+    ctx.closePath(); ctx.stroke();
+    const [gx,gy]=pt((t.innerRadius+t.outerRadius)/2,(t.startAngle+t.endAngle)/2);
+    ctx.fillStyle='#fff'; ctx.font='700 27px '+P.font||'700 27px sans-serif';
+    ctx.font='700 27px "Segoe UI",system-ui,sans-serif';
+    ctx.textAlign='center'; ctx.textBaseline='middle'; ctx.fillText(t.number,gx,gy);
+  }
+  // home
+  const h=GEOM.tiles.find(t=>t.type==='home');
+  ctx.beginPath(); ctx.arc(CX,CY,h.outerRadius,0,7); ctx.fillStyle=P.home; ctx.fill();
+  ctx.lineWidth=4; ctx.strokeStyle=P.homeRing; ctx.stroke();
+}
+// pieces (stacks offset so every number stays visible)
+function drawPiece(cx,cy,cls,label,r){
+  const grd=ctx.createRadialGradient(cx-r*.32,cy-r*.4,r*.2,cx,cy,r);
+  if(cls==='w'){grd.addColorStop(0,'#ffffff');grd.addColorStop(1,'#e7ebf0');}
+  else {grd.addColorStop(0,'#5c5c5c');grd.addColorStop(1,'#171717');}
+  ctx.save(); ctx.shadowColor='rgba(0,0,0,.35)'; ctx.shadowBlur=6; ctx.shadowOffsetY=3;
+  ctx.beginPath(); ctx.arc(cx,cy,r,0,7); ctx.fillStyle=grd; ctx.fill(); ctx.restore();
+  ctx.lineWidth=1.4; ctx.strokeStyle='rgba(0,0,0,.22)'; ctx.stroke();
+  ctx.fillStyle= cls==='w'?'#28313b':'#fff'; ctx.font='700 17px "Segoe UI",system-ui,sans-serif';
+  ctx.textAlign='center'; ctx.textBaseline='middle'; ctx.fillText(label,cx,cy);
+}
+function stackOnTile(ring,sector,pieces){ // pieces: [[cls,label],...]
+  const t=GEOM.tiles.find(x=>x.ring===ring&&x.sector===sector); if(!t)return;
+  const [bx,by]=pt((t.innerRadius+t.outerRadius)/2,(t.startAngle+t.endAngle)/2);
+  const r=19, N=pieces.length, off=N>1?25:0;
+  // draw back-to-front along a diagonal; front never covers a back centre (off>r)
+  for(let i=0;i<N;i++){
+    const k=i-(N-1)/2;
+    drawPiece(bx+k*off*0.62, by+k*off*0.62, pieces[i][0], pieces[i][1], r);
+  }
+}
+function drawPieces(){
+  stackOnTile(5,1,[['w','3']]); stackOnTile(4,11,[['w','7']]); stackOnTile(6,12,[['w','1']]);
+  stackOnTile(3,5,[['w','5']]); stackOnTile(2,7,[['w','9']]);
+  stackOnTile(4,3,[['b','2']]); stackOnTile(5,9,[['b','8']]); stackOnTile(3,10,[['b','4']]);
+  stackOnTile(5,7,[['b','6'],['b','11']]); // a 2-stack block, both numbers visible
+}
+
+// ---- HUD ----
+function cellPc(cls,l){const d=document.createElement('div');d.className='pc '+cls;d.textContent=l;return d;}
+function cellEmpty(){const d=document.createElement('div');d.className='cell empty';return d;}
+function fillRack(id,items,cap){const el=document.getElementById(id);
+  items.forEach(([c,l])=>el.appendChild(cellPc(c,l)));
+  for(let i=items.length;i<cap;i++) el.appendChild(cellEmpty());}
+// racks sized for up to 12 (3x4); show filled + faint empty slots so capacity reads
+fillRack('wrack',[['w','2'],['w','4'],['w','6'],['w','8'],['w','10'],['w','11'],['w','12']],12);
+fillRack('wsaved',[['w','1'],['w','5']],3);
+fillRack('brack',[['b','1'],['b','3'],['b','5'],['b','7'],['b','9'],['b','10'],['b','12']],12);
+fillRack('bsaved',[['b','4']],3);
+
+const PIPS={5:[[26,26],[74,26],[50,50],[26,74],[74,74]],3:[[26,26],[50,50],[74,74]]};
+function die(id,n){const el=document.getElementById(id);PIPS[n].forEach(([x,y])=>{const p=document.createElement('div');p.className='pip';p.style.left=x+'%';p.style.top=y+'%';el.appendChild(p);});}
+die('d1',5); die('d2',3);
+document.getElementById('turndot').style.background='radial-gradient(circle at 35% 28%,#5c5c5c,#171717)';
+
+drawBoard(); drawPieces();
+</script>
+</body></html>
