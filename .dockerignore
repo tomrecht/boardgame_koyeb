@@ -1,0 +1,16 @@
+# Training-only weights: the app plays from model.onnx
+*.pt
+*.pth
+*.ckpt
+# Data, notes and local tooling
+training_data/
+_attic/
+design/
+replays/
+*.jsonl
+*.npz
+.venv/
+__pycache__/
+**/__pycache__/
+.git/
+.DS_Store

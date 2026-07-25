@@ -50,9 +50,12 @@ current_weights = get_weights(weights_file='best_weights.json')
 # switch. Precedence: OPPONENT_MODEL env var > gitignored opponent_model.txt
 # > the default below.
 def _opponent_model_path():
+    """Checkpoint (.pt, needs torch) or exported net (.onnx, needs only
+    onnxruntime) to play as. Deployment defaults to the .onnx if it is there,
+    which is what keeps torch out of the image."""
     import sys
     for arg in sys.argv[1:]:
-        if arg.endswith('.pt'):
+        if arg.endswith('.pt') or arg.endswith('.onnx'):
             return arg
     env = os.environ.get('OPPONENT_MODEL')
     if env:
@@ -65,6 +68,8 @@ def _opponent_model_path():
                     return line
     except FileNotFoundError:
         pass
+    if os.path.exists('model.onnx'):
+        return 'model.onnx'
     return 'td_champion_July18_iter10.pt'
 
 _model_path = _opponent_model_path()

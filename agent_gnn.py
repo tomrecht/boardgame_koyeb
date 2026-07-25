@@ -15,13 +15,21 @@ To use in app.py:
     agent = GNNAgent()
 """
 
-import torch
-from network import BoardEncoder, BoardGNN, load_model, DEVICE
+import numpy as np
+from gnn_backend import make_backend
 
 GAME_OVER_SCORE = 10000
 SCORE_SCALE     = 1000.0   # must match train_distill.py
 NUM_PIECES      = 12       # margin display unit (raw * NUM_PIECES = expected margin)
 GNN_WEIGHTS     = 'gnn_weights.pt'
+
+
+def _top_indices(values, k):
+    """Indices of the k largest values, best first (numpy stand-in for topk)."""
+    v = np.asarray(values).reshape(-1)
+    k = min(int(k), v.shape[0])
+    idx = np.argpartition(-v, k - 1)[:k] if k < v.shape[0] else np.arange(v.shape[0])
+    return [int(i) for i in idx[np.argsort(-v[idx], kind='stable')]]
 
 
 class GNNAgent:
@@ -35,12 +43,12 @@ class GNNAgent:
     def __init__(self, weights_path=GNN_WEIGHTS, model=None,
                  use_prefilter=False, prefilter_top_k=40, heuristic_weights=None,
                  prefilter_min_k=5, prefilter_frac=None, prefilter_score_alpha=None):
-        self.encoder = BoardEncoder()
-        if model is not None:
-            self.model = model
-            self.model.eval()
-        else:
-            self.model = load_model(weights_path)
+        # The backend owns both the net and the encoder that suits it: torch
+        # for training/analysis, onnxruntime (numpy, no torch) for deployment.
+        # Either way self.model(...) returns numpy scores.
+        self.backend = make_backend(weights_path, model=model)
+        self.model = self.backend
+        self.encoder = self.backend.encoder
 
         # Optional move-pair pre-filter: rank candidates with the cheap heuristic
         # and only GNN-encode the top ones. Speeds up high-branching turns and
@@ -89,7 +97,7 @@ class GNNAgent:
             self.heuristic = Agent(weights=w)
 
         if not GNNAgent._printed_ready:
-            print(f"GNNAgent ready on {next(self.model.parameters()).device}")
+            print(f"GNNAgent ready: {self.backend.describe()}")
             GNNAgent._printed_ready = True
 
     def best_play_value(self, board, player):
@@ -139,40 +147,40 @@ class GNNAgent:
             return factor * score * GAME_OVER_SCORE, {'game_over': True}
 
         encoded = self.encoder.encode(board, player)
-        with torch.no_grad():
-            raw_score = self.model(encoded).item()
-
+        raw_score = float(self.model(encoded))
         final_score = raw_score * SCORE_SCALE
         return final_score, {'gnn_raw': raw_score, 'gnn_score': final_score, '_player': player}
 
     def _pick_move_index(self, final_scores):
-        """Difficulty-controlled index over candidate scores (a 1-D torch tensor).
+        """Difficulty-controlled index over candidate scores (a 1-D array).
 
         self.difficulty in [0, 1]: 1 (default) = argmax / full strength; lower =
         top-p sampling over a scale-invariant softmax (z-scored by the candidate
         spread), so the agent plays visibly weaker without picking terrible moves.
         """
+        s = np.asarray(final_scores, dtype=np.float64).reshape(-1)
         d = getattr(self, 'difficulty', 1.0)
-        n = int(final_scores.shape[0])
+        n = s.shape[0]
         if n <= 1 or d is None or float(d) >= 0.999:
-            return int(final_scores.argmax().item())
+            return int(np.argmax(s))
         d = max(0.0, min(1.0, float(d)))
-        s = final_scores.detach().float().flatten()
-        std = s.std().item()
+        std = float(s.std())
         if not (std > 1e-6):
             std = 1.0
         temp  = 0.4 + (1.0 - d) * 2.6      # 0.4 (hard) .. 3.0 (easy)
         top_p = 0.25 + (1.0 - d) * 0.75    # 0.25 (hard) .. 1.0 (easy)
         z = (s - s.max()) / (std * temp)
-        probs = torch.softmax(z, dim=0)
-        sorted_probs, sorted_idx = torch.sort(probs, descending=True)
-        cum = torch.cumsum(sorted_probs, dim=0)
-        k = int((cum < top_p).sum().item()) + 1
+        e = np.exp(z - z.max())
+        probs = e / e.sum()
+        order = np.argsort(-probs, kind='stable')
+        sorted_probs = probs[order]
+        cum = np.cumsum(sorted_probs)
+        k = int((cum < top_p).sum()) + 1
         k = max(1, min(k, n))
-        keep_probs = sorted_probs[:k]
-        keep_probs = keep_probs / keep_probs.sum()
-        choice = int(torch.multinomial(keep_probs, 1).item())
-        return int(sorted_idx[choice].item())
+        keep = sorted_probs[:k]
+        keep = keep / keep.sum()
+        choice = int(np.random.choice(k, p=keep))
+        return int(order[choice])
 
     def select_move_pair(self, moves, board, player, return_scores=False):
         """
@@ -322,9 +330,7 @@ class GNNAgent:
             return self._dedupe_save_pair(chosen)
 
         # --- Single batched forward pass over the (filtered) candidates ---
-        with torch.no_grad():
-            scores = self.model(encoded_list)   # [N]
-
+        scores = self.model(encoded_list)   # [N]
         final_scores = scores * SCORE_SCALE
         best_idx     = final_scores.argmax().item()
 
@@ -626,9 +632,7 @@ class GNNAgent:
             return draw_pair if draw_legal else ((0, 0, 0), (0, 0, 0))
 
         # Evaluate all first moves in one batch
-        with torch.no_grad():
-            first_scores = self.model(first_encoded_list) * SCORE_SCALE  # [N]
-
+        first_scores = self.model(first_encoded_list) * SCORE_SCALE  # [N]
         best_first_idx = first_scores.argmax().item()
 
         # A draw's true value is exactly 0 -- compare directly, no encoding.
@@ -688,9 +692,7 @@ class GNNAgent:
             return (best_first, (0, 0, 0))
 
         # Evaluate all second moves in one batch
-        with torch.no_grad():
-            second_scores = self.model(second_encoded_list) * SCORE_SCALE  # [M]
-
+        second_scores = self.model(second_encoded_list) * SCORE_SCALE  # [M]
         best_second = second_move_keys[second_scores.argmax().item()]
         return (best_first, best_second)
 
@@ -706,108 +708,107 @@ class GNNAgent:
         if not valid_moves:
             return draw_pair if draw_legal else ((0, 0, 0), (0, 0, 0))
 
-        with torch.no_grad():
-            # ---- 1. Evaluate first moves ----
-            first_states = []
-            first_meta   = []
+        # ---- 1. Evaluate first moves ----
+        first_states = []
+        first_meta   = []
 
-            initial_len = len(board.moves)
+        initial_len = len(board.moves)
 
-            for m1 in valid_moves:
-                board.apply_move(m1, switch_turn=False)
-                # Terminal short-circuit: winning first move.
-                wgo, _ = board.check_game_over()
-                if wgo == player:
-                    while len(board.moves) > initial_len:
-                        board.undo_last_move()
-                    return (m1, (0, 0, 0))
-                enc = self.encoder.encode(board, player)
-                first_states.append(enc)
-                first_meta.append(m1)
+        for m1 in valid_moves:
+            board.apply_move(m1, switch_turn=False)
+            # Terminal short-circuit: winning first move.
+            wgo, _ = board.check_game_over()
+            if wgo == player:
                 while len(board.moves) > initial_len:
                     board.undo_last_move()
+                return (m1, (0, 0, 0))
+            enc = self.encoder.encode(board, player)
+            first_states.append(enc)
+            first_meta.append(m1)
+            while len(board.moves) > initial_len:
+                board.undo_last_move()
 
-            values = self.model(first_states).view(-1)
+        values = self.model(first_states).reshape(-1)
 
-            # A draw's true value is exactly 0 -- compare directly against the
-            # best encoded first-move value before running the (expensive)
-            # beam search over second moves.
-            if draw_legal and 0.0 >= values.max().item():
-                return draw_pair
+        # A draw's true value is exactly 0 -- compare directly against the
+        # best encoded first-move value before running the (expensive)
+        # beam search over second moves.
+        if draw_legal and 0.0 >= values.max().item():
+            return draw_pair
 
-            topk = torch.topk(values, min(K, len(values))).indices.tolist()
+        topk = _top_indices(values, K)
 
-            best_pair = None
-            best_value = -1e9
+        best_pair = None
+        best_value = -1e9
 
-            # ---- 2. For each top-K first move ----
-            for idx in topk:
-                m1 = first_meta[idx]
+        # ---- 2. For each top-K first move ----
+        for idx in topk:
+            m1 = first_meta[idx]
 
-                board.apply_move(m1, switch_turn=False)
-                # Terminal short-circuit: top-K first move is a win.
-                wgo, _ = board.check_game_over()
-                if wgo == player:
-                    while len(board.moves) > initial_len:
-                        board.undo_last_move()
-                    return (m1, (0, 0, 0))
+            board.apply_move(m1, switch_turn=False)
+            # Terminal short-circuit: top-K first move is a win.
+            wgo, _ = board.check_game_over()
+            if wgo == player:
+                while len(board.moves) > initial_len:
+                    board.undo_last_move()
+                return (m1, (0, 0, 0))
 
-                # If no second move
-                if all(die.used for die in board.dice):
-                    val = values[idx].item()
-                    if val > best_value:
-                        best_value = val
-                        best_pair = (m1, (0, 0, 0))
-                    while len(board.moves) > initial_len:
-                        board.undo_last_move()
-                    continue
-
-                second_moves = list(set(board.get_valid_moves()) - {(0, 0, 0), (1, 1, 1)})
-
-                if not second_moves:
-                    val = values[idx].item()
-                    if val > best_value:
-                        best_value = val
-                        best_pair = (m1, (0, 0, 0))
-                    while len(board.moves) > initial_len:
-                        board.undo_last_move()
-                    continue
-
-                # ---- 3. Evaluate second moves ----
-                second_states = []
-                second_meta   = []
-
-                mid_len = len(board.moves)
-
-                for m2 in second_moves:
-                    board.apply_move(m2, switch_turn=False)
-                    # Terminal short-circuit: winning second move.
-                    wgo, _ = board.check_game_over()
-                    if wgo == player:
-                        while len(board.moves) > mid_len:
-                            board.undo_last_move()
-                        while len(board.moves) > initial_len:
-                            board.undo_last_move()
-                        return (m1, m2)
-                    enc = self.encoder.encode(board, player)
-                    second_states.append(enc)
-                    second_meta.append(m2)
-                    while len(board.moves) > mid_len:
-                        board.undo_last_move()
-
-                vals2 = self.model(second_states).view(-1)
-
-                best_idx = torch.argmax(vals2).item()
-                val = vals2[best_idx].item()
-
+            # If no second move
+            if all(die.used for die in board.dice):
+                val = values[idx].item()
                 if val > best_value:
                     best_value = val
-                    best_pair = (m1, second_meta[best_idx])
-
+                    best_pair = (m1, (0, 0, 0))
                 while len(board.moves) > initial_len:
                     board.undo_last_move()
+                continue
 
-            return best_pair if best_pair else ((0,0,0),(0,0,0))
+            second_moves = list(set(board.get_valid_moves()) - {(0, 0, 0), (1, 1, 1)})
+
+            if not second_moves:
+                val = values[idx].item()
+                if val > best_value:
+                    best_value = val
+                    best_pair = (m1, (0, 0, 0))
+                while len(board.moves) > initial_len:
+                    board.undo_last_move()
+                continue
+
+            # ---- 3. Evaluate second moves ----
+            second_states = []
+            second_meta   = []
+
+            mid_len = len(board.moves)
+
+            for m2 in second_moves:
+                board.apply_move(m2, switch_turn=False)
+                # Terminal short-circuit: winning second move.
+                wgo, _ = board.check_game_over()
+                if wgo == player:
+                    while len(board.moves) > mid_len:
+                        board.undo_last_move()
+                    while len(board.moves) > initial_len:
+                        board.undo_last_move()
+                    return (m1, m2)
+                enc = self.encoder.encode(board, player)
+                second_states.append(enc)
+                second_meta.append(m2)
+                while len(board.moves) > mid_len:
+                    board.undo_last_move()
+
+            vals2 = self.model(second_states).reshape(-1)
+
+            best_idx = int(np.argmax(vals2))
+            val = vals2[best_idx].item()
+
+            if val > best_value:
+                best_value = val
+                best_pair = (m1, second_meta[best_idx])
+
+            while len(board.moves) > initial_len:
+                board.undo_last_move()
+
+        return best_pair if best_pair else ((0,0,0),(0,0,0))
     # ------------------------------------------------------------------
     # Deep search: one opponent ply over the dice chance node
     # ------------------------------------------------------------------
@@ -860,9 +861,7 @@ class GNNAgent:
     def _raw_value(self, board, player):
         """Net value of the current position in raw units from `player`'s
         frame (no SCORE_SCALE)."""
-        with torch.no_grad():
-            return self.model(self.encoder.encode(board, player)).item()
-
+        return float(self.model(self.encoder.encode(board, player)))
     def _enter_opponent_turn_deterministic(self, board):
         """Reproduce switch_turn's side effects reversibly and WITHOUT
         rolling dice (caller sets dice per chance-node branch afterwards).
@@ -985,9 +984,8 @@ class GNNAgent:
                 undo_to(base_len)
             if win1 is not None:
                 return win1
-            with torch.no_grad():
-                v1 = self.model(encs).view(-1)
-            topk = torch.topk(v1, min(beam_k, len(v1))).indices.tolist()
+            v1 = self.model(encs).reshape(-1)
+            topk = _top_indices(v1, beam_k)
 
             win2 = None
             for b1 in topk:
@@ -1023,8 +1021,7 @@ class GNNAgent:
                             encs2.append(self.encoder.encode(board, opp))
                         undo_to(mid_len)
                     if encs2:
-                        with torch.no_grad():
-                            v2 = self.model(encs2).view(-1)
+                        v2 = self.model(encs2).reshape(-1)
                         v_pair = float(v2.max().item())
                         if best_v is None or v_pair > best_v:
                             best_v = v_pair
@@ -1182,9 +1179,7 @@ class GNNAgent:
                     roll_entries[ri].append((len(A_encs), 'bs', 0, m))
                     A_encs.append(self._dice_variant(
                         bs_enc[m], d1, d2, 1.0, 1.0))
-        with torch.no_grad():
-            A_vals = self.model(A_encs).view(-1)
-
+        A_vals = self.model(A_encs).reshape(-1)
         # ---- Phase B: expand beams, dedup leaves, single forward ----
         tcache = {}
         B_encs = []
@@ -1240,9 +1235,7 @@ class GNNAgent:
                     undo_to(mid_len)
                 undo_to(base_len)
         if B_encs:
-            with torch.no_grad():
-                B_vals = self.model(B_encs).view(-1)
-
+            B_vals = self.model(B_encs).reshape(-1)
         # ---- assemble the 21 values ----
         out = []
         for ri in range(len(self._DICE_ROLLS_21)):
