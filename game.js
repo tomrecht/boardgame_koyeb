@@ -647,7 +647,7 @@ const _tutSteps = [
     {
         title: 'The endgame',
         fast: true,
-        text: '<b>⏩ Later.</b> Everything you have left is on a goal but one — use the <b>1</b> to step it onto goal 3. Now every piece is on a goal: that’s the <b>endgame</b>, and blank pieces get easier to save — a blank goes out on any die <i>bigger</i> than its goal’s number, as long as you hold no higher goal. Your highest is goal 3, so the <b>5</b> takes a blank straight off it. Numbered pieces never get this; they always need their own number.',
+        text: '<b>⏩ Later.</b> Everything you have left is on a goal but one — use the <b>1</b> to step it onto goal 3. Now every piece is on a goal it can be saved from: that’s the <b>endgame</b>, and blank pieces get easier to save — a blank goes out on any die <i>bigger</i> than its goal’s number, as long as you hold no higher goal. Your highest is goal 3, so the <b>5</b> takes a blank straight off it. Numbered pieces never get this; they always need their own number.',
         dice: [1, 5],
         pos: { white: { board: [[2, [7, 4]], [11, [7, 8]], [12, [6, 8]]],
                         saved: [1, 3, 4, 5, 6, 7, 8, 9, 10] },
@@ -684,7 +684,7 @@ const _tutSteps = [
     },
     {
         title: 'You win!',
-        text: 'All twelve saved. The game ends the moment your last piece is off the board, and you score the number of pieces your opponent still had out — four. That’s the whole game: enter, move, capture, wall, save.',
+        text: 'All twelve saved. The game ends the moment your last piece is off the board, and you score the number of pieces your opponent still had out — four. That’s the whole game: enter, move, capture, wall, save. Ready for a real one?',
         finish: true,
         done: () => false,
     },
@@ -771,10 +771,14 @@ function _tutNext() {
 function _tutPlayBlack(game, moves, cb) {
     if (!moves || !moves.length) { cb(); return; }
     _tutNote('<span style="color:#8b95a3; font-weight:700; font-size:13px;">Black plays…</span>');
+    if (typeof updateTurnStatus === 'function') updateTurnStatus('Black’s turn');
     let i = 0;
     const next = () => {
         if (!_tut.active) { cb(); return; }
-        if (i >= moves.length) { setTimeout(cb, 400); return; }
+        if (i >= moves.length) {
+            if (typeof updateTurnStatus === 'function') updateTurnStatus(game);
+            setTimeout(cb, 400); return;
+        }
         const m = moves[i++];
         const piece = _tutPiece(game, 'black', m.n), tile = _tutTile(game, m.to[0], m.to[1]);
         if (piece && tile) {
@@ -1103,20 +1107,32 @@ function showInstructions() {
         ['Endgame', 'When every piece you have left is saved or sitting on a goal it can be saved from, you’re in the endgame: blank pieces can now be saved with a roll <i>higher</i> than their goal’s number, as long as you have nothing waiting on a higher-numbered goal.'],
         ['A couple of special moves', '• Break a wall: past the opening and with no captured pieces, double-click (or drag from the picker) one piece of an enemy two-stack to save it for them — it costs both your dice and hands the opponent a piece, but turns the wall into a lone piece.<br>• Last piece: if you start a turn with a single piece left and it’s a numbered one sitting on its goal, it becomes blank (savable by any roll of that goal number or higher).'],
         ['Stalemate', 'If 10 full rounds pass with nobody saving a piece, either player may call a draw. Any save resets the counter.'],
-        ['Controls', 'Tap or drag a piece to move it; drag onto its goal — or double-click — to save. The ↶ arrow undoes one die at a time; ↷ ends your turn. On a crowded tile the <b>+N</b> badge opens a picker (drag a piece straight out of it). Theme, difficulty and options live under the ⚙ settings, and <b>New Match</b> starts a multi-game match.'],
-        ['Keyboard shortcuts', 'On desktop: <b>Z</b> undoes one die · <b>Enter</b> or <b>Space</b> ends your turn · <b>Esc</b> deselects the piece you’re holding.'],
+        ['Controls', 'Tap or drag a piece to move it; drag onto its goal — or double-click — to save. The ↶ arrow undoes one die at a time; ↷ ends your turn. On a crowded tile the <b>+N</b> badge opens a picker (drag a piece straight out of it). Theme, difficulty and options live under the ⚙ settings, and <b>New Match</b> starts a multi-game match.<br>On desktop: <b>Z</b> undoes one die · <b>Enter</b> or <b>Space</b> ends your turn · <b>Esc</b> deselects the piece you’re holding.'],
     ];
-    let html = '<h2 style="margin:0 0 4px; font-size:24px;">How to Play</h2>';
-    sections.forEach(([h, b]) => {
-        html += '<h3 style="margin:15px 0 3px; font-size:16px;">' + h + '</h3>' +
-            '<p style="margin:0; font-family:' + BODY_FONT + '; font-size:15px; line-height:1.5; color:#33404b;">' + b + '</p>';
-    });
+    // Wide two-column card so the whole thing is readable at a glance instead of
+    // scrolled through; collapses to one scrolling column on a narrow screen.
+    // The columns live in their own unconstrained div: given a fixed height, a
+    // multi-column box overflows sideways (silently dropping the last sections)
+    // rather than growing downwards.
+    let html = '<style>' +
+        '#howToPlay h2 { margin:0 0 9px; font-size:26px; }' +
+        '#howToPlay h3 { margin:11px 0 3px; font-size:17px; break-after:avoid; break-inside:avoid; }' +
+        '#howToPlay .htpCols > h3:first-child { margin-top:0; }' +
+        '#howToPlay p { margin:0; font-family:' + BODY_FONT + '; font-size:16px; line-height:1.5;' +
+            'color:#33404b; break-inside:avoid; }' +
+        '#howToPlay .htpCols { columns:3; column-gap:36px; }' +
+        '@media (max-width: 1000px) { #howToPlay .htpCols { columns:2; } }' +
+        '@media (max-width: 700px)  { #howToPlay .htpCols { columns:1; } }' +
+        '</style><h2>How to Play</h2><div class="htpCols">';
+    sections.forEach(([h, b]) => { html += '<h3>' + h + '</h3><p>' + b + '</p>'; });
+    html += '</div>';
     const card = document.createElement('div');
     card.style.cssText = 'position:relative; background:#fff; color:#28313b; border-radius:16px;' +
-        'width:min(560px,92vw); max-height:86vh; overflow:hidden; box-sizing:border-box;' +
+        'width:min(1120px,95vw); max-height:92vh; overflow:hidden; box-sizing:border-box;' +
         'box-shadow:0 18px 50px rgba(0,0,0,.3);';
     const body = document.createElement('div');
-    body.style.cssText = 'padding:22px 26px; max-height:86vh; box-sizing:border-box;' +
+    body.className = 'htpBody';
+    body.style.cssText = 'padding:26px 30px; max-height:92vh; box-sizing:border-box;' +
         'overflow-y:auto; -webkit-overflow-scrolling:touch;';
     body.innerHTML = html;
     const close = document.createElement('button');
