@@ -110,69 +110,100 @@ const HUD_ACCENT = THEME.accentCss;
 const HUD_INK = '#28313b';
 const HUD_PANEL_BORDER = 0xdbe1ea;
 
-// Unobtrusive theme picker (top-right). Colours are baked at load, so a change
-// is persisted to localStorage and the page reloads.
-function createThemeDropdown() {
-    if (document.getElementById('themeSelect')) return;
-    const sel = document.createElement('select');
-    sel.id = 'themeSelect';
-    sel.title = 'Theme';
-    sel.style.cssText =
-        'position:fixed; top:10px; right:12px; z-index:40; font-family:' + HUD_FONT + ';' +
-        'font-size:13px; padding:4px 8px; border-radius:8px; border:1px solid rgba(0,0,0,.15);' +
-        'background:rgba(255,255,255,.72); color:#28313b; cursor:pointer; opacity:.55; transition:opacity .15s;';
-    sel.addEventListener('mouseenter', () => sel.style.opacity = '1');
-    sel.addEventListener('mouseleave', () => sel.style.opacity = '.55');
-    Object.keys(THEMES).forEach(k => {
-        const o = document.createElement('option');
-        o.value = k; o.textContent = THEMES[k].label;
-        if (k === _themeKey) o.selected = true;
-        sel.appendChild(o);
-    });
-    sel.addEventListener('change', () => {
-        try { localStorage.setItem('boardTheme', sel.value); } catch (e) {}
-        // keep any ?theme= from overriding the new choice on reload
-        const u = new URL(location.href); u.searchParams.delete('theme');
-        location.href = u.toString();
-    });
-    document.body.appendChild(sel);
-}
-
 // AI difficulty (1 = full strength / argmax; lower = weaker via top-p sampling).
 function getAIDifficulty() {
     let v = 1.0;
     try { const s = localStorage.getItem('aiDifficulty'); if (s !== null) v = parseFloat(s); } catch (e) {}
     return isFinite(v) ? Math.min(1, Math.max(0, v)) : 1.0;
 }
-function createDifficultySlider() {
-    if (document.getElementById('difficultyWrap')) return;
-    const wrap = document.createElement('div');
-    wrap.id = 'difficultyWrap';
-    wrap.style.cssText =
-        'position:fixed; top:46px; right:12px; z-index:40; font-family:' + HUD_FONT + ';' +
-        'font-size:11px; color:#28313b; background:rgba(255,255,255,.72); padding:5px 8px;' +
-        'border-radius:8px; border:1px solid rgba(0,0,0,.15); opacity:.55; transition:opacity .15s;' +
-        'display:flex; align-items:center; gap:6px;';
-    wrap.addEventListener('mouseenter', () => wrap.style.opacity = '1');
-    wrap.addEventListener('mouseleave', () => wrap.style.opacity = '.55');
-    const label = document.createElement('span'); label.textContent = 'Difficulty';
-    const slider = document.createElement('input');
+// Move/capture visual+sound feedback (default on).
+function getFeedbackEnabled() {
+    try { const s = localStorage.getItem('fxEnabled'); return s === null ? true : s === '1'; }
+    catch (e) { return true; }
+}
+// Difficulty is locked while a match is ongoing; reflect that in the panel.
+function refreshSettingsMatchState() {
+    const slider = document.querySelector('#settingsDiff input[type=range]');
+    const note = document.getElementById('settingsDiffNote');
+    const active = !!(matchTracker && !matchTracker.over);
+    if (slider) { slider.disabled = active; slider.style.opacity = active ? '.45' : '1'; }
+    if (note) note.style.display = active ? 'block' : 'none';
+}
+
+// A single unobtrusive Settings gear (top-right) holding theme, difficulty and
+// the effects toggle, so they're not always on screen.
+function createSettingsPanel() {
+    if (document.getElementById('settingsGear')) return;
+    const mk = (tag, css, txt) => { const e = document.createElement(tag);
+        if (css) e.style.cssText = css; if (txt != null) e.textContent = txt; return e; };
+
+    const gear = mk('button',
+        'position:fixed; top:10px; right:12px; z-index:41; width:32px; height:32px;' +
+        'border-radius:8px; border:1px solid rgba(0,0,0,.15); background:rgba(255,255,255,.75);' +
+        'color:#28313b; font-size:17px; cursor:pointer; opacity:.6; transition:opacity .15s;', '⚙');
+    gear.id = 'settingsGear'; gear.title = 'Settings';
+    gear.onmouseenter = () => gear.style.opacity = '1';
+    gear.onmouseleave = () => gear.style.opacity = '.6';
+
+    const panel = mk('div',
+        'position:fixed; top:48px; right:12px; z-index:41; display:none;' +
+        'background:#fff; color:#28313b; font-family:' + HUD_FONT + '; font-size:13px;' +
+        'border:1px solid rgba(0,0,0,.15); border-radius:12px; padding:12px 14px; width:216px;' +
+        'box-shadow:0 12px 34px rgba(0,0,0,.22);');
+    panel.id = 'settingsPanel';
+
+    // Theme (reloads, colours are baked at load)
+    const trow = mk('div', 'margin-bottom:12px;');
+    trow.appendChild(mk('div', 'font-weight:600; margin-bottom:4px;', 'Theme'));
+    const sel = mk('select', 'width:100%; padding:4px; border-radius:6px; border:1px solid #cfd6e0;');
+    Object.keys(THEMES).forEach(k => { const o = mk('option', null, THEMES[k].label);
+        o.value = k; if (k === _themeKey) o.selected = true; sel.appendChild(o); });
+    sel.onchange = () => { try { localStorage.setItem('boardTheme', sel.value); } catch (e) {}
+        const u = new URL(location.href); u.searchParams.delete('theme'); location.href = u.toString(); };
+    trow.appendChild(sel); panel.appendChild(trow);
+
+    // Difficulty
+    const drow = mk('div', 'margin-bottom:12px;'); drow.id = 'settingsDiff';
+    const dhead = mk('div', 'font-weight:600; margin-bottom:4px; display:flex; justify-content:space-between;');
+    dhead.appendChild(mk('span', null, 'Difficulty'));
+    const dval = mk('span', 'font-weight:400;'); dhead.appendChild(dval);
+    drow.appendChild(dhead);
+    const slider = mk('input', 'width:100%; cursor:pointer;');
     slider.type = 'range'; slider.min = '0'; slider.max = '100'; slider.step = '5';
     slider.value = String(Math.round(getAIDifficulty() * 100));
-    slider.style.cssText = 'width:88px; cursor:pointer;';
-    const val = document.createElement('span'); val.style.cssText = 'width:30px; text-align:right;';
     const labelFor = (d) => d >= 0.99 ? 'Max' : d <= 0.01 ? 'Easy' : Math.round(d * 100) + '%';
-    val.textContent = labelFor(getAIDifficulty());
-    slider.addEventListener('input', () => {
-        const d = parseInt(slider.value) / 100; val.textContent = labelFor(d);
-        try { localStorage.setItem('aiDifficulty', String(d)); } catch (e) {}
-    });
-    wrap.appendChild(label); wrap.appendChild(slider); wrap.appendChild(val);
-    document.body.appendChild(wrap);
+    dval.textContent = labelFor(getAIDifficulty());
+    slider.oninput = () => { const d = parseInt(slider.value) / 100; dval.textContent = labelFor(d);
+        try { localStorage.setItem('aiDifficulty', String(d)); } catch (e) {} };
+    drow.appendChild(slider);
+    const dnote = mk('div', 'font-size:11px; color:#8b95a3; margin-top:2px; display:none;', 'Locked during a match');
+    dnote.id = 'settingsDiffNote'; drow.appendChild(dnote);
+    panel.appendChild(drow);
+
+    // Effects toggle
+    const frow = mk('label', 'display:flex; align-items:center; gap:8px; cursor:pointer;');
+    const fx = mk('input'); fx.type = 'checkbox'; fx.checked = getFeedbackEnabled();
+    fx.onchange = () => { try { localStorage.setItem('fxEnabled', fx.checked ? '1' : '0'); } catch (e) {} };
+    frow.appendChild(fx); frow.appendChild(mk('span', null, 'Move & capture effects'));
+    panel.appendChild(frow);
+
+    document.body.appendChild(gear); document.body.appendChild(panel);
+    gear.onclick = (e) => { e.stopPropagation();
+        const show = panel.style.display === 'none';
+        panel.style.display = show ? 'block' : 'none';
+        if (show) refreshSettingsMatchState();
+    };
+    document.addEventListener('pointerdown', (e) => {
+        if (panel.style.display !== 'none' && !panel.contains(e.target) && e.target !== gear)
+            panel.style.display = 'none';
+    }, true);
+    refreshSettingsMatchState();
 }
-function _initHudMenus() { createThemeDropdown(); createDifficultySlider(); }
-if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', _initHudMenus);
-else _initHudMenus();
+// Defer to after the whole script has run (this file `defer`s, so the DOM is
+// ready; setTimeout ensures later `let` globals like matchTracker are initialised
+// before createSettingsPanel -> refreshSettingsMatchState touches them).
+if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', createSettingsPanel);
+else setTimeout(createSettingsPanel, 0);
 
 // Rounded pill button with a soft shadow, matching the mockup .btn / .btn.ghost.
 // Returns the interactive Text object (callers attach their own pointer handlers);
@@ -192,6 +223,9 @@ function makeHudButton(scene, cx, cy, label, { ghost = false } = {}) {
     } else {
         g.fillStyle(THEME.accent, 1); g.fillRoundedRect(b.x, b.y, b.width, b.height, r);
     }
+    txt.bg = g;                       // so callers can show/hide the whole button
+    txt.setHudVisible = (v) => { txt.setVisible(v); g.setVisible(v);
+        if (txt.input) txt.input.enabled = v; return txt; };
     return txt;
 }
 
@@ -222,6 +256,7 @@ function startNewMatch(cfg) {
         whiteWins: 0, blackWins: 0, draws: 0,
         firstStarter: first, over: false, winner: null,
     };
+    if (typeof refreshSettingsMatchState === 'function') refreshSettingsMatchState();
     return first;
 }
 // Starter of the k-th game (0-indexed) in the match: alternates from firstStarter.
@@ -280,6 +315,28 @@ function _startMatchFirstGame(starter) {
     if (typeof gameInstance !== 'undefined' && gameInstance && gameInstance.scene) {
         gameInstance.scene.start('MainGameScene', { startingPlayer: starter });
     }
+}
+
+// Small themed confirm dialog.
+function showConfirm(message, onConfirm) {
+    const old = document.getElementById('confirmDlg'); if (old) old.remove();
+    const box = document.createElement('div');
+    box.id = 'confirmDlg';
+    box.style.cssText = 'position:fixed; inset:0; z-index:70; display:grid; place-items:center;' +
+        'background:rgba(0,0,0,.42); font-family:' + HUD_FONT + ';';
+    const btn = 'font-family:' + HUD_FONT + '; font-weight:700; font-size:15px; padding:9px 18px;' +
+        'border-radius:9px; border:none; cursor:pointer;';
+    box.innerHTML =
+        '<div style="background:#fff; color:#28313b; border-radius:16px; padding:22px 26px;' +
+        'width:min(340px,90vw); box-sizing:border-box; box-shadow:0 18px 50px rgba(0,0,0,.3);">' +
+        '<div style="font-size:16px; line-height:1.5; margin-bottom:16px;">' + message + '</div>' +
+        '<div style="display:flex; gap:10px; justify-content:flex-end;">' +
+        '<button id="cNo" style="' + btn + 'background:#eef1f4; color:#28313b;">Cancel</button>' +
+        '<button id="cYes" style="' + btn + 'background:' + THEME.accentCss + '; color:#fff;">Yes</button>' +
+        '</div></div>';
+    document.body.appendChild(box);
+    box.querySelector('#cNo').onclick = () => box.remove();
+    box.querySelector('#cYes').onclick = () => { box.remove(); onConfirm(); };
 }
 
 // DOM modal to configure and start a new match.
@@ -3377,18 +3434,32 @@ class MainGameScene extends Phaser.Scene {
 
 
         // Add new game button (accent) + instructions button (ghost)
+        const inMatch = !!(matchTracker && !matchTracker.over);
+
+        // New Game is unavailable while a match is in progress.
         const newGameButton = makeHudButton(this, 150, 52, 'New Game');
         newGameButton.on('pointerdown', () => {
+            if (matchTracker && !matchTracker.over) return;
             this.showNewGameConfirmationModal();
         });
+        if (inMatch) newGameButton.setHudVisible(false);
 
-        const instructionsButton = makeHudButton(this, 150, 104, 'How to Play', { ghost: true });
+        // New Match sits where New Game would be during a match; starting one
+        // mid-match asks for confirmation first.
+        const newMatchButton = makeHudButton(this, 150, inMatch ? 52 : 104, 'New Match', { ghost: true });
+        newMatchButton.on('pointerdown', () => {
+            if (matchTracker && !matchTracker.over) {
+                showConfirm('Abandon the current match and start a new one?', () => showMatchSetup());
+            } else {
+                showMatchSetup();
+            }
+        });
+
+        const instructionsButton = makeHudButton(this, 150, inMatch ? 104 : 156, 'How to Play', { ghost: true });
         instructionsButton.on('pointerdown', () => {
             this.scene.switch('InstructionsScene');
         });
-
-        const newMatchButton = makeHudButton(this, 150, 156, 'New Match', { ghost: true });
-        newMatchButton.on('pointerdown', () => { showMatchSetup(); });
+        if (typeof refreshSettingsMatchState === 'function') refreshSettingsMatchState();
 
         // Add save game state button
         if(DEBUG_MODE) {
@@ -3801,8 +3872,8 @@ class EndGameScene extends Phaser.Scene {
                 this.add.text(CENTER_X, CENTER_Y + 26,
                     `White ${m.whiteScore} (${m.whiteWins}W)      Black ${m.blackScore} (${m.blackWins}W)      ${m.gamesPlayed} games`,
                     { fontSize: '22px', fontFamily: HUD_FONT, color: '#333' }).setOrigin(0.5);
-                mkButton(CENTER_Y + 96, 'New Match', '#2f7050', () => { abortAndClear(); matchTracker = null; showMatchSetup(); });
-                mkButton(CENTER_Y + 162, 'Casual Game', '#3b6ea5', () => { matchTracker = null; startGame('white'); });
+                mkButton(CENTER_Y + 96, 'New Match', '#2f7050', () => { abortAndClear(); matchTracker = null; refreshSettingsMatchState(); showMatchSetup(); });
+                mkButton(CENTER_Y + 162, 'Casual Game', '#3b6ea5', () => { matchTracker = null; refreshSettingsMatchState(); startGame('white'); });
             } else {
                 const status = `Match  —  White ${m.whiteScore} (${m.whiteWins}W)   Black ${m.blackScore} (${m.blackWins}W)   ` +
                     (m.mode === 'race' ? `race to ${m.target}` : `game ${m.gamesPlayed + 1} of ${m.target}`);
