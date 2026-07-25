@@ -142,6 +142,14 @@ function turnStatusText(game) {
     if (isAI) return 'Computer thinking…';
     return BLACK_IS_AI ? 'Your turn' : _cap(p) + '’s turn';
 }
+// A quick expanding ring at (x,y) — capture (red) / save (accent) feedback.
+function fxBurst(scene, x, y, color) {
+    if (!getFeedbackEnabled() || !scene || !scene.add) return;
+    const ring = scene.add.circle(x, y, 14, color, 0).setStrokeStyle(4, color, 0.9).setDepth(70);
+    scene.tweens.add({ targets: ring, scale: 3.2, alpha: 0, duration: 430, ease: 'Cubic.easeOut',
+        onComplete: () => ring.destroy() });
+}
+
 function updateTurnStatus(textOrGame) {
     const text = typeof textOrGame === 'string' ? textOrGame : turnStatusText(textOrGame);
     let el = document.getElementById('turnStatus');
@@ -1333,6 +1341,29 @@ class Piece {
         }
     }
 
+    // Slide the piece from (ox,oy) to its current position (a quick move tween).
+    // On completion it snaps to the tile/rack's exact layout spot so the visual
+    // never drifts from where the piece logically belongs.
+    animateFrom(ox, oy) {
+        if (!getFeedbackEnabled() || !this.scene || !this.scene.tweens) return;
+        const nx = this.x, ny = this.y;
+        if (Math.hypot(nx - ox, ny - oy) < 2) return;
+        if (this._moveTween) { this._moveTween.stop(); this._moveTween = null; }
+        const snap = () => {
+            this._moveTween = null;
+            if (this.currentTile) this.currentTile.updatePositions();
+            else if (this.rack) this.rack.shiftPiecesUp();
+            else this.setPosition(nx, ny);
+        };
+        const proxy = { x: ox, y: oy };
+        this.setPosition(ox, oy);
+        this._moveTween = this.scene.tweens.add({
+            targets: proxy, x: nx, y: ny, duration: 160, ease: 'Cubic.easeOut',
+            onUpdate: () => this.setPosition(proxy.x, proxy.y),
+            onComplete: snap
+        });
+    }
+
     setSize(size) {
         this.radius = size;
         this.body.setRadius(size);
@@ -1600,6 +1631,7 @@ class Piece {
                 dieToUse.setUsed();
 
                 // Move the piece to the saved rack
+                fxBurst(this.scene, this.x, this.y, THEME.accent);   // save flash on the goal
                 const savedRack = this.color === 0xffffff ? this.game.whiteSavedRack : this.game.blackSavedRack;
                 this.moveToRack(savedRack); // Move the piece to the saved rack
                 this.game.registerSave();   // no-save streak resets immediately
@@ -2699,7 +2731,9 @@ class Game {
                 this.checkEnRouteCapture(piece, targetTile);
             }
 
+            const _ox = piece.x, _oy = piece.y;   // for the slide animation
             piece.move(targetTile);
+            piece.animateFrom(_ox, _oy);
 
             const homeTile = this.tiles.find(tile => tile.type === 'home');
             if (homeTile.pieces.includes(piece)) homeTile.removePiece(piece);
@@ -2808,6 +2842,7 @@ class Game {
     capturePiece(piece) {
         const homeTile = this.tiles.find(tile => tile.type === 'home');
         if (homeTile) {
+            fxBurst(this.scene, piece.x, piece.y, 0xff5555);   // capture flash at the spot
             piece.move(homeTile);
             piece.currentTile = homeTile;
             console.log(`Piece captured and sent to home tile: ${piece.color} ${piece.number}`);
