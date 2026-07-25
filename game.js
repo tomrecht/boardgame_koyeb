@@ -92,10 +92,15 @@ const THEMES = {
 const _themeKey = new URLSearchParams(location.search).get('theme')
     || (typeof localStorage !== 'undefined' && localStorage.getItem('boardTheme'))
     || 'parchment';
-const THEME = THEMES[_themeKey] || THEMES.parchment;
-const BACKGROUND_COLOR = THEME.bg;   // nogo tiles blend into this
-const GOAL_COLOR = THEME.goal;        // all goal tiles a single colour
-const TILE_BORDER = THEME.border;     // tile boundaries
+// A live-mutable COPY of the palette (never the shared THEMES entry, so switching
+// themes at runtime can Object.assign into THEME without corrupting the map).
+const THEME = Object.assign({}, THEMES[_themeKey] || THEMES.parchment);
+let BACKGROUND_COLOR = THEME.bg;   // nogo tiles blend into this
+let GOAL_COLOR = THEME.goal;        // all goal tiles a single colour
+let TILE_BORDER = THEME.border;     // tile boundaries
+// Recolor callbacks registered by themed Phaser objects (HUD buttons, score,
+// AI toggle). Reset each time the scene is (re)created; run by applyThemeLive.
+let _themedRedraws = [];
 
 // Baked radial-gradient sphere texture for a piece (matches the mockup's CSS
 // spheres, which Phaser vector circles can't reproduce). Cached per colour.
@@ -198,6 +203,21 @@ function refreshSettingsMatchState() {
     if (note) note.style.display = active ? 'block' : 'none';
 }
 
+// Apply a theme instantly — no reload, no new game. Mutate the live THEME palette
+// in place and redraw every themed object (board tiles, background, goal numbers,
+// HUD buttons, score line). Pieces and dice are theme-neutral, so they stay.
+function applyThemeLive(key) {
+    const pal = THEMES[key]; if (!pal) return;
+    try { localStorage.setItem('boardTheme', key); } catch (e) {}
+    Object.assign(THEME, pal);
+    BACKGROUND_COLOR = THEME.bg; GOAL_COLOR = THEME.goal; TILE_BORDER = THEME.border;
+    const scene = _setupScene(), game = _setupGame();
+    if (scene && scene.cameras && scene.cameras.main) scene.cameras.main.setBackgroundColor(THEME.bg);
+    if (game && game.tiles)  game.tiles.forEach(t => { if (t.applyThemeColors) t.applyThemeColors(); });
+    if (game && game.pieces) game.pieces.forEach(p => { if (p.updateColor) p.updateColor(); });
+    _themedRedraws.forEach(fn => { try { fn(); } catch (e) {} });
+}
+
 // A single unobtrusive Settings gear (top-right) holding theme, difficulty and
 // the effects toggle, so they're not always on screen.
 function createSettingsPanel() {
@@ -220,14 +240,13 @@ function createSettingsPanel() {
         'box-shadow:0 12px 34px rgba(0,0,0,.22);');
     panel.id = 'settingsPanel';
 
-    // Theme (reloads, colours are baked at load)
+    // Theme — applied live (no reload, no new game)
     const trow = mk('div', 'margin-bottom:12px;');
     trow.appendChild(mk('div', 'font-weight:600; margin-bottom:4px;', 'Theme'));
     const sel = mk('select', 'width:100%; padding:4px; border-radius:6px; border:1px solid #cfd6e0;');
     Object.keys(THEMES).forEach(k => { const o = mk('option', null, THEMES[k].label);
         o.value = k; if (k === _themeKey) o.selected = true; sel.appendChild(o); });
-    sel.onchange = () => { try { localStorage.setItem('boardTheme', sel.value); } catch (e) {}
-        const u = new URL(location.href); u.searchParams.delete('theme'); location.href = u.toString(); };
+    sel.onchange = () => applyThemeLive(sel.value);
     trow.appendChild(sel); panel.appendChild(trow);
 
     // Difficulty
@@ -293,7 +312,7 @@ function createSettingsPanel() {
     refreshSettingsMatchState();
 }
 // A small always-available "?" legend (bottom-right) explaining the few board
-// symbols a newcomer can't name: the hub, the goal wedges, greyed dice, +N.
+// symbols a newcomer can't name: the home tile, the goal wedges, greyed dice, +N.
 function createLegendButton() {
     if (document.getElementById('legendBtn')) return;
     const mk = (tag, css, txt) => { const e = document.createElement(tag);
@@ -318,7 +337,7 @@ function createLegendButton() {
     const cssHex = (n) => '#' + n.toString(16).padStart(6, '0');
     pop.innerHTML =
         '<div style="font-weight:700; margin-bottom:7px;">Legend</div>' +
-        '<div style="margin-bottom:6px;">' + dot(cssHex(THEME.hub)) + '<b>Hub</b> — the disc at the centre; pieces enter here.</div>' +
+        '<div style="margin-bottom:6px;">' + dot(cssHex(THEME.hub)) + '<b>Home tile</b> — the disc at the centre; pieces enter here.</div>' +
         '<div style="margin-bottom:6px;">' + dot(cssHex(THEME.goal)) + '<b>Goals</b> — the six numbered wedges on the rim; save pieces here.</div>' +
         '<div style="margin-bottom:6px;">' + dot('#c9ced6') + '<b>Greyed die</b> — already used this turn.</div>' +
         '<div>' + dot('#e7ebf1') + '<b>+N badge</b> — a stack; tap to pick a piece out of it.</div>';
@@ -414,7 +433,7 @@ function _tutParkWhites(game, keep) {
 const _tutSteps = [
     {
         title: 'Enter a piece',
-        text: 'Your pieces start on the rack. Tap your front piece to send it onto the hub, then tap a highlighted tile to move it out onto the board.',
+        text: 'Your pieces start on the rack. Tap your front piece to send it onto the home tile, then tap a highlighted tile to move it out onto the board.',
         build(game) {
             _tutClearBoard(game);           // all white pieces waiting on the rack
             _tutSetDice(game, 4, 3);
@@ -438,7 +457,7 @@ const _tutSteps = [
     },
     {
         title: 'Capture a lone piece',
-        text: 'Land exactly on a tile holding a single enemy piece to capture it — it’s sent back to their hub to start over. Take the highlighted enemy piece.',
+        text: 'Land exactly on a tile holding a single enemy piece to capture it — it’s sent back to their home tile to start over. Take the highlighted enemy piece.',
         build(game) {
             _tutClearBoard(game);
             const mover = game.pieces.find(p => p.player === 'white');
@@ -599,6 +618,18 @@ function makeHudButton(scene, cx, cy, label, { ghost = false } = {}) {
     txt.bg = g;                       // so callers can show/hide the whole button
     txt.setHudVisible = (v) => { txt.setVisible(v); g.setVisible(v);
         if (txt.input) txt.input.enabled = v; return txt; };
+    txt.recolor = () => {             // re-apply theme colours in place (live theme switch)
+        txt.setColor(ghost ? HUD_INK : THEME.accentInk);
+        g.clear();
+        g.fillStyle(0x000000, 0.12); g.fillRoundedRect(b.x, b.y + 2, b.width, b.height, r);
+        if (ghost) {
+            g.fillStyle(0xffffff, 1); g.fillRoundedRect(b.x, b.y, b.width, b.height, r);
+            g.lineStyle(1, HUD_PANEL_BORDER, 1); g.strokeRoundedRect(b.x, b.y, b.width, b.height, r);
+        } else {
+            g.fillStyle(THEME.accent, 1); g.fillRoundedRect(b.x, b.y, b.width, b.height, r);
+        }
+    };
+    _themedRedraws.push(txt.recolor);
     return txt;
 }
 
@@ -762,8 +793,8 @@ function showInstructions() {
         ['Goal', 'Be the first to <i>save</i> all your pieces. Your score for a win is the number of pieces your opponent still had left — so winning big is worth more.'],
         ['Your pieces', 'You have 12: six numbered (1–6) and six blank. They start on your side rack.'],
         ['A turn', 'Roll two dice and move. Each die moves one piece a number of tiles equal to that die; you can move one piece with each die, or one piece with both (their sum). A piece always takes the shortest route to the tile you choose, and once it has moved with one die it can’t double back with the other. You may skip a die (or the whole turn).'],
-        ['Getting on the board', 'Pieces enter through the hub — the plain disc at the centre. Only the front piece on your rack can enter, and you must enter at least one piece per turn until your rack is empty (unless you have a captured piece, in which case you must enter that).'],
-        ['Capturing &amp; blocking', 'Land on a field tile holding a single enemy piece and you capture it — it goes back to the hub and its owner must re-enter it before doing anything else. A tile with <b>two or more</b> enemy pieces is a wall: you can’t enter or pass through it.'],
+        ['Getting on the board', 'Pieces enter through the home tile — the plain disc at the centre. Only the front piece on your rack can enter, and you must enter at least one piece per turn until your rack is empty (unless you have a captured piece, in which case you must enter that).'],
+        ['Capturing &amp; blocking', 'Land on a field tile holding a single enemy piece and you capture it — it goes back to the home tile and its owner must re-enter it before doing anything else. A tile with <b>two or more</b> enemy pieces is a wall: you can’t enter or pass through it.'],
         ['Saving', 'The six coloured wedges on the rim are goals, numbered 1–6. To save a piece, get it onto a goal and roll that goal’s number to lift it off the board. A numbered piece can only be saved from its own goal; a blank piece from any goal. (You can start saving once all your pieces are on the board.)'],
         ['Endgame', 'When every piece you have left is saved or sitting on a goal it can be saved from, you’re in the endgame: blank pieces can now be saved with a roll <i>higher</i> than their goal’s number, as long as you have nothing waiting on a higher-numbered goal.'],
         ['A couple of special moves', '• Break a wall: past the opening and with no captured pieces, double-click (or drag from the picker) one piece of an enemy two-stack to save it for them — it costs both your dice and hands the opponent a piece, but turns the wall into a lone piece.<br>• Last piece: if you start a turn with a single piece left and it’s a numbered one sitting on its goal, it becomes blank (savable by any roll of that goal number or higher).'],
@@ -2096,6 +2127,21 @@ class Tile {
         }).setOrigin(0.5);
         text.setDepth(50);
         text.setAngle(0);
+        this._numberText = text;   // kept so a live theme switch can recolour it
+    }
+
+    // Re-derive this tile's colours from the current THEME and redraw (live theme
+    // switch). Mirrors the type→colour switch in the constructor.
+    applyThemeColors() {
+        this.highlightColor = THEME.highlight;
+        switch (this.type) {
+            case 'home': this.fillColor = THEME.hub; this.lineColor = THEME.hubRing; break;
+            case 'save': this.fillColor = GOAL_COLOR; this.lineColor = TILE_BORDER; break;
+            case 'nogo': this.fillColor = BACKGROUND_COLOR; this.lineColor = BACKGROUND_COLOR; break;
+            case 'field': this.fillColor = THEME.field; this.lineColor = TILE_BORDER; break;
+        }
+        if (this._numberText) this._numberText.setColor(THEME.goalNum);
+        this.drawTile();
     }
 
 /*     onClick() {
@@ -3987,6 +4033,7 @@ class MainGameScene extends Phaser.Scene {
     create() {
         const debugMode = false; // Set this to false to disable debug mode
 
+        _themedRedraws = [];   // fresh registry each scene build (drop stale button refs)
         this.game = new Game(this, this.startingPlayer, debugMode);
 
         // "Play vs computer" now lives in the settings panel; make sure the game
@@ -4053,6 +4100,7 @@ class MainGameScene extends Phaser.Scene {
             fontFamily: HUD_FONT,
             color: THEME.bgInk
         }).setOrigin(0, 1);
+        _themedRedraws.push(() => this.scoreText.setColor(THEME.bgInk));
 
         this.updateScoreText();
 
