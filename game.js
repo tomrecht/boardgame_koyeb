@@ -101,6 +101,9 @@ let TILE_BORDER = THEME.border;     // tile boundaries
 // Recolor callbacks registered by themed Phaser objects (HUD buttons, score,
 // AI toggle). Reset each time the scene is (re)created; run by applyThemeLive.
 let _themedRedraws = [];
+// True while the first-load welcome screen is up: the game is built but held —
+// no AI moves — until the player presses Play (which starts a fresh game).
+let _gameFrozen = false;
 
 // Baked radial-gradient sphere texture for a piece (matches the mockup's CSS
 // spheres, which Phaser vector circles can't reproduce). Cached per colour.
@@ -760,7 +763,21 @@ function showWelcome(starter) {
             'background:' + (primary ? THEME.accentCss : '#fff') + '; color:' + (primary ? '#fff' : '#5a6473') + ';';
         el.onclick = fn; holder.appendChild(el);
     };
-    mkBtn('Play', true, () => { box.remove(); showCoinFlip(starter); });
+    // Play: reveal the starter with the coin flip, then start a *fresh* game
+    // (new dice + rack) for that starter — nothing about the game is committed,
+    // and the AI never moves, until this point.
+    mkBtn('Play', true, () => {
+        box.remove();
+        showCoinFlip(starter, () => {
+            if (currentGameId) {
+                fetch(`${SERVER_URL}/abort_game`, { method: 'POST',
+                    headers: { 'Content-Type': 'application/json' }, credentials: 'include' }).catch(() => {});
+                currentGameId = null; moveCounter = 0; clearMoveRecording();
+            }
+            const sc = _setupScene();
+            if (sc && sc.scene) sc.scene.restart({ startingPlayer: starter });
+        });
+    });
     mkBtn('How to Play', false, () => showInstructions());
     mkBtn('Interactive tutorial', false, () => { box.remove(); startTutorial(); });
 }
@@ -843,16 +860,22 @@ function showInstructions() {
             '<p style="margin:0; font-family:' + BODY_FONT + '; font-size:15px; line-height:1.5; color:#33404b;">' + b + '</p>';
     });
     const card = document.createElement('div');
-    card.style.cssText = 'background:#fff; color:#28313b; border-radius:16px; padding:22px 26px;' +
-        'width:min(560px,92vw); max-height:86vh; overflow-y:auto; box-sizing:border-box;' +
-        'box-shadow:0 18px 50px rgba(0,0,0,.3); -webkit-overflow-scrolling:touch;';
-    card.innerHTML = html;
+    card.style.cssText = 'position:relative; background:#fff; color:#28313b; border-radius:16px;' +
+        'width:min(560px,92vw); max-height:86vh; overflow:hidden; box-sizing:border-box;' +
+        'box-shadow:0 18px 50px rgba(0,0,0,.3);';
+    const body = document.createElement('div');
+    body.style.cssText = 'padding:22px 26px; max-height:86vh; overflow-y:auto; -webkit-overflow-scrolling:touch;';
+    body.innerHTML = html;
     const close = document.createElement('button');
-    close.textContent = 'Close';
-    close.style.cssText = 'margin-top:16px; font-family:' + HUD_FONT + '; font-weight:700; font-size:15px;' +
-        'padding:9px 20px; border-radius:9px; border:none; cursor:pointer; background:' + THEME.accentCss + '; color:#fff;';
+    close.setAttribute('aria-label', 'Close');
+    close.textContent = '✕';   // ✕
+    close.style.cssText = 'position:absolute; top:9px; right:11px; z-index:2; width:30px; height:30px;' +
+        'border:none; border-radius:50%; cursor:pointer; background:rgba(0,0,0,.05); color:#6a7480;' +
+        'font-size:17px; line-height:1; display:grid; place-items:center;';
+    close.onmouseenter = () => close.style.background = 'rgba(0,0,0,.12)';
+    close.onmouseleave = () => close.style.background = 'rgba(0,0,0,.05)';
     close.onclick = () => box.remove();
-    card.appendChild(close);
+    card.appendChild(body); card.appendChild(close);
     box.appendChild(card); document.body.appendChild(box);
     box.addEventListener('pointerdown', (e) => { if (e.target === box) box.remove(); });
 }
@@ -3385,7 +3408,7 @@ switchTurn() {
 
         // If it's the agent's turn, ask the backend for its moves.
         const currentPlayerObject = this.players.find(player => player.name === this.turn);
-        if (currentPlayerObject && currentPlayerObject.isAI && !window._tutorialActive) {
+        if (currentPlayerObject && currentPlayerObject.isAI && !window._tutorialActive && !_gameFrozen) {
             this.scene.showThinkingIcon();
             setTimeout(() => {
                 getAgentMoves(getGameState(this));
@@ -4069,6 +4092,9 @@ class MainGameScene extends Phaser.Scene {
         const debugMode = false; // Set this to false to disable debug mode
 
         _themedRedraws = [];   // fresh registry each scene build (drop stale button refs)
+        // On the first-load welcome, hold the game (no AI) until the player hits
+        // Play; a real, freshly-rolled game is started then.
+        _gameFrozen = !!(this._coinFlipOnStart && !matchTracker);
         this.game = new Game(this, this.startingPlayer, debugMode);
 
         // "Play vs computer" now lives in the settings panel; make sure the game
@@ -4463,6 +4489,7 @@ class MainGameScene extends Phaser.Scene {
     }
 
     checkInitialAIReady() {
+        if (_gameFrozen) return;   // welcome up: don't let the AI open behind it
         const isBlackAI = this.startingPlayer === 'black' && BLACK_IS_AI;
         const isWhiteAI = this.startingPlayer === 'white' && WHITE_IS_AI;
 
