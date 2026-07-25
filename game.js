@@ -407,6 +407,45 @@ function showConfirm(message, onConfirm) {
     box.querySelector('#cYes').onclick = () => { box.remove(); onConfirm(); };
 }
 
+// How-to-Play as a scrollable, sectioned DOM overlay (sans headers, serif body).
+function showInstructions() {
+    const old = document.getElementById('howToPlay'); if (old) old.remove();
+    const box = document.createElement('div');
+    box.id = 'howToPlay';
+    box.style.cssText = 'position:fixed; inset:0; z-index:60; display:grid; place-items:center;' +
+        'background:rgba(0,0,0,.5); font-family:' + HUD_FONT + ';';
+    const sections = [
+        ['Goal', 'Be the first to <i>save</i> all your pieces. Your score for a win is the number of pieces your opponent still had left — so winning big is worth more.'],
+        ['Your pieces', 'You have 12: six numbered (1–6) and six blank. They start on your side rack.'],
+        ['A turn', 'Roll two dice and move. Each die moves one piece a number of tiles equal to that die; you can move one piece with each die, or one piece with both (their sum). A piece always takes the shortest route to the tile you choose, and once it has moved with one die it can’t double back with the other. You may skip a die (or the whole turn).'],
+        ['Getting on the board', 'Pieces enter through the yellow hub in the middle. Only the front piece on your rack can enter, and you must enter at least one piece per turn until your rack is empty (unless you have a captured piece, in which case you must enter that).'],
+        ['Capturing &amp; blocking', 'Land on a field tile holding a single enemy piece and you capture it — it goes back to the hub and its owner must re-enter it before doing anything else. A tile with <b>two or more</b> enemy pieces is a wall: you can’t enter or pass through it.'],
+        ['Saving', 'The six coloured wedges on the rim are goals, numbered 1–6. To save a piece, get it onto a goal and roll that goal’s number to lift it off the board. A numbered piece can only be saved from its own goal; a blank piece from any goal. (You can start saving once all your pieces are on the board.)'],
+        ['Endgame', 'When every piece you have left is saved or sitting on a goal it can be saved from, you’re in the endgame: blank pieces can now be saved with a roll <i>higher</i> than their goal’s number, as long as you have nothing waiting on a higher-numbered goal.'],
+        ['A couple of special moves', '• Break a wall: past the opening and with no captured pieces, double-click (or drag from the picker) one piece of an enemy two-stack to save it for them — it costs both your dice and hands the opponent a piece, but turns the wall into a lone piece.<br>• Last piece: if you start a turn with a single piece left and it’s a numbered one sitting on its goal, it becomes blank (savable by any roll of that goal number or higher).'],
+        ['Stalemate', 'If 10 full rounds pass with nobody saving a piece, either player may call a draw. Any save resets the counter.'],
+        ['Controls', 'Tap or drag a piece to move it; drag onto its goal — or double-click — to save. The ↶ arrow undoes one die at a time; ↷ ends your turn. On a crowded tile the <b>+N</b> badge opens a picker (drag a piece straight out of it). Theme, difficulty and options live under the ⚙ settings, and <b>New Match</b> starts a multi-game match.'],
+    ];
+    let html = '<h2 style="margin:0 0 4px; font-size:24px;">How to Play</h2>';
+    sections.forEach(([h, b]) => {
+        html += '<h3 style="margin:15px 0 3px; font-size:16px;">' + h + '</h3>' +
+            '<p style="margin:0; font-family:' + BODY_FONT + '; font-size:15px; line-height:1.5; color:#33404b;">' + b + '</p>';
+    });
+    const card = document.createElement('div');
+    card.style.cssText = 'background:#fff; color:#28313b; border-radius:16px; padding:22px 26px;' +
+        'width:min(560px,92vw); max-height:86vh; overflow-y:auto; box-sizing:border-box;' +
+        'box-shadow:0 18px 50px rgba(0,0,0,.3); -webkit-overflow-scrolling:touch;';
+    card.innerHTML = html;
+    const close = document.createElement('button');
+    close.textContent = 'Close';
+    close.style.cssText = 'margin-top:16px; font-family:' + HUD_FONT + '; font-weight:700; font-size:15px;' +
+        'padding:9px 20px; border-radius:9px; border:none; cursor:pointer; background:' + THEME.accentCss + '; color:#fff;';
+    close.onclick = () => box.remove();
+    card.appendChild(close);
+    box.appendChild(card); document.body.appendChild(box);
+    box.addEventListener('pointerdown', (e) => { if (e.target === box) box.remove(); });
+}
+
 // DOM modal to configure and start a new match.
 function showMatchSetup() {
     const old = document.getElementById('matchSetup'); if (old) old.remove();
@@ -3613,9 +3652,7 @@ class MainGameScene extends Phaser.Scene {
         });
 
         const instructionsButton = makeHudButton(this, 150, inMatch ? 104 : 156, 'How to Play', { ghost: true });
-        instructionsButton.on('pointerdown', () => {
-            this.scene.switch('InstructionsScene');
-        });
+        instructionsButton.on('pointerdown', () => { showInstructions(); });
         if (typeof refreshSettingsMatchState === 'function') refreshSettingsMatchState();
 
         // Add save game state button
