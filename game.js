@@ -133,6 +133,48 @@ function _currentGame() {
     try { const sc = gameInstance.scene.getScene('MainGameScene'); return sc && sc.game; }
     catch (e) { return null; }
 }
+
+// ── TURN / THINKING INDICATOR ───────────────────────────────────────────
+function turnStatusText(game) {
+    if (!game || game.gameOver) return '';
+    const p = game.turn;
+    const isAI = (p === 'black' && BLACK_IS_AI) || (p === 'white' && WHITE_IS_AI);
+    if (isAI) return 'Computer thinking…';
+    return BLACK_IS_AI ? 'Your turn' : _cap(p) + '’s turn';
+}
+function updateTurnStatus(textOrGame) {
+    const text = typeof textOrGame === 'string' ? textOrGame : turnStatusText(textOrGame);
+    let el = document.getElementById('turnStatus');
+    if (!el) {
+        el = document.createElement('div'); el.id = 'turnStatus';
+        el.style.cssText = 'position:fixed; top:10px; left:50%; transform:translateX(-50%); z-index:30;' +
+            'font-family:' + HUD_FONT + '; font-size:14px; font-weight:600; color:#28313b;' +
+            'background:rgba(255,255,255,.8); padding:5px 15px; border-radius:20px;' +
+            'box-shadow:0 2px 8px rgba(0,0,0,.14); pointer-events:none; transition:opacity .2s;';
+        document.body.appendChild(el);
+    }
+    el.textContent = text || '';
+    el.style.opacity = text ? '1' : '0';
+}
+
+// ── KEYBOARD SHORTCUTS ──────────────────────────────────────────────────
+// Z = undo one die, Enter/Space = end turn, Esc = deselect.
+document.addEventListener('keydown', (e) => {
+    if (e.target && /^(INPUT|SELECT|TEXTAREA)$/.test(e.target.tagName)) return;
+    if (document.getElementById('matchSetup') || document.getElementById('howToPlay')) return;
+    const g = _currentGame();
+    if (!g || g.gameOver || !g.currentPlayerIsHuman || !g.currentPlayerIsHuman()) return;
+    const k = e.key;
+    if ((k === 'z' || k === 'Z') && !e.metaKey && !e.ctrlKey) {
+        hideStackPicker(); g.undoOneMove(); clearMoveRecording(); e.preventDefault();
+    } else if (k === 'Enter' || k === ' ') {
+        if (g.dice.some(d => !d.used) && getConfirmRiskyEnd() && g.hasAnyLegalMove()) g.showConfirmationModal();
+        else g.switchTurn();
+        e.preventDefault();
+    } else if (k === 'Escape') {
+        hideStackPicker(); _clearSelection(g);
+    }
+});
 // Difficulty is locked while a match is ongoing; reflect that in the panel.
 function refreshSettingsMatchState() {
     const slider = document.querySelector('#settingsDiff input[type=range]');
@@ -2923,7 +2965,8 @@ switchTurn() {
         this.applyLastPieceRule();
         this.turnStartState = getGameState(this);
         if (typeof updateMustMoveHighlights === 'function') updateMustMoveHighlights(this);
-        
+        if (typeof updateTurnStatus === 'function') updateTurnStatus(this);
+
         if (window.showEvals) refreshEvalReadout();
 
         // No-save draw display is owned by the frontend now; update directly.
@@ -3063,6 +3106,7 @@ endGame(winner, score = null, impasse_caller = null) {
         scoreTracker.black_wins += 1;
     }
     scoreTracker.games_played += 1;
+    if (typeof updateTurnStatus === 'function') updateTurnStatus('');   // hide during end screen
     // Fold this game into the active match (if any) before showing the result.
     const matchOver = matchTracker ? recordMatchGame(winner, score) : false;
     this.scene.updateScoreText();
@@ -3713,6 +3757,7 @@ class MainGameScene extends Phaser.Scene {
             this._coinFlipOnStart = false;
             showCoinFlip(this.startingPlayer);
         }
+        if (typeof updateTurnStatus === 'function') updateTurnStatus(this.game);
     }
 
     updateScoreText() {
