@@ -140,7 +140,9 @@ function _boolSetting(key, dflt) {
 }
 function getFeedbackEnabled()   { return _boolSetting('fxEnabled', true); }      // move/capture effects
 function getAutoEndTurn()       { return _boolSetting('autoEndTurn', false); }   // end turn when both dice used
-function getConfirmRiskyEnd()   { return _boolSetting('confirmRiskyEnd', true); } // confirm ending with a move left
+// confirm ending with a move left (never during the tutorial, which scripts a
+// deliberate pass with a live-but-useless die)
+function getConfirmRiskyEnd()   { return !_tut.active && _boolSetting('confirmRiskyEnd', true); }
 
 // The live Game instance (for settings that act on the running game).
 function _currentGame() {
@@ -387,149 +389,303 @@ function maybeShowFirstRunNudge() {
 }
 
 // ── Guided interactive tutorial ─────────────────────────────────────────────
-// A small step-runner over scripted mini-positions. Each step builds a position
-// with the free-placement helpers, shows an instruction bubble, and polls for a
-// success condition to auto-advance. A Next button is always available so the
-// player is never stuck; the AI is suppressed while the tutorial is active
-// (see the !window._tutorialActive guard in switchTurn).
-const _tut = { active: false, step: 0, timer: null, bubble: null, mover: null, startTile: null, target: null };
+// A scripted walkthrough of one whole game, opening to win. Each step declares
+// an exact position (board, racks, dice), the moves it will accept, and a
+// success condition polled a few times a second. Anything the script didn't ask
+// for is refused: _tutMoveOK is consulted inside getReachableTilesByDice, so
+// off-script destinations are neither highlighted nor accepted, and _tutSaveOK /
+// _tutBlockSaveOK gate the two save gestures. Black's replies are scripted
+// slides rather than the AI (suppressed via window._tutorialActive), and
+// switchTurn is short-circuited so the script owns the dice and the turn order.
+const _tut = { active: false, step: 0, timer: null, bubble: null,
+               turnEnded: false, busy: false, shake: null };
 
+function _tutStep() { return _tut.active ? _tutSteps[_tut.step] : null; }
 function _tutRack(game, player, kind) {
     if (kind === 'saved') return player === 'white' ? game.whiteSavedRack : game.blackSavedRack;
     return player === 'white' ? game.whiteUnenteredRack : game.blackUnenteredRack;
 }
 function _tutHub(game) { return game.tiles.find(t => t.type === 'home'); }
-function _tutEntryTiles(game) { return _tutHub(game).neighbors.filter(t => t.type === 'field'); }
+function _tutTile(game, r, s) { return game.tiles.find(t => t.ring === r && t.sector === s); }
+function _tutPiece(game, player, n) { return game.pieces.find(p => p.player === player && p.number === n); }
 function _tutGoal(game, n) { return game.tiles.find(t => t.type === 'save' && t.number === n); }
+function _at(tile, r, s) { return !!tile && tile.ring === r && tile.sector === s; }
+function _tutSavedCount(game, player) { return _tutRack(game, player, 'saved').pieces.length; }
+// the piece a rack-entering move is really about (it sits on the home tile mid-entry)
+function _tutIsFrontRack(game, piece) {
+    const r = _tutRack(game, piece.player, 'unentered');
+    return piece.rack === r ? r.pieces[0] === piece : piece.justMovedHome;
+}
 
-function _tutClearBoard(game) {
-    game.pieces.slice().forEach(p => {
-        _setupPlaceInRack(p, _tutRack(game, p.player, 'unentered'), false);
-        p.justMovedHome = false; p.isSelected = false; if (p.updateColor) p.updateColor();
-    });
+// Lay out a whole position from a declarative spec. board/saved/rack together
+// must name all 12 pieces per side; rack order is the order given (front first).
+function _tutApply(game, spec) {
     game.selectedPiece = null;
     if (game.unhighlightAllTiles) game.unhighlightAllTiles();
-    game.players[0].setGamePhase('opening');
-    game.players[1].setGamePhase('opening');
+    ['white', 'black'].forEach(pl => {
+        const s = spec[pl] || {};
+        const unentered = _tutRack(game, pl, 'unentered');
+        const saved = _tutRack(game, pl, 'saved');
+        game.pieces.filter(p => p.player === pl).forEach(p => {
+            p.isSelected = false; p.justMovedHome = false;
+            _setupPlaceInRack(p, unentered, false);
+        });
+        (s.board || []).forEach(([n, rs]) => {
+            const piece = _tutPiece(game, pl, n), tile = _tutTile(game, rs[0], rs[1]);
+            if (piece && tile) _setupPlaceOnTile(piece, tile);
+        });
+        (s.saved || []).forEach(n => {
+            const piece = _tutPiece(game, pl, n);
+            if (piece) _setupPlaceInRack(piece, saved, false);
+        });
+        // re-place the rack pieces in the stated order (removes + appends)
+        (s.rack || []).forEach(n => {
+            const piece = _tutPiece(game, pl, n);
+            if (piece) _setupPlaceInRack(piece, unentered, false);
+        });
+        game.pieces.filter(p => p.player === pl).forEach(p => p.updateColor && p.updateColor());
+    });
 }
+
+// Re-derive both players' phases from the laid-out position, the same way the
+// game does it (canBeSaved() reads the phase, so midgame has to be set first).
+function _tutPhases(game) {
+    [['white', 0xffffff, 0], ['black', 0x000000, 1]].forEach(([name, color, idx]) => {
+        const player = game.players[idx];
+        if (_tutRack(game, name, 'unentered').pieces.length) { player.setGamePhase('opening'); return; }
+        player.setGamePhase('midgame');
+        const mine = game.pieces.filter(p => p.color === color);
+        if (mine.every(p => p.canBeSaved())) player.setGamePhase('endgame');
+    });
+}
+
 function _tutSetDice(game, a, b) {
     game.dice[0].value = a; game.dice[0].used = false;
     game.dice[1].value = b; game.dice[1].used = false;
     game.dice.forEach(d => d.updateColor('white'));
 }
+
 // Re-derive per-turn state after a hand-built position so the board is playable.
 function _tutRefresh(game) {
     game.turn = 'white';
     game.movedOnce = false;
+    game.gameOver = false;
+    _tut.turnEnded = false;
+    game.undoStack = [];
+    if (typeof clearMoveRecording === 'function') clearMoveRecording();
     game.pieces.forEach(p => { p.reachableTiles = null; p._turnStartTile = p.currentTile || null; });
     if (game.updateMovablePieces) game.updateMovablePieces();
     if (typeof updateMustMoveHighlights === 'function') updateMustMoveHighlights(game);
     if (typeof updateTurnStatus === 'function') updateTurnStatus(game);
     game.dice.forEach(d => d.updateColor('white'));
 }
-// Park every white piece except `keep` in the saved rack, so the unentered rack
-// is empty (no forced-entry obligation) and white counts as past the opening.
-function _tutParkWhites(game, keep) {
-    game.pieces.filter(p => p.player === 'white' && p !== keep)
-        .forEach(p => _setupPlaceInRack(p, _tutRack(game, 'white', 'saved'), false));
-    game.players[0].setGamePhase('midgame');
+
+// ── hooks called from the game itself (all no-ops outside the tutorial) ──────
+function _tutMoveOK(game, piece, tile) {
+    const step = _tutStep();
+    if (!step) return true;
+    try { return !!(step.move && step.move(game, piece, tile)); } catch (e) { return false; }
 }
+function _tutSaveOK(piece) {
+    const step = _tutStep(); if (!step) return true;
+    try { return !!(step.save && step.save(piece.game, piece)); } catch (e) { return false; }
+}
+function _tutBlockSaveOK(piece) {
+    const step = _tutStep(); if (!step) return true;
+    try { return !!(step.blockSave && step.blockSave(piece.game, piece)); } catch (e) { return false; }
+}
+function _tutFilterReach(game, piece, r) {
+    const ok = t => _tutMoveOK(game, piece, t);
+    return { reachableByFirstDie: r.reachableByFirstDie.filter(ok),
+             reachableBySecondDie: r.reachableBySecondDie.filter(ok),
+             reachableBySum: r.reachableBySum.filter(ok) };
+}
+// switchTurn during the tutorial: the script owns the turn, so only note that
+// the player ended it (and only where the step asks them to).
+function _tutTurnEnd() {
+    const step = _tutStep();
+    if (step && step.allowEndTurn) _tut.turnEnded = true;
+    else _tutNudge();
+}
+// The instruction bubble would otherwise sit on top of the bottom of the board
+// (goals 2 and 4 live down there, and most of the second half of the script
+// happens around them). Shrink Phaser's fit box by the bubble's height instead,
+// so the whole board stays visible — setParentSize is the supported path and
+// keeps pointer mapping correct, unlike a CSS transform on the canvas.
+// The scale manager's parent here is the window itself, so it re-reads the full
+// window size every resizeInterval and would undo the override half a second
+// later — hence parking the poll while the tutorial holds a smaller fit box.
+function _tutFitBoard() {
+    const s = (typeof gameInstance !== 'undefined') && gameInstance.scale; if (!s) return;
+    if (!_tut.active || !_tut.bubble) {
+        s.resizeInterval = _tut.resizeInterval || 500;
+        s.setParentSize(window.innerWidth, window.innerHeight);
+        return;
+    }
+    if (_tut.resizeInterval === undefined) _tut.resizeInterval = s.resizeInterval;
+    s.resizeInterval = Number.MAX_SAFE_INTEGER;
+    const reserve = Math.round(_tut.bubble.getBoundingClientRect().height) + 26;
+    s.setParentSize(window.innerWidth, Math.max(260, window.innerHeight - reserve));
+    // CENTER_BOTH still centres the canvas in the *window*, which would hang it
+    // back over the bubble; pin it to the top of the reserved area instead — and
+    // re-read the canvas bounds afterwards, or pointer positions stay offset by
+    // the margin we just removed.
+    if (s.canvas) { s.canvas.style.marginTop = '0px'; s.updateBounds(); }
+}
+function _tutHudVisible(on) {
+    const scene = _setupScene();
+    if (scene && scene.hudButtons) scene.hudButtons.forEach(b => b.setHudVisible && b.setHudVisible(on));
+}
+window.addEventListener('resize', () => { if (_tut.active) setTimeout(_tutFitBoard, 60); });
+
+function _tutNudge() {
+    const b = _tut.bubble; if (!b) return;
+    clearInterval(_tut.shake);
+    let n = 0;
+    b.style.transition = 'transform .08s ease-in-out';
+    _tut.shake = setInterval(() => {
+        b.style.transform = 'translateX(-50%) translateX(' + ((n % 2) ? 7 : -7) + 'px)';
+        if (++n > 3) { clearInterval(_tut.shake); _tut.shake = null; b.style.transform = 'translateX(-50%)'; }
+    }, 80);
+}
+
+// ── the script ───────────────────────────────────────────────────────────────
+// Tile shorthand: spokes run home -> ring1 .. ring7 goal. Spoke 2 -> goal 4,
+// 4 -> goal 2, 6 -> goal 5, 8 -> goal 3, 10 -> goal 6, 12 -> goal 1. Goals sit
+// at [7,2]=4 [7,4]=2 [7,6]=5 [7,8]=3 [7,10]=6 [7,12]=1.
+const _TUT_BLACK_MID = [[1, [2, 9]], [2, [3, 10]], [3, [1, 8]], [7, [5, 13]], [12, [3, 1]]];
 
 const _tutSteps = [
     {
-        title: 'Enter a piece',
-        text: 'Your pieces start on the rack. Tap your front piece to send it onto the home tile, then tap a highlighted tile to move it out onto the board.',
-        build(game) {
-            _tutClearBoard(game);           // all white pieces waiting on the rack
-            _tutSetDice(game, 4, 3);
-            _tutRefresh(game);
-        },
-        done(game) { return game.pieces.some(p => p.player === 'white' && p.currentTile && p.currentTile.type === 'field'); },
+        title: 'Send two pieces out',
+        text: 'Your pieces wait on the rack. Send the front one out — it steps onto the home tile first, then out along a spoke — and spend the <b>5</b> on the highlighted tile near goal 5. Then bring a second piece out with the <b>3</b>. Pieces 1–6 each have one matching goal; blank pieces can use any.',
+        dice: [5, 3],
+        pos: { white: { rack: [7, 8, 6, 9, 10, 11, 12, 1, 2, 3, 4, 5] },
+               black: { rack: [5, 7, 8, 9, 10, 11, 12, 1, 2, 3, 4, 6] } },
+        move: (g, p, t) => p.player === 'white' && (_at(t, 5, 6) || _at(t, 3, 10)),
+        done: g => !!_tutTile(g, 5, 6).pieces.length && !!_tutTile(g, 3, 10).pieces.length,
+        black: [{ n: 5, to: [4, 6] }],
     },
     {
-        title: 'Move with both dice',
-        text: 'This piece is already on the board. Each die moves it that many tiles — use them one at a time, or pick a far tile to spend both at once. It always takes the shortest route and can’t double back.',
-        build(game) {
-            _tutClearBoard(game);
-            const mover = game.pieces.find(p => p.player === 'white');
-            _setupPlaceOnTile(mover, _tutEntryTiles(game)[0]);
-            _tutParkWhites(game, mover);
-            _tutSetDice(game, 3, 2);
-            _tutRefresh(game);
-            _tut.mover = mover; _tut.startTile = mover.currentTile;
-        },
-        done(game) { return _tut.mover && _tut.mover.currentTile && _tut.mover.currentTile !== _tut.startTile && game.dice.every(d => d.used); },
+        title: 'Numbered pieces head for their goal',
+        text: 'Your next piece is the <b>6</b>. A numbered piece can only ever be saved on its own goal, so send it straight there — goal 6 is exactly seven tiles away, and both dice can go on one piece: select the 6, then goal 6 (or drag it there).',
+        dice: [3, 4],
+        pos: { white: { board: [[7, [5, 6]], [8, [3, 10]]], rack: [6, 9, 10, 11, 12, 1, 2, 3, 4, 5] },
+               black: { board: [[5, [4, 6]]], rack: [7, 8, 9, 10, 11, 12, 1, 2, 3, 4, 6] } },
+        move: (g, p, t) => p.player === 'white' && p.number === 6 && _at(t, 7, 10),
+        done: g => _tutPiece(g, 'white', 6).currentTile === _tutGoal(g, 6),
+        black: [{ n: 7, to: [5, 10] }],
     },
     {
-        title: 'Capture a lone piece',
-        text: 'Land exactly on a tile holding a single enemy piece to capture it — it’s sent back to their home tile to start over. Take the highlighted enemy piece.',
-        build(game) {
-            _tutClearBoard(game);
-            const mover = game.pieces.find(p => p.player === 'white');
-            _setupPlaceOnTile(mover, _tutEntryTiles(game)[0]);
-            _tutParkWhites(game, mover);
-            _tutSetDice(game, 3, 2);
-            _tutRefresh(game);
-            const r = game.getReachableTilesByDice(mover);
-            const spot = [...r.reachableByFirstDie, ...r.reachableBySecondDie]
-                .find(t => t.type === 'field' && t.pieces.length === 0);
-            const target = game.pieces.find(p => p.player === 'black');
-            if (spot) _setupPlaceOnTile(target, spot);
-            _tut.target = target;
-            _tutRefresh(game);
-        },
-        done(game) { return _tut.target && _tut.target.currentTile === _tutHub(game); },
+        title: 'Take what’s exposed',
+        text: 'A lone piece on a tile is exposed — land on it and it goes back to the home tile to start over. Black has left two. While you still have pieces on the rack, <b>one of your two moves must be that front rack piece</b> — either order. Enter it with the <b>4</b> onto Black’s 5, and use the <b>2</b> to take the other with the piece already on the board. Black will have to move its captured pieces back out before doing anything else.',
+        dice: [4, 2],
+        pos: { white: { board: [[7, [5, 6]], [8, [3, 10]], [6, [7, 10]]], rack: [9, 10, 11, 12, 1, 2, 3, 4, 5] },
+               black: { board: [[5, [4, 6]], [7, [5, 10]]], rack: [8, 9, 10, 11, 12, 1, 2, 3, 4, 6] } },
+        move: (g, p, t) => p.player === 'white' &&
+            ((_tutIsFrontRack(g, p) && _at(t, 4, 6)) || (p.number === 8 && _at(t, 5, 10))),
+        done: g => _tutHub(g).pieces.filter(p => p.player === 'black').length === 2,
+        black: [{ n: 5, to: [4, 4] }, { n: 7, to: [2, 2] }],
     },
     {
-        title: 'Go around a wall',
-        text: 'Two or more enemy pieces on one tile form a wall — you can’t enter or pass through it. The direct tile is walled off; move your piece around it another way.',
-        build(game) {
-            _tutClearBoard(game);
-            const mover = game.pieces.find(p => p.player === 'white');
-            _setupPlaceOnTile(mover, _tutEntryTiles(game)[0]);
-            _tutParkWhites(game, mover);
-            _tutSetDice(game, 3, 2);
-            _tutRefresh(game);
-            const r = game.getReachableTilesByDice(mover);
-            const wallSpot = r.reachableByFirstDie.find(t => t.type === 'field' && t.pieces.length === 0);
-            const blacks = game.pieces.filter(p => p.player === 'black');
-            if (wallSpot) { _setupPlaceOnTile(blacks[0], wallSpot); _setupPlaceOnTile(blacks[1], wallSpot); }
-            _tut.mover = mover; _tut.startTile = mover.currentTile; _tut.target = wallSpot;
-            _tutRefresh(game);
-        },
-        done(game) { return _tut.mover && _tut.mover.currentTile && _tut.mover.currentTile.type === 'field'
-            && _tut.mover.currentTile !== _tut.startTile && _tut.mover.currentTile !== _tut.target; },
+        title: 'Build a wall',
+        text: 'Two of your pieces on one tile make a <b>wall</b> — enemy pieces can’t land on it or pass through. Black’s 5 still has to come round to goal 5, and the short way in runs over a tile you already hold. Your dice sum to 5: bring your next piece all the way out to join it and shut that route down.',
+        dice: [3, 2],
+        pos: { white: { board: [[7, [5, 6]], [8, [5, 10]], [9, [4, 6]], [6, [7, 10]]], rack: [10, 11, 12, 1, 2, 3, 4, 5] },
+               black: { board: [[5, [4, 4]], [7, [2, 2]]], rack: [8, 9, 10, 11, 12, 1, 2, 3, 4, 6] } },
+        move: (g, p, t) => p.player === 'white' && _tutIsFrontRack(g, p) && _at(t, 5, 6),
+        done: g => _tutTile(g, 5, 6).pieces.filter(p => p.player === 'white').length >= 2,
     },
     {
-        title: 'Save a piece',
-        text: 'Numbered pieces are saved from their matching goal. This piece sits on its goal and a die shows its number — double-click it (or drag it to your saved rack) to save it and score it.',
-        build(game) {
-            _tutClearBoard(game);
-            const mover = game.pieces.find(p => p.player === 'white' && p.number === 3)
-                || game.pieces.find(p => p.player === 'white');
-            _setupPlaceOnTile(mover, _tutGoal(game, 3));
-            _tutParkWhites(game, mover);
-            _tutSetDice(game, 3, 5);
-            _tutRefresh(game);
-            _tut.mover = mover;
-        },
-        done(game) { return _tut.mover && _tut.mover.rack === game.whiteSavedRack; },
+        title: 'Saving',
+        fast: true,
+        text: '<b>⏩ A few turns later.</b> Your rack is empty, so you’re out of the opening and can start saving. A piece on a goal goes out on a die matching that goal’s number: your <b>6</b> is on goal 6 — double-click it, or drag it to your saved rack, and the 6 banks it for a point. Then do the same on <b>goal 1</b> with the 1 — a blank piece can be saved on any goal.',
+        dice: [6, 1],
+        pos: { white: { board: [[6, [7, 10]], [10, [7, 12]], [4, [3, 3]], [2, [3, 4]],
+                                [11, [5, 6]], [12, [3, 6]], [1, [3, 12]], [3, [3, 8]]],
+                        saved: [5, 7, 8, 9] },
+               black: { board: [[8, [5, 2]], [9, [4, 2]], [10, [5, 21]], [11, [5, 22]]].concat(_TUT_BLACK_MID),
+                        saved: [4, 5, 6] } },
+        save: (g, p) => p.player === 'white' && (p.number === 6 || p.number === 10),
+        done: g => _tutSavedCount(g, 'white') >= 6,
+        black: [{ n: 9, to: [6, 2] }, { n: 8, to: [6, 2] }],
     },
     {
-        title: 'You’re ready',
-        text: 'That’s the core of the game: enter, move, capture, block, and save. There are a couple of special moves in How to Play — but you know enough to play. Press Finish to start a real game.',
+        title: 'The long way in',
+        text: 'Black has walled the tile in front of goal 4. A piece always takes the shortest route to where you send it — and your 4’s shortest route was <b>five</b> tiles, so a single 5 would have done it. Now the only way in is <b>nine</b>: up the far spoke, through goal 2 and round the outer arc. Luckily, your dice sum to 9, so move your 4 to its goal.',
+        dice: [3, 6],
+        pos: { white: { board: [[4, [3, 3]], [2, [3, 4]], [11, [5, 6]], [12, [3, 6]], [1, [3, 12]], [3, [3, 8]]],
+                        saved: [5, 6, 7, 8, 9, 10] },
+               black: { board: [[8, [6, 2]], [9, [6, 2]], [10, [5, 21]], [11, [5, 22]]].concat(_TUT_BLACK_MID),
+                        saved: [4, 5, 6] } },
+        move: (g, p, t) => p.player === 'white' && p.number === 4 && _at(t, 7, 2),
+        done: g => _tutPiece(g, 'white', 4).currentTile === _tutGoal(g, 4),
+        black: [{ n: 10, to: [6, 4] }, { n: 11, to: [6, 4] }],
+    },
+    {
+        title: 'Buy the door open',
+        text: 'Those two walled tiles are the only ways into goals 2 and 4, so those goals are now sealed — your <b>2</b> has no route home, on any roll, ever. Your dice can’t do anything useful this turn, so spend them on the door: double-click one of the two black pieces on the wall <b>in front of goal 2</b> to <b>save it for Black</b>. It costs both dice and hands Black a point, but the wall drops to a single piece — your 2 has a path again, with something to capture on the way.',
+        dice: [3, 5],
+        pos: { white: { board: [[4, [7, 2]], [2, [3, 4]], [11, [5, 6]], [12, [3, 6]], [1, [3, 12]], [3, [3, 8]]],
+                        saved: [5, 6, 7, 8, 9, 10] },
+               black: { board: [[8, [6, 2]], [9, [6, 2]], [10, [6, 4]], [11, [6, 4]]].concat(_TUT_BLACK_MID),
+                        saved: [4, 5, 6] } },
+        blockSave: (g, p) => p.player === 'black' && _at(p.currentTile, 6, 4),
+        done: g => _tutSavedCount(g, 'black') >= 4,
+    },
+    {
+        title: 'The endgame',
+        fast: true,
+        text: '<b>⏩ Later.</b> Everything you have left is on a goal but one — use the <b>1</b> to step it onto goal 3. Now every piece is on a goal: that’s the <b>endgame</b>, and blank pieces get easier to save — a blank goes out on any die <i>bigger</i> than its goal’s number, as long as you hold no higher goal. Your highest is goal 3, so the <b>5</b> takes a blank straight off it. Numbered pieces never get this; they always need their own number.',
+        dice: [1, 5],
+        pos: { white: { board: [[2, [7, 4]], [11, [7, 8]], [12, [6, 8]]],
+                        saved: [1, 3, 4, 5, 6, 7, 8, 9, 10] },
+               black: { board: [[1, [6, 4]], [2, [6, 4]], [3, [3, 10]], [7, [2, 9]]],
+                        saved: [4, 5, 6, 8, 9, 10, 11, 12] } },
+        move: (g, p, t) => p.player === 'white' && p.number === 12 && _at(t, 7, 8),
+        save: (g, p) => p.player === 'white' && p.number > 6 && _at(p.currentTile, 7, 8),
+        done: g => _tutSavedCount(g, 'white') >= 10,
+        black: [{ n: 3, to: [3, 9] }],
+    },
+    {
+        title: 'Some dice do nothing',
+        text: 'The <b>4</b> takes your last blank off goal 3. Your 2 can’t use the 5 — a numbered piece only ever goes out on its own number, and you haven’t rolled a 2. Nothing else to do: end your turn.',
+        dice: [4, 5],
+        pos: { white: { board: [[2, [7, 4]], [11, [7, 8]]],
+                        saved: [1, 3, 4, 5, 6, 7, 8, 9, 10, 12] },
+               black: { board: [[1, [6, 4]], [2, [6, 4]], [3, [3, 9]], [7, [2, 9]]],
+                        saved: [4, 5, 6, 8, 9, 10, 11, 12] } },
+        save: (g, p) => p.player === 'white' && p.number > 6 && _at(p.currentTile, 7, 8),
+        allowEndTurn: true,
+        done: g => _tutSavedCount(g, 'white') >= 11 && _tut.turnEnded,
+        black: [{ n: 7, to: [2, 10] }],
+    },
+    {
+        title: 'Your last piece',
+        text: 'Your 2 has <b>lost its number</b>. With one piece left at the start of your turn, a numbered piece on its goal becomes blank — so it no longer has to wait for a 2, and any die of 2 or more brings it in. Save it and the game is yours.',
+        dice: [5, 3],
+        pos: { white: { board: [[2, [7, 4]]], saved: [1, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12] },
+               black: { board: [[1, [6, 4]], [2, [6, 4]], [3, [3, 9]], [7, [2, 10]]],
+                        saved: [4, 5, 6, 8, 9, 10, 11, 12] } },
+        after: g => { g.applyLastPieceRule(); },   // phase is endgame, so the 2 turns blank
+        save: (g, p) => p.player === 'white' && !!p.currentTile && p.currentTile.type === 'save',
+        done: g => _tutSavedCount(g, 'white') >= 12,
+    },
+    {
+        title: 'You win',
+        text: 'All twelve saved. The game ends the moment your last piece is off the board, and you score the number of pieces your opponent still had out — four. That’s the whole game: enter, move, capture, wall, save.',
         finish: true,
-        build() { /* nothing to build; the finish button ends the tutorial */ },
-        done() { return false; },
+        done: () => false,
     },
 ];
 
+// ── runner ───────────────────────────────────────────────────────────────────
 function _tutBubble() {
     if (_tut.bubble) return _tut.bubble;
     const b = document.createElement('div');
     b.id = 'tutBubble';
     b.style.cssText = 'position:fixed; left:50%; bottom:20px; transform:translateX(-50%);' +
-        'z-index:58; width:min(460px,92vw); box-sizing:border-box; background:#fff; color:#28313b;' +
+        'z-index:58; width:min(500px,92vw); box-sizing:border-box; background:#fff; color:#28313b;' +
         'font-family:' + HUD_FONT + '; border-radius:14px; padding:15px 18px;' +
         'box-shadow:0 16px 44px rgba(0,0,0,.3);';
     document.body.appendChild(b);
@@ -539,15 +695,20 @@ function _tutBubble() {
 function _tutRender() {
     const game = _setupGame(); if (!game) return;
     const step = _tutSteps[_tut.step];
-    try { step.build(game); } catch (e) { console.warn('[TUTORIAL] build failed:', e); }
+    if (step.pos) {
+        _tutApply(game, step.pos);
+        _tutSetDice(game, step.dice[0], step.dice[1]);
+        _tutPhases(game);
+        _tutRefresh(game);
+        if (step.after) { try { step.after(game); } catch (e) { console.warn('[TUTORIAL] after() failed:', e); } }
+    }
     const b = _tutBubble();
-    const done = _tut.step >= _tutSteps.length - 1;
     b.innerHTML =
         '<div style="font-size:12px; letter-spacing:.04em; text-transform:uppercase; color:#8b95a3; margin-bottom:3px;">' +
             'Tutorial · Step ' + (_tut.step + 1) + ' of ' + _tutSteps.length + '</div>' +
         '<div style="font-weight:700; font-size:17px; margin-bottom:5px;">' + step.title + '</div>' +
         '<div style="font-family:' + BODY_FONT + '; font-size:14.5px; line-height:1.5; color:#33404b;">' + step.text + '</div>' +
-        '<div id="tutBtns" style="display:flex; gap:8px; margin-top:13px; justify-content:flex-end;"></div>';
+        '<div id="tutBtns" style="display:flex; gap:8px; margin-top:13px; justify-content:flex-end; min-height:32px; align-items:center;"></div>';
     const btns = b.querySelector('#tutBtns');
     const mkBtn = (label, primary, fn) => {
         const el = document.createElement('button');
@@ -560,37 +721,70 @@ function _tutRender() {
     mkBtn('Exit', false, () => _tutEnd(false));
     if (step.finish) mkBtn('Finish', true, () => _tutEnd(true));
     else mkBtn('Skip →', true, _tutNext);
+    requestAnimationFrame(_tutFitBoard);     // re-fit: this step's text may be taller
+}
+function _tutNote(html) {
+    const b = _tut.bubble; if (!b) return;
+    const btns = b.querySelector('#tutBtns');
+    if (btns) btns.innerHTML = html;
 }
 function _tutNext() {
+    _tut.busy = false;
     if (_tut.step >= _tutSteps.length - 1) { _tutEnd(true); return; }
-    _tut.step += 1; _tut.mover = _tut.startTile = _tut.target = null; _tutRender();
+    _tut.step += 1;
+    _tutRender();
+}
+// Black's scripted reply: slide each piece to its new tile, then carry on.
+function _tutPlayBlack(game, moves, cb) {
+    if (!moves || !moves.length) { cb(); return; }
+    _tutNote('<span style="color:#8b95a3; font-weight:700; font-size:13px;">Black plays…</span>');
+    let i = 0;
+    const next = () => {
+        if (!_tut.active) { cb(); return; }
+        if (i >= moves.length) { setTimeout(cb, 400); return; }
+        const m = moves[i++];
+        const piece = _tutPiece(game, 'black', m.n), tile = _tutTile(game, m.to[0], m.to[1]);
+        if (piece && tile) {
+            const ox = piece.x, oy = piece.y;
+            _setupPlaceOnTile(piece, tile);
+            if (piece.animateFrom) piece.animateFrom(ox, oy);
+        }
+        setTimeout(next, 620);
+    };
+    setTimeout(next, 300);
 }
 function _tutPoll() {
-    if (!_tut.active) return;
+    if (!_tut.active || _tut.busy) return;
     const game = _setupGame(); if (!game) return;
     const step = _tutSteps[_tut.step];
-    try {
-        if (step.done && step.done(game)) {
-            // brief pause so the player sees the result, then advance
-            _tut.active = false; clearInterval(_tut.timer);
-            const b = _tutBubble();
-            const btns = b.querySelector('#tutBtns');
-            if (btns) btns.innerHTML = '<span style="color:#3a9e6a; font-weight:700; font-size:14px;">✓ Nice!</span>';
-            setTimeout(() => { _tut.active = true; _tut.timer = setInterval(_tutPoll, 350); _tutNext(); }, 900);
-        }
-    } catch (e) { /* a transient half-built state; ignore */ }
+    let ok = false;
+    try { ok = !!(step.done && step.done(game)); } catch (e) { ok = false; }   // transient half-built state
+    if (!ok) return;
+    _tut.busy = true;
+    _tutNote('<span style="color:#3a9e6a; font-weight:700; font-size:14px;">✓ Nice!</span>');
+    setTimeout(() => {
+        if (!_tut.active) return;
+        _tutPlayBlack(game, step.black, _tutNext);
+    }, 850);
 }
 function startTutorial() {
     if (_tut.active) return;
-    _tut.active = true; window._tutorialActive = true; _tut.step = 0;
-    _tut.mover = _tut.startTile = _tut.target = null;
+    _tut.active = true; window._tutorialActive = true;
+    _tut.step = 0; _tut.busy = false; _tut.turnEnded = false;
+    const welcome = document.getElementById('welcomeScreen');
+    if (welcome) welcome.remove();     // reachable from the settings panel too
+    _tutHudVisible(false);
     _tutRender();
-    clearInterval(_tut.timer); _tut.timer = setInterval(_tutPoll, 350);
+    clearInterval(_tut.timer); _tut.timer = setInterval(_tutPoll, 300);
 }
 function _tutEnd(startGame) {
     _tut.active = false; window._tutorialActive = false;
+    _tut.busy = false;
     clearInterval(_tut.timer); _tut.timer = null;
+    clearInterval(_tut.shake); _tut.shake = null;
     if (_tut.bubble) { _tut.bubble.remove(); _tut.bubble = null; }
+    _tutFitBoard();                       // give the board the full window back
+    _tutHudVisible(true);
     const scene = _setupScene();
     if (scene && scene.scene) scene.scene.restart({ startingPlayer: nextCasualStarter() });
 }
@@ -1701,6 +1895,7 @@ class Piece {
                     console.log(this.player)
                     return;
                 }
+            if (_tut.active && !_tutBlockSaveOK(this)) { _tutNudge(); return; }
             console.log('Saving one opponent piece from block')
             const savedRack = this.color === 0xffffff ? this.game.whiteSavedRack : this.game.blackSavedRack;
 
@@ -1982,6 +2177,7 @@ class Piece {
     }
 
     save() {
+        if (_tut.active && !_tutSaveOK(this)) { _tutNudge(); return false; }
         const player = this.color === 0xffffff ? this.game.players[0] : this.game.players[1];
         console.log(`Attempting to save piece ${this.number} for player ${player.name} in phase ${player.getGamePhase()}`);
         
@@ -2015,12 +2211,11 @@ class Piece {
                 dieToUse = pool.find(d => d.value === saveTileNumber)
                         || pool.sort((a, b) => a.value - b.value)[0];
             } else {
-                // Numbered piece: only its own value (midgame), or a higher die in the
-                // endgame with no higher goal occupied.
+                // Numbered piece: only ever its own value. The endgame higher-die
+                // rule is for blank pieces alone -- game.py's get_saving_die gates
+                // it on number > 6, and sumSave below does too; this branch used to
+                // allow it and let a numbered piece go out on any higher die.
                 dieToUse = dice.find(d => d.value === saveTileNumber);
-                if (!dieToUse && endgameHigherOK) {
-                    dieToUse = dice.filter(d => d.value > saveTileNumber).sort((a, b) => b.value - a.value)[0];
-                }
             }
 
             if (dieToUse) {
@@ -3073,6 +3268,9 @@ class Game {
                 // reachableBySum is already [] here (both dice were needed to reach it)
             }
         }
+        // The tutorial hard-blocks: off-script destinations are dropped here, so
+        // they are neither highlighted nor accepted by movePiece.
+        if (_tut.active) return _tutFilterReach(this, piece, { reachableByFirstDie, reachableBySecondDie, reachableBySum });
         return { reachableByFirstDie, reachableBySecondDie, reachableBySum };
     }
 
@@ -3185,6 +3383,7 @@ class Game {
         }
     
         console.log('Target tile is not reachable by the available dice rolls');
+        if (_tut.active) _tutNudge();      // off-script move: shake the instructions
         return false;
     }
 
@@ -3365,6 +3564,9 @@ class Game {
 
     
 switchTurn() {
+        // The tutorial script owns the dice and the turn order: never roll, never
+        // record, never hand over. The step's success poll advances instead.
+        if (_tut.active) { _tutTurnEnd(); return; }
         const justFinished = this.turn;
         const playerObj = this.players.find(p => p.name === justFinished);
         const source = playerObj.isAI ? 'heuristic' : 'human';
@@ -3521,6 +3723,8 @@ switchTurn() {
     }
 
 endGame(winner, score = null, impasse_caller = null) {
+    // The tutorial ends on its own closing panel, not the end-game scene.
+    if (_tut.active) return;
     // Determine the score (margin) first
     if (winner === 'tie') {
         score = 0;
@@ -4153,6 +4357,10 @@ class MainGameScene extends Phaser.Scene {
 
         const instructionsButton = makeHudButton(this, 150, inMatch ? 104 : 156, 'How to Play', { ghost: true });
         instructionsButton.on('pointerdown', () => { showInstructions(); });
+        // The tutorial hides these: New Game / New Match restart the scene, which
+        // would leave the step runner talking to a board that no longer exists.
+        this.hudButtons = [newGameButton, newMatchButton, instructionsButton];
+        if (_tut.active) _tutHudVisible(false);
         if (typeof refreshSettingsMatchState === 'function') refreshSettingsMatchState();
 
         // Add save game state button

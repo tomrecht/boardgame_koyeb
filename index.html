@@ -1,6 +1,9 @@
 <!DOCTYPE html>
 <html>
 <head>
+    <!-- game.js is UTF-8 (em dashes, curly quotes, arrows); without this a
+         server that omits a charset makes the browser decode it as latin-1 -->
+    <meta charset="utf-8">
     <!-- allow pinch-zoom so the board is easy to read/tap on small screens -->
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=6.0, user-scalable=yes, viewport-fit=cover">
     <script src="https://cdnjs.cloudflare.com/ajax/libs/phaser/3.55.2/phaser.min.js"></script>
