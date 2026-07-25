@@ -826,7 +826,7 @@ function _tutEnd(startGame) {
     _tutFitBoard();                       // give the board the full window back
     _tutHudVisible(true);
     const scene = _setupScene();
-    if (scene && scene.scene) scene.scene.restart({ startingPlayer: nextCasualStarter() });
+    if (scene && scene.scene) scene.scene.restart({ welcome: true });
 }
 
 // Defer to after the whole script has run (this file `defer`s, so the DOM is
@@ -1115,24 +1115,20 @@ function showInstructions() {
     // multi-column box overflows sideways (silently dropping the last sections)
     // rather than growing downwards.
     let html = '<style>' +
-        '#howToPlay h2 { margin:0 0 9px; font-size:26px; }' +
-        '#howToPlay h3 { margin:11px 0 3px; font-size:17px; break-after:avoid; break-inside:avoid; }' +
-        '#howToPlay .htpCols > h3:first-child { margin-top:0; }' +
-        '#howToPlay p { margin:0; font-family:' + BODY_FONT + '; font-size:16px; line-height:1.5;' +
-            'color:#33404b; break-inside:avoid; }' +
-        '#howToPlay .htpCols { columns:3; column-gap:36px; }' +
-        '@media (max-width: 1000px) { #howToPlay .htpCols { columns:2; } }' +
-        '@media (max-width: 700px)  { #howToPlay .htpCols { columns:1; } }' +
-        '</style><h2>How to Play</h2><div class="htpCols">';
+        '#howToPlay h2 { margin:0 0 10px; font-size:30px; }' +
+        '#howToPlay h3 { margin:18px 0 4px; font-size:20px; }' +
+        '#howToPlay h3:first-of-type { margin-top:0; }' +
+        '#howToPlay p { margin:0; font-family:' + BODY_FONT + '; font-size:18px; line-height:1.55;' +
+            'color:#33404b; }' +
+        '</style><h2>How to Play</h2>';
     sections.forEach(([h, b]) => { html += '<h3>' + h + '</h3><p>' + b + '</p>'; });
-    html += '</div>';
     const card = document.createElement('div');
     card.style.cssText = 'position:relative; background:#fff; color:#28313b; border-radius:16px;' +
-        'width:min(1120px,95vw); max-height:92vh; overflow:hidden; box-sizing:border-box;' +
+        'width:min(720px,94vw); max-height:90vh; overflow:hidden; box-sizing:border-box;' +
         'box-shadow:0 18px 50px rgba(0,0,0,.3);';
     const body = document.createElement('div');
     body.className = 'htpBody';
-    body.style.cssText = 'padding:26px 30px; max-height:92vh; box-sizing:border-box;' +
+    body.style.cssText = 'padding:26px 30px; max-height:90vh; box-sizing:border-box;' +
         'overflow-y:auto; -webkit-overflow-scrolling:touch;';
     body.innerHTML = html;
     const close = document.createElement('button');
@@ -4293,7 +4289,12 @@ class MainGameScene extends Phaser.Scene {
     }
 
     init(data) {
-        if (data && data.startingPlayer) {
+        if (data && data.welcome) {
+            // back from the tutorial: same as a fresh page load — hold the game
+            // behind the start screen until the player picks something.
+            this.startingPlayer = Math.random() < 0.5 ? 'white' : 'black';
+            this._coinFlipOnStart = true;
+        } else if (data && data.startingPlayer) {
             this.startingPlayer = data.startingPlayer;
         } else {
             // initial page-load casual game: random first player, revealed by a coin flip
