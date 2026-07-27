@@ -65,9 +65,12 @@ def _cpu_state_dict(model):
 
 def train_on_records(model, records, encoder, board, optimizer,
                      epochs, lam, gamma, batch_size=32,
-                     uniform_weights=True, val_frac=0.1, seed=0, log=True):
+                     uniform_weights=True, val_frac=0.1, seed=0, log=True,
+                     augment=None):
     """Train `model` in place for `epochs` on `records` using TD(lambda)
-    targets recomputed (frozen target net) each epoch. Returns best val loss."""
+    targets recomputed (frozen target net) each epoch. Returns best val loss.
+    `augment` (Symmetry or None) is applied to TRAINING encodes only (targets
+    are computed on the un-rotated positions)."""
     train_recs, val_recs = split_by_game(records, val_frac=val_frac, seed=seed)
     best_val = float('inf')
     best_state = None
@@ -78,7 +81,8 @@ def train_on_records(model, records, encoder, board, optimizer,
                                       lam, gamma, verbose=False)
         tr_loss, tr_acc = run_td_epoch(model, train_t, encoder, board, optimizer,
                                        batch_size, training=True,
-                                       uniform_weights=uniform_weights)
+                                       uniform_weights=uniform_weights,
+                                       augment=augment)
         val_loss, val_acc = run_td_epoch(model, val_t, encoder, board, optimizer,
                                          batch_size, training=False,
                                          uniform_weights=uniform_weights)
@@ -113,7 +117,8 @@ def run_td_selfplay(model,
                     save_prefix='td',
                     seed_base=10_000,
                     explore_eps_fn=None,
-                    revert_fork_sds=None):
+                    revert_fork_sds=None,
+                    augment=None):
     """Iterative TD(lambda) self-play. `model` is trained in place and is the
     current/live network; `champion_sd` is the promotion baseline (start it at
     iter5). `start_iter` lets a resumed run continue checkpoint numbering
@@ -203,7 +208,7 @@ def run_td_selfplay(model,
             model, train_records, encoder, board, optimizer,
             epochs=epochs_per_iter, lam=lam, gamma=gamma,
             batch_size=batch_size, uniform_weights=uniform_weights,
-            seed=it, log=True)
+            seed=it, log=True, augment=augment)
 
         # 4. Evaluate the new model vs the current champion (CPU pool). Eval
         # seeds live in a high, disjoint block (paired eval uses only

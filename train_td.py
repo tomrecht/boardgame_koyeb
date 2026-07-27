@@ -108,14 +108,25 @@ def print_data_stats(records, label=''):
 # Encoding a batch against a precomputed td_target
 # ---------------------------------------------------------------------------
 
-def encode_batch_with_targets(records, encoder, board, uniform_weights=True):
+def encode_batch_with_targets(records, encoder, board, uniform_weights=True,
+                              augment=None):
     """Encode records into a collated batch + td_target labels + weights.
-    Records must already carry 'td_target' (added by compute_td_targets)."""
+    Records must already carry 'td_target' (added by compute_td_targets).
+
+    augment (a symmetry.Symmetry or None): D3 symmetry augmentation. When set,
+    each record's raw_state is rotated to a RANDOM one of the 3 symmetric
+    variants (0/240/480 deg) before encoding, keeping the SAME td_target -- the
+    rotation preserves value (validated: signed gap ~0), so this teaches the net
+    equivariance across the goal pairs, balancing 2&4 / 1&6 / 3&5 by
+    construction. Applied to TRAINING passes only (targets are on the original)."""
     encoded, labels, weights = [], [], []
     failed = 0
     for rec in records:
         try:
-            board.update_state(rec['raw_state'])
+            rs = rec['raw_state']
+            if augment is not None:
+                rs = augment.transform(rs, random.randint(0, 2))
+            board.update_state(rs)
             enc = encoder.encode(board, rec['player'])
             encoded.append(enc)
             labels.append(rec['td_target'])
@@ -146,8 +157,9 @@ def compute_epoch_targets(model, records, encoder, board, lam, gamma, verbose=Fa
 
 
 def run_td_epoch(model, records_with_targets, encoder, board, optimizer,
-                 batch_size, training, uniform_weights=True):
-    """One pass of weighted-MSE regression toward precomputed td_targets."""
+                 batch_size, training, uniform_weights=True, augment=None):
+    """One pass of weighted-MSE regression toward precomputed td_targets.
+    `augment` (Symmetry or None) is applied to TRAINING encodes only."""
     if training:
         model.train()
         order = list(range(len(records_with_targets)))
@@ -165,7 +177,8 @@ def run_td_epoch(model, records_with_targets, encoder, board, optimizer,
     for start in range(0, len(recs), batch_size):
         chunk = recs[start:start + batch_size]
         batch, labels, weights, _ = encode_batch_with_targets(
-            chunk, encoder, board, uniform_weights=uniform_weights)
+            chunk, encoder, board, uniform_weights=uniform_weights,
+            augment=augment if training else None)
         if batch is None:
             continue
 
