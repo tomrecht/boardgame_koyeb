@@ -2921,12 +2921,19 @@ class Die {
         this.graphics.clear();
         this.graphics.fillStyle(0x000000, 0.10);
         this.graphics.fillRoundedRect(this.x, this.y + 4, this.size, this.size, 14);  // soft shadow
-        this.graphics.fillStyle(dieColor, 1);
-        // Colour-coded border preserved: die A vs die B vs (both) -- rounded now.
+        // Colour-coded border preserved: die A vs die B. Drawn as a slightly
+        // larger filled rounded rect *behind* the face rather than with
+        // strokeRoundedRect: a thick stroked path here left stray coloured
+        // lines running from the dice across the board on some Android GPUs
+        // (the WebGL line batch joining onto the next shape). Two fills have
+        // no path to leak.
         const borderColor = this.isFirstDie ? colorFirstDie : colorSecondDie;
-        this.graphics.lineStyle(5, borderColor, 1);
+        const bw = 5;
+        this.graphics.fillStyle(borderColor, 1);
+        this.graphics.fillRoundedRect(this.x - bw / 2, this.y - bw / 2,
+                                      this.size + bw, this.size + bw, 14 + bw / 2);
+        this.graphics.fillStyle(dieColor, 1);
         this.graphics.fillRoundedRect(this.x, this.y, this.size, this.size, 14);
-        this.graphics.strokeRoundedRect(this.x, this.y, this.size, this.size, 14);
 
         const dotSize = this.size * 0.11; // scales with the die
         const dotOffset = this.size / 4;
@@ -5305,3 +5312,24 @@ const config = {
 };
 
 const gameInstance = new Phaser.Game(config);
+
+// Pinch-to-zoom on a phone. Phaser captures touch, i.e. preventDefault() on
+// every touch event over the canvas, and Chrome suppresses zooming for a whole
+// touch sequence whose touchstart was cancelled -- so the board couldn't be
+// zoomed. Two details make letting it through safe:
+//   - touchstart/touchmove uncancelled: the browser can pinch. It can't do
+//     anything else, because `touch-action: pinch-zoom` (index.html) rules out
+//     one-finger panning and double-tap zoom, so dragging a piece and
+//     double-tap-to-save still belong to the canvas.
+//   - touchend still cancelled: that is what suppresses the compatibility
+//     mouse events. Without it every tap is handled twice -- the second pass
+//     reads as a double-click and puts a just-entered piece back on the rack,
+//     so taps appear to do nothing.
+// The flag is flipped from a capture-phase listener, which runs before
+// Phaser's own handler reads it.
+['touchstart', 'touchmove', 'touchend', 'touchcancel'].forEach(type => {
+    window.addEventListener(type, () => {
+        const tm = gameInstance.input && gameInstance.input.touch;
+        if (tm) tm.capture = (type === 'touchend' || type === 'touchcancel');
+    }, { capture: true, passive: true });
+});
