@@ -537,28 +537,79 @@ function _tutTurnEnd() {
 // The scale manager's parent here is the window itself, so it re-reads the full
 // window size every resizeInterval and would undo the override half a second
 // later — hence parking the poll while the tutorial holds a smaller fit box.
+function _tutLayout() {
+    // Side-by-side once the viewport is wide and landscape enough for the
+    // board to keep a sensible size next to a column of text; stacked below
+    // otherwise (portrait phones).
+    const w = window.innerWidth, h = window.innerHeight;
+    return (w >= 640 && w / h >= 1.25) ? 'side' : 'bottom';
+}
+
 function _tutFitBoard() {
     const s = (typeof gameInstance !== 'undefined') && gameInstance.scale; if (!s) return;
     if (!_tut.active || !_tut.bubble) {
         s.resizeInterval = _tut.resizeInterval || 500;
         s.setParentSize(window.innerWidth, window.innerHeight);
+        if (s.canvas) { s.canvas.style.marginLeft = ''; s.canvas.style.marginTop = ''; }
         return;
     }
     if (_tut.resizeInterval === undefined) _tut.resizeInterval = s.resizeInterval;
     s.resizeInterval = Number.MAX_SAFE_INTEGER;
-    const reserve = (_tut.bubbleH || Math.round(_tut.bubble.getBoundingClientRect().height)) + 26;
-    s.setParentSize(window.innerWidth, Math.max(260, window.innerHeight - reserve));
-    // CENTER_BOTH still centres the canvas in the *window*, which would hang it
-    // back over the bubble; pin it to the top of the reserved area instead — and
-    // re-read the canvas bounds afterwards, or pointer positions stay offset by
-    // the margin we just removed.
-    if (s.canvas) { s.canvas.style.marginTop = '0px'; s.updateBounds(); }
+
+    const W = window.innerWidth, H = window.innerHeight;
+    const b = _tut.bubble;
+    const mode = _tutLayout();
+    const gap = 16;
+
+    if (mode === 'side') {
+        // Text in a column beside the board, board pinned to the other side.
+        const bw = Math.min(380, Math.round(W * 0.34));
+        b.style.width = bw + 'px';
+        b.style.left = 'auto';
+        b.style.right = gap + 'px';
+        b.style.bottom = 'auto';
+        b.style.top = '50%';
+        b.style.transform = 'translateY(-50%)';
+        b.style.maxHeight = (H - 2 * gap) + 'px';
+        b.style.overflowY = 'auto';
+        _tutMeasureBubble(bw);
+        s.setParentSize(Math.max(320, W - bw - 2 * gap), H);
+        if (s.canvas) { s.canvas.style.marginLeft = '0px'; s.canvas.style.marginTop = ''; }
+    } else {
+        // Stacked: board on top, text under it. The pair is centred as a group,
+        // so a short board doesn't leave a chasm between the two.
+        const bw = Math.round(Math.min(640, W * 0.92));
+        b.style.width = bw + 'px';                // explicit: clearing it would
+        b.style.right = 'auto';                   // collapse the card to fit-content
+        b.style.left = '50%';
+        b.style.bottom = 'auto';
+        b.style.transform = 'translateX(-50%)';
+        // On a tall narrow screen the text would otherwise eat most of the
+        // height; cap it and let the longest steps scroll.
+        const cap = Math.round(H * 0.45);
+        b.style.maxHeight = cap + 'px';
+        b.style.overflowY = 'auto';
+        _tutMeasureBubble(bw);
+        const bh = Math.min(cap, _tut.bubbleH || Math.round(b.getBoundingClientRect().height));
+        s.setParentSize(W, Math.max(200, H - bh - 2 * gap));
+        if (s.canvas) {
+            const ch = s.canvas.getBoundingClientRect().height;
+            const top = Math.max(0, Math.round((H - (ch + gap + bh)) / 2));
+            s.canvas.style.marginTop = top + 'px';
+            s.canvas.style.marginLeft = '';
+            b.style.top = (top + ch + gap) + 'px';
+        }
+    }
+    // Re-read the canvas bounds after moving it, or pointer positions stay
+    // offset by the margins we just changed.
+    if (s.canvas) s.updateBounds();
 }
 function _tutHudVisible(on) {
     const scene = _setupScene();
     if (scene && scene.hudButtons) scene.hudButtons.forEach(b => b.setHudVisible && b.setHudVisible(on));
 }
-window.addEventListener('resize', () => { if (_tut.active) setTimeout(() => { _tutMeasureBubble(); _tutFitBoard(); }, 60); });
+window.addEventListener('resize', () => { if (_tut.active) setTimeout(_tutFitBoard, 60); });
+window.addEventListener('orientationchange', () => { if (_tut.active) setTimeout(_tutFitBoard, 250); });
 
 function _tutNudge() {
     const b = _tut.bubble; if (!b) return;
@@ -726,9 +777,10 @@ function _tutStepHtml(step, idx) {
 // The board must not resize from step to step, so the bubble reserves the same
 // height throughout: measure the tallest step once (off-screen, at the real
 // width) and pin the bubble to it. Re-measured on resize, where text rewraps.
-function _tutMeasureBubble() {
+function _tutMeasureBubble(width) {
     const probe = document.createElement('div');
-    probe.style.cssText = _TUT_BUBBLE_CSS + 'visibility:hidden; bottom:auto; top:0;';
+    probe.style.cssText = _TUT_BUBBLE_CSS + 'visibility:hidden; bottom:auto; top:0;' +
+        (width ? 'width:' + width + 'px;' : '');
     document.body.appendChild(probe);
     let max = 0;
     _tutSteps.forEach((step, i) => {
@@ -823,7 +875,6 @@ function startTutorial() {
     if (welcome) welcome.remove();     // reachable from the settings panel too
     _tutHudVisible(false);
     _tutBubble();
-    _tutMeasureBubble();
     _tutRender();
     _tutFitBoard();
     clearInterval(_tut.timer); _tut.timer = setInterval(_tutPoll, 300);
