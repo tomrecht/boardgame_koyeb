@@ -538,11 +538,12 @@ function _tutTurnEnd() {
 // window size every resizeInterval and would undo the override half a second
 // later — hence parking the poll while the tutorial holds a smaller fit box.
 function _tutLayout() {
-    // Side-by-side once the viewport is wide and landscape enough for the
-    // board to keep a sensible size next to a column of text; stacked below
-    // otherwise (portrait phones).
+    // Side-by-side only on a landscape phone, where the viewport is too short
+    // to give any height away to the text and the card would sit on the board.
+    // Anything with real height -- desktop, tablet, portrait phone -- stacks
+    // the card under the board, which reads better and keeps the board wide.
     const w = window.innerWidth, h = window.innerHeight;
-    return (w >= 640 && w / h >= 1.25) ? 'side' : 'bottom';
+    return (h <= 560 && w / h >= 1.25) ? 'side' : 'bottom';
 }
 
 function _tutFitBoard() {
