@@ -186,10 +186,11 @@ def run():
 
 
 # -------------------- ratings --------------------
-def _elo(scored, epochs=400, K=8):
+def _elo(scored, epochs=400, K=8, tags=None):
     """scored: list of (a, b, a_score in [0,1]). Iterative symmetric Elo,
-    mean-anchored at 1500. Returns {tag: rating}."""
-    r = {t: 1500.0 for t in CHAMPIONS}
+    mean-anchored at 1500. Returns {tag: rating}. `tags` seeds the table so
+    champions no longer on the roster (deleted checkpoints) are still rated."""
+    r = {t: 1500.0 for t in (tags if tags is not None else CHAMPIONS)}
     rng = random.Random(0)
     for _ in range(epochs):
         rng.shuffle(scored)
@@ -200,11 +201,23 @@ def _elo(scored, epochs=400, K=8):
     return r
 
 
-def compute_ratings(rows):
-    """Aggregate rows -> (win_elo, marg_elo, wins, games, marg, idx). Only
-    champions currently in CHAMPIONS are rated; unknown tags in the jsonl are
-    ignored (safe when champions are added between runs)."""
+def _roster(rows):
+    """Everyone to rate: the configured champions plus anyone already in the
+    results. Analysis must not depend on which checkpoints still exist on disk
+    -- a contender whose .pt was deleted after it played still belongs in the
+    table, and its games still inform everyone else's rating."""
     tags = list(CHAMPIONS)
+    for r in rows:
+        for t in (r['a'], r['b']):
+            if t not in tags:
+                tags.append(t)
+    return tags
+
+
+def compute_ratings(rows):
+    """Aggregate rows -> (win_elo, marg_elo, wins, games, marg, idx) over
+    _roster(rows), so past contenders keep their standings."""
+    tags = _roster(rows)
     idx = {t: i for i, t in enumerate(tags)}
     n = len(tags)
     wins = [[0] * n for _ in range(n)]
@@ -224,16 +237,16 @@ def compute_ratings(rows):
             wins[ia][ib] += aw; wins[ib][ia] += (1 - aw)
             win_scored.append((a, b, float(aw)))
         marg_scored.append((a, b, min(1.0, max(0.0, 0.5 + m / (2 * MAXM)))))
-    return (_elo(list(win_scored)), _elo(list(marg_scored)),
+    return (_elo(list(win_scored), tags=tags), _elo(list(marg_scored), tags=tags),
             wins, games, marg, idx)
 
 
 def standings_str(rows):
     win_elo, marg_elo, wins, games, marg, idx = compute_ratings(rows)
-    order = sorted(CHAMPIONS, key=lambda t: marg_elo[t], reverse=True)
-    out = [f"{'champ':8}{'margin-Elo':>11}{'win-Elo':>9}{'  W-L-D':>9}"
+    order = sorted(idx, key=lambda t: marg_elo[t], reverse=True)
+    out = [f"{'champ':12}{'margin-Elo':>11}{'win-Elo':>9}{'  W-L-D':>9}"
            f"{'  avg-marg':>10}   (by margin-Elo)"]
-    n = len(CHAMPIONS)
+    n = len(idx)
     for t in order:
         i = idx[t]
         g = sum(games[i])
@@ -241,7 +254,7 @@ def standings_str(rows):
         losses = sum(wins[j][i] for j in range(n))  # opponents' wins over t
         draws = g - w - losses
         am = sum(marg[i]) / g if g else 0.0
-        out.append(f"{t:8}{marg_elo[t]:11.0f}{win_elo[t]:9.0f}"
+        out.append(f"{t:12}{marg_elo[t]:11.0f}{win_elo[t]:9.0f}"
                    f"{f'{w}-{losses}-{draws}':>9}{am:+10.2f}")
     return "\n".join(out)
 
@@ -249,29 +262,32 @@ def standings_str(rows):
 def analyze():
     rows = load_rows()
     win_elo, marg_elo, wins, games, marg, idx = compute_ratings(rows)
-    order = sorted(CHAMPIONS, key=lambda t: marg_elo[t], reverse=True)
-    print(f"{len(rows)} games among {len(CHAMPIONS)} champions\n")
+    order = sorted(idx, key=lambda t: marg_elo[t], reverse=True)
+    gone = [t for t in idx if t not in CHAMPIONS]
+    print(f"{len(rows)} games among {len(idx)} champions"
+          + (f" (from the results file, not on the current roster: {', '.join(gone)})" if gone else "")
+          + "\n")
     print(standings_str(rows))
 
     print("\nWIN% matrix (row beats col):")
-    print('       ' + ''.join(f'{t:>8}' for t in order))
+    print(' ' * 12 + ''.join(f'{t:>12}' for t in order))
     for a in order:
         cells = []
         for b in order:
             g = games[idx[a]][idx[b]]
             cells.append('   -   ' if a == b or g == 0
                          else f'{100*wins[idx[a]][idx[b]]/g:6.0f} ')
-        print(f'{a:7}' + ''.join(f'{c:>8}' for c in cells))
+        print(f'{a:12}' + ''.join(f'{c:>12}' for c in cells))
 
     print("\nAVG MARGIN matrix (row's mean signed margin vs col):")
-    print('       ' + ''.join(f'{t:>8}' for t in order))
+    print(' ' * 12 + ''.join(f'{t:>12}' for t in order))
     for a in order:
         cells = []
         for b in order:
             g = games[idx[a]][idx[b]]
             cells.append('   -   ' if a == b or g == 0
                          else f'{marg[idx[a]][idx[b]]/g:+6.2f} ')
-        print(f'{a:7}' + ''.join(f'{c:>8}' for c in cells))
+        print(f'{a:12}' + ''.join(f'{c:>12}' for c in cells))
     print("\nNote: margin-Elo rewards decisive wins; win-Elo is the plain "
           "who-beats-whom. Divergence between them flags a champ that wins "
           "often-but-narrowly (or rarely-but-big).")
