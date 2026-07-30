@@ -277,8 +277,8 @@ def compute_ratings(rows):
 def standings_str(rows):
     win_elo, marg_elo, wins, games, marg, idx = compute_ratings(rows)
     order = sorted(idx, key=lambda t: marg_elo[t], reverse=True)
-    out = [f"{'champ':12}{'margin-Elo':>11}{'win-Elo':>9}{'  W-L-D':>9}"
-           f"{'  avg-marg':>10}   (by margin-Elo)"]
+    out = [f"{'champ':18}{'margin-Elo':>11}{'win-Elo':>9}{'W-L-D':>14}"
+           f"{'avg-marg':>11}   (by margin-Elo)"]
     n = len(idx)
     for t in order:
         i = idx[t]
@@ -287,8 +287,8 @@ def standings_str(rows):
         losses = sum(wins[j][i] for j in range(n))  # opponents' wins over t
         draws = g - w - losses
         am = sum(marg[i]) / g if g else 0.0
-        out.append(f"{t:12}{marg_elo[t]:11.0f}{win_elo[t]:9.0f}"
-                   f"{f'{w}-{losses}-{draws}':>9}{am:+10.2f}")
+        out.append(f"{t:18}{marg_elo[t]:11.0f}{win_elo[t]:9.0f}"
+                   f"{f'{w}-{losses}-{draws}':>14}{am:+11.2f}")
     return "\n".join(out)
 
 
