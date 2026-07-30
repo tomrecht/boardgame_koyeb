@@ -33,11 +33,13 @@ import multiprocessing as mp
 
 REPO = os.path.dirname(os.path.abspath(__file__))
 CHAMPIONS = {
-    'iter5':  f'{REPO}/best_iter5_m46.pt',
-    'iter1':  f'{REPO}/td_champion_July17_iter1.pt',
+    'aux_iter14':  f'{REPO}/td_champion_July21_aux_iter14.pt',
+ #   'aux_iter8':  f'{REPO}/td_champion_July21_aux_iter8.pt',
     'iter4':  f'{REPO}/td_champion_July17_iter4.pt',
     'iter10': f'{REPO}/td_champion_July18_iter10.pt',
     'iter14': f'{REPO}/td_champion_July19_iter14.pt',
+    'symaug_iter6': f'{REPO}/symaug_champ_july27_iter6.pt',
+    'symaug_almost11': f'{REPO}/symaug_almostchamp_july27_iter11.pt',
 }
 for kv in filter(None, os.environ.get('CHAMPS_EXTRA', '').split(',')):
     tag, path = kv.split('=', 1)
@@ -48,7 +50,7 @@ if _only:
     CHAMPIONS = {t: CHAMPIONS[t] for t in _only}
 
 N_SEEDS = int(os.environ.get('N_SEEDS', '40'))
-N_WORKERS = int(os.environ.get('N_WORKERS', '8'))
+N_WORKERS = int(os.environ.get('N_WORKERS', '3'))
 RESULTS = os.environ.get('RESULTS', f'{REPO}/arena.jsonl')
 STANDINGS = os.environ.get('STANDINGS', f'{REPO}/arena_standings.txt')
 SEED_BASE = 4_400_000
@@ -133,50 +135,25 @@ def load_rows():
         return [json.loads(l) for l in f if l.strip()]
 
 
-def _focus_pairs(rows, all_pairs):
-    """FOCUS=<tag>: while the focus champion has played fewer games than the
-    others, play only its pairings so it catches up; once it is level, go back
-    to the full round-robin. Returns (pairs_for_this_round, catching_up)."""
-    focus = os.environ.get('FOCUS', '').strip()
-    if not focus:
-        return all_pairs, False
-    if focus not in CHAMPIONS:
-        raise SystemExit(f"FOCUS={focus} is not in the roster: {', '.join(CHAMPIONS)}")
-    played = {t: 0 for t in CHAMPIONS}
-    for r in rows:
-        for t in (r['a'], r['b']):
-            if t in played:
-                played[t] += 1
-    others = [n for t, n in played.items() if t != focus]
-    # "similar number of games" = at least as many as the least-played other
-    if others and played[focus] < min(others):
-        return [p for p in all_pairs if focus in p], True
-    return all_pairs, False
-
-
 def run():
     """Play round-robin ROUNDS forever until Ctrl-C. Each round = one paired,
     color-swapped game per champion pair (seed = SEED_BASE + round). After each
     round, recompute + print + save current standings. State lives entirely in
     arena.jsonl, so aborting and rerunning resumes seamlessly (finished rounds
-    are skipped instantly). No round count is fixed in advance.
-
-    FOCUS=<tag> plays only that champion's pairings until its game count has
-    caught up with the rest, then reverts to the full round-robin."""
-    all_pairs = list(itertools.combinations(list(CHAMPIONS), 2))
+    are skipped instantly). No round count is fixed in advance."""
+    target = 'symaug_almost11'
+    if target not in CHAMPIONS:
+        raise ValueError(f"target champ {target} not in CHAMPIONS")
+    pairs = [(target, other) for other in CHAMPIONS if other != target]
     rows = load_rows()
-    pairs, catching_up = _focus_pairs(rows, all_pairs)
     done = {(r['a'], r['b'], r['seed'], r['a_white']) for r in rows}
     max_round = max((r['seed'] - SEED_BASE for r in rows), default=-1)
     complete_rounds = sum(
         1 for k in range(max_round + 1)
         if pairs and all((a, b, SEED_BASE + k, aw) in done
                          for a, b in pairs for aw in (True, False)))
-    focus = os.environ.get('FOCUS', '').strip()
     print(f"{len(CHAMPIONS)} champions, {len(pairs)} pairs "
-          f"({2*len(pairs)} games/round)"
-          + (f" -- FOCUS on {focus} until it catches up" if catching_up else "")
-          + f". Resuming: {len(rows)} games, "
+          f"({2*len(pairs)} games/round). Resuming: {len(rows)} games, "
           f"{complete_rounds} full rounds done. Ctrl-C to stop.", flush=True)
     if rows:
         print(standings_str(rows), flush=True)
@@ -187,11 +164,6 @@ def run():
         with ctx.Pool(N_WORKERS, initializer=_worker_init) as pool, \
                 open(RESULTS, 'a') as f:
             while True:                       # unbounded; Ctrl-C to abort
-                pairs, still_catching = _focus_pairs(rows, all_pairs)
-                if focus and catching_up and not still_catching:
-                    print(f"[{focus} has caught up -- back to the full "
-                          f"round-robin]", flush=True)
-                catching_up = still_catching
                 seed = SEED_BASE + round_num
                 tasks = [(a, CHAMPIONS[a], b, CHAMPIONS[b], seed, aw)
                          for a, b in pairs for aw in (True, False)
@@ -274,11 +246,13 @@ def compute_ratings(rows):
             wins, games, marg, idx)
 
 
+
 def standings_str(rows):
     win_elo, marg_elo, wins, games, marg, idx = compute_ratings(rows)
     order = sorted(idx, key=lambda t: marg_elo[t], reverse=True)
-    out = [f"{'champ':12}{'margin-Elo':>11}{'win-Elo':>9}{'  W-L-D':>9}"
-           f"{'  avg-marg':>10}   (by margin-Elo)"]
+    
+    # Header aligned with 18-char champ column
+    out = [f"{'champ':<18}{'margin-Elo':>12}{'win-Elo':>10}{'W-L-D':>10}{'avg-marg':>11}   (by margin-Elo)"]
     n = len(idx)
     for t in order:
         i = idx[t]
@@ -287,8 +261,12 @@ def standings_str(rows):
         losses = sum(wins[j][i] for j in range(n))  # opponents' wins over t
         draws = g - w - losses
         am = sum(marg[i]) / g if g else 0.0
-        out.append(f"{t:12}{marg_elo[t]:11.0f}{win_elo[t]:9.0f}"
-                   f"{f'{w}-{losses}-{draws}':>9}{am:+10.2f}")
+        
+        # Format tag with parentheses if retired/not in CHAMPIONS
+        display_name = t if t in CHAMPIONS else f"({t})"
+        
+        out.append(f"{display_name:<18}{marg_elo[t]:>12.0f}{win_elo[t]:>10.0f}"
+                   f"{f'{w}-{losses}-{draws}':>10}{am:>+11.2f}")
     return "\n".join(out)
 
 

@@ -1,0 +1,11 @@
+after batch 105 (2386 games)
+champ               margin-Elo   win-Elo     W-L-D   avg-marg   (by margin-Elo)
+iter14                    1514      1566 307-247-4      +0.34
+aux_iter14                1507      1573 489-439-3      +0.18
+iter10                    1504      1523 441-449-6      -0.02
+symaug_almost11           1504      1484 280-277-1      -0.04
+symaug_iter6              1504      1547 273-285-0      -0.02
+iter4                     1504      1478 431-463-4      -0.16
+(aux_iter8)               1497      1467   65-82-3      -0.25
+(iter5)                   1487      1454   48-62-3      -0.41
+(iter1)                   1479      1408   38-68-4      -0.76

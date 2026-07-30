@@ -24,11 +24,11 @@ NUM_PIECES      = 12       # margin display unit (raw * NUM_PIECES = expected ma
 GNN_WEIGHTS     = 'gnn_weights.pt'
 
 
-def _position_key(board):
-    """Signature of everything the heuristic reads: where every piece sits, plus
-    the dice. board.pieces order is fixed for the whole search, so no sort is
-    needed. Two states differing only by swapping identical blank pieces get
-    different keys -- a missed hit, never a wrong one."""
+def _piece_locs(board):
+    """Where every piece sits: tile index, -2 saved, -1 still on the rack.
+    board.pieces order is fixed for the whole search, so no sort is needed. Two
+    states differing only by swapping identical blank pieces get different keys
+    -- a missed cache hit, never a wrong one."""
     saved = (board.white_saved, board.black_saved)
     locs = []
     for p in board.pieces:
@@ -38,7 +38,19 @@ def _position_key(board):
             locs.append(-2)
         else:
             locs.append(-1)
-    return (tuple(locs), board.dice[0].used, board.dice[1].used)
+    return tuple(locs)
+
+
+def _position_key(board):
+    """Everything the heuristic reads: piece placement plus the dice."""
+    return (_piece_locs(board), board.dice[0].used, board.dice[1].used)
+
+
+def _pair_relocations(pair):
+    """How many of a pair's moves shuffle a piece around the board, as opposed
+    to saving it or passing -- the legibility cost of a line."""
+    return sum(1 for m in pair
+               if isinstance(m, tuple) and len(m) == 3 and m[1] not in ('save', 0))
 
 
 def _top_indices(values, k):
@@ -235,6 +247,7 @@ class GNNAgent:
 
         move_keys    = []   # list of (move1, move2) pairs
         encoded_list = []   # corresponding encoded positions (filled when NOT prefiltering)
+        outcome_keys = []   # resulting piece placement per candidate, dice ignored
         scored       = []   # (heuristic_score, pair)        (filled when prefiltering)
 
         # Move orders transpose heavily -- about half of a midgame turn's
@@ -255,6 +268,7 @@ class GNNAgent:
             else:
                 move_keys.append(pair)
                 encoded_list.append(self.encoder.encode(board, player))
+                outcome_keys.append(_piece_locs(board))
 
         # --- Pass move ---
         if (0, 0, 0) in moves:
@@ -339,6 +353,7 @@ class GNNAgent:
                         board.apply_move(m, switch_turn=False)
                 move_keys.append(pair)
                 encoded_list.append(self.encoder.encode(board, player))
+                outcome_keys.append(_piece_locs(board))
                 while len(board.moves) > base:
                     board.undo_last_move()
 
@@ -380,6 +395,20 @@ class GNNAgent:
         # the top candidates (top-p over a scale-invariant softmax) so the agent
         # plays visibly weaker without ever making obviously terrible moves.
         best_idx = self._pick_move_index(final_scores, difficulty)
+
+        # Among candidates that leave the board in exactly the same state, take
+        # the one that moves the fewest pieces. This costs nothing -- the
+        # position after the turn is identical and a die left unused is worthless
+        # once the turn ends -- and it stops the agent walking a blank piece from
+        # goal 4 round to goal 2 to save it there when it could have saved it
+        # where it stood. (The scores differ only because "both dice used" is an
+        # input feature, which has no consequence at the end of a turn.)
+        if len(outcome_keys) == len(move_keys):
+            key = outcome_keys[best_idx]
+            same = [i for i, k in enumerate(outcome_keys) if k == key]
+            if len(same) > 1:
+                best_idx = min(same, key=lambda i: (_pair_relocations(move_keys[i]), i))
+
         chosen = move_keys[best_idx]
 
         # --- Diagnostic: localize pass-over-save -------------------------------

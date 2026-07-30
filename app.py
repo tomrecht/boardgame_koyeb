@@ -1,6 +1,7 @@
 # python app.py, then localhost:10000
 
 import os
+import sys
 # The app serves one position per request -- latency-bound inference where
 # GPU/MPS buys nothing, and some machines' MPS stacks hard-abort on the
 # GNN's batched scatter_add (MPSNDArrayScatter rank assertion on the iMac).
@@ -58,10 +59,25 @@ current_weights = get_weights(weights_file='best_weights.json')
 # > the default below.
 def _opponent_model_path():
     """Checkpoint (.pt, needs torch) or exported net (.onnx, needs only
-    onnxruntime) to play as. Deployment defaults to the .onnx if it is there,
-    which is what keeps torch out of the image."""
-    import sys
-    for arg in sys.argv[1:]:
+    onnxruntime) to play as, in order of precedence:
+
+        python app.py --model symaug_iter6.pt      # or -m, or --model=...
+        python app.py symaug_iter6.pt              # bare filename
+        OPPONENT_MODEL=... python app.py           # env (used in deployment)
+        opponent_model.txt                         # first non-comment line
+        model.onnx                                 # if present
+        td_champion_July18_iter10.pt               # last resort
+
+    Deployment defaults to the .onnx, which is what keeps torch out of the
+    image."""
+    argv = sys.argv[1:]
+    for i, arg in enumerate(argv):
+        if arg.startswith('--model='):
+            return arg.split('=', 1)[1]
+        if arg in ('--model', '-m') and i + 1 < len(argv):
+            return argv[i + 1]
+    for arg in argv:
+        # bare filename: extension-checked so gunicorn's own flags can't match
         if arg.endswith('.pt') or arg.endswith('.onnx'):
             return arg
     env = os.environ.get('OPPONENT_MODEL')
@@ -80,6 +96,8 @@ def _opponent_model_path():
     return 'td_champion_July18_iter10.pt'
 
 _model_path = _opponent_model_path()
+if not os.path.exists(_model_path):
+    logger.warning(f'Model file not found: {_model_path} (cwd {os.getcwd()})')
 logger.info(f'Loading opponent model: {_model_path}')
 #agent = Agent(weights=current_weights, log_to_file=True)
 agent = GNNAgent(weights_path=_model_path, use_prefilter=True, prefilter_top_k=40, heuristic_weights=current_weights)

@@ -196,6 +196,25 @@ function updateTurnStatus(textOrGame) {
     el.style.opacity = text ? '1' : '0';
 }
 
+// Brief centred notice under the status pill, for things that would otherwise
+// happen invisibly (the computer passing its whole turn).
+function flashNotice(text, ms = 2400) {
+    let el = document.getElementById('flashNotice');
+    if (!el) {
+        el = document.createElement('div'); el.id = 'flashNotice';
+        el.style.cssText = 'position:fixed; top:44px; left:50%; transform:translateX(-50%);' +
+            'z-index:31; font-family:' + HUD_FONT + '; font-size:13px; font-weight:600;' +
+            'color:#5a6473; background:rgba(255,255,255,.82); padding:4px 12px;' +
+            'border-radius:20px; box-shadow:0 2px 8px rgba(0,0,0,.12); pointer-events:none;' +
+            'opacity:0; transition:opacity .2s;';
+        document.body.appendChild(el);
+    }
+    el.textContent = text;
+    el.style.opacity = '1';
+    clearTimeout(el._t);
+    el._t = setTimeout(() => { el.style.opacity = '0'; }, ms);
+}
+
 // ── KEYBOARD SHORTCUTS ──────────────────────────────────────────────────
 // Z = undo one die, Enter/Space = end turn, Esc = deselect.
 document.addEventListener('keydown', (e) => {
@@ -1170,6 +1189,7 @@ function showInstructions() {
         ['Endgame', 'When every piece you have left is saved or sitting on a goal it can be saved from, you’re in the endgame: blank pieces can now be saved with a roll <i>higher</i> than their goal’s number, as long as you have nothing waiting on a higher-numbered goal.'],
         ['A couple of special moves', '• Break a wall: past the opening and with no captured pieces, double-click (or drag from the picker) one piece of an enemy two-stack to save it for them — it costs both your dice and hands the opponent a piece, but turns the wall into a lone piece.<br>• Last piece: if you start a turn with a single piece left and it’s a numbered one sitting on its goal, it becomes blank (savable by any roll of that goal number or higher).'],
         ['Stalemate', 'If 10 full rounds pass with nobody saving a piece, either player may call a draw. Any save resets the counter.'],
+        ['Matches', 'A match is several games, and it is won on <b>total score</b> — the sum of your winning margins — not on games won. Two formats: a set number of games (highest total score at the end wins), or a race to a target score. Starters alternate; if the scores finish level the match goes to whoever won more games, and if that is level too it is extended by a pair of games. The score line under the board tracks the match.'],
         ['Controls', 'Tap or drag a piece to move it; drag onto its goal — or double-click — to save. The ↶ arrow undoes one die at a time; ↷ ends your turn. On a crowded tile the <b>+N</b> badge opens a picker (drag a piece straight out of it). Theme, difficulty and options live under the ⚙ settings, and <b>New Match</b> starts a multi-game match.<br>On desktop: <b>Z</b> undoes one die · <b>Enter</b> or <b>Space</b> ends your turn · <b>Esc</b> deselects the piece you’re holding.'],
     ];
     // Wide two-column card so the whole thing is readable at a glance instead of
@@ -3553,9 +3573,18 @@ class Game {
         if (!r) return false;
         piece.reachableTiles = r;
 
+        // The move that lands this piece on `goal` can itself be what starts the
+        // endgame (it's the last piece off the field), so the endgame rule has to
+        // be judged against the position AFTER the move, not the current phase --
+        // otherwise dragging your last field piece onto its goal and out in one
+        // gesture is refused, while doing it in two steps works.
+        const endgameAfterMove = this.pieces
+            .filter(p => p.color === piece.color && p !== piece)
+            .every(p => p.canBeSaved());
         const canSaveFrom = (goal, dieVal) => {
             if (dieVal === goal.number) return true;
-            return piece.number > 6 && player.getGamePhase() === 'endgame' &&
+            return piece.number > 6 &&
+                (player.getGamePhase() === 'endgame' || endgameAfterMove) &&
                 dieVal > goal.number && !this.isHigherNumberedGoalOccupied(player, goal.number);
         };
         for (const goal of goals) {
@@ -3594,6 +3623,13 @@ class Game {
     maybeAutoEndTurn() {
         if (!getAutoEndTurn() || this.gameOver) return;
         if (!this.dice.every(d => d.used)) return;
+        // Obligatory pieces are pruned in movePiece, but a piece can also leave
+        // the board by being saved; a stale entry here would block the auto-end
+        // for the rest of the turn.
+        if (this.mustMovePieces && this.mustMovePieces.length) {
+            this.mustMovePieces = this.mustMovePieces.filter(
+                p => p.currentTile || (p.rack && p.rack.type === 'unentered'));
+        }
         if (this.mustMovePieces && this.mustMovePieces.length > 0) return;
         if (this._autoEndScheduled) return;
         this._autoEndScheduled = true;
@@ -3759,6 +3795,7 @@ switchTurn() {
 
         this.rollDice();
         this.movedOnce = false;
+        this._autoEndScheduled = false;   // fresh latch each turn
         this.updateMovablePieces();
         // record each piece's position at the turn start so a piece moved with
         // both dice one-by-one must keep advancing (shortest path, no backtrack).
@@ -5122,6 +5159,13 @@ if (movePair.some(m => Array.isArray(m) && m[0] === 1 && m[1] === 1 && m[2] === 
     }, 2000);
     return;
 }
+    // Both dice declined: nothing moves, so say so -- otherwise the turn just
+    // silently comes back to the player, which reads like a missed move.
+    const isPass = (m) => Array.isArray(m) && m[0] === 0 && m[1] === 0 && m[2] === 0;
+    if (movePair.every(isPass)) {
+        flashNotice(_cap(game.turn) + ' passed');
+    }
+
     let [move1, move2] = movePair;
 
     // Ensure a numbered-piece save is applied before its companion move.
