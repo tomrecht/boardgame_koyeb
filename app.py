@@ -37,6 +37,12 @@ CORS(app, supports_credentials=True)
 # is ephemeral anyway. RECORD_TRAINING=1 turns it back on for a local run.
 RECORD_TRAINING = os.environ.get('RECORD_TRAINING', '') == '1'
 
+# Hard ceiling on how long one move may take. Well under gunicorn's timeout, so
+# a slow position degrades (fewer candidates considered) instead of hanging the
+# worker until it is killed. Locally p99 is ~3s and the worst seen is ~4.6s, so
+# this only bites on a much slower box or a pathological position.
+MOVE_BUDGET = float(os.environ.get('MOVE_BUDGET', '20'))
+
 DATA_DIR = 'training_data'
 POSITIONS_FILE = os.path.join(DATA_DIR, 'positions_with_moves.jsonl')
 CONTRASTIVE_FILE = os.path.join(DATA_DIR, 'contrastive_pairs.jsonl')
@@ -267,8 +273,15 @@ def select_moves():
         moves = shared_board.get_valid_moves()
         logger.debug(f"select_moves: got {len(moves)} valid moves")
         if moves:
+            t0 = time.monotonic()
             chosen_moves = agent.select_move_pair(moves, shared_board, shared_board.current_player,
-                                                  difficulty=difficulty)
+                                                  difficulty=difficulty,
+                                                  deadline=t0 + MOVE_BUDGET)
+            dt = time.monotonic() - t0
+            if dt > 5:
+                logger.warning(f'slow move: {dt:.1f}s over {len(moves)} legal moves')
+            else:
+                logger.info(f'move chosen in {dt:.2f}s ({len(moves)} legal moves)')
             logger.debug(f"select_moves: selected {chosen_moves}")
 
             # Record black's position server-side

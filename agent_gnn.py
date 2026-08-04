@@ -15,6 +15,8 @@ To use in app.py:
     agent = GNNAgent()
 """
 
+import time
+
 import numpy as np
 from gnn_backend import make_backend
 
@@ -22,6 +24,12 @@ GAME_OVER_SCORE = 10000
 SCORE_SCALE     = 1000.0   # must match train_distill.py
 NUM_PIECES      = 12       # margin display unit (raw * NUM_PIECES = expected margin)
 GNN_WEIGHTS     = 'gnn_weights.pt'
+
+
+def move_keys_would_exist(scored, move_keys):
+    """True once at least one candidate has been recorded, so an early stop can
+    never leave the agent with nothing to choose from."""
+    return bool(scored) or bool(move_keys)
 
 
 def _piece_locs(board):
@@ -212,7 +220,8 @@ class GNNAgent:
         choice = int(np.random.choice(k, p=keep))
         return int(order[choice])
 
-    def select_move_pair(self, moves, board, player, return_scores=False, difficulty=None):
+    def select_move_pair(self, moves, board, player, return_scores=False, difficulty=None,
+                         deadline=None):
         """
         2-ply move selection using batched GNN evaluation.
 
@@ -278,7 +287,15 @@ class GNNAgent:
         moves_set.discard((0, 0, 0))
         moves_set.discard((1, 1, 1))   # draw handled separately, see docstring
 
+        truncated = False
         for move in moves_set:
+            # Safety valve for pathological branching: keep whatever candidates
+            # we have rather than let one request run away. Never trips in normal
+            # play -- see MOVE_BUDGET in app.py.
+            if deadline is not None and move_keys_would_exist(scored, move_keys) \
+                    and time.monotonic() > deadline:
+                truncated = True
+                break
             if not isinstance(move, tuple) or len(move) != 3:
                 raise ValueError('Invalid move format.')
 
@@ -356,6 +373,12 @@ class GNNAgent:
                 outcome_keys.append(_piece_locs(board))
                 while len(board.moves) > base:
                     board.undo_last_move()
+
+        if truncated:
+            import logging
+            logging.getLogger('agent_gnn').warning(
+                'move budget hit: scored %d of %d first moves',
+                len(scored) or len(move_keys), len(moves_set))
 
         if not move_keys:
             if draw_legal:

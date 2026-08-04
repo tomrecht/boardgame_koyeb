@@ -4902,6 +4902,7 @@ function evaluateBoard(gameState) {
 }
 
 
+let _agentRetries = 0;
 function getAgentMoves(gameState) {
     // difficulty 1 = full strength (argmax); lower = more top-p sampling (weaker)
     gameState = Object.assign({}, gameState, { difficulty: getAIDifficulty() });
@@ -4916,9 +4917,14 @@ function getAgentMoves(gameState) {
     })
     .then(response => {
         console.log('Response status:', response.status);
+        // A gateway timeout (or any error page) answers with HTML, so parsing it
+        // as JSON throws and the turn used to hang on "Computer thinking…"
+        // forever. Treat a bad response as a failed move and recover.
+        if (!response.ok) throw new Error('server responded ' + response.status);
         return response.json();
     })
     .then(data => {
+        _agentRetries = 0;
         updateNoSaveDisplay();
         if (data.move) {
             console.log('Agent moves:', data.move);
@@ -4932,7 +4938,20 @@ function getAgentMoves(gameState) {
     })
     .catch(error => {
         console.error('Error:', error);
-        gameInstance.scene.scenes[0].hideThinkingIcon();
+        const scene = gameInstance.scene.scenes[0];
+        scene.hideThinkingIcon();
+        // One quiet retry (a cold instance or a recycled worker usually answers
+        // the second time), then hand control back rather than leaving the
+        // player staring at a board that will never move.
+        if (_agentRetries < 1) {
+            _agentRetries += 1;
+            flashNotice('The computer didn’t answer — retrying', 3000);
+            setTimeout(() => { scene.showThinkingIcon(); getAgentMoves(gameState); }, 1500);
+        } else {
+            _agentRetries = 0;
+            flashNotice('No answer from the computer. Tap ↷ to ask again.', 6000);
+            if (typeof updateTurnStatus === 'function') updateTurnStatus('Computer unavailable');
+        }
     });
 }
 
