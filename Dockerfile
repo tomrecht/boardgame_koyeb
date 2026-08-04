@@ -15,10 +15,17 @@ COPY . .
 ENV OPPONENT_MODEL=model.onnx
 # Smaller feature cache than training uses: ~25 MB less resident per worker.
 ENV ROW_CACHE_MAX=20000
-# Sized for a fraction-of-a-vCPU instance: locally a move is p50 0.4s / p99 3s,
-# so on eMicro the tail lands around 15-20s. Past this the agent chooses from
-# the candidates it has rather than making the player wait.
-ENV MOVE_BUDGET=10
+# Prefer strong-and-slow: give move selection as long as it can have without
+# tripping a timeout. On eMicro the heaviest midgame positions land around
+# 15-20s (p50 is nearer 2s), so 40s means they are searched in full and the
+# budget effectively never bites -- while still leaving room under the 60s
+# worker timeout and the platform's own request timeout.
+#
+# The ceiling here is the PLATFORM's request timeout, not this: Koyeb returns a
+# 504 at 60s unless the service is configured otherwise. Raise that first, then
+# MOVE_BUDGET and WEB_TIMEOUT together.
+ENV MOVE_BUDGET=40
+ENV WEB_TIMEOUT=90
 
 # ONE worker by default: each is a separate process with its own copy of the
 # net (~90 MB), and two of them on a small instance ran the box out of memory --

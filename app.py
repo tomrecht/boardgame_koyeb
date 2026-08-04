@@ -37,11 +37,20 @@ CORS(app, supports_credentials=True)
 # is ephemeral anyway. RECORD_TRAINING=1 turns it back on for a local run.
 RECORD_TRAINING = os.environ.get('RECORD_TRAINING', '') == '1'
 
-# Hard ceiling on how long one move may take. Well under gunicorn's timeout, so
-# a slow position degrades (fewer candidates considered) instead of hanging the
-# worker until it is killed. Locally p99 is ~3s and the worst seen is ~4.6s, so
-# this only bites on a much slower box or a pathological position.
-MOVE_BUDGET = float(os.environ.get('MOVE_BUDGET', '20'))
+# Hard ceiling on how long one move may take: past it the agent chooses from the
+# candidates it has rather than hanging the worker until it is killed.
+#
+# Two things can time out above this, and the budget has to stay under BOTH:
+#   * gunicorn's --timeout (WEB_TIMEOUT), which kills the worker mid-request;
+#   * the platform's own request timeout, which returns a 504 to the browser
+#     while the worker keeps grinding (Koyeb's is 60s unless raised).
+# So the default is WEB_TIMEOUT minus a margin for scoring the collected
+# candidates and sending the response, and MOVE_BUDGET can override it.
+_WEB_TIMEOUT = float(os.environ.get('WEB_TIMEOUT', '60'))
+MOVE_BUDGET = float(os.environ.get('MOVE_BUDGET') or max(5.0, _WEB_TIMEOUT - 20))
+if MOVE_BUDGET > _WEB_TIMEOUT - 10:
+    logger.warning(f'MOVE_BUDGET={MOVE_BUDGET:.0f}s leaves little room under the '
+                   f'{_WEB_TIMEOUT:.0f}s worker timeout; a slow move may kill the worker')
 
 DATA_DIR = 'training_data'
 POSITIONS_FILE = os.path.join(DATA_DIR, 'positions_with_moves.jsonl')
@@ -101,6 +110,7 @@ def _opponent_model_path():
         return 'model.onnx'
     return 'td_champion_July18_iter10.pt'
 
+logger.info(f'move budget {MOVE_BUDGET:.0f}s (worker timeout {_WEB_TIMEOUT:.0f}s)')
 _model_path = _opponent_model_path()
 if not os.path.exists(_model_path):
     logger.warning(f'Model file not found: {_model_path} (cwd {os.getcwd()})')
