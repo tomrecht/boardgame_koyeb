@@ -79,13 +79,23 @@ class GNNAgent:
 
     def __init__(self, weights_path=GNN_WEIGHTS, model=None,
                  use_prefilter=False, prefilter_top_k=40, heuristic_weights=None,
-                 prefilter_min_k=5, prefilter_frac=None, prefilter_score_alpha=None):
+                 prefilter_min_k=5, prefilter_frac=None, prefilter_score_alpha=None,
+                 first_move_prefilter=0):
         # The backend owns both the net and the encoder that suits it: torch
         # for training/analysis, onnxruntime (numpy, no torch) for deployment.
         # Either way self.model(...) returns numpy scores.
         self.backend = make_backend(weights_path, model=model)
         self.model = self.backend
         self.encoder = self.backend.encoder
+
+        # Two-stage prefilter (0 = off). The one-stage prefilter below scores
+        # every candidate PAIR with the heuristic -- ~10k evaluations on a busy
+        # midgame turn, which is ~94% of the time a move takes. With this set to
+        # F, first moves are scored on their own (~150 evaluations), the best F
+        # are kept, and only those get their second moves enumerated. The risk is
+        # a pair whose first move looks poor alone but is strong in combination;
+        # first moves that save a piece are kept regardless.
+        self.first_move_prefilter = int(first_move_prefilter)
 
         # Optional move-pair pre-filter: rank candidates with the cheap heuristic
         # and only GNN-encode the top ones. Speeds up high-branching turns and
@@ -287,8 +297,41 @@ class GNNAgent:
         moves_set.discard((0, 0, 0))
         moves_set.discard((1, 1, 1))   # draw handled separately, see docstring
 
+        # --- Stage 1 (optional): rank first moves on their own ---------------
+        # Every score here is also the score of that move's (move, pass) pair --
+        # a pass changes nothing -- so stage 2 gets these back from eval_cache
+        # for free.
+        moves_iter = moves_set
+        if prefilter and self.first_move_prefilter and len(moves_set) > self.first_move_prefilter:
+            first_scored = []
+            for move in moves_set:
+                base = len(board.moves)
+                board.apply_move(move, switch_turn=False)
+                wgo, _ = board.check_game_over()
+                if wgo == player:
+                    while len(board.moves) > base:
+                        board.undo_last_move()
+                    win = (move, (0, 0, 0))
+                    return [(float('inf'), win)] if return_scores else win
+                key = _position_key(board)
+                sc = eval_cache.get(key)
+                if sc is None:
+                    sc, _ = self.heuristic.evaluate(board, player)
+                    eval_cache[key] = sc
+                first_scored.append((sc, move))
+                while len(board.moves) > base:
+                    board.undo_last_move()
+            first_scored.sort(key=lambda x: x[0], reverse=True)
+            keep = [m for _, m in first_scored[:self.first_move_prefilter]]
+            kept = set(keep)
+            # a first move that saves a piece is never culled here, for the same
+            # reason save PAIRS are exempt from the top-K cull below
+            keep += [m for _, m in first_scored
+                     if m not in kept and isinstance(m, tuple) and m[1] == 'save']
+            moves_iter = keep
+
         truncated = False
-        for move in moves_set:
+        for move in moves_iter:
             # Safety valve for pathological branching: keep whatever candidates
             # we have rather than let one request run away. Never trips in normal
             # play -- see MOVE_BUDGET in app.py.
@@ -378,7 +421,7 @@ class GNNAgent:
             import logging
             logging.getLogger('agent_gnn').warning(
                 'move budget hit: scored %d of %d first moves',
-                len(scored) or len(move_keys), len(moves_set))
+                len(scored) or len(move_keys), len(moves_iter))
 
         if not move_keys:
             if draw_legal:
