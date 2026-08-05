@@ -3,12 +3,24 @@
 Context for Claude Code picking up this project. Owner (Tom) prefers terse
 responses. Tom is the domain expert on the boardgame, you are the ML expert; make suggestions on training accordingly, but you may also suggest potential improvements to game rules and mechanics when relevant.
 
+**KEEP THIS FILE CURRENT (owner, 2026-08-04).** Update CLAUDE.md as part of the
+work, not as a favour asked for afterwards. Anything a fresh session would have
+to rediscover belongs here: a rule change, a deployed model, a config the app
+depends on, a measured number that settles a question, a bug whose cause was
+non-obvious, a decision and why. Land it in the same commit as the change where
+practical. Prune too: when a note is superseded, replace it rather than stacking
+a contradiction on top (say what changed and why, briefly). Numbers beat
+adjectives — record what was measured, over what sample, and what it rules out.
+
 **WORKSPACE CONSTRAINT (owner, 2026-07-21): Ownder works on two machines, iMac and MacBook. 
 Work only inside this folder (`/Users/tomrecht/game/boardgame_koyeb` on MacBook, `/Users/tom/Game/BoardGame` on iMac).** Reads/writes outside it trigger permission prompts. Do NOT create git worktrees or files in sibling dirs; run new experiments from a branch checked out *in this folder* (or keep files here).
 When you must inspect another branch's file, use `git show <branch>:<path>`;
 when you must read an out-of-folder artifact (e.g. a running worktree's log),
 `cp` it in first. (Some existing runs — e.g. the symmetry-aug worktree — predate
-this rule; monitor them by copying their logs in.)
+this rule; monitor them by copying their logs in.) The symmetry-aug work is now
+on origin as `symmetry-aug` / `symmetry-aug-main`, so it no longer lives only on
+the MacBook; its checkpoints `symaug_champ_July27_iter6.pt` and
+`symaug_almostchamp_July27_iter11.pt` are in this folder (iter11 is deployed).
 
 **OVERNIGHT / AUTONOMOUS WORK RULES (owner, 2026-07-23, after a failure).**
 The agent only acts *while a turn is running* (issuing tool calls). The moment
@@ -378,6 +390,112 @@ fix, larger change to the loop). Still parked for now, but no longer
 expected to self-resolve via the TD run.
 
 ## Current state
+
+- **SESSION UPDATE (2026-08-04) — LIVE ON KOYEB: deployed model, latency,
+  and a rendering bug.** `main` == `td-lambda` == `frontend-overhaul`; the
+  `fast-prefilter` branch is merged. Koyeb tracks main, so pushing deploys.
+  - **DEPLOYED MODEL: `model.onnx` = `symaug_almostchamp_July27_iter11.pt`**
+    (the symmetry-aug run's iter11), replacing aux_iter14 — owner reports it as
+    the strongest against him. Exported with `onnx_export.py <ckpt> model.onnx`,
+    which self-verifies (wrapper vs model exact, graph vs torch 1.1e-07); also
+    checked that the exported net and the checkpoint play an identical 40-turn
+    seeded trace. Re-export the same way to change the served model.
+  - **The 504 / "app won't load" incident.** gunicorn logged WORKER TIMEOUT then
+    SIGKILL: a request outran the timeout, the worker was killed, and nothing
+    served while it restarted. Cause was running 2 workers — separate processes,
+    ~90 MB each (measured: 19 MB master + 83 MB worker), too much for eMicro.
+    Now **1 worker / 2 threads** (WEB_WORKERS, WEB_THREADS), timeout 60→90s,
+    `--max-requests 2000`. Threads are safe: the Board is per-thread
+    (`get_board()`) and difficulty is passed per call, not set on the agent.
+  - **MOVE_BUDGET (default WEB_TIMEOUT−20, 40s in the image)**: past the
+    deadline `select_move_pair` stops enumerating and chooses from what it has,
+    logging `move budget hit`. `/select_moves` logs every move's duration and
+    warns over 5s. ROW_CACHE_MAX trims the encoder cache in deployment.
+  - **Frontend survives a failed request**: a non-OK response is no longer
+    parsed as JSON (the gateway's HTML error page threw `Unexpected token '<'`),
+    and the turn no longer hangs on "Computer thinking…" — one quiet retry, then
+    it says so and hands control back.
+  - **RENDERING BUG, long-standing, now fixed.** `Tile.highlight/unhighlight/
+    onOut` appended another `fillStyle+fillPath` to each tile's Graphics instead
+    of redrawing it; a Graphics replays its whole command list every frame and
+    `unhighlightAllTiles` touches ~70 tiles per selection, so the board got
+    slower every turn: **55 fps → 4 fps over 60 turns**, with objects, DOM and
+    heap all flat (which is why a reload "fixed" it). They now set a fill
+    override and redraw (drawTile clears first). That made drawTile hot and
+    exposed a second leak — it re-registered pointer handlers and created a new
+    Text per goal number each call (209 → 1261 objects); hit area, handlers and
+    number text are now built once. After: ~44 fps at turn 150, flat.
+  - **Two-stage prefilter, served only.** `first_move_prefilter=F` scores each
+    first move alone (~150 heuristic evals), keeps the best F, and only expands
+    those into pairs — the one-stage prefilter scored every pair (~10k evals,
+    ~94% of a move). app.py serves with **F=12** (FIRST_MOVE_PREFILTER env);
+    **the library default stays 0, so training, self-play and the arena are
+    unchanged**. Measured: worst move 3.65s → 1.28s, p99 3.06s → 1.12s; strength
+    over 120 paired games (`match_prefilter.py`) 52.1%, mean paired margin
+    +0.054 (95% CI −0.220..+0.329) — no measurable change, rules out a drop of
+    0.27 margin. Save first moves are exempt from the cull.
+  - **Move-time optimisations (exact, no play change — identical 40-turn
+    trace).** Two fixes took the worst midgame move 4.14s → 2.32s before the
+    prefilter: `_blot_cache` now keys on the enemy-blot set as well as the
+    blocked set, so it survives the search's apply/undo (it was cleared on every
+    undo, and the prefilter undoes ~10k times a move — that BFS was 10.5s of 18s
+    profiled); and the prefilter caches the heuristic per resulting position,
+    since ~half a midgame turn's pairs transpose (5,195 of 10,568 measured).
+  - **Android**: pinch-zoom worked again by flipping Phaser's touch capture per
+    event (touchstart/touchmove uncancelled so the browser can pinch, touchend
+    still cancelled to suppress the compatibility mouse events — turning capture
+    off wholesale breaks tapping). Dice borders drawn as a filled rounded rect
+    behind the face rather than a thick `strokeRoundedRect`, which left stray
+    coloured lines across the board on some GPUs.
+  - **Human-play rule bug fixed**: `game.js` let a NUMBERED piece go out on a
+    higher endgame die. That rule is blank-only (`game.py`'s `get_saving_die`
+    gates on number > 6). Also fixed: `sumSave` judged the endgame rule against
+    the phase *before* its own move, so dragging your last field piece onto its
+    goal and out in one gesture was refused while two steps worked.
+  - Smaller: settings gear 2x; goal numbers get a halo and per-theme contrast
+    (High-Contrast drew them white on near-white, 1.2:1); `flashNotice` when the
+    computer passes both dice; How to Play documents match scoring (total score,
+    not games won); tutorial ends at the start screen; tutorial lays out
+    side-by-side only on a landscape phone; app.py takes `--model/-m/--model=`
+    or a bare `*.pt`/`*.onnx`.
+
+- **ARENA / MEASUREMENT FINDINGS (2026-08-04).** `arena.py analyze` now rates
+  every tag present in `arena.jsonl`, not just checkpoints still on disk (a
+  deleted contender used to vanish along with its games), and `FOCUS=<tag>`
+  plays only that champion's pairings until its game count catches up.
+  - **The promotion gates do not survive open play.** Of five recorded
+    promotions, three REVERSE in the arena: iter10 over iter4 (gate 56.3% vs
+    arena 47%), iter14 over iter10 (60.2% vs 44%), aux_iter8 over iter14 (58.5%
+    vs 44%). The deployed-then champion aux_iter14 loses to two of its own
+    ancestors (39-41% vs iter4, 43% vs iter14).
+  - **Two mechanisms, and the second dominates.** Winner's curse: simulating the
+    loop (true edges ~N(48%,5), promote at ≥55% of 200 games) gives promoted
+    models measuring 57.8% but truly 54.6% — ~3 points of inflation, 8% of
+    promotions not actually better. That alone would still compound to ~73% for
+    the last champion vs the first; it is at 41%. The rest is
+    **non-transitivity**: there is an outright cycle,
+    `aux_iter14 > iter10 (58%) > iter14 (56%) > aux_iter14 (57%)`.
+  - **The top four are statistically inseparable.** Bootstrapping the standings
+    over paired units: P(best) 30/30/22/18% for iter10/iter4/aux_iter14/iter14,
+    and 0% for iter1, iter5 and aux_iter8 (so trimming those three was sound).
+    Paired-margin SD within the top four is 1.8, so separating a 0.5-margin edge
+    needs ~103 paired games per matchup and 0.3 needs ~287 — the matchups had
+    9-16. **Implication: "most recently promoted" carries no weight when picking
+    a warm start**; use human play and the arena, not the gate.
+  - **Suggested gate change (not implemented):** gate against a fixed panel
+    (champion + iter4 + iter10) at the same total game budget — 50 games each
+    gives the same ~3.5% SE on the mean as 200 against one opponent — promoting
+    on mean ≥55% with no member below 45%. It measures the thing that matters
+    and makes runs comparable across experiments.
+  - **Pass-over-save reproduced.** In a constructed endgame (white 10 saved, a
+    blank on goal 4, the numbered 2 on goal 2, roll 4+5) the agent rates
+    "shuffle the blank to goal 2 and pass" (+307.8) and even "pass both"
+    (+306.3) above banking the piece (+302.9). SCORE_SCALE is 1000, so these are
+    raw ~0.30 — not saturation, a real value error. Also: the direct save and
+    the goal-2 detour tie *exactly* (+302.8634), so which one played depended on
+    enumeration order; the agent now prefers the fewest-relocation line among
+    candidates with an identical resulting position (free — same position, and
+    an unused die is worthless once the turn ends).
 
 - **SESSION UPDATE (2026-07-25) — DEPLOYMENT: ONNX + BRANCHES MERGED.**
   `main` == `td-lambda` == `frontend-overhaul` == commit `ddd9c00`, all pushed.
