@@ -2536,6 +2536,7 @@ class Tile {
     }
 
     addNumberText(number, angle, radius) {
+        if (this._numberText) { this._numberText.destroy(); this._numberText = null; }
         // radius is passed just OUTSIDE the goal tile's outer edge so the number
         // never gets obscured by pieces sitting on the goal. Black, large, bold.
         const x = CENTER_X + radius * Math.cos(angle);
@@ -2634,21 +2635,26 @@ class Tile {
         if (DEBUG_MODE) console.log(this.ring, this.sector)
     }
 
-    highlight() {   
-        let color = this.reachableColor !== null ? this.reachableColor : this.highlightColor;
-        this.graphics.fillStyle(color, 1); 
-        this.graphics.fillPath();
+    // Recolour by REDRAWING the tile, never by appending another fill to the
+    // same Graphics. These three run constantly -- unhighlightAllTiles touches
+    // every tile on every selection -- and a Graphics object replays its whole
+    // command list each frame, so appending here made the renderer do more work
+    // every turn: measured 55 fps at the start of a game down to 4 fps by turn
+    // 60, with object count and heap flat. A reload "fixed" it because it reset
+    // the command lists.
+    highlight() {
+        this._fillOverride = this.reachableColor !== null ? this.reachableColor : this.highlightColor;
+        this.drawTile();
     }
 
     unhighlight() {
-        this.graphics.fillStyle(this.fillColor, 1);
-        this.graphics.fillPath();
+        this._fillOverride = null;
+        this.drawTile();
     }
 
     onOut() {
-        let color = this.reachableColor !== null ? this.reachableColor : this.fillColor;
-        this.graphics.fillStyle(color, 1);
-        this.graphics.fillPath();
+        this._fillOverride = this.reachableColor !== null ? this.reachableColor : null;
+        this.drawTile();
     }
 
 
@@ -2812,7 +2818,7 @@ class Tile {
         // and no nogo fill covers an adjacent field tile's border.
         if (this.type === 'nogo') return;
         this.graphics.lineStyle(1.7, this.lineColor, 1);
-        this.graphics.fillStyle(this.fillColor, 1);
+        this.graphics.fillStyle(this._fillOverride != null ? this._fillOverride : this.fillColor, 1);
 
         if (this.type === "home") {
             this.x = CENTER_X;
@@ -2821,7 +2827,8 @@ class Tile {
             this.graphics.strokeCircle(CENTER_X, CENTER_Y, HOME_TILE_RADIUS);
         } else {
     
-            const points = this.calculateAnnularSegmentPoints(CENTER_X, CENTER_Y, this.innerRadius, this.outerRadius, this.startAngle, this.endAngle);
+            const points = this._points || (this._points = this.calculateAnnularSegmentPoints(
+                CENTER_X, CENTER_Y, this.innerRadius, this.outerRadius, this.startAngle, this.endAngle));
 
 
 
@@ -2837,21 +2844,30 @@ class Tile {
             this.graphics.fillPath();
             this.graphics.strokePath();
 
-            this.graphics.setInteractive(new Phaser.Geom.Polygon(points), Phaser.Geom.Polygon.Contains)
-                .on('pointerdown', () => this.onClick())
-                .on('pointerover', () => this.onHover())
-                .on('pointerout', () => this.onOut());
+            // Hit area, handlers and the goal number are built ONCE. drawTile is
+            // now called every time a tile changes colour, and re-running this
+            // block each time re-registered the pointer handlers and created a
+            // fresh Text object per goal, every highlight.
+            if (!this._built) this.buildTileChrome(points);
+        }
+    }
 
-            // Debug-mode tooltip: show this tile's ring and sector.
-            this.graphics
-                .on('pointerover', () => { if (window.debugMode) showDebugTip(`ring ${this.ring}, sector ${this.sector}`); })
-                .on('pointermove', () => { if (window.debugMode) showDebugTip(`ring ${this.ring}, sector ${this.sector}`); })
-                .on('pointerout',  () => { hideDebugTip(); });
+    buildTileChrome(points) {
+        this._built = true;
+        this.graphics.setInteractive(new Phaser.Geom.Polygon(points), Phaser.Geom.Polygon.Contains)
+            .on('pointerdown', () => this.onClick())
+            .on('pointerover', () => this.onHover())
+            .on('pointerout', () => this.onOut());
 
-                            // Add number to "save" tiles
+        // Debug-mode tooltip: show this tile's ring and sector.
+        this.graphics
+            .on('pointerover', () => { if (window.debugMode) showDebugTip(`ring ${this.ring}, sector ${this.sector}`); })
+            .on('pointermove', () => { if (window.debugMode) showDebugTip(`ring ${this.ring}, sector ${this.sector}`); })
+            .on('pointerout',  () => { hideDebugTip(); });
+
+        // Add number to "save" tiles
         if (this.type === 'save' && this.number !== undefined) {
             this.addNumberText(this.number, (this.startAngle + this.endAngle) / 2, this.outerRadius + 26);
-        }
         }
     }
     
@@ -5442,6 +5458,25 @@ const gameInstance = new Phaser.Game(config);
 //     so taps appear to do nothing.
 // The flag is flipped from a capture-phase listener, which runs before
 // Phaser's own handler reads it.
+// A lost WebGL context -- backgrounded tab, GPU process restart, memory
+// pressure on the device -- leaves the board technically working but crawling,
+// and Phaser 3.55 does not restore it by itself. Say so rather than leaving it
+// looking like the game got slow for no reason. (preventDefault is what allows
+// a restore event to fire at all, if the browser manages one.)
+setTimeout(() => {
+    const cv = gameInstance && gameInstance.canvas;
+    if (!cv || !cv.addEventListener) return;
+    cv.addEventListener('webglcontextlost', (e) => {
+        e.preventDefault();
+        console.warn('WebGL context lost');
+        if (typeof flashNotice === 'function') flashNotice('Graphics stalled — reload the page', 20000);
+    });
+    cv.addEventListener('webglcontextrestored', () => {
+        console.warn('WebGL context restored');
+        if (typeof flashNotice === 'function') flashNotice('Graphics restored', 2500);
+    });
+}, 0);
+
 ['touchstart', 'touchmove', 'touchend', 'touchcancel'].forEach(type => {
     window.addEventListener(type, () => {
         const tm = gameInstance.input && gameInstance.input.touch;
