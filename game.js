@@ -4861,9 +4861,14 @@ class EndGameScene extends Phaser.Scene {
         if (this.inMatch && matchTracker) {
             const m = matchTracker;
             if (this.matchOver) {
-                const mScore = m.winner === 'white' ? m.whiteScore : m.blackScore;
+                // The winner's MARGIN, not their running total -- a match is won
+                // on total score, so the interesting number is the gap. It can be
+                // zero: level on score is broken by games won, and "by 0" would
+                // be nonsense, so say how it was actually won.
+                const mDiff = Math.abs(m.whiteScore - m.blackScore);
                 const mres = m.winner === 'draw' ? 'The match is a draw!'
-                    : `${_cap(m.winner)} wins the match with a score of ${mScore}`;
+                    : mDiff > 0 ? `${_cap(m.winner)} wins the match by ${mDiff}`
+                                : `${_cap(m.winner)} wins the match on games won`;
                 const top = card(340);
                 subline(top + 58, message, 21);
                 headline(top + 118, mres, 34);
