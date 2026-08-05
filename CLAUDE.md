@@ -20,7 +20,8 @@ when you must read an out-of-folder artifact (e.g. a running worktree's log),
 this rule; monitor them by copying their logs in.) The symmetry-aug work is now
 on origin as `symmetry-aug` / `symmetry-aug-main`, so it no longer lives only on
 the MacBook; its checkpoints `symaug_champ_July27_iter6.pt` and
-`symaug_almostchamp_July27_iter11.pt` are in this folder (iter11 is deployed).
+`symaug_almostchamp_July27_iter11.pt` are in this folder (iter6, the promoted
+champion, is the one deployed).
 
 **OVERNIGHT / AUTONOMOUS WORK RULES (owner, 2026-07-23, after a failure).**
 The agent only acts *while a turn is running* (issuing tool calls). The moment
@@ -394,12 +395,15 @@ expected to self-resolve via the TD run.
 - **SESSION UPDATE (2026-08-04) — LIVE ON KOYEB: deployed model, latency,
   and a rendering bug.** `main` == `td-lambda` == `frontend-overhaul`; the
   `fast-prefilter` branch is merged. Koyeb tracks main, so pushing deploys.
-  - **DEPLOYED MODEL: `model.onnx` = `symaug_almostchamp_July27_iter11.pt`**
-    (the symmetry-aug run's iter11), replacing aux_iter14 — owner reports it as
-    the strongest against him. Exported with `onnx_export.py <ckpt> model.onnx`,
-    which self-verifies (wrapper vs model exact, graph vs torch 1.1e-07); also
-    checked that the exported net and the checkpoint play an identical 40-turn
-    seeded trace. Re-export the same way to change the served model.
+  - **DEPLOYED MODEL: `model.onnx` = `symaug_champ_July27_iter6.pt`** (the
+    symmetry-aug run's promoted champion), replacing aux_iter14 — owner reports
+    it as the strongest against him. Note the two symaug checkpoints are easy to
+    confuse: `symaug_champ_*_iter6` is the promoted one and is what is deployed;
+    `symaug_almostchamp_*_iter11` is not. Exported with
+    `onnx_export.py <ckpt> model.onnx`, which self-verifies (wrapper vs model
+    exact, graph vs torch 8.8e-08); also checked that the exported net and the
+    checkpoint play an identical 40-turn seeded trace. Re-export the same way to
+    change the served model.
   - **The 504 / "app won't load" incident.** gunicorn logged WORKER TIMEOUT then
     SIGKILL: a request outran the timeout, the worker was killed, and nothing
     served while it restarted. Cause was running 2 workers — separate processes,
