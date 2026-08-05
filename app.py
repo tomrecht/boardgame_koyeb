@@ -116,7 +116,16 @@ if not os.path.exists(_model_path):
     logger.warning(f'Model file not found: {_model_path} (cwd {os.getcwd()})')
 logger.info(f'Loading opponent model: {_model_path}')
 #agent = Agent(weights=current_weights, log_to_file=True)
-agent = GNNAgent(weights_path=_model_path, use_prefilter=True, prefilter_top_k=40, heuristic_weights=current_weights)
+# Two-stage prefilter, for the served agent only: rank first moves, expand the
+# best FIRST_MOVE_PREFILTER of them into pairs. Measured at F=12 over 120 paired
+# games (match_prefilter.py): 52.1% for the fast agent, mean paired margin +0.05
+# (95% CI -0.22..+0.33) -- no measurable strength change -- while the worst move
+# drops from 3.65s to 1.28s, which is what a fractional-vCPU instance feels.
+# Training, self-play and the arena keep the library default of 0.
+FIRST_MOVE_PREFILTER = int(os.environ.get('FIRST_MOVE_PREFILTER', '12'))
+agent = GNNAgent(weights_path=_model_path, use_prefilter=True, prefilter_top_k=40,
+                 heuristic_weights=current_weights,
+                 first_move_prefilter=FIRST_MOVE_PREFILTER)
 agent.debug_pass_over_save = True 
 # Heuristic agent kept alongside the GNN so /evaluate_board can report both
 # evals for the same position (the GNN is the player; the heuristic is shown
