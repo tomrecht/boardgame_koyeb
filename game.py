@@ -1,9 +1,14 @@
 import random
+import os
 from collections import deque
 import json
 import itertools
 
 NUM_PIECES = 12
+# Hard ceiling on the per-position caches, in entries. A busy midgame turn adds
+# a few thousand, so this is far above anything one search needs; it exists so a
+# pathological position can't grow the process without bound between resets.
+CACHE_MAX = int(os.environ.get('BOARD_CACHE_MAX', '150000'))
 # After this many two-player turns with no save (once both players are in
 # midgame), either player may call a draw. Easily tunable.
 NO_SAVE_TURNS_FOR_DRAW = 10
@@ -219,10 +224,22 @@ class Board:
         # BUGFIX: this was never invalidated here, so a reused Board (training
         # target/input encoding loops over records, and the Flask app between
         # requests) kept the PREVIOUS state's blocked-tile snapshot -- distance
-        # features were then computed against stale blocking. The bk-keyed
-        # value caches (_distance_cache etc.) stay valid once the key is fresh.
+        # features were then computed against stale blocking.
         self._blocked_key_cache.clear()
         self._blot_key_cache.clear()
+        # The value caches are pure functions of their keys, so keeping them
+        # across positions is CORRECT but unbounded -- and the app reuses one
+        # Board per thread and never calls switch_turn, which is the only other
+        # place they are cleared. Measured on a long game: _blot_cache reached
+        # 90k entries and the worker 174 MB by move 45, still climbing ~2 MB a
+        # move, which is what made moves take 30s and then get OOM-killed on a
+        # 256 MB instance. Every entry retains the frozensets in its key, so the
+        # cost is memory, not entries. Within one search they still do all the
+        # work they were added for; only cross-request reuse is given up, and
+        # that reuse is worthless because each request is a different position.
+        self._distance_cache.clear()
+        self._blot_cache.clear()
+        self._reachable_cache.clear()
         self.clear()
         for die, die_details in zip(self.dice, game_state_details['dice']):
             die.number = die_details['value']
@@ -669,6 +686,8 @@ class Board:
                     # this player, so membership == is_blocked (and is O(1))
                     if neighbor.type not in ['nogo', 'home'] and neighbor.index not in blocked_key:
                         queue.append((neighbor, distance + 1))
+        if len(self._distance_cache) > CACHE_MAX:
+            self._distance_cache.clear()
         self._distance_cache[cache_key] = float('inf')
         return float('inf')
 
@@ -789,10 +808,14 @@ class Board:
                         neighbor.pieces[0].player != piece.player):
                         new_blot_count += 1
                     if neighbor.type == 'save' and (piece.number > 6 or piece.number == neighbor.number):
+                        if len(self._blot_cache) > CACHE_MAX:
+                            self._blot_cache.clear()
                         self._blot_cache[cache_key] = new_blot_count
                         return new_blot_count
                     if neighbor.type not in ['nogo', 'home'] and not neighbor.is_blocked(piece.player):
                         queue.append((neighbor, distance + 1, new_blot_count))
+        if len(self._blot_cache) > CACHE_MAX:
+            self._blot_cache.clear()
         self._blot_cache[cache_key] = float('inf')
         return float('inf')
 

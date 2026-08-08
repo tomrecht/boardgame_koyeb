@@ -15,6 +15,8 @@ Scores always come back as a numpy array (a 0-d array for a single position),
 whichever backend produced them.
 """
 
+import os
+
 import numpy as np
 
 
@@ -58,6 +60,12 @@ class OnnxBackend:
         # and the deploy target is a fractional-vCPU instance anyway.
         opts.intra_op_num_threads = 1
         opts.inter_op_num_threads = 1
+        # No arena allocator: it grows to fit the largest batch it has ever seen
+        # and never gives that back, which on a long game walks the worker up to
+        # ~170 MB (batch sizes vary a lot move to move). Measured cost of turning
+        # it off is small next to the deadline we care about, and the deploy
+        # target is a 256 MB instance.
+        opts.enable_cpu_mem_arena = bool(int(os.environ.get('ORT_MEM_ARENA', '0')))
         self.session = ort.InferenceSession(onnx_path, opts,
                                             providers=['CPUExecutionProvider'])
         self.path = onnx_path
