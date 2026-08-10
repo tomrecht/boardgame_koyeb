@@ -210,6 +210,42 @@ function updateTurnStatus(textOrGame) {
 
 function getSoundEnabled()       { return _boolSetting('sound', true); }
 
+// Segmented pill control -- two or three mutually exclusive choices, sized for
+// a settings row. Returns the element with .value / .setValue / .setDisabled,
+// so callers treat it like the <select> it replaces.
+function makeSegmented(options, value, onChange) {
+    const wrap = document.createElement('div');
+    wrap.dataset.seg = '1';
+    wrap.style.cssText = 'display:inline-flex; gap:2px; padding:2px; border-radius:999px;' +
+        'background:#eef1f4; border:1px solid #dfe4ea;';
+    const btns = [];
+    const paint = () => btns.forEach(b => {
+        const on = b.dataset.value === wrap.value;
+        b.style.background = on ? THEME.accentCss : 'transparent';
+        b.style.color = on ? '#fff' : '#5a6473';
+        b.style.fontWeight = on ? '700' : '600';
+    });
+    options.forEach(([val, label]) => {
+        const b = document.createElement('button');
+        b.type = 'button';
+        b.dataset.value = val;
+        b.textContent = label;
+        b.style.cssText = 'border:none; border-radius:999px; cursor:pointer; padding:4px 12px;' +
+            'font-family:' + HUD_FONT + '; font-size:12.5px; line-height:1.2; transition:background .12s;';
+        b.onclick = () => { if (wrap.disabled) return; wrap.value = val; paint(); if (onChange) onChange(val); };
+        wrap.appendChild(b); btns.push(b);
+    });
+    wrap.value = value;
+    wrap.setValue = (v) => { wrap.value = v; paint(); };
+    wrap.setDisabled = (d) => {
+        wrap.disabled = d;
+        wrap.style.opacity = d ? '.45' : '1';
+        btns.forEach(b => b.style.cursor = d ? 'default' : 'pointer');
+    };
+    paint();
+    return wrap;
+}
+
 // ── SOUND ────────────────────────────────────────────────────────────────
 // Synthesised with WebAudio rather than shipped as files: a handful of short
 // tones cost nothing to download, can't 404, and keep the deployment a single
@@ -302,12 +338,19 @@ function refreshSettingsMatchState() {
     // running score meaningless.
     const prow = document.getElementById('settingsPlayers');
     if (prow) {
-        prow.querySelectorAll('select').forEach(sel => {
-            sel.disabled = active; sel.style.opacity = active ? '.45' : '1';
-        });
+        prow.querySelectorAll('div[data-seg]').forEach(seg => seg.setDisabled(active));
         const pnote = document.getElementById('settingsPlayersNote');
         if (pnote) pnote.style.display = active ? 'block' : 'none';
     }
+}
+
+// Settings pills follow the globals (match setup can change them too).
+function syncSettingsPlayers() {
+    const prow = document.getElementById('settingsPlayers');
+    if (!prow) return;
+    const segs = prow.querySelectorAll('div[data-seg]');
+    if (segs[0]) segs[0].setValue(WHITE_IS_AI ? 'computer' : 'human');
+    if (segs[1]) segs[1].setValue(BLACK_IS_AI ? 'computer' : 'human');
 }
 
 // Push WHITE_IS_AI / BLACK_IS_AI onto the live game, and start the computer
@@ -399,15 +442,12 @@ function createSettingsPanel() {
     prow.id = 'settingsPlayers';
     prow.appendChild(mk('div', 'font-weight:600; margin-bottom:4px;', 'Players'));
     const mkSide = (label, isAI, save) => {
-        const row = mk('div', 'display:flex; align-items:center; gap:8px; margin:3px 0;');
+        const row = mk('div', 'display:flex; align-items:center; gap:8px; margin:4px 0;');
         row.appendChild(mk('span', 'width:44px;', label));
-        const sel = mk('select', 'flex:1; padding:3px; border-radius:6px; border:1px solid #cfd6e0;');
-        [['human', 'Human'], ['computer', 'Computer']].forEach(([v, t]) => {
-            const o = mk('option', null, t); o.value = v; sel.appendChild(o);
-        });
-        sel.value = isAI() ? 'computer' : 'human';
-        sel.onchange = () => { save(sel.value === 'computer'); applyPlayerRoles(); };
-        row.appendChild(sel);
+        const seg = makeSegmented([['human', 'Human'], ['computer', 'Computer']],
+                                  isAI() ? 'computer' : 'human',
+                                  (v) => { save(v === 'computer'); applyPlayerRoles(); });
+        row.appendChild(seg);
         return row;
     };
     prow.appendChild(mkSide('White', () => WHITE_IS_AI, (v) => {
@@ -1376,12 +1416,7 @@ function showMatchSetup(onCancel) {
           '<div id="raceOpts" style="margin:2px 0 12px 26px; font-size:14px; opacity:.5;">' +
             'Target: <input id="mRace" type="number" min="1" value="' + MATCH_DEFAULT_RACE + '" style="width:56px;" disabled></div>' +
           '<div style="margin:14px 0 4px; font-size:15px; font-weight:600;">Players</div>' +
-          '<div style="display:flex; gap:14px; font-size:14px; margin-bottom:4px;">' +
-            '<label style="flex:1;">White<br><select id="mWhite" style="width:100%; padding:3px;">' +
-              '<option value="human">Human</option><option value="computer">Computer</option></select></label>' +
-            '<label style="flex:1;">Black<br><select id="mBlack" style="width:100%; padding:3px;">' +
-              '<option value="human">Human</option><option value="computer">Computer</option></select></label>' +
-          '</div>' +
+          '<div id="mPlayers" style="font-size:14px; margin-bottom:4px;"></div>' +
           '<div style="font-size:11px; color:#8b95a3; margin-bottom:8px;">Locked once the match starts</div>' +
           '<div style="display:flex; gap:10px; justify-content:flex-end; margin-top:12px;">' +
             '<button id="mCancel" style="' + btnCss + 'background:#eef1f4; color:#28313b;">Cancel</button>' +
@@ -1399,8 +1434,18 @@ function showMatchSetup(onCancel) {
         $('#mRace').disabled = mode !== 'race';
     };
     modeRadios.forEach(r => r.addEventListener('change', sync)); sync();
-    $('#mWhite').value = WHITE_IS_AI ? 'computer' : 'human';
-    $('#mBlack').value = BLACK_IS_AI ? 'computer' : 'human';
+    const segs = {};
+    [['White', WHITE_IS_AI], ['Black', BLACK_IS_AI]].forEach(([side, isAI]) => {
+        const row = document.createElement('div');
+        row.style.cssText = 'display:flex; align-items:center; gap:8px; margin:4px 0;';
+        const lab = document.createElement('span');
+        lab.style.cssText = 'width:44px;'; lab.textContent = side;
+        row.appendChild(lab);
+        segs[side] = makeSegmented([['human', 'Human'], ['computer', 'Computer']],
+                                   isAI ? 'computer' : 'human');
+        row.appendChild(segs[side]);
+        $('#mPlayers').appendChild(row);
+    });
     $('#mCancel').onclick = () => { box.remove(); if (onCancel) onCancel(); };
     $('#mStart').onclick = () => {
         const mode = [...modeRadios].find(r => r.checked).value;
@@ -1412,12 +1457,13 @@ function showMatchSetup(onCancel) {
         } else {
             target = Math.max(1, parseInt($('#mRace').value) || MATCH_DEFAULT_RACE);
         }
-        WHITE_IS_AI = $('#mWhite').value === 'computer';
-        BLACK_IS_AI = $('#mBlack').value === 'computer';
+        WHITE_IS_AI = segs.White.value === 'computer';
+        BLACK_IS_AI = segs.Black.value === 'computer';
         try {
             localStorage.setItem('whiteIsAI', WHITE_IS_AI ? '1' : '0');
             localStorage.setItem('blackIsAI', BLACK_IS_AI ? '1' : '0');
         } catch (e) {}
+        syncSettingsPlayers();
         box.remove();
         const starter = startNewMatch({ mode, target, tieRule });
         _startMatchFirstGame(starter);
@@ -2515,8 +2561,10 @@ class Piece {
 
                 // Move the piece to the saved rack
                 fxBurst(this.scene, this.x, this.y, THEME.accent);   // save flash on the goal
-                SFX.save();
                 const savedRack = this.color === 0xffffff ? this.game.whiteSavedRack : this.game.blackSavedRack;
+                // The twelfth save ends the game, and the win/lose chime says so
+                // better than a save chime landing on top of it.
+                if (savedRack.pieces.length + 1 < TOTAL_PIECES) SFX.save();
                 this.moveToRack(savedRack); // Move the piece to the saved rack
                 this.game.registerSave();   // no-save streak resets immediately
 
