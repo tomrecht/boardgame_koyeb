@@ -1225,6 +1225,14 @@ function _startMatchFirstGame(starter) {
     }
     showCoinFlip(starter, () => {   // reveal who goes first, then start the game
         if (typeof gameInstance !== 'undefined' && gameInstance && gameInstance.scene) {
+            // SceneManager.start() does not stop whatever is currently showing
+            // (a scene's own scene.start() does). Starting a match from the
+            // end-of-match screen therefore left that screen rendering on top
+            // of the new game, so stop anything else that is running first.
+            gameInstance.scene.getScenes(true).forEach(sc => {
+                const key = sc.scene.key;
+                if (key !== 'MainGameScene') gameInstance.scene.stop(key);
+            });
             gameInstance.scene.start('MainGameScene', { startingPlayer: starter });
         }
     });
@@ -3246,6 +3254,7 @@ class Game {
         this.turn = this.startingPlayer;
         this.dice = [new Die(scene, DICE_X1, DICE_Y, true), new Die(scene, DICE_X2, DICE_Y, false)];
         this.gameOver = false;
+        this.instanceId = ++_gameInstanceSeq;   // see getAgentMoves: drop stale replies
         this.score = { 'white': 0, 'black': 0 };
         this.selectedPiece = null;
         this.fullPassCounter = 0;
@@ -4635,6 +4644,11 @@ class MainGameScene extends Phaser.Scene {
         // Play; a real, freshly-rolled game is started then.
         _gameFrozen = !!(this._coinFlipOnStart && !matchTracker);
         this.game = new Game(this, this.startingPlayer, debugMode);
+        // A restart destroys every game object, but this.game keeps pointing at
+        // the old Game until create() runs again -- so anything deferred (the
+        // agent's move animation) needs a positive "this game is over" mark, not
+        // just an identity check. See stillCurrent() in the agent-move code.
+        this.events.once('shutdown', (g => () => { g.isDefunct = true; })(this.game));
 
         // Who plays each colour now lives in the settings panel; reflect the
         // persisted choice. checkInitialAIReady below starts the first move, so
@@ -5095,10 +5109,16 @@ function evaluateBoard(gameState) {
 }
 
 
+// Bumped for every Game built; an agent reply naming an older one is discarded.
+let _gameInstanceSeq = 0;
 let _agentRetries = 0;
 function getAgentMoves(gameState) {
     // difficulty 1 = full strength (argmax); lower = more top-p sampling (weaker)
     gameState = Object.assign({}, gameState, { difficulty: getAIDifficulty() });
+    // Which game asked. Starting a new game while the computer is thinking used
+    // to let the reply land on the board that replaced it, applying moves for
+    // pieces that no longer exist.
+    const askedBy = (_currentGame() || {}).instanceId;
     console.log('Sending game state to agent:', gameState);
     return fetch(`${SERVER_URL}/select_moves`, {
         method: 'POST',
@@ -5117,6 +5137,12 @@ function getAgentMoves(gameState) {
         return response.json();
     })
     .then(data => {
+        const now = (_currentGame() || {}).instanceId;
+        if (askedBy !== undefined && now !== askedBy) {
+            console.log('Discarding agent reply for a game that has been replaced');
+            const sc = _setupScene(); if (sc && sc.hideThinkingIcon) sc.hideThinkingIcon();
+            return;
+        }
         _agentRetries = 0;
         updateNoSaveDisplay();
         if (data.move) {
@@ -5419,7 +5445,19 @@ if (movePair.some(m => Array.isArray(m) && m[0] === 1 && m[1] === 1 && m[2] === 
         }
     }
 
+    // The agent's two moves play out through chained setTimeouts, so a new game
+    // started mid-animation (New Game / New Match, or the end-of-match screen)
+    // used to keep applying them to pieces whose Phaser objects were already
+    // destroyed. Every deferred step re-checks that this game is still the one
+    // on screen.
+    const stillCurrent = () => {
+        if (game.isDefunct) return false;
+        const live = gameInstance.scene.scenes[0] && gameInstance.scene.scenes[0].game;
+        return !!live && live.instanceId === game.instanceId;
+    };
+
     function processMove(move, callback) {
+        if (!stillCurrent()) { console.log('Abandoning agent move: the game has been replaced'); return; }
         console.log('Applying move:', move);
         if (!Array.isArray(move) || move.length !== 3) {
             console.error('Invalid move format:', move);
@@ -5454,6 +5492,7 @@ if (movePair.some(m => Array.isArray(m) && m[0] === 1 && m[1] === 1 && m[2] === 
                 piece.updateColor();
                 piece.currentTile.highlight();
                 setTimeout(() => {
+                    if (!stillCurrent()) return;
                     const savedRack = piece.color === 0xffffff ? game.whiteSavedRack : game.blackSavedRack;
                     piece.moveToRack(savedRack);   // peel only the named piece; rest of the block stays
                     game.registerSave();   // no-save streak resets immediately
@@ -5481,6 +5520,7 @@ if (movePair.some(m => Array.isArray(m) && m[0] === 1 && m[1] === 1 && m[2] === 
             piece.updateColor();
             if (targetTile !== 'save') targetTile.highlight();
             setTimeout(() => {
+                if (!stillCurrent()) return;
                 if (targetTile === 'save') {
                     piece.save();
                     console.log(`Piece ${pieceColorNumber[0]} ${pieceColorNumber[1]} saved`);

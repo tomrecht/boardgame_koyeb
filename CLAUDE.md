@@ -429,6 +429,26 @@ expected to self-resolve via the TD run.
     exposed a second leak — it re-registered pointer handlers and created a new
     Text per goal number each call (209 → 1261 objects); hit area, handlers and
     number text are now built once. After: ~44 fps at turn 150, flat.
+  - **STARTING A GAME OVER ANOTHER ONE (2026-08-10).** Two bugs, both on the
+    New Game / New Match routes. (1) `_startMatchFirstGame` called
+    `gameInstance.scene.start(...)` on the **SceneManager**, which — unlike a
+    scene's own `scene.start()` — does not stop what is currently showing, so
+    starting a match from the end-of-match screen left EndGameScene rendering on
+    top (active scenes `['MainGameScene','EndGameScene']`). It now stops every
+    other active scene first. (2) The agent's two moves play out through chained
+    `setTimeout`s, so a game started mid-animation kept applying them to pieces
+    Phaser had already destroyed — `Cannot set properties of null (setting
+    'radius')` from `_layoutSheen`. Every deferred step now checks
+    `stillCurrent()`. Note an identity check alone is NOT enough: between
+    `shutdown` and the next `create()`, `scenes[0].game` still points at the old
+    Game, so `MainGameScene` marks it `isDefunct` on shutdown and that is what
+    the guard reads. `getAgentMoves` also drops a reply whose game has been
+    replaced (`Game.instanceId`). Verified over all five routes into a game
+    (welcome ×2, casual end ×2, match end) — one active scene, no page errors —
+    and self-play still runs (both sides Computer, 10 `/select_moves` in 12s).
+    Method note: the stack was invisible (`Script error.`, Phaser is CDN-loaded
+    cross-origin) until driven under CDP `Debugger.setPauseOnExceptions` and
+    reading `callFrames` — the tool to reach for on any opaque frontend throw.
   - **Two-stage prefilter, served only.** `first_move_prefilter=F` scores each
     first move alone (~150 heuristic evals), keeps the best F, and only expands
     those into pairs — the one-stage prefilter scored every pair (~10k evals,
