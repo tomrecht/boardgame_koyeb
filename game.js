@@ -13,9 +13,16 @@ const DEBUG_MODE = false;
 // gated too (RECORD_TRAINING=1 there re-enables it for a local collection run).
 const RECORD_TRAINING_DATA = false;
 
-const WHITE_IS_AI = false;
+// Who plays each colour. Defaults: you are White, the computer is Black. Both
+// sides can be either, so you can watch the agent play itself or play both
+// sides yourself. (playVsComputer is the old single-toggle key, still honoured
+// as the default for Black so existing installs don't change behaviour.)
+let WHITE_IS_AI = _boolSetting('whiteIsAI', false);
 let BLACK_IS_AI = (function () {
-    try { const s = localStorage.getItem('playVsComputer'); return s === null ? true : s === '1'; }
+    try {
+        const nu = localStorage.getItem('blackIsAI');
+        if (nu !== null) return nu === '1';
+        const s = localStorage.getItem('playVsComputer'); return s === null ? true : s === '1'; }
     catch (e) { return true; }
 })();
 
@@ -169,9 +176,14 @@ function turnStatusText(game) {
     // nothing to say before the player has started a game (welcome screen up)
     if (!game || game.gameOver || _gameFrozen) return '';
     const p = game.turn;
+    // In the tutorial you always play White and the script moves Black, whatever
+    // the players are set to outside it.
+    if (_tut.active) return p === 'white' ? 'Your turn' : 'Black’s turn';
     const isAI = (p === 'black' && BLACK_IS_AI) || (p === 'white' && WHITE_IS_AI);
     if (isAI) return 'Computer thinking…';
-    return BLACK_IS_AI ? 'Your turn' : _cap(p) + '’s turn';
+    // "Your turn" only makes sense when exactly one side is yours
+    const humans = (WHITE_IS_AI ? 0 : 1) + (BLACK_IS_AI ? 0 : 1);
+    return humans === 1 ? 'Your turn' : _cap(p) + '’s turn';
 }
 // A quick expanding ring at (x,y) — capture (red) / save (accent) feedback.
 function fxBurst(scene, x, y, color) {
@@ -195,6 +207,52 @@ function updateTurnStatus(textOrGame) {
     el.textContent = text || '';
     el.style.opacity = text ? '1' : '0';
 }
+
+function getSoundEnabled()       { return _boolSetting('sound', true); }
+
+// ── SOUND ────────────────────────────────────────────────────────────────
+// Synthesised with WebAudio rather than shipped as files: a handful of short
+// tones cost nothing to download, can't 404, and keep the deployment a single
+// self-contained page. The context is created on the first sound (browsers
+// refuse one before a user gesture) and reused.
+const SFX = (() => {
+    let ctx = null;
+    function context() {
+        if (ctx) return ctx;
+        try {
+            const AC = window.AudioContext || window.webkitAudioContext;
+            if (AC) ctx = new AC();
+        } catch (e) { ctx = null; }
+        return ctx;
+    }
+    // one short enveloped tone; `slide` bends the pitch over the note
+    function tone({ freq, dur = 0.09, type = 'sine', gain = 0.12, slide = 0, delay = 0 }) {
+        const c = context(); if (!c) return;
+        if (c.state === 'suspended') c.resume().catch(() => {});
+        const t0 = c.currentTime + delay;
+        const osc = c.createOscillator(), amp = c.createGain();
+        osc.type = type;
+        osc.frequency.setValueAtTime(freq, t0);
+        if (slide) osc.frequency.exponentialRampToValueAtTime(Math.max(40, freq + slide), t0 + dur);
+        // quick attack, smooth decay: a click without the click artefact
+        amp.gain.setValueAtTime(0.0001, t0);
+        amp.gain.exponentialRampToValueAtTime(gain, t0 + 0.008);
+        amp.gain.exponentialRampToValueAtTime(0.0001, t0 + dur);
+        osc.connect(amp).connect(c.destination);
+        osc.start(t0); osc.stop(t0 + dur + 0.02);
+    }
+    const play = (fn) => { if (getSoundEnabled()) { try { fn(); } catch (e) {} } };
+    return {
+        move:    () => play(() => tone({ freq: 320, dur: 0.07, type: 'triangle', gain: 0.10 })),
+        capture: () => play(() => tone({ freq: 220, dur: 0.16, type: 'square', gain: 0.09, slide: -110 })),
+        save:    () => play(() => { tone({ freq: 660, dur: 0.10, gain: 0.11 });
+                                    tone({ freq: 990, dur: 0.14, gain: 0.09, delay: 0.08 }); }),
+        win:     () => play(() => [523, 659, 784, 1047].forEach((f, i) =>
+                                    tone({ freq: f, dur: 0.16, gain: 0.10, delay: i * 0.11 }))),
+        lose:    () => play(() => [392, 330, 262].forEach((f, i) =>
+                                    tone({ freq: f, dur: 0.20, type: 'triangle', gain: 0.09, delay: i * 0.13 }))),
+    };
+})();
 
 // Brief centred notice under the status pill, for things that would otherwise
 // happen invisibly (the computer passing its whole turn).
@@ -240,6 +298,34 @@ function refreshSettingsMatchState() {
     const active = !!(matchTracker && !matchTracker.over);
     if (slider) { slider.disabled = active; slider.style.opacity = active ? '.45' : '1'; }
     if (note) note.style.display = active ? 'block' : 'none';
+    // Same for who plays which colour: swapping sides mid-match would make the
+    // running score meaningless.
+    const prow = document.getElementById('settingsPlayers');
+    if (prow) {
+        prow.querySelectorAll('select').forEach(sel => {
+            sel.disabled = active; sel.style.opacity = active ? '.45' : '1';
+        });
+        const pnote = document.getElementById('settingsPlayersNote');
+        if (pnote) pnote.style.display = active ? 'block' : 'none';
+    }
+}
+
+// Push WHITE_IS_AI / BLACK_IS_AI onto the live game, and start the computer
+// thinking if the change means it is now its move.
+function applyPlayerRoles(triggerAI = true) {
+    const g = _currentGame();
+    if (!g) return;
+    const w = g.players.find(p => p.name === 'white');
+    const b = g.players.find(p => p.name === 'black');
+    if (w) w.isAI = WHITE_IS_AI;
+    if (b) b.isAI = BLACK_IS_AI;
+    if (typeof updateTurnStatus === 'function') updateTurnStatus(g);
+    const cur = g.players.find(p => p.name === g.turn);
+    if (triggerAI && cur && cur.isAI && !g.gameOver && !_gameFrozen && !window._tutorialActive) {
+        const scene = _setupScene();
+        if (scene && scene.showThinkingIcon) scene.showThinkingIcon();
+        setTimeout(() => getAgentMoves(getGameState(g)), 400);
+    }
 }
 
 // Apply a theme instantly — no reload, no new game. Mutate the live THEME palette
@@ -307,16 +393,44 @@ function createSettingsPanel() {
     dnote.id = 'settingsDiffNote'; drow.appendChild(dnote);
     panel.appendChild(drow);
 
-    // Play vs computer toggle
-    const crow = mk('label', 'display:flex; align-items:center; gap:8px; cursor:pointer; margin-bottom:8px;');
-    const pc = mk('input'); pc.type = 'checkbox'; pc.checked = BLACK_IS_AI;
-    pc.onchange = () => {
-        BLACK_IS_AI = pc.checked;
-        try { localStorage.setItem('playVsComputer', BLACK_IS_AI ? '1' : '0'); } catch (e) {}
-        const g = _currentGame(); if (g && g.updateBlackPlayerAIStatus) g.updateBlackPlayerAIStatus(BLACK_IS_AI);
+    // Who plays each colour. Locked during a match: swapping a side mid-match
+    // would make the running score meaningless.
+    const prow = mk('div', 'margin-bottom:10px;');
+    prow.id = 'settingsPlayers';
+    prow.appendChild(mk('div', 'font-weight:600; margin-bottom:4px;', 'Players'));
+    const mkSide = (label, isAI, save) => {
+        const row = mk('div', 'display:flex; align-items:center; gap:8px; margin:3px 0;');
+        row.appendChild(mk('span', 'width:44px;', label));
+        const sel = mk('select', 'flex:1; padding:3px; border-radius:6px; border:1px solid #cfd6e0;');
+        [['human', 'Human'], ['computer', 'Computer']].forEach(([v, t]) => {
+            const o = mk('option', null, t); o.value = v; sel.appendChild(o);
+        });
+        sel.value = isAI() ? 'computer' : 'human';
+        sel.onchange = () => { save(sel.value === 'computer'); applyPlayerRoles(); };
+        row.appendChild(sel);
+        return row;
     };
-    crow.appendChild(pc); crow.appendChild(mk('span', null, 'Play vs computer'));
-    panel.appendChild(crow);
+    prow.appendChild(mkSide('White', () => WHITE_IS_AI, (v) => {
+        WHITE_IS_AI = v;
+        try { localStorage.setItem('whiteIsAI', v ? '1' : '0'); } catch (e) {}
+    }));
+    prow.appendChild(mkSide('Black', () => BLACK_IS_AI, (v) => {
+        BLACK_IS_AI = v;
+        try { localStorage.setItem('blackIsAI', v ? '1' : '0'); } catch (e) {}
+    }));
+    prow.appendChild(mk('div', 'font-size:11px; color:#8b95a3; margin-top:2px; display:none;',
+                        'Locked during a match')).id = 'settingsPlayersNote';
+    panel.appendChild(prow);
+
+    // Sound
+    const srow = mk('label', 'display:flex; align-items:center; gap:8px; cursor:pointer; margin-bottom:8px;');
+    const sfxBox = mk('input'); sfxBox.type = 'checkbox'; sfxBox.checked = getSoundEnabled();
+    sfxBox.onchange = () => {
+        try { localStorage.setItem('sound', sfxBox.checked ? '1' : '0'); } catch (e) {}
+        if (sfxBox.checked) SFX.save();          // a sample of what you just enabled
+    };
+    srow.appendChild(sfxBox); srow.appendChild(mk('span', null, 'Sound effects'));
+    panel.appendChild(srow);
 
     // Boolean toggles
     const toggle = (labelText, get, key, marginBottom) => {
@@ -1033,7 +1147,14 @@ function recordMatchGame(winner, score) {
             else if (m.blackWins > m.whiteWins) { m.over = true; m.winner = 'black'; }
             // score AND wins tied -> draw or extend by a pair (same criteria)
             else if (m.tieRule === 'draw') { m.over = true; m.winner = 'draw'; }
-            else { m.target += 2; }
+            else {
+                // Extending silently was confusing: you set a 6-game match and
+                // suddenly it is showing game 7. Record it so the end-of-game
+                // card can say what happened and why.
+                m.extendedAt = m.target;
+                m.target += 2;
+                m.justExtended = true;
+            }
         }
     }
     return m.over;
@@ -1254,6 +1375,14 @@ function showMatchSetup(onCancel) {
             '<input type="radio" name="mmode" value="race"> Race to a total score</label>' +
           '<div id="raceOpts" style="margin:2px 0 12px 26px; font-size:14px; opacity:.5;">' +
             'Target: <input id="mRace" type="number" min="1" value="' + MATCH_DEFAULT_RACE + '" style="width:56px;" disabled></div>' +
+          '<div style="margin:14px 0 4px; font-size:15px; font-weight:600;">Players</div>' +
+          '<div style="display:flex; gap:14px; font-size:14px; margin-bottom:4px;">' +
+            '<label style="flex:1;">White<br><select id="mWhite" style="width:100%; padding:3px;">' +
+              '<option value="human">Human</option><option value="computer">Computer</option></select></label>' +
+            '<label style="flex:1;">Black<br><select id="mBlack" style="width:100%; padding:3px;">' +
+              '<option value="human">Human</option><option value="computer">Computer</option></select></label>' +
+          '</div>' +
+          '<div style="font-size:11px; color:#8b95a3; margin-bottom:8px;">Locked once the match starts</div>' +
           '<div style="display:flex; gap:10px; justify-content:flex-end; margin-top:12px;">' +
             '<button id="mCancel" style="' + btnCss + 'background:#eef1f4; color:#28313b;">Cancel</button>' +
             '<button id="mStart" style="' + btnCss + 'background:' + THEME.accentCss + '; color:#fff;">Start match</button>' +
@@ -1270,6 +1399,8 @@ function showMatchSetup(onCancel) {
         $('#mRace').disabled = mode !== 'race';
     };
     modeRadios.forEach(r => r.addEventListener('change', sync)); sync();
+    $('#mWhite').value = WHITE_IS_AI ? 'computer' : 'human';
+    $('#mBlack').value = BLACK_IS_AI ? 'computer' : 'human';
     $('#mCancel').onclick = () => { box.remove(); if (onCancel) onCancel(); };
     $('#mStart').onclick = () => {
         const mode = [...modeRadios].find(r => r.checked).value;
@@ -1281,6 +1412,12 @@ function showMatchSetup(onCancel) {
         } else {
             target = Math.max(1, parseInt($('#mRace').value) || MATCH_DEFAULT_RACE);
         }
+        WHITE_IS_AI = $('#mWhite').value === 'computer';
+        BLACK_IS_AI = $('#mBlack').value === 'computer';
+        try {
+            localStorage.setItem('whiteIsAI', WHITE_IS_AI ? '1' : '0');
+            localStorage.setItem('blackIsAI', BLACK_IS_AI ? '1' : '0');
+        } catch (e) {}
         box.remove();
         const starter = startNewMatch({ mode, target, tieRule });
         _startMatchFirstGame(starter);
@@ -2378,6 +2515,7 @@ class Piece {
 
                 // Move the piece to the saved rack
                 fxBurst(this.scene, this.x, this.y, THEME.accent);   // save flash on the goal
+                SFX.save();
                 const savedRack = this.color === 0xffffff ? this.game.whiteSavedRack : this.game.blackSavedRack;
                 this.moveToRack(savedRack); // Move the piece to the saved rack
                 this.game.registerSave();   // no-save streak resets immediately
@@ -3528,6 +3666,7 @@ class Game {
             const _ox = piece.x, _oy = piece.y;   // for the slide animation
             piece.move(targetTile);
             piece.animateFrom(_ox, _oy);
+            SFX.move();
 
             const homeTile = this.tiles.find(tile => tile.type === 'home');
             if (homeTile.pieces.includes(piece)) homeTile.removePiece(piece);
@@ -3660,6 +3799,7 @@ class Game {
         const homeTile = this.tiles.find(tile => tile.type === 'home');
         if (homeTile) {
             fxBurst(this.scene, piece.x, piece.y, 0xff5555);   // capture flash at the spot
+            SFX.capture();
             piece.move(homeTile);
             piece.currentTile = homeTile;
             console.log(`Piece captured and sent to home tile: ${piece.color} ${piece.number}`);
@@ -3954,6 +4094,11 @@ endGame(winner, score = null, impasse_caller = null) {
 
     this.gameOver = true;
     console.log(`${winner} wins with a score of ${score}!`);
+    // From the human's point of view when exactly one side is human; two humans
+    // (or two computers) just get the win chime.
+    const humanSide = (!WHITE_IS_AI && BLACK_IS_AI) ? 'white'
+                    : (WHITE_IS_AI && !BLACK_IS_AI) ? 'black' : null;
+    if (winner === 'draw' || !humanSide || winner === humanSide) SFX.win(); else SFX.lose();
     if (winner === 'draw') {
         scoreTracker.draws += 1;
     } else if (winner === 'white') {
@@ -4345,13 +4490,6 @@ endGame(winner, score = null, impasse_caller = null) {
         const dlg = document.getElementById('confirmDlg'); if (dlg) dlg.remove();
     }
 
-    updateBlackPlayerAIStatus(isAI) {
-        const blackPlayer = this.players.find(player => player.name === 'black');
-        if (blackPlayer) {
-            blackPlayer.isAI = isAI;
-        }
-    }
-
     saveTileNeighborsToFile() {
         const tileNeighbors = {};
 
@@ -4450,9 +4588,10 @@ class MainGameScene extends Phaser.Scene {
         _gameFrozen = !!(this._coinFlipOnStart && !matchTracker);
         this.game = new Game(this, this.startingPlayer, debugMode);
 
-        // "Play vs computer" now lives in the settings panel; make sure the game
-        // reflects the persisted choice.
-        this.game.updateBlackPlayerAIStatus(BLACK_IS_AI);
+        // Who plays each colour now lives in the settings panel; reflect the
+        // persisted choice. checkInitialAIReady below starts the first move, so
+        // don't also trigger it here.
+        applyPlayerRoles(false);
         this.createEvalButton();
 
         const iconSize = 192;
@@ -4574,28 +4713,6 @@ class MainGameScene extends Phaser.Scene {
                  `Total score ${totalStr}`].join(sep)
             );
         }
-
-    createRadioButton() {
-        const circleX = this.sys.game.config.width - 350;
-        const circleY = this.sys.game.config.height - 60;
-        const textX = circleX + 30;
-        const textY = circleY;
-    
-        const circle = this.add.circle(circleX, circleY, 15, BLACK_IS_AI ? THEME.accent : 0xD3D3D3)
-            .setInteractive({ useHandCursor: true })
-            .on('pointerdown', () => {
-                BLACK_IS_AI = !BLACK_IS_AI;
-                this.game.updateBlackPlayerAIStatus(BLACK_IS_AI);
-                circle.setFillStyle(BLACK_IS_AI ? THEME.accent : 0xD3D3D3);
-            });
-
-        const text = this.add.text(textX, textY, 'Play Computer', {
-            fontSize: '20px',
-            fontFamily: HUD_FONT,
-            color: THEME.bgInk
-        }).setOrigin(0, 0.5);
-    }
-    
 
     createEvalButton() {
         const circleX = this.sys.game.config.width - 450;
@@ -4881,11 +4998,18 @@ class EndGameScene extends Phaser.Scene {
             } else {
                 const status = m.mode === 'race' ? `race to ${m.target}`
                     : `game ${m.gamesPlayed + 1} of ${m.target}`;
-                const top = card(290);
+                const extended = m.justExtended;
+                m.justExtended = false;
+                const top = card(extended ? 330 : 290);
                 headline(top + 78, message, 34);
                 subline(top + 142,
                     `White ${m.whiteScore} (${m.whiteWins}W)   ·   Black ${m.blackScore} (${m.blackWins}W)   ·   ${status}`, 21);
-                button(CENTER_X, top + 218, 'Next Game', false,
+                if (extended) {
+                    subline(top + 186,
+                        `Level after ${m.extendedAt} games — match extended by 2`, 20)
+                        .setColor(THEME.accentCss);
+                }
+                button(CENTER_X, top + (extended ? 258 : 218), 'Next Game', false,
                     () => startGame(matchStarterForGame(m.gamesPlayed)));
             }
             return;
