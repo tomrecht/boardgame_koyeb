@@ -300,6 +300,100 @@ function updateTurnStatus(textOrGame) {
     el.style.opacity = text ? '1' : '0';
 }
 
+// ── MUST-ENTER GHOSTS ───────────────────────────────────────────────────
+// Zooming in can leave the rack off screen, including the piece you are obliged
+// to bring out -- with nothing on screen to tell you why nothing else will move.
+// The enterable piece(s) are then echoed in a corner of whatever is visible,
+// drawn translucent so they read as not-on-the-board, and the first is tappable.
+
+// The world rectangle currently on screen. Under pinch-zoom that is the visual
+// viewport; unzoomed it is the whole canvas.
+function _visibleWorldRect() {
+    const cv = gameInstance && gameInstance.canvas;
+    if (!cv) return null;
+    const r = cv.getBoundingClientRect();
+    if (!r.width || !r.height) return null;
+    const vv = window.visualViewport;
+    const l = vv ? vv.offsetLeft : 0, t = vv ? vv.offsetTop : 0;
+    const w = vv ? vv.width : window.innerWidth, h = vv ? vv.height : window.innerHeight;
+    const wx = (x) => (x - r.left) * (config.width / r.width);
+    const wy = (y) => (y - r.top) * (config.height / r.height);
+    return { x0: wx(l), y0: wy(t), x1: wx(l + w), y1: wy(t + h), cssW: w };
+}
+
+// How many unentered pieces could still be brought out THIS turn. Captured
+// pieces sit on the home tile and must move first, one die each, so they crowd
+// entries out: one captured leaves one entry, two leaves none, and a spent die
+// costs one as well. Capped at two, which is all a turn can manage.
+function _enterableUnentered(g) {
+    if (!g || g.gameOver || _gameFrozen) return [];
+    if (g.currentPlayerIsHuman && !g.currentPlayerIsHuman()) return [];
+    const rack = g.turn === 'white' ? g.whiteUnenteredRack : g.blackUnenteredRack;
+    if (!rack || !rack.pieces.length) return [];
+    const colour = g.turn === 'white' ? 0xffffff : 0x000000;
+    const home = g.tiles && g.tiles.find(t => t.type === 'home');
+    const captured = home ? home.pieces.filter(p => p.color === colour).length : 0;
+    const unused = g.dice.filter(d => !d.used).length;
+    const n = Math.max(0, Math.min(unused - captured, rack.pieces.length, 2));
+    return rack.pieces.slice(0, n);
+}
+
+let _ghosts = [];
+function _updateMustEnterGhosts() {
+    const scene = _setupScene(), g = _currentGame();
+    if (!scene || !scene.add) return;
+    const hide = () => _ghosts.forEach(gh => gh.setVisible(false));
+    if (!_isPhone() || _tut.active) { hide(); return; }
+
+    const rect = _visibleWorldRect();
+    const pieces = _enterableUnentered(g);
+    if (!rect || !pieces.length) { hide(); return; }
+    // only for pieces actually off screen -- if the rack is in view, say nothing
+    const offscreen = pieces.filter(p => p.x < rect.x0 || p.x > rect.x1 || p.y < rect.y0 || p.y > rect.y1);
+    if (!offscreen.length) { hide(); return; }
+
+    // Constant apparent size: the ghost is a HUD affordance, so it should not
+    // balloon with the zoom. ~44 CSS px across, the usual touch-target size.
+    const worldPerCss = (rect.x1 - rect.x0) / rect.cssW;
+    const r = 22 * worldPerCss, pad = 14 * worldPerCss;
+    offscreen.forEach((piece, i) => {
+        let gh = _ghosts[i];
+        if (!gh) {
+            gh = scene.add.container(0, 0).setDepth(80);
+            gh.body = scene.add.circle(0, 0, 1, 0xffffff);
+            gh.ring = scene.add.circle(0, 0, 1, 0x000000, 0).setStrokeStyle(2, THEME.accent, 1);
+            gh.label = scene.add.text(0, 0, '', { fontFamily: HUD_FONT, fontStyle: 'bold' }).setOrigin(0.5);
+            gh.add([gh.body, gh.ring, gh.label]);
+            _ghosts[i] = gh;
+        }
+        const x = rect.x0 + pad + r + i * (2 * r + pad);
+        const y = rect.y1 - pad - r;
+        gh.setPosition(x, y).setVisible(true).setAlpha(i === 0 ? 0.62 : 0.4);
+        gh.body.setRadius(r).setFillStyle(piece.color, 1);
+        gh.ring.setRadius(r + 2 * worldPerCss).setStrokeStyle(2.5 * worldPerCss, THEME.accent, 1);
+        gh.label.setText(piece.number <= 6 ? String(piece.number) : '')
+                .setFontSize(Math.round(r * 1.2))
+                .setColor(piece.color === 0xffffff ? '#000000' : '#ffffff');
+        // Only the first is actionable: the rack hands out one piece at a time,
+        // so the second is a preview that another entry is still available.
+        gh.body.disableInteractive();
+        if (i === 0) {
+            gh.body.setInteractive(new Phaser.Geom.Circle(r, r, r + pad), Phaser.Geom.Circle.Contains);
+            gh.body.off('pointerdown');
+            gh.body.on('pointerdown', () => {
+                piece.handleClick({ rightButtonDown: () => false });
+                _updateMustEnterGhosts();
+            });
+        }
+    });
+    for (let i = offscreen.length; i < _ghosts.length; i++) _ghosts[i].setVisible(false);
+}
+
+if (window.visualViewport) {
+    visualViewport.addEventListener('resize', () => _updateMustEnterGhosts());
+    visualViewport.addEventListener('scroll', () => _updateMustEnterGhosts());
+}
+
 function getSoundEnabled()       { return _boolSetting('sound', true); }
 function getFullscreenPref()     { return _boolSetting('fullscreen', false); }
 
@@ -3983,6 +4077,7 @@ class Game {
             this.mustMovePieces = this.mustMovePieces.filter(p => p !== piece);
             }
             if (typeof updateMustMoveHighlights === 'function') updateMustMoveHighlights(this);
+            if (typeof _updateMustEnterGhosts === 'function') _updateMustEnterGhosts();
 
             // clear the now-stale reachability so the next selection recomputes
             // it fresh (a leftover set from before the move otherwise wrongly
@@ -4154,6 +4249,7 @@ class Game {
             this.mustMovePieces = [unenteredRack.pieces[0]]; // The first piece in the unentered rack must move
         }
         if (typeof updateMustMoveHighlights === 'function') updateMustMoveHighlights(this);
+        if (typeof _updateMustEnterGhosts === 'function') _updateMustEnterGhosts();
     }
 
     // Obligatory-move ordering: an obligatory piece may always be selected. A
@@ -4886,6 +4982,9 @@ class MainGameScene extends Phaser.Scene {
         // agent's move animation) needs a positive "this game is over" mark, not
         // just an identity check. See stillCurrent() in the agent-move code.
         this.events.once('shutdown', (g => () => { g.isDefunct = true; })(this.game));
+        // the ghosts are scene objects; a restart destroys them, so drop the pool
+        this.events.once('shutdown', () => { _ghosts = []; });
+        _ghosts = [];
 
         // Who plays each colour now lives in the settings panel; reflect the
         // persisted choice. checkInitialAIReady below starts the first move, so
