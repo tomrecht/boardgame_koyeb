@@ -536,6 +536,11 @@ expected to self-resolve via the TD run.
     two scores, and once the match is over the progress is dropped (the longer
     heading plus "game 4 of 4" ran past goal 2's arc at x=630). All six variants
     measured clear: casual fresh/played, match running/with draws/over, race.
+    `_fitScoreText` then shrinks the row only if a line would still run past the
+    arc, so three- and four-digit numbers (games 1284, score +999, match 234
+    (12W)) fit without costing normal scores any size — measured 671-745px wide
+    before, all ≤606 after. Desktop is single-line at y1154-1176, below the arc's
+    lowest point (1140), so the x<630 rule is phone-only; don't "fix" it there.
   - **Two traps this hit, both worth remembering.** (1) `wordWrap: undefined` in
     a Phaser text style is NOT the same as omitting it — `GetValue` sees the key
     as present and dereferences it, so `create()` threw and every object after

@@ -4920,8 +4920,9 @@ class MainGameScene extends Phaser.Scene {
         // line has to wrap rather than run underneath it. Origin (0,1) means it
         // grows upward from the bottom, so wrapping needs no repositioning; the
         // two lines above it are spaced for the 2-line worst case.
+        this._scoreBaseFs = Math.round(20 * k);
         const scoreStyle = {
-            fontSize: Math.round(20 * k) + 'px',
+            fontSize: this._scoreBaseFs + 'px',
             fontFamily: HUD_FONT,
             color: THEME.bgInk
         };
@@ -4967,11 +4968,25 @@ class MainGameScene extends Phaser.Scene {
         if (typeof updateTurnStatus === 'function') updateTurnStatus(this.game);
     }
 
+    // Keep the score row clear of goal 2's arc (x=630) whatever the numbers do.
+    // Normal scores never trigger this; three- and four-digit ones shrink a
+    // little rather than running under the board. Multi-line text reports the
+    // widest line, which is exactly the constraint.
+    _fitScoreText() {
+        if (!_isPhone() || !this.scoreText) return;
+        const maxW = 582;                       // 630 minus the 24px left margin, with a little slack
+        this.scoreText.setFontSize(this._scoreBaseFs);
+        if (this.scoreText.width > maxW) {
+            const shrunk = Math.floor(this._scoreBaseFs * maxW / this.scoreText.width);
+            this.scoreText.setFontSize(Math.max(30, shrunk));
+        }
+    }
+
     updateScoreText() {
             // During a match the line shows that match's running score/wins;
             // otherwise the session totals.
             const matchLine = matchScoreLine();
-            if (matchLine) { this.scoreText.setText(matchLine); return; }
+            if (matchLine) { this.scoreText.setText(matchLine); this._fitScoreText(); return; }
 
             // Single line, interpunct-separated, directly on the background.
             // Total score is signed (+ favours White), shown with a leader label.
@@ -4989,6 +5004,7 @@ class MainGameScene extends Phaser.Scene {
             this.scoreText.setText(_isPhone()
                 ? parts.slice(0, 3).join(sep) + '\n' + parts.slice(3).join(sep)
                 : parts.join(sep));
+            this._fitScoreText();
         }
 
     createEvalButton() {
