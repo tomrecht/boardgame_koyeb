@@ -5825,6 +5825,13 @@ class EndGameScene extends Phaser.Scene {
     }
 
     create() {
+        // This scene has its OWN camera, and on a phone the game size is the
+        // device-pixel buffer (2597x1200 in landscape), not the world. Without
+        // framing it the card, drawn at world centre, sat ~400px left of the
+        // visible centre in landscape and high above it in portrait.
+        _fitCameraToWorld(this);
+        this.scale.on('resize', () => _fitCameraToWorld(this));
+
         let message;
         if (this.winner === 'draw') {
             const caller = this.impasse_caller || 'A player';

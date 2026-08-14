@@ -758,6 +758,22 @@ with it in mind.** Assessment and the concrete implications:
     unconditional, `movePiece` clears it on the piece it moves, and phones never
     set it at all (a finger that leaves often sends no pointerout, so the
     highlight had no way back off).
+  - **Every scene needs its camera framed, not just the main one (fixed
+    2026-08-14).** `EndGameScene` has its own camera, and on a phone the game
+    size is the device-pixel BUFFER (2597x1200 landscape), not the world — so a
+    card drawn at world centre sat ~400px left of the visible centre in
+    landscape, and high above it in portrait. It now calls `_fitCameraToWorld`
+    in `create()` and on resize. Measured centred on both axes in landscape,
+    portrait and desktop. **Any new scene must do the same.**
+  - **OPEN (owner, 2026-08-14): ghost dragging does not work on his phone**,
+    though it passes in emulation end-to-end (enters the piece, lands on a legal
+    destination). Leads to check on a device: the drag threshold is 34 GAME px,
+    which is ~11 CSS px at the landscape buffer but ~7 in portrait; the ghost's
+    hit circle is only `r + pad`, so the finger must start well inside it; and
+    anything that calls `_updateViewportHud()` mid-drag re-places the ghosts,
+    which would snatch the ghost back from the finger (`visualViewport`
+    resize/scroll events still fire on a phone even though we no longer use
+    browser zoom).
   - **Pinch has a 6% dead zone** on the finger separation: two fingers dragged
     together still wobble apart by a few pixels, and feeding that into the zoom
     made a two-finger pan shimmer (owner: "as if it's trying to zoom in and out
