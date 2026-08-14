@@ -485,76 +485,37 @@ expected to self-resolve via the TD run.
     to be decoupled from the drawn radius. Note the canvas backing store stays
     1800×1200, so pinch-zoom reveals real detail (3× in landscape) — it is small,
     not blurry.
+  - **MOBILE WORK REVERTED TO `d59603c` (2026-08-14) — read before retrying.**
+    Owner could not select the first unentered (rack) piece on his Android
+    phone. `?phone=0` (the escape hatch added mid-session) fixed it, so the cause
+    was one of the phone-gated tweaks; tile-tap selection was already disabled by
+    then, which rules it out. The remaining tweak that touches input is the
+    **one-finger pan while zoomed** (`touch-action: pan-x pan-y pinch-zoom` above
+    `visualViewport.scale > 1.02`, with a hit test calling preventDefault over a
+    movable piece). Every test that failed to reproduce it tapped at scale 1 —
+    i.e. never exercised the only state in which that code is live. That is the
+    likely culprit and the lesson: **a tweak that only activates while zoomed
+    must be tested while zoomed.**
+    Also ruled out along the way, each measured: hit-area overlap (fixed, worst
+    overlap 0px, did not help), finger drift turning a tap into a drag (0/4/9px,
+    piece enters every time), and two-finger panning (works with no code —
+    `touch-action: pinch-zoom` permits multi-finger panning).
+    **Next attempt should pan inside Phaser** (camera scroll on a drag that
+    starts on empty background) rather than handing the gesture to the browser:
+    Phaser knows what is under the pointer, so it can never steal a tap on a
+    piece, and nothing depends on how a browser resolves touch-action mid-gesture.
+    Owner wants one-finger panning kept, so this is the route, not two-finger.
+    Reverted whole rather than patched: five pushes in, each fix was a guess
+    against a bug that would not reproduce, and the owner could not play.
   - **PHONE CHANGES MUST NOT TOUCH THE DESKTOP BROWSER (owner, 2026-08-14).**
     Gate every mobile-only tweak on `_isPhone()` in game.js — `(pointer: coarse)`
     AND a min viewport side ≤820 — and verify the desktop path is unchanged in
     the same run (the CDP harness emulates all three: landscape phone, portrait
-    phone, desktop with `mobile:false`).
-  - **Panning a zoomed board: TWO fingers, and it already worked (2026-08-14).**
-    `touch-action: pinch-zoom` permits multi-finger *panning* as well as zooming,
-    so a two-finger drag has always panned a pinch-zoomed board — measured under
-    CDP (visual viewport moves with the fingers, `touch-action` still the plain
-    `pinch-zoom`, zero code). One finger stays with the canvas so dragging and
-    tapping behave the same zoomed or not.
-    **Do not hand one-finger drags to the browser while zoomed.** That was tried
-    (switch to `pan-x pan-y pinch-zoom` above `visualViewport.scale > 1.02`, with
-    a hit test to keep piece-dragging) and it broke selection on a real phone:
-    Chrome claims the gesture as a pan as soon as the finger drifts a pixel or
-    two, which is every real tap. Emulated taps have zero drift, so CDP could not
-    reproduce it — owner hit it immediately. Reverted.
-    Harness note: `Input.dispatchTouchEvent` taps DO reach Phaser provided touch
-    emulation is enabled before the page loads (`piece.handleClick` fires,
-    `wasTouch=true`); an early failure to see this was the AI holding the turn,
-    not the harness. `Emulation.setEmitTouchEventsForMouse` hangs the page — use
-    dispatchTouchEvent directly.
-  - **TILE-TAP SELECTION IS OFF BY DEFAULT — unresolved phone bug.** Owner: the
-    first unentered (rack) piece became unselectable on his phone, appearing in
-    the same push as tile-tap and persisting after the hit-area overlap fix, so
-    tile-tap is the prime suspect. NOT reproduced under CDP emulation: a real
-    touch tap on the top rack piece enters it every time, with 0/4/9px of finger
-    drift (a drift past `dragDistanceThreshold = 6` WORLD px, ~2 CSS px on a
-    phone, turns a tap into a drag — the closest thing to a real fingertip), and
-    with the tweaks on or off. Enable with `?tiletap=1` when picking this up.
-    Note `input.topOnly` is never set (Phaser defaults it true) — worth checking
-    whether the tile under a piece can also receive the same pointerdown, which
-    would double-fire `handleClick` and read as a double-tap.
-  - **Tap a tile to select; bigger touch targets (2026-08-14, phone-only).**
-    `Tile.onClick` with nothing selected now delegates to `_unambiguousPiece()`
-    — the current player's single piece on that tile, or any of them when they
-    are all unnumbered (interchangeable; two numbered pieces stay ambiguous
-    because each has its own goal). It calls the piece's own `handleClick`, so
-    every rule and the double-tap-to-save timing are unchanged. `Piece.
-    _applyHitArea` grows the touch target into the space that is actually free:
-    rack `min(r+6, spacing/2)`, alone on a tile +10, in a stack only +2 (slot
-    centres are 2r+4 apart). Measured: phone hit circle r=28 vs drawn 22 and a
-    click 24px off-centre selects; desktop keeps Phaser's default 40×40 box
-    (`hitArea` untouched, off-centre click ignored, tile tap does nothing).
-    **Regression this caused, and the rule it implies:** `setSize()` runs BEFORE
-    `rack.addPiece()` at game setup, so rack pieces took the "alone" branch and
-    got r+10=32 with slots only 56 apart — overlapping targets, which Phaser
-    awards to whichever object is higher in the display list, usually NOT
-    `rack.pieces[0]` (the only selectable one). Owner hit it immediately: could
-    not select the first unentered piece. Two guards now: the rack cap above,
-    and `Rack.addPiece` re-applies the hit area. Rule: a grown touch target must
-    never overlap another piece's, and hit-area code must not assume `rack` or
-    `currentTile` is set at `setSize` time (measured `worstOverlapPx: 0`).
-  - **`?phone=0` / `?phone=1`** force the phone tweaks off/on (`_isPhone`
-    override), so a phone can be compared against the plain build, or the phone
-    paths exercised on a desktop, without a deploy.
-  - **Piece numbers were rendering in Courier** — Phaser's default family, never
-    set — 12px on a 14px piece, the worst case for a thin monospace. Phones now
-    use bold `HUD_FONT` at 2.0r (only the digits 1-6 are ever drawn, so the cap
-    height still clears the circle) with a halo in the piece's own colour to
-    lift it off the sheen. `tilePieceRadius` also starts above `STACK_PR` on a
-    phone and shrinks to fit, capped at `(band-10)/2`, so a piece alone on a
-    tile draws at r=25 instead of 20. Desktop unchanged (Courier, 1.7r, r=20) —
-    changing it there is a one-line gate removal if wanted.
-  - **Pre-existing crash fixed in `Piece.handleClick`**: `returnToRack()` sets
-    `game.selectedPiece = null`, and the next line called `.updateColor()` on it
-    — so entering a piece and then clicking any *other* rack piece threw
-    `Cannot read properties of null`. Now held in a local. Found by the tile-tap
-    test; affects desktop too, and predates this work.
-  - **Two mobile glitches fixed (2026-08-14).** The turn/thinking pill was fixed
+    phone, desktop with `mobile:false`). Keep a `?phone=0` / `?phone=1` override
+    so a real device can be A/B'd against the plain build without a deploy; it
+    is what finally localised this bug.
+  - **Two mobile glitches — fixed, then REVERTED with everything else; re-apply
+    first, they are cosmetic and cannot affect input.** The turn/thinking pill was fixed
     at the top-centre of the *viewport*, which in landscape is the top of the
     board (the letterboxing puts the board against the screen edge), and in
     portrait it sat exactly under `#rotateHint` (z-index 45 over the pill's 30),
