@@ -3969,6 +3969,12 @@ class Game {
         if (homeTile.pieces.filter(p => p.color === piece.color).length > 1) {
             reachableBySum = [];   // >1 captured piece: no combined (sum) move
         }
+        // A die has to be kept back for the obligatory piece(s), so a piece that
+        // is not itself obligatory cannot spend both on a sum move. movePiece
+        // already refuses it; without this the sum destinations still lit up,
+        // offering moves that would then be rejected.
+        const must = this.mustMovePieces || [];
+        if (must.length > 0 && !must.includes(piece)) reachableBySum = [];
 
         // Shortest-path enforcement for a piece moved with both dice one-by-one:
         // once it has advanced from its turn-start tile, the remaining die must

@@ -600,6 +600,29 @@ with it in mind.** Assessment and the concrete implications:
     since zooming alone can leave the piece you must move off screen, and
     two-finger panning already exists; then the Phaser camera pan; then the
     portrait layout redo LAST.
+  - **Sum destinations were highlighted while a die was reserved (fixed
+    2026-08-14, both platforms).** With an entry or captured-piece obligation
+    outstanding, a NON-obligatory piece may move first but only with one die —
+    `movePiece` refused a sum move, yet `getReachableTilesByDice` still lit the
+    sum destinations, offering moves that were then rejected. It now clears
+    `reachableBySum` when `mustMovePieces` is non-empty and does not include the
+    piece. Measured: sum 0, single-die destinations unaffected, piece still
+    selectable. (Owner spotted this while specifying the rack-selection change
+    below; it was already live.)
+    **Backlog — CHOOSE WHICH UNENTERED PIECE ENTERS (owner, 2026-08-14, both
+    platforms).** Today only the top rack piece can ever enter: `game.py`'s
+    `get_unentered_piece()` returns `unentered_rack[0]` and that is the only
+    entry `get_valid_moves` offers, and `handleClick` mirrors it
+    (`rack.pieces[0] !== this` returns). Owner wants the second rack piece
+    selectable too, so you can bring it out first — the dice arithmetic already
+    exists as `canSelectForMove` (a non-obligatory piece may go first only if
+    enough dice remain for the obligatory one), it simply never applies to rack
+    pieces. Touches `game.py` (entry generation), the AI's move set, and the
+    frontend guard. **When it lands, both selectable rack pieces get the amber
+    must-move ring** (`updateMustMoveHighlights`) — with captured pieces still
+    taking precedence, since they crowd entries out entirely. Until then the
+    second must-enter ghost stays a dimmed preview rather than a tappable
+    target, because tapping it could only ever enter the *first* piece.
     **Backlog (owner, 2026-08-14, both platforms, not urgent):** clicking an
     unentered piece moves it to the home tile; from there a DRAG should carry it
     to a destination tile, distinguishing drag from click (a click there returns
