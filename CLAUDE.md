@@ -511,11 +511,30 @@ expected to self-resolve via the TD run.
     because each has its own goal). It calls the piece's own `handleClick`, so
     every rule and the double-tap-to-save timing are unchanged. `Piece.
     _applyHitArea` grows the touch target into the space that is actually free:
-    rack +6 (slots are 2r+12 apart), alone on a tile +10, in a stack only +2
-    (slot centres are 2r+4 apart, so more would select the neighbour). Measured:
-    phone hit circle r=28 vs drawn 22 and a click 24px off-centre selects;
-    desktop keeps Phaser's default 40×40 box (`hitArea` untouched, off-centre
-    click ignored, tile tap does nothing).
+    rack `min(r+6, spacing/2)`, alone on a tile +10, in a stack only +2 (slot
+    centres are 2r+4 apart). Measured: phone hit circle r=28 vs drawn 22 and a
+    click 24px off-centre selects; desktop keeps Phaser's default 40×40 box
+    (`hitArea` untouched, off-centre click ignored, tile tap does nothing).
+    **Regression this caused, and the rule it implies:** `setSize()` runs BEFORE
+    `rack.addPiece()` at game setup, so rack pieces took the "alone" branch and
+    got r+10=32 with slots only 56 apart — overlapping targets, which Phaser
+    awards to whichever object is higher in the display list, usually NOT
+    `rack.pieces[0]` (the only selectable one). Owner hit it immediately: could
+    not select the first unentered piece. Two guards now: the rack cap above,
+    and `Rack.addPiece` re-applies the hit area. Rule: a grown touch target must
+    never overlap another piece's, and hit-area code must not assume `rack` or
+    `currentTile` is set at `setSize` time (measured `worstOverlapPx: 0`).
+  - **`?phone=0` / `?phone=1`** force the phone tweaks off/on (`_isPhone`
+    override), so a phone can be compared against the plain build, or the phone
+    paths exercised on a desktop, without a deploy.
+  - **Piece numbers were rendering in Courier** — Phaser's default family, never
+    set — 12px on a 14px piece, the worst case for a thin monospace. Phones now
+    use bold `HUD_FONT` at 2.0r (only the digits 1-6 are ever drawn, so the cap
+    height still clears the circle) with a halo in the piece's own colour to
+    lift it off the sheen. `tilePieceRadius` also starts above `STACK_PR` on a
+    phone and shrinks to fit, capped at `(band-10)/2`, so a piece alone on a
+    tile draws at r=25 instead of 20. Desktop unchanged (Courier, 1.7r, r=20) —
+    changing it there is a one-line gate removal if wanted.
   - **Pre-existing crash fixed in `Piece.handleClick`**: `returnToRack()` sets
     `game.selectedPiece = null`, and the next line called `.updateColor()` on it
     — so entering a piece and then clicking any *other* rack piece threw

@@ -200,8 +200,18 @@ function fxBurst(scene, x, y, color) {
 // board itself). Falls back to a compact overlay when there is no room anywhere.
 // Phone-only tweaks: a coarse pointer AND a small screen. Everything gated on
 // this leaves the desktop browser exactly as it was.
+// `?phone=0` turns every phone tweak off (so a phone can be compared against
+// the plain build without a deploy), `?phone=1` forces them on for testing on a
+// desktop. Read once: this is called from hot paths like piece layout.
+let _phoneOverride;
 function _isPhone() {
     try {
+        if (_phoneOverride === undefined) {
+            const q = new URLSearchParams(location.search).get('phone');
+            _phoneOverride = (q === '0' || q === 'off') ? false
+                           : (q === '1' || q === 'on') ? true : null;
+        }
+        if (_phoneOverride !== null) return _phoneOverride;
         return window.matchMedia('(pointer: coarse)').matches &&
                Math.min(window.innerWidth, window.innerHeight) <= 820;
     } catch (e) { return false; }
@@ -2364,10 +2374,15 @@ class Piece {
         this.circle.setRadius(size);
         this._layoutSheen();
         if (this.text) {
-            this.text.setFontSize(`${size * 1.7}px`);
+            this.text.setFontSize(`${this._numberFontSize()}px`);
+            if (_isPhone()) this.text.setStroke(this.text.style.stroke, Math.max(1, size * 0.1));
         }
         this._applyHitArea();
     }
+
+    // Only the digits 1-6 are ever drawn, so a phone can afford a bigger one:
+    // at 2.0r the cap height is about 1.4r inside a 2r circle.
+    _numberFontSize() { return this.radius * (_isPhone() ? 2.0 : 1.7); }
 
     // Phones only. A piece is ~13px across on a landscape phone, well under the
     // 44px a fingertip wants, so grow the touch target into whatever space is
@@ -2379,11 +2394,20 @@ class Piece {
         const c = this.circle;
         if (!c || !c.input || !_isPhone()) return;      // desktop keeps Phaser's default box
         const r = this.radius;
+        // Never grow past half the gap to the next piece. Two overlapping
+        // targets go to whichever object sits higher in the display list, and
+        // on a rack that is usually NOT the one piece you are allowed to move,
+        // so the tap is swallowed and nothing happens.
         let hit;
-        if (this.rack) hit = r + 6;                     // rack slots sit 2r+12 apart
-        else if (!this.currentTile || (this.currentTile.pieces || []).length <= 1) hit = r + 10;
-        else hit = r + 2;
-        c.input.hitArea = new Phaser.Geom.Circle(r, r, hit);
+        if (this.rack) hit = Math.min(r + 6, this.rack.spacing / 2);
+        else if (this.currentTile) {
+            // a stack packs its slots 2r+4 apart; a piece alone has the tile
+            const alone = (this.currentTile.pieces || []).length <= 1;
+            hit = alone ? r + 10 : r + 2;
+        } else {
+            hit = r;                                    // mid-move: leave it be
+        }
+        c.input.hitArea = new Phaser.Geom.Circle(r, r, Math.max(r, hit));
         c.input.hitAreaCallback = Phaser.Geom.Circle.Contains;
     }
 
@@ -2708,11 +2732,22 @@ class Piece {
             .on('pointerout',  () => { hideDebugTip(); });
 
         if (this.number <= 6 || DEBUG_MODE) {
-            this.text = this.scene.add.text(this.x, this.y, this.number, {
-                fontSize: `${this.radius * 1.7}px`,
+            // Phaser's default font family is Courier -- a thin monospace with a
+            // small x-height, which at 12px on a phone is the worst possible
+            // choice. Phones get the bold UI sans instead, a bigger digit (only
+            // 1-6 are ever drawn, so there is room inside the circle), and a
+            // halo in the piece's own colour to lift it off the sheen.
+            const st = {
+                fontSize: `${this._numberFontSize()}px`,
                 color: `#${this.textColor.toString(16).padStart(6, '0')}`,
                 fontStyle: 'bold'
-            }).setOrigin(0.5, 0.5);
+            };
+            if (_isPhone()) st.fontFamily = HUD_FONT;
+            this.text = this.scene.add.text(this.x, this.y, this.number, st).setOrigin(0.5, 0.5);
+            if (_isPhone()) {
+                this.text.setStroke(`#${this.bodyColor.toString(16).padStart(6, '0')}`,
+                                    Math.max(1, this.radius * 0.1));
+            }
         } else {
             this.text = null;
         }
@@ -3014,7 +3049,13 @@ class Tile {
     // at a slightly smaller size, etc. — resize only when needed, prefer resizing
     // to stacking. Beyond the min radius the extra pieces fold into the badge.
     tilePieceRadius(n) {
-        let r = STACK_PR;
+        // On a phone, start bigger and shrink to fit, so a piece with a roomy
+        // tile to itself is drawn larger rather than leaving the space empty.
+        // The ceiling keeps it inside the tile's own radial band, since the
+        // capacity test below only counts slots and would happily overflow it.
+        const ext = this.outerRadius - this.innerRadius;
+        let r = _isPhone() ? Math.max(STACK_PR, Math.floor(Math.min(STACK_PR * 1.5, (ext - 10) / 2)))
+                           : STACK_PR;
         while (r > STACK_MIN_R && this._capacityAtSlot(r * 2 + 4) < n) r -= 1;
         return r;
     }
@@ -3187,6 +3228,9 @@ class Rack {
     addPiece(piece) {
         this.pieces.push(piece);
         piece.rack = this;
+        // Sizing happens before this at game setup, and the touch target depends
+        // on which rack the piece is in, so re-apply now that it knows.
+        if (piece._applyHitArea) piece._applyHitArea();
     }
 
     removePiece(piece) {
@@ -5810,7 +5854,7 @@ const _vv = window.visualViewport || null;
 function _isZoomedIn() { return !!_vv && _vv.scale > 1.02; }
 
 function _applyTouchAction() {
-    const ta = _isZoomedIn() ? 'pan-x pan-y pinch-zoom' : 'pinch-zoom';
+    const ta = (_isPhone() && _isZoomedIn()) ? 'pan-x pan-y pinch-zoom' : 'pinch-zoom';
     document.documentElement.style.touchAction = ta;
     document.body.style.touchAction = ta;
     if (gameInstance && gameInstance.canvas) gameInstance.canvas.style.touchAction = ta;
@@ -5839,7 +5883,7 @@ function _movablePieceAtClient(cx, cy) {
 
 window.addEventListener('touchstart', (e) => {
     // Multi-finger gestures stay the browser's, so pinching still zooms.
-    if (!_isZoomedIn() || e.touches.length !== 1) return;
+    if (!_isPhone() || !_isZoomedIn() || e.touches.length !== 1) return;
     const t = e.touches[0];
     if (_movablePieceAtClient(t.clientX, t.clientY)) e.preventDefault();   // drag, don't pan
 }, { capture: true, passive: false });
