@@ -1,6 +1,6 @@
 {
-  "name": "Board Game",
-  "short_name": "Board Game",
+  "name": "Quahuru",
+  "short_name": "Quahuru",
   "description": "A hub-and-spoke dice game: race your pieces around the board and bring them safely home.",
   "start_url": "./",
   "scope": "./",
