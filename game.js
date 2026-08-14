@@ -581,6 +581,24 @@ function onTap(obj, handler) {
     return obj;
 }
 
+// A near miss on a crowded board usually lands on the WRONG ADJACENT tile
+// rather than on nothing, and the move is then simply refused. When the tile
+// you hit is not a legal destination but exactly ONE tile next to it is, that
+// was plainly the one meant. Ambiguity (two reachable neighbours) is left
+// alone, which is the owner's rule. Board adjacency, not pixel distance, so it
+// follows the real geometry. Phones only: a mouse does not need the help, and
+// a silent redirect would be worse than a refused click.
+function _resolveDestination(game, tile) {
+    if (!_isPhone() || !game || !tile) return tile;
+    const piece = game.selectedPiece;
+    const rt = piece && piece.reachableTiles;
+    if (!rt) return tile;
+    const reach = new Set([].concat(...Object.values(rt).filter(Array.isArray)));
+    if (reach.has(tile)) return tile;                     // hit the intended tile
+    const near = (tile.neighbors || []).filter(t => reach.has(t));
+    return near.length === 1 ? near[0] : tile;
+}
+
 function getSoundEnabled()       { return _boolSetting('sound', true); }
 function getFullscreenPref()     { return _boolSetting('fullscreen', false); }
 
@@ -3585,7 +3603,7 @@ class Tile {
     buildTileChrome(points) {
         this._built = true;
         this.graphics.setInteractive(new Phaser.Geom.Polygon(points), Phaser.Geom.Polygon.Contains);
-        onTap(this.graphics, () => this.onClick());
+        onTap(this.graphics, () => _resolveDestination(this.game, this).onClick());
         this.graphics
             .on('pointerover', () => this.onHover())
             .on('pointerout', () => this.onOut());
@@ -5162,7 +5180,8 @@ endGame(winner, score = null, impasse_caller = null) {
                 if (piece.game.sumSave(piece)) return;
             }
 
-            if (target) target.onClick();          // moves the selected piece, with full rule checks
+            const drop = _resolveDestination(piece.game, target);
+            if (drop) drop.onClick();              // moves the selected piece, with full rule checks
             if (piece.currentTile === before) {     // move didn't happen -> snap back + deselect
                 if (piece._snapRack) piece.returnToRack();   // returns to rack (also deselects)
                 else {

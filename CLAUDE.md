@@ -719,6 +719,19 @@ with it in mind.** Assessment and the concrete implications:
     (`-398.5`), which renders every edge across two device pixels;
     `_setCameraView` now rounds. **Chrome's edge-swipe "back"** was stealing
     drags: `overscroll-behavior: none` on html/body.
+    **NEAR-MISS TILE TARGETING (2026-08-14, phones).** Owner: aiming at a
+    destination on a crowded board usually lands on the WRONG ADJACENT tile, not
+    on empty space, and the move is simply refused. `_resolveDestination` now
+    redirects: if the tile you hit is not a legal destination but exactly ONE of
+    its neighbours is, that neighbour was clearly meant. Two or more reachable
+    neighbours is ambiguous and left alone (owner's rule). It uses the board's
+    own `tile.neighbors` adjacency rather than pixel distance, so it follows the
+    real geometry, and it runs for both taps and drag-drops. Phone-only: a mouse
+    does not need the help, and a silent redirect there would be worse than a
+    refused click. Measured on phone — redirects when single, leaves ambiguous
+    alone, never touches a tile that is already reachable, and end-to-end a tap
+    on the wrong tile lands the piece on the intended one; desktop does none of
+    it (same tap leaves the piece on home).
     **Harness note:** every screen<->world conversion in the CDP tests must go
     through `camera.worldView` now; the old `wx * canvasWidth / 1800` mapping is
     only valid under FIT, and using it silently sends taps to the wrong place
