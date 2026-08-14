@@ -612,6 +612,24 @@ with it in mind.** Assessment and the concrete implications:
     visible rect — the rect extends into the letterbox bands, and anything drawn
     there is off the canvas, invisible and untappable. This bit the ghosts (world
     x=-286) and then the dice (x=-243) in turn.
+    **A PINCH COULD ACT AS A CLICK — fixed 2026-08-14 (phone-only).** The first
+    finger of a pinch fires `pointerdown` before the second lands, so any handler
+    bound to down had already run by the time the browser knew it was a zoom:
+    owner saw pieces move and panels open while zooming. `onTap(obj, handler)`
+    now binds phones to **pointerup** and drops the event if a second finger
+    joined the gesture (`_multiTouchActive`, with a 140ms tail so the second
+    finger's own release cannot land as a tap) or if the pointer travelled more
+    than 16px (a drag or pan, not a tap). Applied to everything that is NOT
+    draggable: tiles, the stack badge, HUD buttons, the undo/end-turn arrows,
+    the end-card buttons and the ghosts. **Pieces deliberately stay on
+    pointerdown** — dragging one relies on the selection being made there, and a
+    stray selection from a pinch is harmless. Desktop keeps pointerdown
+    throughout. Measured: tap still opens How to Play and still commits a move on
+    both platforms; an identical pinch over the destination tile does not move.
+    **Floating dice appear only once half of a die is out of frame** (owner: a
+    sliver clipped off the edge plus a full copy beside it just reads as
+    duplication). Threshold measured at 0/0.1/0.25/0.49 hidden → no readout,
+    0.5/0.75 → readout.
     **Remaining mobile queue (owner's order, 2026-08-14):** fullscreen +
     web-app manifest; then the must-enter piece hovering in a corner when it is
     out of frame — owner notes this matters *independently* of one-finger pan,

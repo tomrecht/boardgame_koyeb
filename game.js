@@ -398,8 +398,8 @@ function _updateMustEnterGhosts() {
         gh.body.disableInteractive();
         if (i === 0) {
             gh.body.setInteractive(new Phaser.Geom.Circle(r, r, r + pad), Phaser.Geom.Circle.Contains);
-            gh.body.off('pointerdown');
-            gh.body.on('pointerdown', () => {
+            gh.body.off('pointerdown'); gh.body.off('pointerup');
+            onTap(gh.body, () => {
                 piece.handleClick({ rightButtonDown: () => false });
                 _updateMustEnterGhosts();
             });
@@ -421,9 +421,15 @@ function _updateHudDice() {
     const rect = _visibleWorldRect();
     const dice = g.dice || [];
     if (!rect || dice.length < 2) return;
-    const out = dice.some(d => d.x < rect.x0 || d.x + d.size > rect.x1 ||
-                               d.y < rect.y0 || d.y + d.size > rect.y1);
-    if (!out) return;
+    // Only once a die is MEANINGFULLY out of frame: clipping a sliver off the
+    // edge and then showing a full copy beside it just reads as duplication.
+    // Half of either die hidden is the threshold.
+    const hidden = (d) => {
+        const vw = Math.max(0, Math.min(d.x + d.size, rect.x1) - Math.max(d.x, rect.x0));
+        const vh = Math.max(0, Math.min(d.y + d.size, rect.y1) - Math.max(d.y, rect.y0));
+        return 1 - (vw * vh) / (d.size * d.size);
+    };
+    if (!dice.some(d => hidden(d) >= 0.5)) return;
 
     const worldPerCss = (rect.x1 - rect.x0) / rect.cssW;
     const size = 34 * worldPerCss, gap = 9 * worldPerCss, pad = 14 * worldPerCss;
@@ -448,6 +454,38 @@ function _updateViewportHud() { _updateMustEnterGhosts(); _updateHudDice(); }
 if (window.visualViewport) {
     visualViewport.addEventListener('resize', () => _updateViewportHud());
     visualViewport.addEventListener('scroll', () => _updateViewportHud());
+}
+
+// Phones: commit taps on pointer UP, not pointer DOWN.
+// A pinch's first finger fires pointerdown before the second one lands, so a
+// down-bound handler has already acted by the time the browser knows it is a
+// zoom gesture -- which is how a pinch could move a piece or open a panel.
+// Binding to up lets us check two things first: that no second finger joined,
+// and that the pointer barely moved (a drag or pan is not a tap).
+// Pieces deliberately keep pointerdown: dragging one relies on the selection
+// being made there, and a stray selection is harmless anyway.
+let _touchesDown = 0, _gestureWasMultiTouch = false;
+function _multiTouchActive() { return _gestureWasMultiTouch || _touchesDown > 1; }
+['touchstart', 'touchend', 'touchcancel'].forEach(type => {
+    window.addEventListener(type, (e) => {
+        _touchesDown = e.touches ? e.touches.length : 0;
+        if (_touchesDown > 1) _gestureWasMultiTouch = true;
+        // clear a little after the last finger lifts, so the second finger's own
+        // pointerup cannot land as a tap straight after a pinch
+        else if (_touchesDown === 0 && _gestureWasMultiTouch) {
+            setTimeout(() => { if (_touchesDown === 0) _gestureWasMultiTouch = false; }, 140);
+        }
+    }, { capture: true, passive: true });
+});
+
+function onTap(obj, handler) {
+    if (!_isPhone()) { obj.on('pointerdown', handler); return obj; }
+    obj.on('pointerup', function (pointer, ...rest) {
+        if (_multiTouchActive()) return;
+        if (pointer && pointer.getDistance && pointer.getDistance() > 16) return;   // a drag, not a tap
+        return handler.call(this, pointer, ...rest);
+    });
+    return obj;
 }
 
 function getSoundEnabled()       { return _boolSetting('sound', true); }
@@ -3368,7 +3406,8 @@ class Tile {
                 .setInteractive({ useHandCursor: true })
                 // with a piece selected, the badge acts as the tile (drop/move here);
                 // otherwise it toggles the overflow picker open/closed.
-                .on('pointerdown', () => {
+                ;
+            onTap(this.badgeCircle, () => {
                     if (this.game.selectedPiece) { this.onClick(); return; }
                     if (stackPickerOpen()) hideStackPicker(); else openStackPicker(this);
                 });
@@ -3432,8 +3471,9 @@ class Tile {
 
     buildTileChrome(points) {
         this._built = true;
-        this.graphics.setInteractive(new Phaser.Geom.Polygon(points), Phaser.Geom.Polygon.Contains)
-            .on('pointerdown', () => this.onClick())
+        this.graphics.setInteractive(new Phaser.Geom.Polygon(points), Phaser.Geom.Polygon.Contains);
+        onTap(this.graphics, () => this.onClick());
+        this.graphics
             .on('pointerover', () => this.onHover())
             .on('pointerout', () => this.onOut());
 
@@ -4900,12 +4940,12 @@ endGame(winner, score = null, impasse_caller = null) {
         this.undoButton = scene.add.image(config.width - (_isPhone() ? 520 : DIE_2_POSITION),
                                           _isPhone() ? 100 : 85, 'leftWavyArrow')
             .setDisplaySize(buttonSize, buttonSize)
-            .setInteractive()
-            .on('pointerdown', () => {
-                hideStackPicker();
-                this.undoOneMove();   // one die / one move at a time
-                clearMoveRecording();
-            });
+            .setInteractive();
+        onTap(this.undoButton, () => {
+            hideStackPicker();
+            this.undoOneMove();   // one die / one move at a time
+            clearMoveRecording();
+        });
 
         const undoTooltip = makeHudTip(scene, this.undoButton.x, this.undoButton.y + buttonSize * 0.72, 'Undo');
         this.undoButton.on('pointerover', () => undoTooltip.show(true));
@@ -4917,8 +4957,8 @@ endGame(winner, score = null, impasse_caller = null) {
         this.switchTurnButton = scene.add.image(config.width - (_isPhone() ? 330 : DIE_1_POSITION),
                                                 _isPhone() ? 100 : 85, 'rightWavyArrow')
             .setDisplaySize(buttonSize, buttonSize)
-            .setInteractive()
-            .on('pointerdown', () => {
+            .setInteractive();
+        onTap(this.switchTurnButton, () => {
                 // Only the human whose turn it is may end the turn.
                 if (this.gameOver || !this.currentPlayerIsHuman()) return;
                 // Confirm only if the setting is on AND ending is actually risky
@@ -4929,7 +4969,7 @@ endGame(winner, score = null, impasse_caller = null) {
                     this.switchTurn();
                 }
             });
-    
+
         const switchTurnTooltip = makeHudTip(scene, this.switchTurnButton.x,
                                              this.switchTurnButton.y + buttonSize * 0.72, 'End turn');
         this.switchTurnButton.on('pointerover', () => switchTurnTooltip.show(true));
@@ -5078,7 +5118,7 @@ class MainGameScene extends Phaser.Scene {
         const hudK = _isPhone() ? 2 : 1;
         const hy = (n) => _isPhone() ? 48 + n * 84 : 52 + n * 52;
         const newGameButton = makeHudButton(this, 150, hy(0), 'New Game', { k: hudK });
-        newGameButton.on('pointerdown', () => {
+        onTap(newGameButton, () => {
             if (matchTracker && !matchTracker.over) return;
             this.showNewGameConfirmationModal();
         });
@@ -5087,7 +5127,7 @@ class MainGameScene extends Phaser.Scene {
         // New Match sits where New Game would be during a match; starting one
         // mid-match asks for confirmation first.
         const newMatchButton = makeHudButton(this, 150, hy(inMatch ? 0 : 1), 'New Match', { ghost: true, k: hudK });
-        newMatchButton.on('pointerdown', () => {
+        onTap(newMatchButton, () => {
             if (matchTracker && !matchTracker.over) {
                 showConfirm('Abandon the current match and start a new one?', () => showMatchSetup());
             } else {
@@ -5096,7 +5136,7 @@ class MainGameScene extends Phaser.Scene {
         });
 
         const instructionsButton = makeHudButton(this, 150, hy(inMatch ? 1 : 2), 'How to Play', { ghost: true, k: hudK });
-        instructionsButton.on('pointerdown', () => { showInstructions(); });
+        onTap(instructionsButton, () => { showInstructions(); });
         // The tutorial hides these: New Game / New Match restart the scene, which
         // would leave the step runner talking to a board that no longer exists.
         this.hudButtons = [newGameButton, newMatchButton, instructionsButton];
@@ -5161,7 +5201,7 @@ class MainGameScene extends Phaser.Scene {
             'Call draw', { ghost: true, k });
         this.callDrawButton.setHudVisible(false);
 
-            this.callDrawButton.on('pointerdown', () => {
+            onTap(this.callDrawButton, () => {
                 fetch(`${SERVER_URL}/call_draw`, { method: 'POST', credentials: 'include' })
                     .catch(e => console.warn('call_draw failed:', e));
                 const g = gameInstance.scene.scenes[0].game;
@@ -5483,7 +5523,7 @@ class EndGameScene extends Phaser.Scene {
         }).setOrigin(0.5);
         const button = (x, y, label, ghost, cb) => {
             const b = makeHudButton(this, x, y, label, { ghost, k: K });
-            b.on('pointerdown', cb);
+            onTap(b, cb);
             return b;
         };
 
