@@ -390,6 +390,40 @@ blocks and learns their value from real outcomes (AlphaZero-style coverage
 fix, larger change to the loop). Still parked for now, but no longer
 expected to self-resolve via the TD run.
 
+## Project direction: a real Android/iOS app (owner, 2026-08-14)
+
+Standing goal — the web client should eventually ship as an actual app, with
+possible store presence. Not being built yet; **future changes should be made
+with it in mind.** Assessment and the concrete implications:
+
+- **Packaging is the cheap part.** A PWA (manifest + service worker) gets a
+  home-screen icon, no browser chrome and offline loading in hours, no store
+  needed. A Capacitor wrapper adds real store presence in about a day plus store
+  admin (Play $25 once; Apple $99/yr and review) and changes no game code — the
+  WebView is Chrome on Android, WKWebView on iOS, so rendering is what we have.
+- **The real work is on-device AI**, which is what removes the server, the cold
+  starts, the 504s and MOVE_BUDGET juggling entirely. `model.onnx` (1.66 MB)
+  runs as-is under **onnxruntime-web** (WASM); what needs porting to JS is
+  `encoder.py` (pure numpy, mechanical) and `agent_gnn.py`'s 2-ply search +
+  heuristic prefilter, plus whatever of `game.py` the search touches (game.js
+  already has move generation/validation for human play). Days to a couple of
+  weeks; the risk is correctness, so verify with the established standard —
+  seeded trace-diff (`PYTHONHASHSEED=0`) asserting identical move traces against
+  the Python agent. A native rewrite (Kotlin/Swift/Flutter) is ruled out: it
+  would discard a polished Phaser UI to solve a problem we do not have.
+- **Consequences for work being done now:**
+  1. **Phaser is CDN-loaded** (`index.html`). A packaged or offline app must
+     bundle it locally — this is a prerequisite, and it also fixes the opaque
+     `Script error.` stack traces that cost time this session.
+  2. **Zoom/pan belongs inside Phaser** (camera), not on browser `touch-action` /
+     `visualViewport`. Already decided after the selection bug; the app goal is a
+     second, independent reason — a WebView arbitrates pinch-zoom differently
+     and often not at all.
+  3. **Portrait layout is a prerequisite**, not a nicety: phone apps are expected
+     to work held upright. It is last in the queue but gates the app work.
+  4. **Don't add server-only game behaviour** without remembering it needs a JS
+     twin later. Settings already live in localStorage, which a WebView keeps.
+
 ## Current state
 
 - **SESSION UPDATE (2026-08-04) — LIVE ON KOYEB: deployed model, latency,
@@ -507,6 +541,23 @@ expected to self-resolve via the TD run.
     **One-finger panning must be rebuilt inside Phaser** (camera scroll on a drag
     starting off-piece) so the browser never arbitrates the gesture. Owner wants
     it; two-finger panning already works but is not what anyone reaches for.
+    **MUST-ENTER HOVER — SPEC (owner, 2026-08-14).** When zoom leaves the rack
+    off screen, the unentered piece(s) you could still bring out this turn hover
+    in a corner, drawn translucent (or otherwise clearly not-on-the-board) and
+    tappable. **Which pieces:** the first unentered piece, possibly the first
+    two — but only those actually enterable in the remainder of THIS turn.
+    Owner's cases, all confirmed against `game.py`: one captured piece → one
+    entry; 2+ captured → none; one die already used → one. The engine backs this
+    exactly — captured pieces sit on the **home tile**, and `get_valid_moves`
+    returns *only* captured-piece moves while any of yours are there;
+    `must_move_unentered()` further requires no captured pieces of yours on home
+    AND `firstMove` unset, so the entry obligation binds only the turn's first
+    move, one piece at a time. So the count is roughly
+    `max(0, unused_dice - own_pieces_on_home)`, capped by rack size — but prefer
+    asking the existing `canSelectForMove` / `getReachableTilesByDice` rather
+    than re-deriving the rule, since entry can also be blocked outright.
+    Note only `rack.pieces[0]` is selectable at a time (guard in `handleClick`),
+    so a second hovering piece is anticipatory.
     **Remaining mobile queue (owner's order, 2026-08-14):** fullscreen +
     web-app manifest; then the must-enter piece hovering in a corner when it is
     out of frame — owner notes this matters *independently* of one-finger pan,
