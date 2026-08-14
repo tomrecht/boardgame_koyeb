@@ -356,6 +356,10 @@ function _updateMustEnterGhosts() {
     // balloon with the zoom. ~44 CSS px across, the usual touch-target size.
     const worldPerCss = (rect.x1 - rect.x0) / rect.cssW;
     const r = 22 * worldPerCss, pad = 14 * worldPerCss;
+    // The visible rect can extend past the canvas into the letterbox bands, and
+    // a ghost placed out there is off the canvas: invisible and untappable.
+    // Place within the visible part OF THE CANVAS.
+    const px0 = Math.max(0, rect.x0), py1 = Math.min(config.height, rect.y1);
     offscreen.forEach((piece, i) => {
         let gh = _ghosts[i];
         if (!gh) {
@@ -366,8 +370,8 @@ function _updateMustEnterGhosts() {
             gh.add([gh.body, gh.ring, gh.label]);
             _ghosts[i] = gh;
         }
-        const x = rect.x0 + pad + r + i * (2 * r + pad);
-        const y = rect.y1 - pad - r;
+        const x = px0 + pad + r + i * (2 * r + pad);
+        const y = py1 - pad - r;
         gh.setPosition(x, y).setVisible(true).setAlpha(i === 0 ? 0.62 : 0.4);
         gh.body.setRadius(r).setFillStyle(piece.color, 1);
         gh.ring.setRadius(r + 2 * worldPerCss).setStrokeStyle(2.5 * worldPerCss, THEME.accent, 1);

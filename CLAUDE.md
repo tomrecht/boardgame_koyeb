@@ -579,12 +579,33 @@ with it in mind.** Assessment and the concrete implications:
     than re-deriving the rule, since entry can also be blocked outright.
     Note only `rack.pieces[0]` is selectable at a time (guard in `handleClick`),
     so a second hovering piece is anticipatory.
+    **MUST-ENTER GHOSTS — BUILT (2026-08-14).** `_updateMustEnterGhosts` draws the
+    enterable rack piece(s) translucent in the bottom-left of whatever is on
+    screen, but only when the real ones are outside the visible rect (so nothing
+    shows unzoomed). Count from `_enterableUnentered`:
+    `min(unused_dice - own_pieces_on_home, rack, 2)` — measured 2 fresh, 1 with a
+    die spent, 1 with one captured, 0 with two captured, 0 with both dice spent,
+    0 on desktop. Only the first is interactive (alpha .62 vs .4): the rack hands
+    out one piece at a time, so the second is a preview. Tapping it enters the
+    piece (verified with a real touch event). Two things that bit:
+    the visible rect includes the letterbox bands, so placement must be clamped
+    to the canvas or the ghost lands off it (invisible AND untappable); and it is
+    sized in world units from `worldPerCss` so it stays ~44 CSS px at any zoom
+    rather than ballooning. Harness note: `currentPlayerIsHuman()` reads the
+    player objects, NOT `WHITE_IS_AI`/`BLACK_IS_AI`, so a test that only sets the
+    globals sees the ghosts (correctly) suppressed on an AI turn.
     **Remaining mobile queue (owner's order, 2026-08-14):** fullscreen +
     web-app manifest; then the must-enter piece hovering in a corner when it is
     out of frame — owner notes this matters *independently* of one-finger pan,
     since zooming alone can leave the piece you must move off screen, and
     two-finger panning already exists; then the Phaser camera pan; then the
     portrait layout redo LAST.
+    **Backlog (owner, 2026-08-14, both platforms, not urgent):** clicking an
+    unentered piece moves it to the home tile; from there a DRAG should carry it
+    to a destination tile, distinguishing drag from click (a click there returns
+    it to the rack). Today `_snapRack` sends any dragged just-entered piece back
+    to the rack when the drop misses, and `onClick` on a `justMovedHome` piece
+    returns it — so the drag path needs to win when the pointer actually moves.
   - **Dice on a phone (2026-08-14): 120 at y=30, border 5→14.** They were ~32 CSS
     px with a 1.6px colour border — the die-A/die-B coding was invisible. They
     now grow left and up, keeping the right edge put (HUD buttons end at x=220;
