@@ -490,20 +490,23 @@ expected to self-resolve via the TD run.
     AND a min viewport side ≤820 — and verify the desktop path is unchanged in
     the same run (the CDP harness emulates all three: landscape phone, portrait
     phone, desktop with `mobile:false`).
-  - **Pan while zoomed (2026-08-14).** `touch-action: pinch-zoom` lets the
-    browser pinch but reserves one-finger drags for the canvas, so once zoomed in
-    there was no way to reach the rest of the board with the obvious gesture.
-    While `visualViewport.scale > 1.02` the page now switches to `pan-x pan-y
-    pinch-zoom` (Chrome reports the equivalent `manipulation` back from
-    getComputedStyle), so one finger pans; a `passive:false` touchstart listener
-    calls preventDefault when the finger lands on a piece the current player can
-    move, so dragging your own piece still beats panning. Verified under CDP with
-    `Emulation.setPageScaleFactor` + `Input.synthesizeScrollGesture`: the visual
-    viewport moves by exactly the drag distance, and touch-action reverts on
-    zoom-out. Harness note: synthetic `Input.dispatchTouchEvent` taps do NOT
-    reach Phaser in this headless setup (a mouse click on the same piece selects
-    it), so test taps with mouse events and treat "tap did nothing" as an
-    artifact until a mouse control says otherwise.
+  - **Panning a zoomed board: TWO fingers, and it already worked (2026-08-14).**
+    `touch-action: pinch-zoom` permits multi-finger *panning* as well as zooming,
+    so a two-finger drag has always panned a pinch-zoomed board — measured under
+    CDP (visual viewport moves with the fingers, `touch-action` still the plain
+    `pinch-zoom`, zero code). One finger stays with the canvas so dragging and
+    tapping behave the same zoomed or not.
+    **Do not hand one-finger drags to the browser while zoomed.** That was tried
+    (switch to `pan-x pan-y pinch-zoom` above `visualViewport.scale > 1.02`, with
+    a hit test to keep piece-dragging) and it broke selection on a real phone:
+    Chrome claims the gesture as a pan as soon as the finger drifts a pixel or
+    two, which is every real tap. Emulated taps have zero drift, so CDP could not
+    reproduce it — owner hit it immediately. Reverted.
+    Harness note: `Input.dispatchTouchEvent` taps DO reach Phaser provided touch
+    emulation is enabled before the page loads (`piece.handleClick` fires,
+    `wasTouch=true`); an early failure to see this was the AI holding the turn,
+    not the harness. `Emulation.setEmitTouchEventsForMouse` hangs the page — use
+    dispatchTouchEvent directly.
   - **Tap a tile to select; bigger touch targets (2026-08-14, phone-only).**
     `Tile.onClick` with nothing selected now delegates to `_unambiguousPiece()`
     — the current player's single piece on that tile, or any of them when they

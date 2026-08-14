@@ -5843,47 +5843,11 @@ setTimeout(() => {
 });
 
 // ── PANNING A ZOOMED BOARD ──────────────────────────────────────────────
-// `touch-action: pinch-zoom` lets the browser pinch while reserving one-finger
-// drags for the canvas, which is what makes dragging a piece work. The cost is
-// that once you have zoomed in, the gesture everyone reaches for to see the
-// rest of the board -- one finger -- is the one gesture that does nothing.
-// So while the page is actually zoomed, hand one-finger drags back to the
-// browser as a pan; a finger that starts on a piece you could move still drags
-// it, and taps are unaffected either way (a tap is not a pan).
-const _vv = window.visualViewport || null;
-function _isZoomedIn() { return !!_vv && _vv.scale > 1.02; }
-
-function _applyTouchAction() {
-    const ta = (_isPhone() && _isZoomedIn()) ? 'pan-x pan-y pinch-zoom' : 'pinch-zoom';
-    document.documentElement.style.touchAction = ta;
-    document.body.style.touchAction = ta;
-    if (gameInstance && gameInstance.canvas) gameInstance.canvas.style.touchAction = ta;
-}
-if (_vv) {
-    _vv.addEventListener('resize', _applyTouchAction);
-    _vv.addEventListener('scroll', _applyTouchAction);
-}
-_applyTouchAction();
-
-// The movable piece under a client point, if any. Touch coordinates are layout-
-// viewport CSS pixels, which pinch-zoom does not change, so this mapping holds
-// at any zoom level.
-function _movablePieceAtClient(cx, cy) {
-    const cv = gameInstance && gameInstance.canvas;
-    const g = _currentGame();
-    if (!cv || !g || g.gameOver) return null;
-    const r = cv.getBoundingClientRect();
-    if (!r.width || !r.height) return null;
-    const wx = (cx - r.left) * (config.width / r.width);
-    const wy = (cy - r.top) * (config.height / r.height);
-    const slop = 16;   // a fingertip is bigger than a piece at this scale
-    return (g.pieces || []).find(p => p.player === g.turn && p.visible !== false &&
-        Math.hypot((p.x || 0) - wx, (p.y || 0) - wy) <= (p.radius || STACK_PR) + slop) || null;
-}
-
-window.addEventListener('touchstart', (e) => {
-    // Multi-finger gestures stay the browser's, so pinching still zooms.
-    if (!_isPhone() || !_isZoomedIn() || e.touches.length !== 1) return;
-    const t = e.touches[0];
-    if (_movablePieceAtClient(t.clientX, t.clientY)) e.preventDefault();   // drag, don't pan
-}, { capture: true, passive: false });
+// Two-finger drag already pans a pinch-zoomed page: `touch-action: pinch-zoom`
+// permits multi-finger panning as well as zooming, and this was measured to
+// work with no code at all (the visual viewport moves with the fingers).
+// One finger deliberately stays with the canvas, so dragging a piece and
+// tapping to select behave the same zoomed or not. An earlier attempt handed
+// one-finger drags to the browser while zoomed; that let Chrome claim a tap as
+// a pan the moment the finger drifted a pixel or two, which on a real phone is
+// every tap -- pieces stopped being selectable.
