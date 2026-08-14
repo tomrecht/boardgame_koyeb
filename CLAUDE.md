@@ -662,6 +662,29 @@ with it in mind.** Assessment and the concrete implications:
     the save never fired). **Quiet sound effects lifted** to gain 0.20-0.22: a
     square wave and a two-note chime carry far more perceived loudness than a
     single sine, so move/win/lose were inaudible next to capture/save.
+    **THE CANVAS FILLS THE SCREEN ON PHONES (2026-08-14).** Owner: zooming in used
+    to stop at the old frame instead of expanding into the screen — a direct
+    cost of moving zoom onto the camera, since `Scale.FIT` letterboxes the canvas
+    and camera zoom only enlarges the board *inside* that rectangle. Phones now
+    use **`Scale.RESIZE`** (canvas == viewport, no bands at all) and the camera
+    frames the world: `_baseZoom` = `min(vw/WORLD_W, vh/WORLD_H)` shows
+    everything, and user zoom multiplies that up to 4x. `WORLD_W/H` (1800x1200)
+    stay the coordinate system everything is laid out in — `config.width/height`
+    keep those values, so all the existing world-space placement still holds.
+    `_pageZoomed` compares against the base zoom, not 1, and `_visibleWorldRect`
+    always reads `camera.worldView` on a phone. Desktop keeps FIT untouched.
+    Clamp: the visible rect is kept inside the world on each axis where it is
+    smaller, and centred on whichever axis has slack (a phone is never 3:2).
+    Measured: landscape canvas 844x390 == viewport and portrait 390x844 ==
+    viewport, whole board visible at rest, zoomed view 1039x480 world using the
+    full screen, tap still enters a piece, desktop still letterboxed at 1248x832.
+    With no letterbox bands the turn pill has nowhere to hide, so it now sits
+    under the settings gear (measured clear of gear, HUD buttons, dice, arrows on
+    landscape/portrait/desktop).
+    **Harness note:** every screen<->world conversion in the CDP tests must go
+    through `camera.worldView` now; the old `wx * canvasWidth / 1800` mapping is
+    only valid under FIT, and using it silently sends taps to the wrong place
+    (it made taps look broken twice).
     **Remaining mobile queue (owner's order, 2026-08-14):** fullscreen +
     web-app manifest; then the must-enter piece hovering in a corner when it is
     out of frame — owner notes this matters *independently* of one-finger pan,

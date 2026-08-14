@@ -272,8 +272,11 @@ function _placeTurnStatus(el) {
         const w = Math.round((onLeft ? r.left : window.innerWidth - r.right) - 16);
         set(`top:${onLeft ? 10 : 84}px; ${onLeft ? 'left' : 'right'}:8px; transform:none;` +
             `width:${w}px; font-size:12px; text-align:center; white-space:normal; line-height:1.25;`);
-    } else {                                     // nowhere to put it: overlay, compact
-        set('left:50%; transform:translateX(-50%); top:6px; font-size:12px; padding:4px 10px;');
+    } else {
+        // No band at all -- on a phone the canvas now fills the screen. Sit under
+        // the settings gear on the right: the top left holds the HUD buttons and
+        // the centre is the board.
+        set('right:12px; top:84px; transform:none; font-size:12px; padding:4px 10px;');
     }
 }
 
@@ -310,13 +313,40 @@ function updateTurnStatus(textOrGame) {
 // unless the page itself is pinch-zoomed. Checking this first also avoids
 // trusting the canvas rect during start-up, before layout has settled -- which
 // briefly reported the racks as off screen and flashed the ghosts up at zoom 1.
+// The zoom at which the whole world just fits the canvas. User zoom multiplies
+// this, so "zoom 1" always means "everything visible" whatever the screen is.
+function _baseZoom(scene) {
+    if (!_isPhone()) return 1;
+    const sz = scene.scale.gameSize;
+    return Math.min(sz.width / WORLD_W, sz.height / WORLD_H) || 1;
+}
+
+// Put the camera where the world is framed as asked: `left`/`top` are the world
+// coordinates of the top-left of the visible area. Phaser centres a zoomed view
+// on scroll + cameraSize/2, so worldView.x = scrollX + (camW - camW/zoom)/2.
+function _setCameraView(cam, left, top) {
+    cam.setScroll(left - (cam.width - cam.width / cam.zoom) / 2,
+                  top - (cam.height - cam.height / cam.zoom) / 2);
+}
+
+function _fitCameraToWorld(scene) {
+    if (!_isPhone()) return;
+    const cam = scene.cameras.main;
+    scene._camBase = _baseZoom(scene);
+    cam.setZoom(scene._camBase * (scene._camUserZoom || 1));
+    cam.centerOn(WORLD_W / 2, WORLD_H / 2);
+}
+
 function _mainCamera() {
     const sc = _setupScene();
     return (sc && sc.cameras && sc.cameras.main) || null;
 }
 function _pageZoomed() {
-    const cam = _mainCamera();
-    if (cam && cam.zoom > 1.02) return true;          // in-canvas zoom
+    const sc = _setupScene(), cam = _mainCamera();
+    if (sc && cam) {
+        const base = sc._camBase || _baseZoom(sc);
+        if (cam.zoom > base * 1.02) return true;       // zoomed in past the fit
+    }
     const vv = window.visualViewport;                  // browser pinch (desktop)
     return !!vv && vv.scale > 1.02;
 }
@@ -328,10 +358,11 @@ function _visibleWorldRect() {
     if (!cv) return null;
     const r = cv.getBoundingClientRect();
     if (!r.width || !r.height) return null;
-    // When the camera is doing the zooming, it already knows exactly which world
-    // rectangle is on screen -- no viewport arithmetic needed.
+    // The camera already knows exactly which world rectangle is on screen -- no
+    // viewport arithmetic needed. Always true on a phone, where the canvas fills
+    // the viewport and the camera does the framing.
     const cam = _mainCamera();
-    if (cam && cam.zoom > 1.02) {
+    if (cam && (_isPhone() || cam.zoom > 1.02)) {
         const v = cam.worldView;
         return { x0: v.x, y0: v.y, x1: v.right, y1: v.bottom, cssW: r.width };
     }
@@ -4869,23 +4900,30 @@ endGame(winner, score = null, impasse_caller = null) {
         } catch (e) {}
         if (scene._camWired) return;
         scene._camWired = true;
+        _fitCameraToWorld(scene);
+        const onResize = () => { _fitCameraToWorld(scene); _updateViewportHud(); };
+        scene.scale.on('resize', onResize);
 
         const cam = scene.cameras.main;
-        const MIN_ZOOM = 1, MAX_ZOOM = 4, PAN_SLOP = 8;
+        const PAN_SLOP = 8, MAX_FACTOR = 4;
         scene.input.addPointer(2);                 // enough pointers for a pinch
         // The browser must not also zoom/scroll, or the two transforms compose.
         if (gameInstance.canvas) gameInstance.canvas.style.touchAction = 'none';
 
+        // Zoom runs from "the whole world fits" up to 4x that. The visible world
+        // rectangle is kept inside the world where it is smaller, and centred on
+        // whichever axis has slack (a phone screen is never the world's shape).
         const clamp = () => {
-            cam.zoom = Phaser.Math.Clamp(cam.zoom, MIN_ZOOM, MAX_ZOOM);
-            // Phaser centres a zoomed view on scroll + size/2 (worldView.x is
-            // scrollX + (W - W/zoom)/2), so the scroll range that keeps the view
-            // inside the board is symmetric about zero -- and collapses to 0 at
-            // zoom 1, which pins the unzoomed view exactly where it belongs.
-            const mx = (config.width - config.width / cam.zoom) / 2;
-            const my = (config.height - config.height / cam.zoom) / 2;
-            cam.scrollX = Phaser.Math.Clamp(cam.scrollX, -mx, mx);
-            cam.scrollY = Phaser.Math.Clamp(cam.scrollY, -my, my);
+            const base = scene._camBase || _baseZoom(scene);
+            cam.zoom = Phaser.Math.Clamp(cam.zoom, base, base * MAX_FACTOR);
+            scene._camUserZoom = cam.zoom / base;
+            const vw = cam.width / cam.zoom, vh = cam.height / cam.zoom;
+            const v = cam.worldView;
+            const left = vw >= WORLD_W ? (WORLD_W - vw) / 2
+                                       : Phaser.Math.Clamp(v.x, 0, WORLD_W - vw);
+            const top  = vh >= WORLD_H ? (WORLD_H - vh) / 2
+                                       : Phaser.Math.Clamp(v.y, 0, WORLD_H - vh);
+            _setCameraView(cam, left, top);
         };
 
         let panFrom = null, panning = false, pinch = null;
@@ -4939,7 +4977,7 @@ endGame(winner, score = null, impasse_caller = null) {
         // destination that is off screen can be reached without letting go.
         const edgePan = () => {
             const piece = scene._draggingPiece;
-            if (!piece || cam.zoom <= 1.02) return;
+            if (!piece || cam.zoom <= (scene._camBase || 1) * 1.02) return;
             const p = scene.input.activePointer;
             if (!p || !p.isDown) return;
             const v = cam.worldView;
@@ -4963,6 +5001,7 @@ endGame(winner, score = null, impasse_caller = null) {
         scene.events.once('shutdown', () => {
             scene._camWired = false;
             scene.events.off('update', edgePan);
+            scene.scale.off('resize', onResize);
         });
     }
 
@@ -6286,15 +6325,20 @@ window.addEventListener('beforeunload', function() {
 });
 
 
+// WORLD_W/H stay the coordinate system everything is laid out in (the board is
+// drawn at 1800x1200 whatever the screen is). On a phone the canvas RESIZEs to
+// fill the viewport and the camera frames that world inside it -- otherwise FIT
+// letterboxes the canvas, and zooming in then just enlarges the board inside the
+// same small rectangle, leaving the grey bands untouched. Desktop keeps FIT.
+const WORLD_W = 1800, WORLD_H = 1200;
 const config = {
     type: Phaser.AUTO,
-    width: 1800,
-    height: 1200,
+    width: WORLD_W,
+    height: WORLD_H,
     backgroundColor: BACKGROUND_COLOR,
-    scale: {
-        mode: Phaser.Scale.FIT, 
-        autoCenter: Phaser.Scale.CENTER_BOTH
-    },
+    scale: _isPhone()
+        ? { mode: Phaser.Scale.RESIZE, autoCenter: Phaser.Scale.NO_CENTER }
+        : { mode: Phaser.Scale.FIT, autoCenter: Phaser.Scale.CENTER_BOTH },
     scene: [MainGameScene, EndGameScene],
 };
 
