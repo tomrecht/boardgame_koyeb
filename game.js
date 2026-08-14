@@ -4935,12 +4935,35 @@ endGame(winner, score = null, impasse_caller = null) {
             _updateViewportHud();
         });
 
+        // Dragging a piece to the edge of the view scrolls the board, so a
+        // destination that is off screen can be reached without letting go.
+        const edgePan = () => {
+            const piece = scene._draggingPiece;
+            if (!piece || cam.zoom <= 1.02) return;
+            const p = scene.input.activePointer;
+            if (!p || !p.isDown) return;
+            const v = cam.worldView;
+            const band = Math.min(v.width, v.height) * 0.14;
+            const dx = p.worldX < v.x + band ? -1 : p.worldX > v.right - band ? 1 : 0;
+            const dy = p.worldY < v.y + band ? -1 : p.worldY > v.bottom - band ? 1 : 0;
+            if (!dx && !dy) return;
+            const speed = 20 / cam.zoom;          // world px per frame
+            cam.scrollX += dx * speed;
+            cam.scrollY += dy * speed;
+            clamp();
+            _updateViewportHud();
+        };
+        scene.events.on('update', edgePan);
+
         const release = () => {
             if (pointers().length === 0) { pinch = null; panning = false; panFrom = null; }
         };
         scene.input.on('pointerup', release);
         scene.input.on('pointerupoutside', release);
-        scene.events.once('shutdown', () => { scene._camWired = false; });
+        scene.events.once('shutdown', () => {
+            scene._camWired = false;
+            scene.events.off('update', edgePan);
+        });
     }
 
     setupDragging(scene) {
@@ -5646,7 +5669,9 @@ class EndGameScene extends Phaser.Scene {
             align: 'center', wordWrap: { width: P(720) }
         }).setOrigin(0.5);
         const button = (x, y, label, ghost, cb) => {
-            const b = makeHudButton(this, x, y, label, { ghost, k: K });
+            // The card's buttons are its only controls and it covers the screen,
+            // so they get a further step up beyond the card's own scale.
+            const b = makeHudButton(this, x, y, label, { ghost, k: _isPhone() ? K * 1.35 : 1 });
             onTap(b, cb);
             return b;
         };
