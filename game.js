@@ -289,8 +289,10 @@ function updateTurnStatus(textOrGame) {
         window.addEventListener('orientationchange', () => setTimeout(() => _placeTurnStatus(el), 250));
     }
     el.textContent = text || '';
-    el.style.opacity = text ? '1' : '0';
+    // Placement rewrites cssText wholesale, which would drop the opacity below
+    // and leave an empty white pill on screen -- so place first, hide second.
     _placeTurnStatus(el);
+    el.style.opacity = text ? '1' : '0';
 }
 
 function getSoundEnabled()       { return _boolSetting('sound', true); }
@@ -1179,13 +1181,17 @@ function makeHudTip(scene, cx, cy, label) {
 // Rounded pill button with a soft shadow, matching the mockup .btn / .btn.ghost.
 // Returns the interactive Text object (callers attach their own pointer handlers);
 // a graphics background sits just behind it and tracks its bounds.
-function makeHudButton(scene, cx, cy, label, { ghost = false } = {}) {
+// `k` scales the whole button. The in-game HUD keeps k=1 (it has to share the
+// corner with the dice and the racks); full-screen overlays pass a bigger k on
+// a phone, where 19px of world font is barely 6 CSS px.
+function makeHudButton(scene, cx, cy, label, { ghost = false, k = 1 } = {}) {
     const txt = scene.add.text(cx, cy, label, {
-        fontSize: '19px', fontFamily: HUD_FONT, fontStyle: 'bold',
-        color: ghost ? HUD_INK : THEME.accentInk, padding: { x: 16, y: 9 }
+        fontSize: Math.round(19 * k) + 'px', fontFamily: HUD_FONT, fontStyle: 'bold',
+        color: ghost ? HUD_INK : THEME.accentInk,
+        padding: { x: Math.round(16 * k), y: Math.round(9 * k) }
     }).setOrigin(0.5).setDepth(2).setInteractive({ useHandCursor: true });
     const b = txt.getBounds();
-    const r = 9;
+    const r = 9 * k;
     const g = scene.add.graphics().setDepth(1);
     g.fillStyle(0x000000, 0.12); g.fillRoundedRect(b.x, b.y + 2, b.width, b.height, r);
     if (ghost) {
@@ -4883,24 +4889,42 @@ class MainGameScene extends Phaser.Scene {
 
         // Add score display text box
         // Single-line counters directly on the background (no box), bottom-left.
-        this.scoreText = this.add.text(24, this.sys.game.config.height - 24, '', {
-            fontSize: '20px',
+        // Bottom-left status stack: score line, the no-save counter above it, and
+        // the Call-draw button above that. All of it is world-space text, so on a
+        // phone it renders at ~6.5 CSS px; k scales the stack and re-spaces it so
+        // the three keep clear of each other. The corner is empty background
+        // (the board is a circle), so there is room to grow into.
+        const phone = _isPhone();
+        const k = phone ? 2.2 : 1;
+        const H = this.sys.game.config.height;
+        // Goal 2's arc starts at x=630 and dips to y=1140, so the enlarged score
+        // line has to wrap rather than run underneath it. Origin (0,1) means it
+        // grows upward from the bottom, so wrapping needs no repositioning; the
+        // two lines above it are spaced for the 2-line worst case.
+        const scoreStyle = {
+            fontSize: Math.round(20 * k) + 'px',
             fontFamily: HUD_FONT,
             color: THEME.bgInk
-        }).setOrigin(0, 1);
+        };
+        // Set the key only on a phone: Phaser's GetValue treats an explicitly
+        // undefined `wordWrap` as present and then dereferences it, so passing
+        // `wordWrap: undefined` throws inside create() and leaves the rest of
+        // the scene (impasse line, Call draw, ...) unbuilt.
+        if (phone) scoreStyle.wordWrap = { width: 580 };
+        this.scoreText = this.add.text(24, H - 24, '', scoreStyle).setOrigin(0, 1);
         _themedRedraws.push(() => this.scoreText.setColor(THEME.bgInk));
 
         this.updateScoreText();
 
         // No-save counter: a quiet HUD line (not a boxed red warning), with the
         // draw offer as a standard ghost pill underneath it when it applies.
-        this.impasseText = this.add.text(24, this.sys.game.config.height - 58, '', {
-            fontSize: '21px', fontFamily: HUD_FONT, color: THEME.bgInk
+        this.impasseText = this.add.text(24, phone ? H - 148 : H - 58, '', {
+            fontSize: Math.round(21 * k) + 'px', fontFamily: HUD_FONT, color: THEME.bgInk
         }).setOrigin(0, 1).setVisible(false).setAlpha(0.75);
         _themedRedraws.push(() => this.impasseText.setColor(THEME.bgInk));
 
-        this.callDrawButton = makeHudButton(this, 85, this.sys.game.config.height - 115,
-            'Call draw', { ghost: true });
+        this.callDrawButton = makeHudButton(this, phone ? 190 : 85, phone ? H - 260 : H - 115,
+            'Call draw', { ghost: true, k });
         this.callDrawButton.setHudVisible(false);
 
             this.callDrawButton.on('pointerdown', () => {
@@ -5185,23 +5209,28 @@ class EndGameScene extends Phaser.Scene {
         // Card, headline, sub-line and pill buttons — the same vocabulary as the
         // welcome / match-setup overlays (this screen used to be bare text on the
         // background with square green and blue buttons).
+        // This card is the whole screen -- there is nothing to collide with --
+        // so on a phone it is simply drawn bigger. At K=1 the numbers below are
+        // exactly the desktop layout. P() scales the offsets the call sites use.
+        const K = _isPhone() ? 2 : 1;
+        const P = (n) => n * K;
         const card = (h) => {
-            const w = 820, x = CENTER_X - w / 2, y = CENTER_Y - h / 2;
+            const w = 820 * K, x = CENTER_X - w / 2, y = CENTER_Y - (h * K) / 2;
             const g = this.add.graphics();
-            g.fillStyle(0x000000, 0.10); g.fillRoundedRect(x, y + 6, w, h, 22);
-            g.fillStyle(0xffffff, 1);    g.fillRoundedRect(x, y, w, h, 22);
+            g.fillStyle(0x000000, 0.10); g.fillRoundedRect(x, y + P(6), w, h * K, P(22));
+            g.fillStyle(0xffffff, 1);    g.fillRoundedRect(x, y, w, h * K, P(22));
             return y;
         };
         const headline = (y, text, size) => this.add.text(CENTER_X, y, text, {
-            fontSize: size + 'px', fontFamily: HUD_FONT, fontStyle: 'bold',
-            color: HUD_INK, align: 'center', wordWrap: { width: 720 }
+            fontSize: P(size) + 'px', fontFamily: HUD_FONT, fontStyle: 'bold',
+            color: HUD_INK, align: 'center', wordWrap: { width: P(720) }
         }).setOrigin(0.5);
         const subline = (y, text, size) => this.add.text(CENTER_X, y, text, {
-            fontSize: (size || 23) + 'px', fontFamily: HUD_FONT, color: '#5a6473',
-            align: 'center', wordWrap: { width: 720 }
+            fontSize: P(size || 23) + 'px', fontFamily: HUD_FONT, color: '#5a6473',
+            align: 'center', wordWrap: { width: P(720) }
         }).setOrigin(0.5);
         const button = (x, y, label, ghost, cb) => {
-            const b = makeHudButton(this, x, y, label, { ghost });
+            const b = makeHudButton(this, x, y, label, { ghost, k: K });
             b.on('pointerdown', cb);
             return b;
         };
@@ -5218,13 +5247,13 @@ class EndGameScene extends Phaser.Scene {
                     : mDiff > 0 ? `${_cap(m.winner)} wins the match by ${mDiff}`
                                 : `${_cap(m.winner)} wins the match on games won`;
                 const top = card(340);
-                subline(top + 58, message, 21);
-                headline(top + 118, mres, 34);
-                subline(top + 182,
+                subline(top + P(58), message, 21);
+                headline(top + P(118), mres, 34);
+                subline(top + P(182),
                     `White ${m.whiteScore} (${m.whiteWins}W)   ·   Black ${m.blackScore} (${m.blackWins}W)   ·   ${m.gamesPlayed} games`, 21);
-                button(CENTER_X - 105, top + 262, 'New Match', false,
+                button(CENTER_X - P(105), top + P(262), 'New Match', false,
                     () => { abortAndClear(); matchTracker = null; refreshSettingsMatchState(); showMatchSetup(); });
-                button(CENTER_X + 105, top + 262, 'Single Game', true,
+                button(CENTER_X + P(105), top + P(262), 'Single Game', true,
                     () => { matchTracker = null; refreshSettingsMatchState(); startGame('white'); });
             } else {
                 const status = m.mode === 'race' ? `race to ${m.target}`
@@ -5232,15 +5261,15 @@ class EndGameScene extends Phaser.Scene {
                 const extended = m.justExtended;
                 m.justExtended = false;
                 const top = card(extended ? 330 : 290);
-                headline(top + 78, message, 34);
-                subline(top + 142,
+                headline(top + P(78), message, 34);
+                subline(top + P(142),
                     `White ${m.whiteScore} (${m.whiteWins}W)   ·   Black ${m.blackScore} (${m.blackWins}W)   ·   ${status}`, 21);
                 if (extended) {
-                    subline(top + 186,
+                    subline(top + P(186),
                         `Level after ${m.extendedAt} games — match extended by 2`, 20)
                         .setColor(THEME.accentCss);
                 }
-                button(CENTER_X, top + (extended ? 258 : 218), 'Next Game', false,
+                button(CENTER_X, top + P(extended ? 258 : 218), 'Next Game', false,
                     () => startGame(matchStarterForGame(m.gamesPlayed)));
             }
             return;
@@ -5248,9 +5277,9 @@ class EndGameScene extends Phaser.Scene {
 
         // Casual single-game flow.
         const top = card(250);
-        headline(top + 80, message, 36);
-        button(CENTER_X - 105, top + 176, 'New Game', false, () => startGame(nextCasualStarter()));
-        button(CENTER_X + 105, top + 176, 'New Match', true, () => { abortAndClear(); showMatchSetup(); });
+        headline(top + P(80), message, 36);
+        button(CENTER_X - P(105), top + P(176), 'New Game', false, () => startGame(nextCasualStarter()));
+        button(CENTER_X + P(105), top + P(176), 'New Match', true, () => { abortAndClear(); showMatchSetup(); });
     }
 
 }

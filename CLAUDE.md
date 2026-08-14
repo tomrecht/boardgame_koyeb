@@ -514,6 +514,22 @@ expected to self-resolve via the TD run.
     the largest of the tested sizes clearing every real tile outline and text —
     verified by polygon test, not a bounding box: the board is a circle, so a
     box test says "overlaps" for a corner that is plainly empty.
+  - **Readable overlays and status text on a phone (2026-08-14).** Everything
+    drawn in world space divides by the fit scale (~3.08 landscape), so 19-21px
+    fonts landed at 6-7 CSS px. `makeHudButton` now takes a scale `k`;
+    EndGameScene scales as a unit (`K=2` on a phone, `P()` on the offsets) —
+    it is a full-screen overlay, so nothing can collide: smallest text 6→12.3
+    CSS px, headline 23.4. The bottom-left stack (score / no-save / Call draw)
+    scales by 2.2 → 14+ CSS px; the score line **wraps at 580** because goal 2's
+    arc starts at x=630 and dips to y=1140, and the stack above it is spaced for
+    the 2-line case. Desktop numbers are byte-identical, asserted in the run.
+  - **Two traps this hit, both worth remembering.** (1) `wordWrap: undefined` in
+    a Phaser text style is NOT the same as omitting it — `GetValue` sees the key
+    as present and dereferences it, so `create()` threw and every object after
+    `scoreText` (impasse line, Call draw) was never built. Build the style
+    object and set optional keys conditionally. (2) `_placeTurnStatus` assigns
+    `style.cssText`, which wipes the `opacity:0` that hides the pill — place
+    first, then set opacity, or an empty white pill sits on the end screen.
   - **`_isPhone()` MUST STAY ABOVE THE LAYOUT CONSTANTS.** `const DIE_SIZE =
     _isPhone() ? ... ` runs during top-level evaluation, where a `let
     _phoneOverride` declared further down is still in its temporal dead zone;
