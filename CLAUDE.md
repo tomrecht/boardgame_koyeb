@@ -681,6 +681,23 @@ with it in mind.** Assessment and the concrete implications:
     With no letterbox bands the turn pill has nowhere to hide, so it now sits
     under the settings gear (measured clear of gear, HUD buttons, dice, arrows on
     landscape/portrait/desktop).
+    **NEVER CALL `input.hitTestPointer()` FROM A POINTER HANDLER.** The camera's
+    pointerdown used it to decide "did this land on a piece?", and it broke piece
+    dragging on a phone completely (owner: "one finger does nothing"): the nested
+    hit test re-runs input processing mid-update and clobbers the drag state
+    Phaser is in the middle of setting up. Phaser already passes the list as the
+    handler's second argument (`currentlyOver`) — use that.
+    **RENDER THE WORLD AT 1:1 OR BETTER, NEVER BELOW.** With `Scale.RESIZE` the
+    drawing buffer is CSS pixels, so on a 3x screen the board rendered at a third
+    of device resolution; worse, in portrait the camera's base zoom fell to 0.43,
+    and tile outlines (~1.5 world px) rasterised below one device pixel — owner
+    saw "borders broken up" and "everything looks dusty". Phones now use
+    `Scale.NONE` with `_sizeCanvasToScreen`: buffer = viewport x devicePixelRatio
+    (capped at 3), then ENLARGED so `min(bufW/WORLD_W, bufH/WORLD_H) >= 1`, with
+    a 9 MP ceiling; the canvas element still covers the viewport, so the browser
+    does the shrink as a smooth image downsample — exactly what FIT used to do.
+    Measured: landscape 2597x1200 buffer, portrait 1800x3895, both `zoom 1` and
+    1.0 device px per world px, desktop untouched at 1800x1200.
     **Harness note:** every screen<->world conversion in the CDP tests must go
     through `camera.worldView` now; the old `wx * canvasWidth / 1800` mapping is
     only valid under FIT, and using it silently sends taps to the wrong place
@@ -714,12 +731,14 @@ with it in mind.** Assessment and the concrete implications:
     taking precedence, since they crowd entries out entirely. Until then the
     second must-enter ghost stays a dimmed preview rather than a tappable
     target, because tapping it could only ever enter the *first* piece.
-    **Backlog (owner, 2026-08-14, both platforms, not urgent):** clicking an
-    unentered piece moves it to the home tile; from there a DRAG should carry it
-    to a destination tile, distinguishing drag from click (a click there returns
-    it to the rack). Today `_snapRack` sends any dragged just-entered piece back
-    to the rack when the drop misses, and `onClick` on a `justMovedHome` piece
-    returns it — so the drag path needs to win when the pointer actually moves.
+  - **Drag a just-entered piece off the home tile (done 2026-08-14, both
+    platforms).** `onClick` returned a `justMovedHome` piece to the rack, and it
+    runs on pointer DOWN — so the press itself put the piece back and a drag
+    could never start. The return is now deferred to pointer UP (`_pendingReturn`)
+    and cancelled by `onDragStart` (`_draggedSincePress`): a click still returns
+    it, a drag carries it to the destination. Measured both ways on both
+    platforms. Test note: a programmatic `handleClick` followed by a synthetic
+    click within 300ms is read as a DOUBLE click and does neither — leave a gap.
   - **Dice on a phone (2026-08-14): 120 at y=30, border 5→14.** They were ~32 CSS
     px with a 1.6px colour border — the die-A/die-B coding was invisible. They
     now grow left and up, keeping the right edge put (HUD buttons end at x=220;

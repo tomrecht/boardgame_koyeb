@@ -329,6 +329,30 @@ function _setCameraView(cam, left, top) {
                   top - (cam.height - cam.height / cam.zoom) / 2);
 }
 
+// Draw at device resolution, display at CSS size: the buffer is the screen in
+// real pixels, the canvas element covers the viewport, and Phaser maps pointer
+// coordinates through the canvas rect, so input stays correct.
+function _sizeCanvasToScreen() {
+    if (!_isPhone() || !gameInstance || !gameInstance.scale) return;
+    const dpr = Math.min(window.devicePixelRatio || 1, 3);   // cap: 4x buffers cost more than they show
+    const vw = Math.round(window.innerWidth), vh = Math.round(window.innerHeight);
+    if (!vw || !vh) return;
+    let bw = vw * dpr, bh = vh * dpr;
+    // Never let the camera shrink the world at RASTERISATION time. Tile outlines
+    // are ~1.5 world px; drawn at a zoom below 1 they fall under a device pixel
+    // and the whole board looks dusty and broken up. Enlarging the buffer so the
+    // world renders at 1:1 or better puts the shrink back where Scale.FIT used
+    // to do it -- a smooth image downsample by the browser.
+    const grow = Math.max(WORLD_W / bw, WORLD_H / bh, 1);
+    bw *= grow; bh *= grow;
+    const MAX_PX = 9e6;                                      // keep it sane on a phone
+    const over = Math.sqrt((bw * bh) / MAX_PX);
+    if (over > 1) { bw /= over; bh /= over; }
+    gameInstance.scale.resize(Math.round(bw), Math.round(bh));
+    const cv = gameInstance.canvas;
+    if (cv) { cv.style.width = vw + 'px'; cv.style.height = vh + 'px'; }
+}
+
 function _fitCameraToWorld(scene) {
     if (!_isPhone()) return;
     const cam = scene.cameras.main;
@@ -2583,7 +2607,12 @@ class Piece {
             this.highlightReachableTiles();
         }
         else if (this.currentTile && this.currentTile.type === 'home' && this.justMovedHome) {
-                this.returnToRack();
+                // Don't send it back yet: this fires on pointer DOWN, so
+                // returning here made it impossible to drag a just-entered piece
+                // off the home tile -- the press itself put it back on the rack.
+                // A press that turns into a drag cancels this (see onDragStart);
+                // a press that lifts without moving is a click, and returns it.
+                this._pendingReturn = true;
         } else if (this.player === this.game.turn) {
             this.isSelected = !this.isSelected;
             this.updateColor();
@@ -3065,11 +3094,18 @@ class Piece {
             .setInteractive()
             .on('pointerover', () => this.onHover())
             .on('pointerout', () => this.onOut())
-            .on('pointerdown', (pointer) => this.handleClick(pointer));
+            .on('pointerdown', (pointer) => { this._draggedSincePress = false; this.handleClick(pointer); });
         // drag-to-move (additive; click still works). The scene-level drag
         // handlers (Game.setupDragging) reach the piece via __piece.
         this.circle.__piece = this;
         this.scene.input.setDraggable(this.circle);
+        const finishPress = () => {
+            if (!this._pendingReturn) return;
+            this._pendingReturn = false;
+            if (!this._draggedSincePress) this.returnToRack();
+        };
+        this.circle.on('pointerup', finishPress);
+        this.circle.on('pointerupoutside', finishPress);
 
         // Debug-mode tooltip: show the number of unnumbered pieces (numbered
         // pieces already display their number on the board).
@@ -4900,9 +4936,12 @@ endGame(winner, score = null, impasse_caller = null) {
         } catch (e) {}
         if (scene._camWired) return;
         scene._camWired = true;
+        _sizeCanvasToScreen();
         _fitCameraToWorld(scene);
-        const onResize = () => { _fitCameraToWorld(scene); _updateViewportHud(); };
+        const onResize = () => { _sizeCanvasToScreen(); _fitCameraToWorld(scene); _updateViewportHud(); };
         scene.scale.on('resize', onResize);
+        window.addEventListener('resize', onResize);
+        window.addEventListener('orientationchange', () => setTimeout(onResize, 250));
 
         const cam = scene.cameras.main;
         const PAN_SLOP = 8, MAX_FACTOR = 4;
@@ -4931,7 +4970,7 @@ endGame(winner, score = null, impasse_caller = null) {
         const pointers = () => [scene.input.pointer1, scene.input.pointer2]
             .filter(p => p && p.isDown);
 
-        scene.input.on('pointerdown', (pointer) => {
+        scene.input.on('pointerdown', (pointer, currentlyOver) => {
             const down = pointers();
             if (down.length >= 2) {                 // pinch takes over
                 panning = false; panFrom = null;
@@ -4939,9 +4978,12 @@ endGame(winner, score = null, impasse_caller = null) {
                 pinch = { dist: Phaser.Math.Distance.Between(a.x, a.y, b.x, b.y), zoom: cam.zoom };
                 return;
             }
-            // A drag that starts on a piece belongs to the piece.
-            const hits = scene.input.hitTestPointer(pointer) || [];
-            if (hits.some(o => o && o.__piece)) { panFrom = null; return; }
+            // A drag that starts on a piece belongs to the piece. Use the list
+            // Phaser hands us -- calling hitTestPointer() from inside a pointer
+            // handler re-runs hit testing mid-update and clobbers the drag state
+            // Phaser is in the middle of setting up, which killed piece dragging
+            // on a phone entirely.
+            if ((currentlyOver || []).some(o => o && o.__piece)) { panFrom = null; return; }
             panFrom = { x: pointer.x, y: pointer.y, sx: cam.scrollX, sy: cam.scrollY };
         });
 
@@ -5002,6 +5044,7 @@ endGame(winner, score = null, impasse_caller = null) {
             scene._camWired = false;
             scene.events.off('update', edgePan);
             scene.scale.off('resize', onResize);
+            window.removeEventListener('resize', onResize);
         });
     }
 
@@ -5018,6 +5061,10 @@ endGame(winner, score = null, impasse_caller = null) {
 
         const onDragStart = (pointer, obj) => {
             const piece = obj.__piece; if (!piece) return;
+            // a press that became a drag is not a click, so it must not send a
+            // just-entered piece back to the rack when the finger lifts
+            piece._draggedSincePress = true;
+            piece._pendingReturn = false;
             hideStackPicker();
             piece._originTile = piece.currentTile;
             piece._originRack = piece.rack;
@@ -6336,8 +6383,12 @@ const config = {
     width: WORLD_W,
     height: WORLD_H,
     backgroundColor: BACKGROUND_COLOR,
+    // Phones: NONE, because the size is managed by _sizeCanvasToScreen below --
+    // RESIZE sets the drawing buffer to CSS pixels, which on a 3x screen renders
+    // the board at a third of the device resolution and visibly breaks up the
+    // tile and piece outlines. Desktop keeps FIT (its buffer is already 1800x1200).
     scale: _isPhone()
-        ? { mode: Phaser.Scale.RESIZE, autoCenter: Phaser.Scale.NO_CENTER }
+        ? { mode: Phaser.Scale.NONE }
         : { mode: Phaser.Scale.FIT, autoCenter: Phaser.Scale.CENTER_BOTH },
     scene: [MainGameScene, EndGameScene],
 };
