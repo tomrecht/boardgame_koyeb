@@ -630,6 +630,38 @@ with it in mind.** Assessment and the concrete implications:
     sliver clipped off the edge plus a full copy beside it just reads as
     duplication). Threshold measured at 0/0.1/0.25/0.49 hidden → no readout,
     0.5/0.75 → readout.
+    **CAMERA PAN AND ZOOM, IN-CANVAS (2026-08-14, phones).** `setupCameraControls`
+    puts panning and zooming on the Phaser camera and sets the canvas to
+    `touch-action: none`, so the browser never arbitrates a gesture: one finger
+    on anything that is not a piece pans (after an 8px slop so a tap is still a
+    tap), a finger starting on a piece drags the piece, two fingers pinch-zoom
+    about their midpoint, `?cam=0` disables the lot. `_visibleWorldRect` and
+    `_pageZoomed` prefer `camera.worldView` / `camera.zoom` when the camera is
+    zoomed, which is exact and replaces the visualViewport arithmetic.
+    **Phaser centres a zoomed view on `scroll + size/2`** — `worldView.x` is
+    `scrollX + (W - W/zoom)/2`, NOT `scrollX`. The first clamp got this wrong and
+    allowed scrolling the board off screen; the correct scroll range is symmetric
+    about zero, `±(W - W/zoom)/2`, which also pins zoom 1 to exactly 0.
+    Verified while zoomed (the state every earlier attempt failed to test): pinch
+    → zoom 2.72, one finger → camera scrolls, and a tap on a rack piece maps to
+    `world=1563,345 hits=piece`, fires `handleClick` → `onClick` → enters. Two
+    harness traps: `worldView` is stale until a frame renders, and a world point
+    outside the current view converts to a screen point off-canvas (looks exactly
+    like a dead tap).
+    **Touch feel, same session (owner's reports):** touch targets now grow to
+    half the distance to the NEAREST OTHER PIECE, capped at 2.4r — an isolated
+    piece gets radius 60 against a drawn 25, a packed rack piece 32. This has to
+    be recomputed for ALL pieces whenever anything settles (`_refreshHitAreas` in
+    `_updateViewportHud`): a per-piece value goes stale when its neighbours move,
+    and stale targets overlapped by 61px, which is what sends a tap to the wrong
+    piece. **Tapping a piece while another is selected now always forwards to the
+    tile it stands on** (was field tiles only), so a crowded tile no longer has
+    to be hit in the slivers between its pieces — both platforms.
+    **`dragDistanceThreshold` is 34 on phones** (6 world px is ~2 CSS px, less
+    than a fingertip wobbles, so the second tap of a double-tap became a drag and
+    the save never fired). **Quiet sound effects lifted** to gain 0.20-0.22: a
+    square wave and a two-note chime carry far more perceived loudness than a
+    single sine, so move/win/lose were inaudible next to capture/save.
     **Remaining mobile queue (owner's order, 2026-08-14):** fullscreen +
     web-app manifest; then the must-enter piece hovering in a corner when it is
     out of frame — owner notes this matters *independently* of one-finger pan,

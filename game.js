@@ -310,8 +310,14 @@ function updateTurnStatus(textOrGame) {
 // unless the page itself is pinch-zoomed. Checking this first also avoids
 // trusting the canvas rect during start-up, before layout has settled -- which
 // briefly reported the racks as off screen and flashed the ghosts up at zoom 1.
+function _mainCamera() {
+    const sc = _setupScene();
+    return (sc && sc.cameras && sc.cameras.main) || null;
+}
 function _pageZoomed() {
-    const vv = window.visualViewport;
+    const cam = _mainCamera();
+    if (cam && cam.zoom > 1.02) return true;          // in-canvas zoom
+    const vv = window.visualViewport;                  // browser pinch (desktop)
     return !!vv && vv.scale > 1.02;
 }
 
@@ -322,6 +328,13 @@ function _visibleWorldRect() {
     if (!cv) return null;
     const r = cv.getBoundingClientRect();
     if (!r.width || !r.height) return null;
+    // When the camera is doing the zooming, it already knows exactly which world
+    // rectangle is on screen -- no viewport arithmetic needed.
+    const cam = _mainCamera();
+    if (cam && cam.zoom > 1.02) {
+        const v = cam.worldView;
+        return { x0: v.x, y0: v.y, x1: v.right, y1: v.bottom, cssW: r.width };
+    }
     const vv = window.visualViewport;
     const l = vv ? vv.offsetLeft : 0, t = vv ? vv.offsetTop : 0;
     const w = vv ? vv.width : window.innerWidth, h = vv ? vv.height : window.innerHeight;
@@ -448,8 +461,19 @@ function _updateHudDice() {
     });
 }
 
+// A piece's touch target depends on where the OTHER pieces are, so it goes
+// stale as soon as any of them moves -- and a stale one can overlap a
+// neighbour, which is what makes taps land on the wrong piece. Recompute the
+// whole set whenever anything settles. 24 pieces is nothing.
+function _refreshHitAreas() {
+    if (!_isPhone()) return;
+    const g = _currentGame();
+    if (!g || !g.pieces) return;
+    g.pieces.forEach(p => { if (p._applyHitArea) p._applyHitArea(); });
+}
+
 // Everything that has to follow the viewport rather than the board.
-function _updateViewportHud() { _updateMustEnterGhosts(); _updateHudDice(); }
+function _updateViewportHud() { _refreshHitAreas(); _updateMustEnterGhosts(); _updateHudDice(); }
 
 if (window.visualViewport) {
     visualViewport.addEventListener('resize', () => _updateViewportHud());
@@ -582,14 +606,18 @@ const SFX = (() => {
     }
     const play = (fn) => { if (getSoundEnabled()) { try { fn(); } catch (e) {} } };
     return {
-        move:    () => play(() => tone({ freq: 320, dur: 0.07, type: 'triangle', gain: 0.10 })),
+        // The save and capture effects carry far more perceived loudness than
+        // their gain suggests -- a square wave and a two-note chime have much
+        // more energy than one sine. On a phone the others were inaudible below
+        // full volume, so the quiet ones are lifted rather than these cut.
+        move:    () => play(() => tone({ freq: 320, dur: 0.08, type: 'triangle', gain: 0.22 })),
         capture: () => play(() => tone({ freq: 220, dur: 0.16, type: 'square', gain: 0.09, slide: -110 })),
         save:    () => play(() => { tone({ freq: 660, dur: 0.10, gain: 0.11 });
                                     tone({ freq: 990, dur: 0.14, gain: 0.09, delay: 0.08 }); }),
         win:     () => play(() => [523, 659, 784, 1047].forEach((f, i) =>
-                                    tone({ freq: f, dur: 0.16, gain: 0.10, delay: i * 0.11 }))),
+                                    tone({ freq: f, dur: 0.16, gain: 0.20, delay: i * 0.11 }))),
         lose:    () => play(() => [392, 330, 262].forEach((f, i) =>
-                                    tone({ freq: f, dur: 0.20, type: 'triangle', gain: 0.09, delay: i * 0.13 }))),
+                                    tone({ freq: f, dur: 0.20, type: 'triangle', gain: 0.20, delay: i * 0.13 }))),
     };
 })();
 
@@ -2468,8 +2496,11 @@ class Piece {
 
         if (this.game.selectedPiece && this.game.selectedPiece !== this) {
 
-            // If this piece is on a field tile, treat as tile click instead
-            if (this.currentTile && this.currentTile.type === 'field') {
+            // With another piece selected, a tap on a piece means "move onto the
+            // tile it stands on" -- otherwise a crowded tile can only be reached
+            // by hitting the slivers of empty space between its pieces. Any tile
+            // type, since goals get crowded too.
+            if (this.currentTile) {
                 this.currentTile.onClick();
                 return;
             }
@@ -2670,20 +2701,21 @@ class Piece {
         const c = this.circle;
         if (!c || !c.input || !_isPhone()) return;      // desktop keeps Phaser's default box
         const r = this.radius;
-        // Never grow past half the gap to the next piece. Two overlapping
-        // targets go to whichever object sits higher in the display list, and
-        // on a rack that is usually NOT the one piece you are allowed to move,
-        // so the tap is swallowed and nothing happens.
-        let hit;
-        if (this.rack) hit = Math.min(r + 6, this.rack.spacing / 2);
-        else if (this.currentTile) {
-            // a stack packs its slots 2r+4 apart; a piece alone has the tile
-            const alone = (this.currentTile.pieces || []).length <= 1;
-            hit = alone ? r + 10 : r + 2;
-        } else {
-            hit = r;                                    // mid-move: leave it be
+        // Grow into whatever room the piece actually has: half the distance to
+        // the nearest other piece, so two targets can never overlap (an overlap
+        // goes to whichever sits higher in the display list, which on a rack is
+        // usually not the piece you are allowed to move). An isolated piece ends
+        // up with a target well over twice its size, which is what makes it
+        // tappable while zoomed out.
+        let nearest = Infinity;
+        const all = (this.game && this.game.pieces) || [];
+        for (const q of all) {
+            if (q === this || q.hidden) continue;
+            const d = Math.hypot((q.x || 0) - this.x, (q.y || 0) - this.y);
+            if (d < nearest) nearest = d;
         }
-        c.input.hitArea = new Phaser.Geom.Circle(r, r, Math.max(r, hit));
+        const room = Number.isFinite(nearest) ? nearest / 2 : r * 2.4;
+        c.input.hitArea = new Phaser.Geom.Circle(r, r, Math.max(r, Math.min(r * 2.4, room)));
         c.input.hitAreaCallback = Phaser.Geom.Circle.Contains;
     }
 
@@ -3704,6 +3736,7 @@ class Game {
         this.blackSavedRack = new Rack(scene, 1545, RACK_Y2, 'black', 'saved');
 
         this.setupDragging(scene);
+        this.setupCameraControls(scene);
 
         // Create buttons
         this.createSwitchTurnButton(scene);
@@ -4822,13 +4855,104 @@ endGame(winner, score = null, impasse_caller = null) {
     // (its normal handleClick) before dragstart fires, so drag just moves the
     // already-selected piece and drops it on the tile under the pointer, exactly
     // as if that tile had been clicked. Invalid drops snap the piece back.
+    // ── CAMERA PAN AND ZOOM (phones) ────────────────────────────────────
+    // Panning and zooming happen INSIDE Phaser, on the camera, never by handing
+    // gestures to the browser. That earlier attempt let Chrome claim one-finger
+    // drags while zoomed, and it took the taps with them -- pieces stopped being
+    // selectable. Here Phaser knows exactly what is under the finger, so a drag
+    // that starts on a piece drags the piece and anything else pans; a pinch is
+    // two pointers and can never be confused with a tap. `?cam=0` disables it.
+    setupCameraControls(scene) {
+        if (!_isPhone()) return;
+        try {
+            if (new URLSearchParams(location.search).get('cam') === '0') return;
+        } catch (e) {}
+        if (scene._camWired) return;
+        scene._camWired = true;
+
+        const cam = scene.cameras.main;
+        const MIN_ZOOM = 1, MAX_ZOOM = 4, PAN_SLOP = 8;
+        scene.input.addPointer(2);                 // enough pointers for a pinch
+        // The browser must not also zoom/scroll, or the two transforms compose.
+        if (gameInstance.canvas) gameInstance.canvas.style.touchAction = 'none';
+
+        const clamp = () => {
+            cam.zoom = Phaser.Math.Clamp(cam.zoom, MIN_ZOOM, MAX_ZOOM);
+            // Phaser centres a zoomed view on scroll + size/2 (worldView.x is
+            // scrollX + (W - W/zoom)/2), so the scroll range that keeps the view
+            // inside the board is symmetric about zero -- and collapses to 0 at
+            // zoom 1, which pins the unzoomed view exactly where it belongs.
+            const mx = (config.width - config.width / cam.zoom) / 2;
+            const my = (config.height - config.height / cam.zoom) / 2;
+            cam.scrollX = Phaser.Math.Clamp(cam.scrollX, -mx, mx);
+            cam.scrollY = Phaser.Math.Clamp(cam.scrollY, -my, my);
+        };
+
+        let panFrom = null, panning = false, pinch = null;
+
+        const pointers = () => [scene.input.pointer1, scene.input.pointer2]
+            .filter(p => p && p.isDown);
+
+        scene.input.on('pointerdown', (pointer) => {
+            const down = pointers();
+            if (down.length >= 2) {                 // pinch takes over
+                panning = false; panFrom = null;
+                const [a, b] = down;
+                pinch = { dist: Phaser.Math.Distance.Between(a.x, a.y, b.x, b.y), zoom: cam.zoom };
+                return;
+            }
+            // A drag that starts on a piece belongs to the piece.
+            const hits = scene.input.hitTestPointer(pointer) || [];
+            if (hits.some(o => o && o.__piece)) { panFrom = null; return; }
+            panFrom = { x: pointer.x, y: pointer.y, sx: cam.scrollX, sy: cam.scrollY };
+        });
+
+        scene.input.on('pointermove', (pointer) => {
+            const down = pointers();
+            if (pinch && down.length >= 2) {
+                const [a, b] = down;
+                const d = Phaser.Math.Distance.Between(a.x, a.y, b.x, b.y);
+                if (pinch.dist > 0) {
+                    const mid = { x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 };
+                    const before = cam.getWorldPoint(mid.x, mid.y);
+                    cam.zoom = pinch.zoom * (d / pinch.dist);
+                    clamp();
+                    const after = cam.getWorldPoint(mid.x, mid.y);
+                    cam.scrollX += before.x - after.x;    // keep the pinch centre put
+                    cam.scrollY += before.y - after.y;
+                    clamp();
+                    _updateViewportHud();
+                }
+                return;
+            }
+            if (!panFrom || !pointer.isDown || scene._draggingPiece) return;
+            const dx = pointer.x - panFrom.x, dy = pointer.y - panFrom.y;
+            if (!panning && Math.hypot(dx, dy) < PAN_SLOP) return;   // still might be a tap
+            panning = true;
+            cam.scrollX = panFrom.sx - dx / cam.zoom;
+            cam.scrollY = panFrom.sy - dy / cam.zoom;
+            clamp();
+            _updateViewportHud();
+        });
+
+        const release = () => {
+            if (pointers().length === 0) { pinch = null; panning = false; panFrom = null; }
+        };
+        scene.input.on('pointerup', release);
+        scene.input.on('pointerupoutside', release);
+        scene.events.once('shutdown', () => { scene._camWired = false; });
+    }
+
     setupDragging(scene) {
         // NB: Phaser clears scene.input listeners on shutdown/restart, so re-wire
         // every time create() runs. The guard is reset on 'shutdown' (below) so a
         // New Game (scene.restart) or end-game (scene.start) keeps pieces draggable.
         if (scene._dragWired) return;
         scene._dragWired = true;
-        scene.input.dragDistanceThreshold = 6;   // small moves stay clicks
+        // 6 world px is about 2 CSS px on a phone, less than a fingertip wobbles,
+        // so the second tap of a double-tap became a drag and the save it was
+        // meant to trigger never happened.
+        scene.input.dragDistanceThreshold = _isPhone() ? 34 : 6;
 
         const onDragStart = (pointer, obj) => {
             const piece = obj.__piece; if (!piece) return;
