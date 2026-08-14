@@ -719,19 +719,36 @@ with it in mind.** Assessment and the concrete implications:
     (`-398.5`), which renders every edge across two device pixels;
     `_setCameraView` now rounds. **Chrome's edge-swipe "back"** was stealing
     drags: `overscroll-behavior: none` on html/body.
-    **NEAR-MISS TILE TARGETING (2026-08-14, phones).** Owner: aiming at a
-    destination on a crowded board usually lands on the WRONG ADJACENT tile, not
-    on empty space, and the move is simply refused. `_resolveDestination` now
-    redirects: if the tile you hit is not a legal destination but exactly ONE of
-    its neighbours is, that neighbour was clearly meant. Two or more reachable
-    neighbours is ambiguous and left alone (owner's rule). It uses the board's
-    own `tile.neighbors` adjacency rather than pixel distance, so it follows the
-    real geometry, and it runs for both taps and drag-drops. Phone-only: a mouse
-    does not need the help, and a silent redirect there would be worse than a
-    refused click. Measured on phone — redirects when single, leaves ambiguous
-    alone, never touches a tile that is already reachable, and end-to-end a tap
-    on the wrong tile lands the piece on the intended one; desktop does none of
-    it (same tap leaves the piece on home).
+    **NEAR-MISS TILE TARGETING (2026-08-14, phones).** Aiming at a destination on
+    a crowded board lands on the WRONG tile, not on empty space, and the move is
+    then refused. `_resolveDestination` redirects when exactly ONE legal
+    destination lies within a fingertip (22 CSS px, converted to world units at
+    the current zoom) of where you actually touched; two candidates that close is
+    ambiguous and left alone. **First version used tile ADJACENCY and was too
+    eager** — owner: "it picks one seemingly at random", because adjacency does
+    not know which side of the tile you touched. Distance from the touch point is
+    the right test, and the conservative rule matters because with
+    confirm-end-of-turn off a wrong move is hard to take back. Runs for taps and
+    drag-drops; phone-only (a mouse does not need it, and a silent redirect there
+    would be worse than a refused click).
+    **Two-finger drag now pans as well as zooms.** The pinch anchored the world
+    point under the LIVE midpoint each frame, which cancels translation; it now
+    captures the world point under the midpoint at pinch start and keeps that
+    under the moving midpoint, giving zoom-about-the-pinch and panning together.
+    Measured: scroll moves, zoom holds steady.
+    **Rotation left a few pixels of grey at the top** because the canvas was
+    sized with `100vw/100vh`, and on mobile Chrome `100vh` is the LARGE viewport
+    (toolbar hidden) — taller than `innerHeight` while the URL bar shows. The
+    size now comes from JS in real pixels via `--vw`/`--vh` custom properties,
+    with the canvas `position: fixed` at 0,0. (Headless cannot reproduce a
+    dynamic toolbar, so this one needs a device to confirm.)
+    **DRAGGING A GHOST IS UNFINISHED, deliberately disabled.** The drag handlers
+    run and the piece IS entered on drop (measured), but the drop never lands on
+    the tile: `tileAtPoint` at the release point yields nothing usable even when
+    that tile is in the piece's reachable set. Rather than ship a gesture that
+    enters a piece and then seems to do nothing, `setDraggable` is commented out
+    and ghosts stay tap-only. Pick this up by logging `pointer.worldX/worldY` at
+    `dragend` against the tile's polygon.
     **Harness note:** every screen<->world conversion in the CDP tests must go
     through `camera.worldView` now; the old `wx * canvasWidth / 1800` mapping is
     only valid under FIT, and using it silently sends taps to the wrong place

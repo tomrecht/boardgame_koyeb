@@ -340,7 +340,11 @@ function _sizeCanvasToScreen() {
     const dpr = Math.min(window.devicePixelRatio || 1, 3);   // cap: 4x buffers cost more than they show
     const vw = Math.round(window.innerWidth), vh = Math.round(window.innerHeight);
     if (!vw || !vh) return;
-    document.body.classList.add('fill-screen');   // CSS owns the displayed size
+    // CSS owns the displayed size, from these two custom properties, so Phaser
+    // re-asserting its own inline width/height on resize cannot win.
+    document.body.classList.add('fill-screen');
+    document.documentElement.style.setProperty('--vw', vw + 'px');
+    document.documentElement.style.setProperty('--vh', vh + 'px');
     let bw = vw * dpr, bh = vh * dpr;
     // Never let the camera shrink the world at RASTERISATION time. Tile outlines
     // are ~1.5 world px; drawn at a zoom below 1 they fall under a device pixel
@@ -459,6 +463,7 @@ function _updateMustEnterGhosts() {
         if (!gh) {
             gh = scene.add.container(0, 0).setDepth(80);
             gh.body = scene.add.circle(0, 0, 1, 0xffffff);
+            gh._draggable = true;
             gh.ring = scene.add.circle(0, 0, 1, 0x000000, 0).setStrokeStyle(2, THEME.accent, 1);
             gh.label = scene.add.text(0, 0, '', { fontFamily: HUD_FONT, fontStyle: 'bold' }).setOrigin(0.5);
             gh.add([gh.body, gh.ring, gh.label]);
@@ -485,6 +490,14 @@ function _updateMustEnterGhosts() {
                 piece.handleClick({ rightButtonDown: () => false });
                 _updateMustEnterGhosts();
             });
+            // DRAGGING A GHOST IS UNFINISHED -- tap-only for now. The drag
+            // handlers below do run (the piece is entered on drop, measured),
+            // but the drop itself never lands on the tile: `tileAtPoint` at the
+            // release point resolves to nothing usable even when the tile IS in
+            // the piece's reachable set. Left disabled rather than shipping a
+            // gesture that enters a piece and then appears to do nothing.
+            gh.body.__ghost = { piece, ghost: gh };
+            // scene.input.setDraggable(gh.body);
         }
     });
     for (let i = offscreen.length; i < _ghosts.length; i++) _ghosts[i].setVisible(false);
@@ -581,22 +594,40 @@ function onTap(obj, handler) {
     return obj;
 }
 
-// A near miss on a crowded board usually lands on the WRONG ADJACENT tile
-// rather than on nothing, and the move is then simply refused. When the tile
-// you hit is not a legal destination but exactly ONE tile next to it is, that
-// was plainly the one meant. Ambiguity (two reachable neighbours) is left
-// alone, which is the owner's rule. Board adjacency, not pixel distance, so it
-// follows the real geometry. Phones only: a mouse does not need the help, and
-// a silent redirect would be worse than a refused click.
-function _resolveDestination(game, tile) {
-    if (!_isPhone() || !game || !tile) return tile;
+// A near miss on a crowded board usually lands on the WRONG tile rather than on
+// nothing, and the move is then simply refused. If exactly ONE legal
+// destination is within a fingertip of where you actually touched, that was
+// plainly the one meant. Two candidates that close is ambiguous and left alone:
+// guessing would be worse than refusing, especially with confirm-end-of-turn
+// off, where a wrong move is hard to take back. Distance from the touch point,
+// not adjacency -- adjacency does not know which side of the tile you touched,
+// which made the pick look random when two destinations sat side by side.
+function _tileDistance(tile, wx, wy) {
+    const pts = tile.calculateAnnularSegmentPoints(
+        CENTER_X, CENTER_Y, tile.innerRadius, tile.outerRadius, tile.startAngle, tile.endAngle);
+    let best = Infinity;
+    for (const p of pts) {
+        const d = Math.hypot(p.x - wx, p.y - wy);
+        if (d < best) best = d;
+    }
+    return best;
+}
+
+function _resolveDestination(game, tile, wx, wy) {
+    if (!_isPhone() || !game || wx == null || wy == null) return tile;
     const piece = game.selectedPiece;
     const rt = piece && piece.reachableTiles;
     if (!rt) return tile;
-    const reach = new Set([].concat(...Object.values(rt).filter(Array.isArray)));
-    if (reach.has(tile)) return tile;                     // hit the intended tile
-    const near = (tile.neighbors || []).filter(t => reach.has(t));
-    return near.length === 1 ? near[0] : tile;
+    const reach = [...new Set([].concat(...Object.values(rt).filter(Array.isArray)))];
+    if (!reach.length || (tile && reach.includes(tile))) return tile;   // aimed correctly
+    // a fingertip, in world units at the current zoom
+    const cam = _mainCamera();
+    const cv = gameInstance && gameInstance.canvas;
+    const rect = cv && cv.getBoundingClientRect();
+    const worldPerCss = (cam && rect && rect.width) ? (cam.worldView.width / rect.width) : 1;
+    const tol = 22 * worldPerCss;
+    const near = reach.filter(t => _tileDistance(t, wx, wy) <= tol);
+    return near.length === 1 ? near[0] : tile;      // exactly one candidate, or leave it
 }
 
 function getSoundEnabled()       { return _boolSetting('sound', true); }
@@ -3603,7 +3634,10 @@ class Tile {
     buildTileChrome(points) {
         this._built = true;
         this.graphics.setInteractive(new Phaser.Geom.Polygon(points), Phaser.Geom.Polygon.Contains);
-        onTap(this.graphics, () => _resolveDestination(this.game, this).onClick());
+        onTap(this.graphics, (pointer) => {
+            const t = pointer ? _resolveDestination(this.game, this, pointer.worldX, pointer.worldY) : this;
+            t.onClick();
+        });
         this.graphics
             .on('pointerover', () => this.onHover())
             .on('pointerout', () => this.onOut());
@@ -5012,10 +5046,20 @@ endGame(winner, score = null, impasse_caller = null) {
 
         scene.input.on('pointerdown', (pointer, currentlyOver) => {
             const down = pointers();
-            if (down.length >= 2) {                 // pinch takes over
+            if (down.length >= 2) {                 // two fingers: zoom AND pan
                 panning = false; panFrom = null;
                 const [a, b] = down;
-                pinch = { dist: Phaser.Math.Distance.Between(a.x, a.y, b.x, b.y), zoom: cam.zoom };
+                const mid = { x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 };
+                const left = cam.scrollX + (cam.width - cam.width / cam.zoom) / 2;
+                const top = cam.scrollY + (cam.height - cam.height / cam.zoom) / 2;
+                pinch = {
+                    dist: Phaser.Math.Distance.Between(a.x, a.y, b.x, b.y),
+                    zoom: cam.zoom,
+                    // the world point under the midpoint when the pinch began:
+                    // keeping THIS under the moving midpoint gives both the zoom
+                    // anchor and two-finger panning in one step
+                    world: { x: left + mid.x / cam.zoom, y: top + mid.y / cam.zoom },
+                };
                 return;
             }
             // A drag that starts on a piece belongs to the piece. Use the list
@@ -5034,12 +5078,12 @@ endGame(winner, score = null, impasse_caller = null) {
                 const d = Phaser.Math.Distance.Between(a.x, a.y, b.x, b.y);
                 if (pinch.dist > 0) {
                     const mid = { x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 };
-                    const before = cam.getWorldPoint(mid.x, mid.y);
-                    cam.zoom = pinch.zoom * (d / pinch.dist);
-                    clamp();
-                    const after = cam.getWorldPoint(mid.x, mid.y);
-                    cam.scrollX += before.x - after.x;    // keep the pinch centre put
-                    cam.scrollY += before.y - after.y;
+                    const base = scene._camBase || _baseZoom(scene);
+                    cam.zoom = Phaser.Math.Clamp(pinch.zoom * (d / pinch.dist), base, base * MAX_FACTOR);
+                    // put the pinch's starting world point back under the CURRENT
+                    // midpoint: that anchors the zoom and pans with the fingers.
+                    _setCameraView(cam, pinch.world.x - mid.x / cam.zoom,
+                                        pinch.world.y - mid.y / cam.zoom);
                     clamp();
                     _updateViewportHud();
                 }
@@ -5101,6 +5145,7 @@ endGame(winner, score = null, impasse_caller = null) {
         scene.input.dragDistanceThreshold = _isPhone() ? 34 : 6;
 
         const onDragStart = (pointer, obj) => {
+            if (obj.__ghost) { scene._draggingGhost = obj.__ghost; return; }
             const piece = obj.__piece; if (!piece) return;
             // a press that became a drag is not a click, so it must not send a
             // just-entered piece back to the rack when the finger lifts
@@ -5125,6 +5170,7 @@ endGame(winner, score = null, impasse_caller = null) {
         };
 
         const onDrag = (pointer, obj) => {
+            if (obj.__ghost) { obj.__ghost.ghost.setPosition(pointer.worldX, pointer.worldY); return; }
             const piece = obj.__piece; if (!piece || !piece._dragOK) return;
             // Centre the piece on the pointer. (dragX/dragY bake in the grab
             // offset from where the piece sat at dragstart — but rack pieces
@@ -5145,6 +5191,18 @@ endGame(winner, score = null, impasse_caller = null) {
         };
 
         const onDragEnd = (pointer, obj) => {
+            if (obj.__ghost) {
+                // Enter the piece it stands for, then treat the drop as a tile
+                // tap -- the same near-miss resolution as any other drop.
+                const { piece: ghostPiece } = obj.__ghost;
+                scene._draggingGhost = null;
+                if (ghostPiece.rack) ghostPiece.handleClick({ rightButtonDown: () => false });
+                const t = ghostPiece.game.tileAtPoint(pointer.worldX, pointer.worldY);
+                const drop = _resolveDestination(ghostPiece.game, t, pointer.worldX, pointer.worldY);
+                if (drop) drop.onClick();
+                _updateViewportHud();
+                return;
+            }
             const piece = obj.__piece; if (!piece || !piece._dragOK) return;
             piece._dragOK = false;
             scene._draggingPiece = null;
@@ -5180,7 +5238,7 @@ endGame(winner, score = null, impasse_caller = null) {
                 if (piece.game.sumSave(piece)) return;
             }
 
-            const drop = _resolveDestination(piece.game, target);
+            const drop = _resolveDestination(piece.game, target, pointer.worldX, pointer.worldY);
             if (drop) drop.onClick();              // moves the selected piece, with full rule checks
             if (piece.currentTile === before) {     // move didn't happen -> snap back + deselect
                 if (piece._snapRack) piece.returnToRack();   // returns to rack (also deselects)
@@ -6473,9 +6531,32 @@ setTimeout(() => {
 ['touchstart', 'touchmove', 'touchend', 'touchcancel'].forEach(type => {
     window.addEventListener(type, () => {
         const tm = gameInstance.input && gameInstance.input.touch;
-        if (tm) tm.capture = (type === 'touchend' || type === 'touchcancel');
+        if (!tm) return;
+        // A phone owns every gesture itself now (camera pan and pinch), so every
+        // touch event is cancelled. That is also what stops Chrome's edge-swipe
+        // "back", which overscroll-behavior cannot: the page has no scroll
+        // container for that property to apply to, so the swipe went straight to
+        // history navigation and swallowed drags aimed at the board.
+        // Desktop keeps the old dance: leave touchstart/touchmove alone so the
+        // browser can still pinch-zoom, cancel touchend to kill the duplicate
+        // compatibility mouse events.
+        tm.capture = _isPhone() ? true : (type === 'touchend' || type === 'touchcancel');
     }, { capture: true, passive: true });
 });
+
+// Cancel touch gestures ourselves, in the capture phase, before anything else
+// can claim them. Phaser's own `capture` flag did not actually cancel here
+// (measured: capture true, defaultPrevented false), and Chrome decides whether a
+// drag is an edge-swipe "back" on the first uncancelled touchmove.
+// CHROME'S EDGE-SWIPE "BACK" IS STILL UNSOLVED. Tried and reverted, each
+// measured: `overscroll-behavior: none` (no effect -- the page has no scroll
+// container for it to apply to); cancelling touchstart+touchmove in the capture
+// phase (stopped tapping working at all); cancelling touchmove alone (stopped
+// piece DRAGGING -- the drop never reached a tile). Phaser's own `capture` flag
+// does not cancel here either: measured capture true, defaultPrevented false.
+// Next thing to try: cancel touchmove ONLY for gestures that began within ~24px
+// of the screen edge, which is the region Chrome reserves for the gesture,
+// leaving every other drag untouched.
 
 // ── PANNING A ZOOMED BOARD ──────────────────────────────────────────────
 // Panning is NOT done by handing gestures to the browser. `touch-action` stays

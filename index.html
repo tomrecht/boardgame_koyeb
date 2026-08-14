@@ -51,11 +51,18 @@
            the whole viewport. Phaser re-asserts its own inline canvas size on
            every resize, so this has to win -- without it a rotation leaves the
            canvas at the previous orientation's width. */
+        /* Sized from JS in real pixels, not vw/vh: on mobile Chrome 100vh is the
+           LARGE viewport (toolbar hidden), so with the URL bar showing the
+           canvas is taller than the visible area -- the board's bottom goes off
+           screen and the page shifts, leaving a grey strip at the top. */
         body.fill-screen canvas {
-            width: 100vw !important;
-            height: 100vh !important;
+            width: var(--vw) !important;
+            height: var(--vh) !important;
             max-width: none;
             max-height: none;
+            position: fixed;
+            top: 0;
+            left: 0;
         }
         /* On a portrait phone, hint that landscape gives a much bigger board. */
         #rotateHint {
