@@ -2188,10 +2188,14 @@ class Piece {
                 return;
             }
 
-            this.game.selectedPiece.isSelected = false;
-            if (this.game.selectedPiece.currentTile && this.game.selectedPiece.currentTile.type === 'home' && this.game.selectedPiece.justMovedHome) {
-                this.game.selectedPiece.returnToRack();}
-            this.game.selectedPiece.updateColor();
+            // Hold the outgoing piece in a local: returnToRack() clears
+            // game.selectedPiece, so reading it again below threw (entering a
+            // piece and then clicking any other rack piece hit this every time).
+            const prev = this.game.selectedPiece;
+            prev.isSelected = false;
+            if (prev.currentTile && prev.currentTile.type === 'home' && prev.justMovedHome) {
+                prev.returnToRack();}
+            prev.updateColor();
             this.game.selectedPiece = this;
             this.game.unhighlightAllTiles();
             this.isSelected = false;
@@ -2362,6 +2366,25 @@ class Piece {
         if (this.text) {
             this.text.setFontSize(`${size * 1.7}px`);
         }
+        this._applyHitArea();
+    }
+
+    // Phones only. A piece is ~13px across on a landscape phone, well under the
+    // 44px a fingertip wants, so grow the touch target into whatever space is
+    // actually free around this piece: a piece alone on its tile has room, one
+    // in a stack has almost none (slot centres are only 2r+4 apart, and an
+    // overlapping hit area would quietly select the neighbour instead).
+    // Untouched on desktop, where the default is the 2r bounding box.
+    _applyHitArea() {
+        const c = this.circle;
+        if (!c || !c.input || !_isPhone()) return;      // desktop keeps Phaser's default box
+        const r = this.radius;
+        let hit;
+        if (this.rack) hit = r + 6;                     // rack slots sit 2r+12 apart
+        else if (!this.currentTile || (this.currentTile.pieces || []).length <= 1) hit = r + 10;
+        else hit = r + 2;
+        c.input.hitArea = new Phaser.Geom.Circle(r, r, hit);
+        c.input.hitAreaCallback = Phaser.Geom.Circle.Contains;
     }
 
     // Show/hide the whole piece. Overflow pieces on a stacked tile are hidden
@@ -2838,6 +2861,15 @@ class Tile {
                 return;
             }
             if (this.game.gameOver) return;
+            // Phones: with nothing selected yet, tapping the tile selects the
+            // piece on it, as long as there is no doubt which one is meant. A
+            // tile is far easier to hit than a 13px piece. Delegating to the
+            // piece's own handler keeps every rule and the double-tap-to-save
+            // timing exactly as they are when you tap the piece itself.
+            if (!this.game.selectedPiece && _isPhone()) {
+                const target = this._unambiguousPiece();
+                if (target) { target.handleClick({ rightButtonDown: () => false }); return; }
+            }
             // The overflow picker is opened only from the "+K" badge, never as a
             // side effect of a tile click (so moving a piece onto a tile that
             // tips into overflow doesn't pop the picker).
@@ -2871,6 +2903,18 @@ class Tile {
             }
         }
     
+
+    // The piece a tap on this tile can only have meant: the current player's
+    // single piece here, or -- when they are all unnumbered -- any of them,
+    // since those are interchangeable. Numbered pieces each have their own goal,
+    // so two of them on one tile stays ambiguous and the tap is ignored (tap the
+    // piece itself, or use the stack picker).
+    _unambiguousPiece() {
+        const mine = (this.pieces || []).filter(p => p.player === this.game.turn && !p.hidden);
+        if (mine.length === 1) return mine[0];
+        if (mine.length > 1 && mine.every(p => p.number > 6)) return mine[0];
+        return null;
+    }
 
     onHover() {
         if (this.game.gameOver) return;

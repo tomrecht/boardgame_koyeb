@@ -504,6 +504,23 @@ expected to self-resolve via the TD run.
     reach Phaser in this headless setup (a mouse click on the same piece selects
     it), so test taps with mouse events and treat "tap did nothing" as an
     artifact until a mouse control says otherwise.
+  - **Tap a tile to select; bigger touch targets (2026-08-14, phone-only).**
+    `Tile.onClick` with nothing selected now delegates to `_unambiguousPiece()`
+    — the current player's single piece on that tile, or any of them when they
+    are all unnumbered (interchangeable; two numbered pieces stay ambiguous
+    because each has its own goal). It calls the piece's own `handleClick`, so
+    every rule and the double-tap-to-save timing are unchanged. `Piece.
+    _applyHitArea` grows the touch target into the space that is actually free:
+    rack +6 (slots are 2r+12 apart), alone on a tile +10, in a stack only +2
+    (slot centres are 2r+4 apart, so more would select the neighbour). Measured:
+    phone hit circle r=28 vs drawn 22 and a click 24px off-centre selects;
+    desktop keeps Phaser's default 40×40 box (`hitArea` untouched, off-centre
+    click ignored, tile tap does nothing).
+  - **Pre-existing crash fixed in `Piece.handleClick`**: `returnToRack()` sets
+    `game.selectedPiece = null`, and the next line called `.updateColor()` on it
+    — so entering a piece and then clicking any *other* rack piece threw
+    `Cannot read properties of null`. Now held in a local. Found by the tile-tap
+    test; affects desktop too, and predates this work.
   - **Two mobile glitches fixed (2026-08-14).** The turn/thinking pill was fixed
     at the top-centre of the *viewport*, which in landscape is the top of the
     board (the letterboxing puts the board against the screen edge), and in
