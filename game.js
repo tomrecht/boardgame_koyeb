@@ -1138,6 +1138,11 @@ function startTutorial() {
     _tut.step = 0; _tut.busy = false; _tut.turnEnded = false;
     const welcome = document.getElementById('welcomeScreen');
     if (welcome) welcome.remove();     // reachable from the settings panel too
+    // The tutorial runs on the welcome screen's held game, but it is a real
+    // thing being played and it scripts its own dice -- which stay invisible
+    // while the game counts as frozen. Its own guards (_tutorialActive) are
+    // what keep the AI out, not this flag.
+    _gameFrozen = false;
     _tutHudVisible(false);
     _tutBubble();
     _tutRender();
@@ -1306,6 +1311,14 @@ function matchScoreLine() {
     const prefix = m.over
         ? (m.winner === 'draw' ? 'Match drawn' : `${_cap(m.winner)} wins the match`)
         : 'Match';
+    // On a phone this has to stay left of goal 2's arc (x=630), so break it in
+    // two: heading and progress, then the two scores. Once the match is over the
+    // progress ("game 4 of 4") is both redundant and too long to fit beside the
+    // longer heading, so it is dropped.
+    if (_isPhone()) {
+        const head = m.over ? prefix : prefix + sep + parts.slice(2).join(sep);
+        return head + '\n' + parts.slice(0, 2).join(sep);
+    }
     return prefix + sep + parts.join(sep);
 }
 
@@ -3374,6 +3387,12 @@ class Die {
 
     drawDieWithColor(dieColor, dotColor) {
         this.graphics.clear();
+        // Nothing to show before the player has actually started a game. The
+        // board sits frozen behind the welcome screen with a rolled pair, but
+        // that roll is discarded -- Play starts a fresh game -- so displaying it
+        // just shows two values that are never used. The real game runs through
+        // a new create(), which builds new dice with the flag already cleared.
+        if (_gameFrozen) return;
         this.graphics.fillStyle(0x000000, 0.10);
         this.graphics.fillRoundedRect(this.x, this.y + 4, this.size, this.size, 14);  // soft shadow
         // Colour-coded border preserved: die A vs die B. Drawn as a slightly
@@ -4906,11 +4925,11 @@ class MainGameScene extends Phaser.Scene {
             fontFamily: HUD_FONT,
             color: THEME.bgInk
         };
-        // Set the key only on a phone: Phaser's GetValue treats an explicitly
-        // undefined `wordWrap` as present and then dereferences it, so passing
-        // `wordWrap: undefined` throws inside create() and leaves the rest of
-        // the scene (impasse line, Call draw, ...) unbuilt.
-        if (phone) scoreStyle.wordWrap = { width: 580 };
+        // NB: an explicitly undefined `wordWrap` is not the same as omitting it --
+        // Phaser's GetValue treats the key as present and dereferences it, which
+        // throws inside create() and leaves everything after this unbuilt. The
+        // phone's line break is inserted into the text instead (see the setText
+        // that assembles it), so no wrap width is needed at all.
         this.scoreText = this.add.text(24, H - 24, '', scoreStyle).setOrigin(0, 1);
         _themedRedraws.push(() => this.scoreText.setColor(THEME.bgInk));
 
@@ -4960,13 +4979,16 @@ class MainGameScene extends Phaser.Scene {
             const totalStr = total === 0 ? '0'
                 : `${total > 0 ? 'White' : 'Black'} +${Math.abs(total)}`;
             const sep = '  \u00B7  ';
-            this.scoreText.setText(
-                [`Games ${scoreTracker.games_played}`,
-                 `White ${scoreTracker.white_wins}`,
-                 `Black ${scoreTracker.black_wins}`,
-                 `Draws ${scoreTracker.draws}`,
-                 `Total score ${totalStr}`].join(sep)
-            );
+            const parts = [`Games ${scoreTracker.games_played}`,
+                           `White ${scoreTracker.white_wins}`,
+                           `Black ${scoreTracker.black_wins}`,
+                           `Draws ${scoreTracker.draws}`,
+                           `Total score ${totalStr}`];
+            // A phone breaks this in two deliberately -- games/white/black, then
+            // draws/total. Left to wordWrap it split mid-item ("Black" / "0").
+            this.scoreText.setText(_isPhone()
+                ? parts.slice(0, 3).join(sep) + '\n' + parts.slice(3).join(sep)
+                : parts.join(sep));
         }
 
     createEvalButton() {

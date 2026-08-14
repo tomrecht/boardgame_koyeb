@@ -523,6 +523,19 @@ expected to self-resolve via the TD run.
     scales by 2.2 → 14+ CSS px; the score line **wraps at 580** because goal 2's
     arc starts at x=630 and dips to y=1140, and the stack above it is spaced for
     the 2-line case. Desktop numbers are byte-identical, asserted in the run.
+  - **No dice before a game starts (2026-08-14, both platforms).** The welcome
+    screen sits over a held game whose dice are rolled and then thrown away —
+    Play starts a fresh one — so it showed two values that were never used.
+    `drawDieWithColor` returns early while `_gameFrozen`. Watch-out found in
+    testing: the **tutorial runs on that same held game** and scripts its own
+    dice, so it blanked them; `startTutorial` now clears `_gameFrozen` (the AI
+    is kept out by `_tutorialActive`, not by that flag).
+  - **Score row wraps deliberately, not by width.** Owner: wordWrap split it
+    mid-item ("Black" / "0"). The phone build now inserts the break itself —
+    games/white/black, then draws/total; for a match, heading+progress then the
+    two scores, and once the match is over the progress is dropped (the longer
+    heading plus "game 4 of 4" ran past goal 2's arc at x=630). All six variants
+    measured clear: casual fresh/played, match running/with draws/over, race.
   - **Two traps this hit, both worth remembering.** (1) `wordWrap: undefined` in
     a Phaser text style is NOT the same as omitting it — `GetValue` sees the key
     as present and dereferences it, so `create()` threw and every object after
