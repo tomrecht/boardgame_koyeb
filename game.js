@@ -4868,7 +4868,12 @@ class MainGameScene extends Phaser.Scene {
         const inMatch = !!(matchTracker && !matchTracker.over);
 
         // New Game is unavailable while a match is in progress.
-        const newGameButton = makeHudButton(this, 150, 52, 'New Game');
+        // The three HUD buttons are 19px of world font -- ~6 CSS px on a phone.
+        // They get scaled and re-spaced there, into the corner box bounded by
+        // the dice (x>=309) and the top of the racks (y>=297).
+        const hudK = _isPhone() ? 2 : 1;
+        const hy = (n) => _isPhone() ? 48 + n * 84 : 52 + n * 52;
+        const newGameButton = makeHudButton(this, 150, hy(0), 'New Game', { k: hudK });
         newGameButton.on('pointerdown', () => {
             if (matchTracker && !matchTracker.over) return;
             this.showNewGameConfirmationModal();
@@ -4877,7 +4882,7 @@ class MainGameScene extends Phaser.Scene {
 
         // New Match sits where New Game would be during a match; starting one
         // mid-match asks for confirmation first.
-        const newMatchButton = makeHudButton(this, 150, inMatch ? 52 : 104, 'New Match', { ghost: true });
+        const newMatchButton = makeHudButton(this, 150, hy(inMatch ? 0 : 1), 'New Match', { ghost: true, k: hudK });
         newMatchButton.on('pointerdown', () => {
             if (matchTracker && !matchTracker.over) {
                 showConfirm('Abandon the current match and start a new one?', () => showMatchSetup());
@@ -4886,7 +4891,7 @@ class MainGameScene extends Phaser.Scene {
             }
         });
 
-        const instructionsButton = makeHudButton(this, 150, inMatch ? 104 : 156, 'How to Play', { ghost: true });
+        const instructionsButton = makeHudButton(this, 150, hy(inMatch ? 1 : 2), 'How to Play', { ghost: true, k: hudK });
         instructionsButton.on('pointerdown', () => { showInstructions(); });
         // The tutorial hides these: New Game / New Match restart the scene, which
         // would leave the step runner talking to a board that no longer exists.

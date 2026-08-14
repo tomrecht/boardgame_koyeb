@@ -507,6 +507,12 @@ expected to self-resolve via the TD run.
     **One-finger panning must be rebuilt inside Phaser** (camera scroll on a drag
     starting off-piece) so the browser never arbitrates the gesture. Owner wants
     it; two-finger panning already works but is not what anyone reaches for.
+    **Remaining mobile queue (owner's order, 2026-08-14):** fullscreen +
+    web-app manifest; then the must-enter piece hovering in a corner when it is
+    out of frame — owner notes this matters *independently* of one-finger pan,
+    since zooming alone can leave the piece you must move off screen, and
+    two-finger panning already exists; then the Phaser camera pan; then the
+    portrait layout redo LAST.
   - **Dice on a phone (2026-08-14): 120 at y=30, border 5→14.** They were ~32 CSS
     px with a 1.6px colour border — the die-A/die-B coding was invisible. They
     now grow left and up, keeping the right edge put (HUD buttons end at x=220;
@@ -548,6 +554,12 @@ expected to self-resolve via the TD run.
     object and set optional keys conditionally. (2) `_placeTurnStatus` assigns
     `style.cssText`, which wipes the `opacity:0` that hides the pill — place
     first, then set opacity, or an empty white pill sits on the end screen.
+  - **HUD buttons on a phone (2026-08-14): k=2, 6.2→12.3 CSS px.** New Game /
+    New Match / How to Play are `makeHudButton`s at 19px world font. They scale
+    and re-space (`hy(n) = 48 + n*84`) inside the corner box bounded by the dice
+    (x≥309) and the top of the racks (y≥297): measured span x14-286, y9-255, no
+    overlaps. That box is what caps the scale — k=2.2 would put "How to Play"
+    into the dice.
   - **Racks on a phone (2026-08-14): RACK_PR 22→26.** Rack pieces go 14.3→16.9
     CSS px. The panel size derives from RACK_PR and spacing, so the two racks
     per side are re-centred via `RACK_Y1`/`RACK_Y2` (desktop keeps its literal
