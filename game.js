@@ -193,19 +193,55 @@ function fxBurst(scene, x, y, color) {
         onComplete: () => ring.destroy() });
 }
 
+// The canvas keeps a fixed 3:2 shape, so on a phone it is letterboxed: bands of
+// empty page above/below it in portrait, left/right of it in landscape. Put the
+// pill in a band whenever one is big enough, so it never covers the board (it
+// used to sit at the top of the *viewport*, which in landscape is the top of the
+// board itself). Falls back to a compact overlay when there is no room anywhere.
+function _placeTurnStatus(el) {
+    const c = document.querySelector('canvas');
+    if (!c) return;
+    const r = c.getBoundingClientRect();
+    const H = 34, GAP = 8;                       // pill height, and its clearance
+    const above = r.top, below = window.innerHeight - r.bottom;
+    const side = Math.max(r.left, window.innerWidth - r.right);
+    const set = (css) => { el.style.cssText = el._base + css; };
+    if (above >= H + GAP) {                      // portrait: band above the board
+        set(`left:50%; transform:translateX(-50%); top:${Math.round(r.top - H - GAP / 2)}px;`);
+    } else if (below >= H + GAP) {
+        set(`left:50%; transform:translateX(-50%); top:${Math.round(r.bottom + GAP / 2)}px;`);
+    } else if (side >= 104) {                    // landscape: band beside the board
+        // Prefer the left band: the settings gear sits at the top of the right
+        // one, so a pill there covers it (drop below the gear if left is too
+        // narrow to use).
+        const onLeft = r.left >= window.innerWidth - r.right - 24;
+        const w = Math.round((onLeft ? r.left : window.innerWidth - r.right) - 16);
+        set(`top:${onLeft ? 10 : 84}px; ${onLeft ? 'left' : 'right'}:8px; transform:none;` +
+            `width:${w}px; font-size:12px; text-align:center; white-space:normal; line-height:1.25;`);
+    } else {                                     // nowhere to put it: overlay, compact
+        set('left:50%; transform:translateX(-50%); top:6px; font-size:12px; padding:4px 10px;');
+    }
+}
+
 function updateTurnStatus(textOrGame) {
     const text = typeof textOrGame === 'string' ? textOrGame : turnStatusText(textOrGame);
     let el = document.getElementById('turnStatus');
     if (!el) {
         el = document.createElement('div'); el.id = 'turnStatus';
-        el.style.cssText = 'position:fixed; top:10px; left:50%; transform:translateX(-50%); z-index:30;' +
+        el._base = 'position:fixed; z-index:40; box-sizing:border-box;' +
             'font-family:' + HUD_FONT + '; font-size:14px; font-weight:600; color:#28313b;' +
             'background:rgba(255,255,255,.8); padding:5px 15px; border-radius:20px;' +
-            'box-shadow:0 2px 8px rgba(0,0,0,.14); pointer-events:none; transition:opacity .2s;';
+            'box-shadow:0 2px 8px rgba(0,0,0,.14); pointer-events:none; transition:opacity .2s;' +
+            'white-space:nowrap;';
+        el.style.cssText = el._base;
         document.body.appendChild(el);
+        // the board is re-fitted on rotate/resize, so the band moves with it
+        window.addEventListener('resize', () => _placeTurnStatus(el));
+        window.addEventListener('orientationchange', () => setTimeout(() => _placeTurnStatus(el), 250));
     }
     el.textContent = text || '';
     el.style.opacity = text ? '1' : '0';
+    _placeTurnStatus(el);
 }
 
 function getSoundEnabled()       { return _boolSetting('sound', true); }
@@ -406,6 +442,10 @@ function createSettingsPanel() {
         'position:fixed; top:82px; right:12px; z-index:41; display:none;' +
         'background:#fff; color:#28313b; font-family:' + HUD_FONT + '; font-size:13px;' +
         'border:1px solid rgba(0,0,0,.15); border-radius:12px; padding:12px 14px; width:216px;' +
+        // A landscape phone is ~390px tall, far shorter than this panel: without
+        // a cap its lower half (sound, tutorial) sat off-screen and unreachable.
+        'box-sizing:border-box; max-height:calc(100vh - 94px);' +
+        'overflow-y:auto; overscroll-behavior:contain; -webkit-overflow-scrolling:touch;' +
         'box-shadow:0 12px 34px rgba(0,0,0,.22);');
     panel.id = 'settingsPanel';
 

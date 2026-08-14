@@ -471,6 +471,33 @@ expected to self-resolve via the TD run.
     off wholesale breaks tapping). Dice borders drawn as a filled rounded rect
     behind the face rather than a thick `strokeRoundedRect`, which left stray
     coloured lines across the board on some GPUs.
+  - **PHONE LAYOUT — measured (2026-08-14).** The world is a fixed 1800×1200
+    with `Scale.FIT`, so a phone gets the desktop layout shrunk whole, letterboxed
+    into bands. Measured with CDP device metrics: **landscape 844×390** → canvas
+    585×390, 129px dead band each side, board circle ~345px (88% of the height —
+    near the ceiling, little to win); **portrait 390×844** → canvas 390×260, so
+    **69% of the screen is empty** and the board is only ~230px. A piece (world
+    r=20) renders 13px across in landscape, 8.7px in portrait, against the 44px
+    tap-target guideline. Conclusions: a portrait-native layout (board across the
+    full width, racks/dice/score stacked below) is the one big win, ~1.7× linear
+    / 2.9× area, and would beat landscape; landscape can only gain ~13% by moving
+    racks out into the bands. Sizing alone never reaches 44px, so hit areas need
+    to be decoupled from the drawn radius. Note the canvas backing store stays
+    1800×1200, so pinch-zoom reveals real detail (3× in landscape) — it is small,
+    not blurry.
+  - **Two mobile glitches fixed (2026-08-14).** The turn/thinking pill was fixed
+    at the top-centre of the *viewport*, which in landscape is the top of the
+    board (the letterboxing puts the board against the screen edge), and in
+    portrait it sat exactly under `#rotateHint` (z-index 45 over the pill's 30),
+    so it was invisible. `_placeTurnStatus` now measures the canvas rect and puts
+    the pill in a letterbox band — above/below in portrait, beside in landscape,
+    preferring the left band because the gear owns the top right — falling back
+    to a compact overlay when no band fits; it re-runs on resize/orientation
+    change. The settings panel had no height cap, so on a 390px-tall landscape
+    phone everything below "Move & capture effects" was off-screen: now
+    `max-height:calc(100vh - 94px)` with `overflow-y:auto`, and `box-sizing:
+    border-box` (without it the 12px padding pushed the panel 14px past the
+    bottom — the first fix measured as still not fitting).
   - **Human-play rule bug fixed**: `game.js` let a NUMBERED piece go out on a
     higher endgame die. That rule is blank-only (`game.py`'s `get_saving_die`
     gates on number > 6). Also fixed: `sumSave` judged the endgame rule against
