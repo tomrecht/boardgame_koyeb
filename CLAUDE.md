@@ -742,13 +742,26 @@ with it in mind.** Assessment and the concrete implications:
     size now comes from JS in real pixels via `--vw`/`--vh` custom properties,
     with the canvas `position: fixed` at 0,0. (Headless cannot reproduce a
     dynamic toolbar, so this one needs a device to confirm.)
-    **DRAGGING A GHOST IS UNFINISHED, deliberately disabled.** The drag handlers
-    run and the piece IS entered on drop (measured), but the drop never lands on
-    the tile: `tileAtPoint` at the release point yields nothing usable even when
-    that tile is in the piece's reachable set. Rather than ship a gesture that
-    enters a piece and then seems to do nothing, `setDraggable` is commented out
-    and ghosts stay tap-only. Pick this up by logging `pointer.worldX/worldY` at
-    `dragend` against the tile's polygon.
+    **GHOSTS ARE DRAGGABLE (2026-08-14).** Drag one onto a tile and the piece it
+    stands for is entered and moved there in one gesture. It looked broken at
+    first — the piece entered but never landed — but tracing the drop showed
+    `tileAtPoint(936,1025) = null`: the TEST was aiming at a computed centroid
+    that falls just outside a curved annular sector, and the near-miss rule then
+    (correctly) placed the piece on the single nearby legal tile. Assert "landed
+    on a legal destination", not "landed on exactly this tile".
+  - **A MOVED PIECE COULD STAY HIGHLIGHTED — fixed, both platforms.** Owner saw a
+    piece look selected after a capture from the home tile, intermittently.
+    Cause: `onOut()` began with guards (another piece selected, not your turn any
+    more, ...) that returned BEFORE clearing `isHovered`, and the highlight
+    colour is shared between hovered and selected — so a stranded hover is
+    indistinguishable from a stuck selection. Clearing hover is now
+    unconditional, `movePiece` clears it on the piece it moves, and phones never
+    set it at all (a finger that leaves often sends no pointerout, so the
+    highlight had no way back off).
+  - **Pinch has a 6% dead zone** on the finger separation: two fingers dragged
+    together still wobble apart by a few pixels, and feeding that into the zoom
+    made a two-finger pan shimmer (owner: "as if it's trying to zoom in and out
+    at the same time").
     **Harness note:** every screen<->world conversion in the CDP tests must go
     through `camera.worldView` now; the old `wx * canvasWidth / 1800` mapping is
     only valid under FIT, and using it silently sends taps to the wrong place

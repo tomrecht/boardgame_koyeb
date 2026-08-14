@@ -2540,16 +2540,21 @@ class Piece {
         if (this.rack && this.rack.type === 'saved') return;
         if (this.rack && this.rack.type === 'unentered' && this.rack.pieces[0] !== this) return;
         if (!this.game.canSelectForMove(this)) return false;
+        // A touch screen has no hover: a finger that leaves often sends no
+        // pointerout at all, so setting this would strand the highlight on.
+        if (_isPhone()) return;
         this.isHovered = true;
         this.updateColor();
     }
 
     onOut() {
-        if (this.game.selectedPiece && this.game.selectedPiece !== this) return;
-        if (this.player !== this.game.turn) return; 
-        if (this.rack && this.rack.type === 'saved') return;
-        if (this.rack && this.rack.type === 'unentered' && this.rack.pieces[0] !== this) return;
-        
+        // Clearing hover is unconditional. The guards that used to sit here
+        // (another piece selected, not your turn any more, ...) meant that a
+        // piece could keep `isHovered` forever -- and since the highlight colour
+        // is shared with "selected", it looked exactly like a piece that stayed
+        // selected after moving. Owner hit this after a capture from the home
+        // tile, intermittently, which is the giveaway: it depends on what the
+        // state happened to be when the pointer left.
         this.isHovered = false;
         this.updateColor();
     }
@@ -4317,6 +4322,7 @@ class Game {
             }
 
             const _ox = piece.x, _oy = piece.y;   // for the slide animation
+            piece.isHovered = false;              // it is not under the pointer any more
             piece.move(targetTile);
             piece.animateFrom(_ox, _oy);
             SFX.move();
@@ -5079,7 +5085,13 @@ endGame(winner, score = null, impasse_caller = null) {
                 if (pinch.dist > 0) {
                     const mid = { x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 };
                     const base = scene._camBase || _baseZoom(scene);
-                    cam.zoom = Phaser.Math.Clamp(pinch.zoom * (d / pinch.dist), base, base * MAX_FACTOR);
+                    // Dead zone on the finger separation. Two fingers dragged
+                    // together still wobble a few pixels apart, and feeding that
+                    // straight into the zoom made a pan shimmer in and out.
+                    const ratio = d / pinch.dist;
+                    if (Math.abs(ratio - 1) > 0.06) {
+                        cam.zoom = Phaser.Math.Clamp(pinch.zoom * ratio, base, base * MAX_FACTOR);
+                    }
                     // put the pinch's starting world point back under the CURRENT
                     // midpoint: that anchors the zoom and pans with the fingers.
                     _setCameraView(cam, pinch.world.x - mid.x / cam.zoom,
