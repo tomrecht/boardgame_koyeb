@@ -2701,6 +2701,10 @@ class Piece {
 
     
 
+    _afterRackChange() {
+        if (typeof _updateMustEnterGhosts === 'function') setTimeout(_updateMustEnterGhosts, 0);
+    }
+
     moveFromRack() {
         const homeTile = this.game.tiles.find(tile => tile.type === 'home');
         this.rack.removePiece(this);
@@ -2710,6 +2714,7 @@ class Piece {
         this._turnStartTile = homeTile;   // an entering piece measures progress from home
         this.game.selectedPiece = this;
         this.isSelected = true;
+        this._afterRackChange();          // one fewer piece left to bring out
     }
 
     moveToRack(rack, addToFront = false) {
@@ -2746,6 +2751,9 @@ class Piece {
         this.justMovedHome = false;
         this.reachableTiles = null;
         this.game.selectedPiece = null;
+        // back on the rack means it is enterable again -- and if the rack is off
+        // screen its ghost has to come back with it
+        if (typeof _updateMustEnterGhosts === 'function') setTimeout(_updateMustEnterGhosts, 0);
         this.game.tiles.forEach(tile => {
             tile.unhighlight();
         })
@@ -4308,6 +4316,8 @@ switchTurn() {
 
         // No-save draw accounting happens at the real turn boundary.
         this.updateNoSaveCounter();
+        // the other player's rack is a different set of enterable pieces
+        if (typeof _updateMustEnterGhosts === 'function') setTimeout(_updateMustEnterGhosts, 0);
 
         // Record human turns here
         if (!playerObj.isAI) {
@@ -4836,8 +4846,11 @@ endGame(winner, score = null, impasse_caller = null) {
     }
 
     createUndoButton(scene) {
-        const buttonSize = 64; // Adjust the button size as needed
-        this.undoButton = scene.add.image(config.width - DIE_2_POSITION, 85, 'leftWavyArrow')
+        // Phones get bigger arrows, further apart: at 64 world px they are ~21
+        // CSS px with only 36px of world gap, which is easy to mis-hit.
+        const buttonSize = _isPhone() ? 110 : 64;
+        this.undoButton = scene.add.image(config.width - (_isPhone() ? 560 : DIE_2_POSITION),
+                                          _isPhone() ? 100 : 85, 'leftWavyArrow')
             .setDisplaySize(buttonSize, buttonSize)
             .setInteractive()
             .on('pointerdown', () => {
@@ -4846,14 +4859,15 @@ endGame(winner, score = null, impasse_caller = null) {
                 clearMoveRecording();
             });
 
-        const undoTooltip = makeHudTip(scene, this.undoButton.x, this.undoButton.y + 46, 'Undo');
+        const undoTooltip = makeHudTip(scene, this.undoButton.x, this.undoButton.y + buttonSize * 0.72, 'Undo');
         this.undoButton.on('pointerover', () => undoTooltip.show(true));
         this.undoButton.on('pointerout',  () => undoTooltip.show(false));
     }
 
     createSwitchTurnButton(scene) {
-        const buttonSize = 64; // Adjust the button size as needed
-        this.switchTurnButton = scene.add.image(config.width - DIE_1_POSITION, 85, 'rightWavyArrow')
+        const buttonSize = _isPhone() ? 110 : 64;
+        this.switchTurnButton = scene.add.image(config.width - (_isPhone() ? 330 : DIE_1_POSITION),
+                                                _isPhone() ? 100 : 85, 'rightWavyArrow')
             .setDisplaySize(buttonSize, buttonSize)
             .setInteractive()
             .on('pointerdown', () => {
@@ -4868,7 +4882,8 @@ endGame(winner, score = null, impasse_caller = null) {
                 }
             });
     
-        const switchTurnTooltip = makeHudTip(scene, this.switchTurnButton.x, this.switchTurnButton.y + 46, 'End turn');
+        const switchTurnTooltip = makeHudTip(scene, this.switchTurnButton.x,
+                                             this.switchTurnButton.y + buttonSize * 0.72, 'End turn');
         this.switchTurnButton.on('pointerover', () => switchTurnTooltip.show(true));
         this.switchTurnButton.on('pointerout',  () => switchTurnTooltip.show(false));
     }
