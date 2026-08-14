@@ -507,6 +507,20 @@ expected to self-resolve via the TD run.
     **One-finger panning must be rebuilt inside Phaser** (camera scroll on a drag
     starting off-piece) so the browser never arbitrates the gesture. Owner wants
     it; two-finger panning already works but is not what anyone reaches for.
+  - **Dice on a phone (2026-08-14): 120 at y=30, border 5→14.** They were ~32 CSS
+    px with a 1.6px colour border — the die-A/die-B coding was invisible. They
+    now grow left and up, keeping the right edge put (HUD buttons end at x=220;
+    anything wider or lower runs into the board's upper-left arc). 120@y=30 was
+    the largest of the tested sizes clearing every real tile outline and text —
+    verified by polygon test, not a bounding box: the board is a circle, so a
+    box test says "overlaps" for a corner that is plainly empty.
+  - **`_isPhone()` MUST STAY ABOVE THE LAYOUT CONSTANTS.** `const DIE_SIZE =
+    _isPhone() ? ... ` runs during top-level evaluation, where a `let
+    _phoneOverride` declared further down is still in its temporal dead zone;
+    the ReferenceError was swallowed by `_isPhone`'s own try/catch, so it
+    returned false and every phone-sized constant silently kept its desktop
+    value (DIE_SIZE measured 100 on a phone). The helper is now declared above
+    the constants. Any new per-device constant must check the same way.
   - **PHONE CHANGES MUST NOT TOUCH THE DESKTOP BROWSER (owner, 2026-08-14).**
     Gate every mobile-only tweak on `_isPhone()` in game.js — `(pointer: coarse)`
     AND a min viewport side ≤820 — and verify the desktop path is unchanged in

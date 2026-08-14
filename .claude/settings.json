@@ -2,7 +2,22 @@
   "permissions": {
     "allow": [
       "Bash(git ls-remote *)",
-      "Bash(grep -E \"main$|td-lambda$|frontend-overhaul$\")"
+      "Bash(grep -E \"main$|td-lambda$|frontend-overhaul$\")",
+      "Edit",
+      "Write",
+      "Bash(git add *)",
+      "Bash(git commit *)",
+      "Bash(git push *)",
+      "Bash(git checkout *)",
+      "Bash(git branch *)",
+      "Bash(git diff *)",
+      "Bash(git log *)",
+      "Bash(git show *)",
+      "Bash(git status *)",
+      "Bash(git stash *)",
+      "Bash(node *)",
+      "Bash(python3 *)",
+      "Bash(curl *)"
     ]
   }
 }

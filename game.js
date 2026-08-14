@@ -26,6 +26,28 @@ let BLACK_IS_AI = (function () {
     catch (e) { return true; }
 })();
 
+// Phone-only tweaks: a coarse pointer AND a small screen. Everything gated on
+// this leaves the desktop browser exactly as it was. `?phone=0` turns every
+// phone tweak off (so a phone can be compared against the plain build without a
+// deploy), `?phone=1` forces them on for testing on a desktop.
+// Declared HERE, above the first constant that calls it: as a `let` further
+// down the file it sat in its temporal dead zone during top-level evaluation,
+// the ReferenceError was swallowed by the catch, and every constant sized for a
+// phone silently kept its desktop value.
+let _phoneOverride;
+function _isPhone() {
+    try {
+        if (_phoneOverride === undefined) {
+            const q = new URLSearchParams(location.search).get('phone');
+            _phoneOverride = (q === '0' || q === 'off') ? false
+                           : (q === '1' || q === 'on') ? true : null;
+        }
+        if (_phoneOverride !== null) return _phoneOverride;
+        return window.matchMedia('(pointer: coarse)').matches &&
+               Math.min(window.innerWidth, window.innerHeight) <= 820;
+    } catch (e) { return false; }
+}
+
 const PIECE_RADIUS_BASE = 20;
 // On-board stacking: default board-piece radius. Pieces pack into a polar grid
 // of slots sized from each tile's geometry; overflow folds into a "+K" badge
@@ -49,12 +71,16 @@ const NO_SAVE_TURNS_FOR_DRAW = 10;
 
 const DIE_1_POSITION= 400;   // (still used to place the undo/end-turn arrows)
 const DIE_2_POSITION = 500;
-// Dice: halfway between the original 80 and the 120 try, anchored so the pair's
-// top-right corner stays put (die 2 right edge = 580, top = 50).
-const DIE_SIZE = 100;
-const DICE_Y = 50;
-const DICE_X2 = 580 - DIE_SIZE;         // second (right) die
-const DICE_X1 = DICE_X2 - DIE_SIZE - 20; // first die, 20px gap
+// Dice: halfway between the original 80 and the 120 try. A phone grows them
+// left and up, keeping the right edge where it is -- the HUD buttons end at
+// x=220 so there is room on that side, whereas anything wider or lower runs
+// into the board's upper-left arc. 120 at y=30 was the largest of the sizes
+// tested against the real tile outlines that touches no tile and no text
+// (39 CSS px on a landscape phone, up from 32.5).
+const DIE_SIZE = _isPhone() ? 120 : 100;
+const DICE_Y = _isPhone() ? 30 : 50;
+const DICE_X2 = (_isPhone() ? 576 : 580) - DIE_SIZE;   // second (right) die
+const DICE_X1 = DICE_X2 - DIE_SIZE - 20;               // first die, 20px gap
 // Rack pieces render a touch larger than board pieces (mockup look).
 const RACK_PR = 22;
 
@@ -214,20 +240,6 @@ function _tileTapEnabled() {
             _tileTapOverride = !(q === '0' || q === 'off');
         }
         return _tileTapOverride;
-    } catch (e) { return false; }
-}
-
-let _phoneOverride;
-function _isPhone() {
-    try {
-        if (_phoneOverride === undefined) {
-            const q = new URLSearchParams(location.search).get('phone');
-            _phoneOverride = (q === '0' || q === 'off') ? false
-                           : (q === '1' || q === 'on') ? true : null;
-        }
-        if (_phoneOverride !== null) return _phoneOverride;
-        return window.matchMedia('(pointer: coarse)').matches &&
-               Math.min(window.innerWidth, window.innerHeight) <= 820;
     } catch (e) { return false; }
 }
 
@@ -3365,7 +3377,9 @@ class Die {
         // (the WebGL line batch joining onto the next shape). Two fills have
         // no path to leak.
         const borderColor = this.isFirstDie ? colorFirstDie : colorSecondDie;
-        const bw = 5;
+        // 5 world px is only ~1.6 CSS px on a phone -- the colour coding was
+        // effectively invisible there.
+        const bw = _isPhone() ? 14 : 5;
         this.graphics.fillStyle(borderColor, 1);
         this.graphics.fillRoundedRect(this.x - bw / 2, this.y - bw / 2,
                                       this.size + bw, this.size + bw, 14 + bw / 2);
