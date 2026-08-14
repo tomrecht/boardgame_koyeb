@@ -485,6 +485,25 @@ expected to self-resolve via the TD run.
     to be decoupled from the drawn radius. Note the canvas backing store stays
     1800×1200, so pinch-zoom reveals real detail (3× in landscape) — it is small,
     not blurry.
+  - **PHONE CHANGES MUST NOT TOUCH THE DESKTOP BROWSER (owner, 2026-08-14).**
+    Gate every mobile-only tweak on `_isPhone()` in game.js — `(pointer: coarse)`
+    AND a min viewport side ≤820 — and verify the desktop path is unchanged in
+    the same run (the CDP harness emulates all three: landscape phone, portrait
+    phone, desktop with `mobile:false`).
+  - **Pan while zoomed (2026-08-14).** `touch-action: pinch-zoom` lets the
+    browser pinch but reserves one-finger drags for the canvas, so once zoomed in
+    there was no way to reach the rest of the board with the obvious gesture.
+    While `visualViewport.scale > 1.02` the page now switches to `pan-x pan-y
+    pinch-zoom` (Chrome reports the equivalent `manipulation` back from
+    getComputedStyle), so one finger pans; a `passive:false` touchstart listener
+    calls preventDefault when the finger lands on a piece the current player can
+    move, so dragging your own piece still beats panning. Verified under CDP with
+    `Emulation.setPageScaleFactor` + `Input.synthesizeScrollGesture`: the visual
+    viewport moves by exactly the drag distance, and touch-action reverts on
+    zoom-out. Harness note: synthetic `Input.dispatchTouchEvent` taps do NOT
+    reach Phaser in this headless setup (a mouse click on the same piece selects
+    it), so test taps with mouse events and treat "tap did nothing" as an
+    artifact until a mouse control says otherwise.
   - **Two mobile glitches fixed (2026-08-14).** The turn/thinking pill was fixed
     at the top-centre of the *viewport*, which in landscape is the top of the
     board (the letterboxing puts the board against the screen edge), and in
