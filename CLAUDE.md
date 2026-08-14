@@ -485,28 +485,28 @@ expected to self-resolve via the TD run.
     to be decoupled from the drawn radius. Note the canvas backing store stays
     1800×1200, so pinch-zoom reveals real detail (3× in landscape) — it is small,
     not blurry.
-  - **MOBILE WORK REVERTED TO `d59603c` (2026-08-14) — read before retrying.**
-    Owner could not select the first unentered (rack) piece on his Android
-    phone. `?phone=0` (the escape hatch added mid-session) fixed it, so the cause
-    was one of the phone-gated tweaks; tile-tap selection was already disabled by
-    then, which rules it out. The remaining tweak that touches input is the
-    **one-finger pan while zoomed** (`touch-action: pan-x pan-y pinch-zoom` above
-    `visualViewport.scale > 1.02`, with a hit test calling preventDefault over a
-    movable piece). Every test that failed to reproduce it tapped at scale 1 —
-    i.e. never exercised the only state in which that code is live. That is the
-    likely culprit and the lesson: **a tweak that only activates while zoomed
-    must be tested while zoomed.**
-    Also ruled out along the way, each measured: hit-area overlap (fixed, worst
-    overlap 0px, did not help), finger drift turning a tap into a drag (0/4/9px,
-    piece enters every time), and two-finger panning (works with no code —
-    `touch-action: pinch-zoom` permits multi-finger panning).
-    **Next attempt should pan inside Phaser** (camera scroll on a drag that
-    starts on empty background) rather than handing the gesture to the browser:
-    Phaser knows what is under the pointer, so it can never steal a tap on a
-    piece, and nothing depends on how a browser resolves touch-action mid-gesture.
-    Owner wants one-finger panning kept, so this is the route, not two-finger.
-    Reverted whole rather than patched: five pushes in, each fix was a guess
-    against a bug that would not reproduce, and the owner could not play.
+  - **ONE-FINGER BROWSER PANNING BREAKS TAPPING — CONFIRMED, DO NOT RETRY.**
+    Handing one-finger drags to the browser while zoomed (`touch-action: pan-x
+    pan-y pinch-zoom` above `visualViewport.scale > 1.02`, with a preventDefault
+    over a movable piece) made pieces unselectable on the owner's Android phone
+    *whenever the page was zoomed in*; zoomed out, everything worked. Chrome
+    claims the gesture and the preventDefault guard cannot be relied on, because
+    under pinch-zoom a touch's `clientX` and `getBoundingClientRect()` are not in
+    the same coordinate space. Reverted; `touch-action` stays `pinch-zoom`.
+    Ruled out along the way, each measured: tile-tap selection (bug persisted
+    with it disabled), hit-area overlap (fixed, worst overlap 0px, no help),
+    finger drift turning a tap into a drag (0/4/9px, piece enters every time),
+    and any Phaser mis-mapping under pinch-zoom — **Phaser's pointer world
+    coords are exactly right at scale 2.5**, so input itself is sound.
+    **Testing lesson that cost five pushes:** a tweak that is only live while
+    zoomed must be tested while zoomed. Every failing test tapped at scale 1.
+    Two further harness traps met on the way: at scale 2.5 the visual viewport
+    is only 338×156 CSS px, so a target outside it is untappable (looks exactly
+    like a broken tap), and CDP touch coordinates are visual-viewport CSS px —
+    `layoutX - visualViewport.offsetLeft`, with NO multiplication by scale.
+    **One-finger panning must be rebuilt inside Phaser** (camera scroll on a drag
+    starting off-piece) so the browser never arbitrates the gesture. Owner wants
+    it; two-finger panning already works but is not what anyone reaches for.
   - **PHONE CHANGES MUST NOT TOUCH THE DESKTOP BROWSER (owner, 2026-08-14).**
     Gate every mobile-only tweak on `_isPhone()` in game.js — `(pointer: coarse)`
     AND a min viewport side ≤820 — and verify the desktop path is unchanged in

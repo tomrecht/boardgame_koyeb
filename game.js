@@ -193,19 +193,92 @@ function fxBurst(scene, x, y, color) {
         onComplete: () => ring.destroy() });
 }
 
+// The canvas keeps a fixed 3:2 shape, so on a phone it is letterboxed: bands of
+// empty page above/below it in portrait, left/right of it in landscape. Put the
+// pill in a band whenever one is big enough, so it never covers the board (it
+// used to sit at the top of the *viewport*, which in landscape is the top of the
+// board itself). Falls back to a compact overlay when there is no room anywhere.
+// Phone-only tweaks: a coarse pointer AND a small screen. Everything gated on
+// this leaves the desktop browser exactly as it was.
+// `?phone=0` turns every phone tweak off (so a phone can be compared against
+// the plain build without a deploy), `?phone=1` forces them on for testing on a
+// desktop. Read once: this is called from hot paths like piece layout.
+// Tapping a tile to pick the piece on it. On by default; `?tiletap=0` disables
+// it. (It was suspected of breaking selection on a phone; the real cause was
+// one-finger browser panning while zoomed -- see PANNING A ZOOMED BOARD.)
+let _tileTapOverride;
+function _tileTapEnabled() {
+    try {
+        if (_tileTapOverride === undefined) {
+            const q = new URLSearchParams(location.search).get('tiletap');
+            _tileTapOverride = !(q === '0' || q === 'off');
+        }
+        return _tileTapOverride;
+    } catch (e) { return false; }
+}
+
+let _phoneOverride;
+function _isPhone() {
+    try {
+        if (_phoneOverride === undefined) {
+            const q = new URLSearchParams(location.search).get('phone');
+            _phoneOverride = (q === '0' || q === 'off') ? false
+                           : (q === '1' || q === 'on') ? true : null;
+        }
+        if (_phoneOverride !== null) return _phoneOverride;
+        return window.matchMedia('(pointer: coarse)').matches &&
+               Math.min(window.innerWidth, window.innerHeight) <= 820;
+    } catch (e) { return false; }
+}
+
+function _placeTurnStatus(el) {
+    const c = document.querySelector('canvas');
+    if (!c) return;
+    if (!_isPhone()) {   // desktop keeps the original top-centre pill
+        el.style.cssText = el._base + 'left:50%; transform:translateX(-50%); top:10px;';
+        return;
+    }
+    const r = c.getBoundingClientRect();
+    const H = 34, GAP = 8;                       // pill height, and its clearance
+    const above = r.top, below = window.innerHeight - r.bottom;
+    const side = Math.max(r.left, window.innerWidth - r.right);
+    const set = (css) => { el.style.cssText = el._base + css; };
+    if (above >= H + GAP) {                      // portrait: band above the board
+        set(`left:50%; transform:translateX(-50%); top:${Math.round(r.top - H - GAP / 2)}px;`);
+    } else if (below >= H + GAP) {
+        set(`left:50%; transform:translateX(-50%); top:${Math.round(r.bottom + GAP / 2)}px;`);
+    } else if (side >= 104) {                    // landscape: band beside the board
+        // Prefer the left band: the settings gear sits at the top of the right
+        // one, so a pill there covers it (drop below the gear if left is too
+        // narrow to use).
+        const onLeft = r.left >= window.innerWidth - r.right - 24;
+        const w = Math.round((onLeft ? r.left : window.innerWidth - r.right) - 16);
+        set(`top:${onLeft ? 10 : 84}px; ${onLeft ? 'left' : 'right'}:8px; transform:none;` +
+            `width:${w}px; font-size:12px; text-align:center; white-space:normal; line-height:1.25;`);
+    } else {                                     // nowhere to put it: overlay, compact
+        set('left:50%; transform:translateX(-50%); top:6px; font-size:12px; padding:4px 10px;');
+    }
+}
+
 function updateTurnStatus(textOrGame) {
     const text = typeof textOrGame === 'string' ? textOrGame : turnStatusText(textOrGame);
     let el = document.getElementById('turnStatus');
     if (!el) {
         el = document.createElement('div'); el.id = 'turnStatus';
-        el.style.cssText = 'position:fixed; top:10px; left:50%; transform:translateX(-50%); z-index:30;' +
+        el._base = 'position:fixed; z-index:40; box-sizing:border-box;' +
             'font-family:' + HUD_FONT + '; font-size:14px; font-weight:600; color:#28313b;' +
             'background:rgba(255,255,255,.8); padding:5px 15px; border-radius:20px;' +
-            'box-shadow:0 2px 8px rgba(0,0,0,.14); pointer-events:none; transition:opacity .2s;';
+            'box-shadow:0 2px 8px rgba(0,0,0,.14); pointer-events:none; transition:opacity .2s;' +
+            'white-space:nowrap;';
+        el.style.cssText = el._base;
         document.body.appendChild(el);
+        // the board is re-fitted on rotate/resize, so the band moves with it
+        window.addEventListener('resize', () => _placeTurnStatus(el));
+        window.addEventListener('orientationchange', () => setTimeout(() => _placeTurnStatus(el), 250));
     }
     el.textContent = text || '';
     el.style.opacity = text ? '1' : '0';
+    _placeTurnStatus(el);
 }
 
 function getSoundEnabled()       { return _boolSetting('sound', true); }
@@ -406,6 +479,10 @@ function createSettingsPanel() {
         'position:fixed; top:82px; right:12px; z-index:41; display:none;' +
         'background:#fff; color:#28313b; font-family:' + HUD_FONT + '; font-size:13px;' +
         'border:1px solid rgba(0,0,0,.15); border-radius:12px; padding:12px 14px; width:216px;' +
+        // A landscape phone is ~390px tall, far shorter than this panel: without
+        // a cap its lower half (sound, tutorial) sat off-screen and unreachable.
+        'box-sizing:border-box; max-height:calc(100vh - 94px);' +
+        'overflow-y:auto; overscroll-behavior:contain; -webkit-overflow-scrolling:touch;' +
         'box-shadow:0 12px 34px rgba(0,0,0,.22);');
     panel.id = 'settingsPanel';
 
@@ -2135,10 +2212,14 @@ class Piece {
                 return;
             }
 
-            this.game.selectedPiece.isSelected = false;
-            if (this.game.selectedPiece.currentTile && this.game.selectedPiece.currentTile.type === 'home' && this.game.selectedPiece.justMovedHome) {
-                this.game.selectedPiece.returnToRack();}
-            this.game.selectedPiece.updateColor();
+            // Hold the outgoing piece in a local: returnToRack() clears
+            // game.selectedPiece, so reading it again below threw (entering a
+            // piece and then clicking any other rack piece hit this every time).
+            const prev = this.game.selectedPiece;
+            prev.isSelected = false;
+            if (prev.currentTile && prev.currentTile.type === 'home' && prev.justMovedHome) {
+                prev.returnToRack();}
+            prev.updateColor();
             this.game.selectedPiece = this;
             this.game.unhighlightAllTiles();
             this.isSelected = false;
@@ -2307,8 +2388,41 @@ class Piece {
         this.circle.setRadius(size);
         this._layoutSheen();
         if (this.text) {
-            this.text.setFontSize(`${size * 1.7}px`);
+            this.text.setFontSize(`${this._numberFontSize()}px`);
+            if (_isPhone()) this.text.setStroke(this.text.style.stroke, Math.max(1, size * 0.1));
         }
+        this._applyHitArea();
+    }
+
+    // Only the digits 1-6 are ever drawn, so a phone can afford a bigger one:
+    // at 2.0r the cap height is about 1.4r inside a 2r circle.
+    _numberFontSize() { return this.radius * (_isPhone() ? 2.0 : 1.7); }
+
+    // Phones only. A piece is ~13px across on a landscape phone, well under the
+    // 44px a fingertip wants, so grow the touch target into whatever space is
+    // actually free around this piece: a piece alone on its tile has room, one
+    // in a stack has almost none (slot centres are only 2r+4 apart, and an
+    // overlapping hit area would quietly select the neighbour instead).
+    // Untouched on desktop, where the default is the 2r bounding box.
+    _applyHitArea() {
+        const c = this.circle;
+        if (!c || !c.input || !_isPhone()) return;      // desktop keeps Phaser's default box
+        const r = this.radius;
+        // Never grow past half the gap to the next piece. Two overlapping
+        // targets go to whichever object sits higher in the display list, and
+        // on a rack that is usually NOT the one piece you are allowed to move,
+        // so the tap is swallowed and nothing happens.
+        let hit;
+        if (this.rack) hit = Math.min(r + 6, this.rack.spacing / 2);
+        else if (this.currentTile) {
+            // a stack packs its slots 2r+4 apart; a piece alone has the tile
+            const alone = (this.currentTile.pieces || []).length <= 1;
+            hit = alone ? r + 10 : r + 2;
+        } else {
+            hit = r;                                    // mid-move: leave it be
+        }
+        c.input.hitArea = new Phaser.Geom.Circle(r, r, Math.max(r, hit));
+        c.input.hitAreaCallback = Phaser.Geom.Circle.Contains;
     }
 
     // Show/hide the whole piece. Overflow pieces on a stacked tile are hidden
@@ -2632,11 +2746,22 @@ class Piece {
             .on('pointerout',  () => { hideDebugTip(); });
 
         if (this.number <= 6 || DEBUG_MODE) {
-            this.text = this.scene.add.text(this.x, this.y, this.number, {
-                fontSize: `${this.radius * 1.7}px`,
+            // Phaser's default font family is Courier -- a thin monospace with a
+            // small x-height, which at 12px on a phone is the worst possible
+            // choice. Phones get the bold UI sans instead, a bigger digit (only
+            // 1-6 are ever drawn, so there is room inside the circle), and a
+            // halo in the piece's own colour to lift it off the sheen.
+            const st = {
+                fontSize: `${this._numberFontSize()}px`,
                 color: `#${this.textColor.toString(16).padStart(6, '0')}`,
                 fontStyle: 'bold'
-            }).setOrigin(0.5, 0.5);
+            };
+            if (_isPhone()) st.fontFamily = HUD_FONT;
+            this.text = this.scene.add.text(this.x, this.y, this.number, st).setOrigin(0.5, 0.5);
+            if (_isPhone()) {
+                this.text.setStroke(`#${this.bodyColor.toString(16).padStart(6, '0')}`,
+                                    Math.max(1, this.radius * 0.1));
+            }
         } else {
             this.text = null;
         }
@@ -2785,6 +2910,15 @@ class Tile {
                 return;
             }
             if (this.game.gameOver) return;
+            // Phones: with nothing selected yet, tapping the tile selects the
+            // piece on it, as long as there is no doubt which one is meant. A
+            // tile is far easier to hit than a 13px piece. Delegating to the
+            // piece's own handler keeps every rule and the double-tap-to-save
+            // timing exactly as they are when you tap the piece itself.
+            if (!this.game.selectedPiece && _isPhone() && _tileTapEnabled()) {
+                const target = this._unambiguousPiece();
+                if (target) { target.handleClick({ rightButtonDown: () => false }); return; }
+            }
             // The overflow picker is opened only from the "+K" badge, never as a
             // side effect of a tile click (so moving a piece onto a tile that
             // tips into overflow doesn't pop the picker).
@@ -2818,6 +2952,18 @@ class Tile {
             }
         }
     
+
+    // The piece a tap on this tile can only have meant: the current player's
+    // single piece here, or -- when they are all unnumbered -- any of them,
+    // since those are interchangeable. Numbered pieces each have their own goal,
+    // so two of them on one tile stays ambiguous and the tap is ignored (tap the
+    // piece itself, or use the stack picker).
+    _unambiguousPiece() {
+        const mine = (this.pieces || []).filter(p => p.player === this.game.turn && !p.hidden);
+        if (mine.length === 1) return mine[0];
+        if (mine.length > 1 && mine.every(p => p.number > 6)) return mine[0];
+        return null;
+    }
 
     onHover() {
         if (this.game.gameOver) return;
@@ -2917,7 +3063,13 @@ class Tile {
     // at a slightly smaller size, etc. — resize only when needed, prefer resizing
     // to stacking. Beyond the min radius the extra pieces fold into the badge.
     tilePieceRadius(n) {
-        let r = STACK_PR;
+        // On a phone, start bigger and shrink to fit, so a piece with a roomy
+        // tile to itself is drawn larger rather than leaving the space empty.
+        // The ceiling keeps it inside the tile's own radial band, since the
+        // capacity test below only counts slots and would happily overflow it.
+        const ext = this.outerRadius - this.innerRadius;
+        let r = _isPhone() ? Math.max(STACK_PR, Math.floor(Math.min(STACK_PR * 1.5, (ext - 10) / 2)))
+                           : STACK_PR;
         while (r > STACK_MIN_R && this._capacityAtSlot(r * 2 + 4) < n) r -= 1;
         return r;
     }
@@ -3090,6 +3242,9 @@ class Rack {
     addPiece(piece) {
         this.pieces.push(piece);
         piece.rack = this;
+        // Sizing happens before this at game setup, and the touch target depends
+        // on which rack the piece is in, so re-apply now that it knows.
+        if (piece._applyHitArea) piece._applyHitArea();
     }
 
     removePiece(piece) {
@@ -5700,3 +5855,13 @@ setTimeout(() => {
         if (tm) tm.capture = (type === 'touchend' || type === 'touchcancel');
     }, { capture: true, passive: true });
 });
+
+// ── PANNING A ZOOMED BOARD ──────────────────────────────────────────────
+// Panning is NOT done by handing gestures to the browser. `touch-action` stays
+// `pinch-zoom` (index.html) so one finger always belongs to the canvas.
+// Allowing one-finger browser panning while zoomed broke selection outright on
+// a real phone: Chrome claims the gesture, and the preventDefault meant to
+// protect taps on pieces could not be trusted, because under pinch-zoom the
+// touch's clientX and getBoundingClientRect() are not in the same coordinate
+// space. Two-finger drag still pans (pinch-zoom permits multi-finger panning).
+// In-canvas camera pan/zoom is the way to give one-finger panning back.
