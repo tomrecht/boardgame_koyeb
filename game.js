@@ -203,6 +203,19 @@ function fxBurst(scene, x, y, color) {
 // `?phone=0` turns every phone tweak off (so a phone can be compared against
 // the plain build without a deploy), `?phone=1` forces them on for testing on a
 // desktop. Read once: this is called from hot paths like piece layout.
+// Tapping a tile to pick the piece on it: opt-in with `?tiletap=1` while the
+// phone-only selection failure it caused is still unexplained.
+let _tileTapOverride;
+function _tileTapEnabled() {
+    try {
+        if (_tileTapOverride === undefined) {
+            const q = new URLSearchParams(location.search).get('tiletap');
+            _tileTapOverride = (q === '1' || q === 'on');
+        }
+        return _tileTapOverride;
+    } catch (e) { return false; }
+}
+
 let _phoneOverride;
 function _isPhone() {
     try {
@@ -2901,7 +2914,11 @@ class Tile {
             // tile is far easier to hit than a 13px piece. Delegating to the
             // piece's own handler keeps every rule and the double-tap-to-save
             // timing exactly as they are when you tap the piece itself.
-            if (!this.game.selectedPiece && _isPhone()) {
+            // OFF BY DEFAULT (`?tiletap=1` to try it): on the owner's phone this
+            // stopped the first unentered piece being selectable, and it has not
+            // been reproduced under emulation yet -- not even with a drifting
+            // finger, which is what turns a real tap into a drag.
+            if (!this.game.selectedPiece && _isPhone() && _tileTapEnabled()) {
                 const target = this._unambiguousPiece();
                 if (target) { target.handleClick({ rightButtonDown: () => false }); return; }
             }
@@ -5843,11 +5860,50 @@ setTimeout(() => {
 });
 
 // ── PANNING A ZOOMED BOARD ──────────────────────────────────────────────
-// Two-finger drag already pans a pinch-zoomed page: `touch-action: pinch-zoom`
-// permits multi-finger panning as well as zooming, and this was measured to
-// work with no code at all (the visual viewport moves with the fingers).
-// One finger deliberately stays with the canvas, so dragging a piece and
-// tapping to select behave the same zoomed or not. An earlier attempt handed
-// one-finger drags to the browser while zoomed; that let Chrome claim a tap as
-// a pan the moment the finger drifted a pixel or two, which on a real phone is
-// every tap -- pieces stopped being selectable.
+// Two fingers already pan a pinch-zoomed page (`touch-action: pinch-zoom`
+// permits multi-finger panning as well as zooming -- measured, no code needed).
+// One finger is the gesture people actually reach for though, so while the page
+// is zoomed it pans too, EXCEPT when the finger lands on a piece the current
+// player can move, which still drags that piece.
+// The risk to watch: with panning allowed, Chrome can claim a gesture as a pan
+// as soon as the finger drifts, and a real tap always drifts a pixel or two --
+// so the preventDefault below is what keeps taps on pieces working. Emulated
+// taps do not drift; test any change here on a real phone.
+const _vv = window.visualViewport || null;
+function _isZoomedIn() { return !!_vv && _vv.scale > 1.02; }
+
+function _applyTouchAction() {
+    const ta = (_isPhone() && _isZoomedIn()) ? 'pan-x pan-y pinch-zoom' : 'pinch-zoom';
+    document.documentElement.style.touchAction = ta;
+    document.body.style.touchAction = ta;
+    if (gameInstance && gameInstance.canvas) gameInstance.canvas.style.touchAction = ta;
+}
+if (_vv) {
+    _vv.addEventListener('resize', _applyTouchAction);
+    _vv.addEventListener('scroll', _applyTouchAction);
+}
+_applyTouchAction();
+
+// The movable piece under a client point, if any. Touch coordinates are layout-
+// viewport CSS pixels, which pinch-zoom does not change, so this mapping holds
+// at any zoom level. The slop is generous on purpose: losing a tap is much
+// worse than losing a pan.
+function _movablePieceAtClient(cx, cy) {
+    const cv = gameInstance && gameInstance.canvas;
+    const g = _currentGame();
+    if (!cv || !g || g.gameOver) return null;
+    const r = cv.getBoundingClientRect();
+    if (!r.width || !r.height) return null;
+    const wx = (cx - r.left) * (config.width / r.width);
+    const wy = (cy - r.top) * (config.height / r.height);
+    const slop = 24;
+    return (g.pieces || []).find(p => p.player === g.turn && !p.hidden &&
+        Math.hypot((p.x || 0) - wx, (p.y || 0) - wy) <= (p.radius || STACK_PR) + slop) || null;
+}
+
+window.addEventListener('touchstart', (e) => {
+    // Multi-finger gestures stay the browser's, so pinching still zooms.
+    if (!_isPhone() || !_isZoomedIn() || e.touches.length !== 1) return;
+    const t = e.touches[0];
+    if (_movablePieceAtClient(t.clientX, t.clientY)) e.preventDefault();   // drag, don't pan
+}, { capture: true, passive: false });

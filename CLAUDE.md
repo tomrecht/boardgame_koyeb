@@ -507,6 +507,17 @@ expected to self-resolve via the TD run.
     `wasTouch=true`); an early failure to see this was the AI holding the turn,
     not the harness. `Emulation.setEmitTouchEventsForMouse` hangs the page — use
     dispatchTouchEvent directly.
+  - **TILE-TAP SELECTION IS OFF BY DEFAULT — unresolved phone bug.** Owner: the
+    first unentered (rack) piece became unselectable on his phone, appearing in
+    the same push as tile-tap and persisting after the hit-area overlap fix, so
+    tile-tap is the prime suspect. NOT reproduced under CDP emulation: a real
+    touch tap on the top rack piece enters it every time, with 0/4/9px of finger
+    drift (a drift past `dragDistanceThreshold = 6` WORLD px, ~2 CSS px on a
+    phone, turns a tap into a drag — the closest thing to a real fingertip), and
+    with the tweaks on or off. Enable with `?tiletap=1` when picking this up.
+    Note `input.topOnly` is never set (Phaser defaults it true) — worth checking
+    whether the tile under a piece can also receive the same pointerdown, which
+    would double-fire `handleClick` and read as a double-tap.
   - **Tap a tile to select; bigger touch targets (2026-08-14, phone-only).**
     `Tile.onClick` with nothing selected now delegates to `_unambiguousPiece()`
     — the current player's single piece on that tile, or any of them when they
