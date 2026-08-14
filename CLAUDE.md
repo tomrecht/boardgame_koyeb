@@ -594,6 +594,24 @@ with it in mind.** Assessment and the concrete implications:
     rather than ballooning. Harness note: `currentPlayerIsHuman()` reads the
     player objects, NOT `WHITE_IS_AI`/`BLACK_IS_AI`, so a test that only sets the
     globals sees the ghosts (correctly) suppressed on an AI turn.
+    **PINNED DICE READOUT (2026-08-14).** Same idea as the ghosts: when the real
+    dice scroll out of frame, `_updateHudDice` paints a small pair into the top
+    right of the visible canvas (ghosts own the bottom left). `paintDie` was
+    extracted from `Die.drawDieWithColor` so both draw the identical face, pips
+    and colour-coded border. `_updateViewportHud()` refreshes both, and is called
+    from every place the obligation set or the dice change.
+    **Both viewport HUDs are gated on `_pageZoomed()`** (`visualViewport.scale >
+    1.02`). `Scale.FIT` keeps the whole canvas on screen, so nothing can be out
+    of frame unless the page is pinch-zoomed — and checking this first avoids
+    trusting the canvas rect during start-up, which briefly reported the racks as
+    off screen and flashed the ghosts up at zoom 1 (owner saw this).
+    **Both ghosts show together** whenever either is out of frame: one appearing
+    alone while its neighbour is still visible on the rack reads as a different
+    piece (owner).
+    Placement of BOTH must be clamped to the visible part of the CANVAS, not the
+    visible rect — the rect extends into the letterbox bands, and anything drawn
+    there is off the canvas, invisible and untappable. This bit the ghosts (world
+    x=-286) and then the dice (x=-243) in turn.
     **Remaining mobile queue (owner's order, 2026-08-14):** fullscreen +
     web-app manifest; then the must-enter piece hovering in a corner when it is
     out of frame — owner notes this matters *independently* of one-finger pan,

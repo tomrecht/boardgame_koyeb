@@ -306,6 +306,15 @@ function updateTurnStatus(textOrGame) {
 // The enterable piece(s) are then echoed in a corner of whatever is visible,
 // drawn translucent so they read as not-on-the-board, and the first is tappable.
 
+// Scale.FIT keeps the whole canvas on screen, so nothing can be out of frame
+// unless the page itself is pinch-zoomed. Checking this first also avoids
+// trusting the canvas rect during start-up, before layout has settled -- which
+// briefly reported the racks as off screen and flashed the ghosts up at zoom 1.
+function _pageZoomed() {
+    const vv = window.visualViewport;
+    return !!vv && vv.scale > 1.02;
+}
+
 // The world rectangle currently on screen. Under pinch-zoom that is the visual
 // viewport; unzoomed it is the whole canvas.
 function _visibleWorldRect() {
@@ -343,14 +352,17 @@ function _updateMustEnterGhosts() {
     const scene = _setupScene(), g = _currentGame();
     if (!scene || !scene.add) return;
     const hide = () => _ghosts.forEach(gh => gh.setVisible(false));
-    if (!_isPhone() || _tut.active) { hide(); return; }
+    if (!_isPhone() || _tut.active || !_pageZoomed()) { hide(); return; }
 
     const rect = _visibleWorldRect();
     const pieces = _enterableUnentered(g);
     if (!rect || !pieces.length) { hide(); return; }
-    // only for pieces actually off screen -- if the rack is in view, say nothing
-    const offscreen = pieces.filter(p => p.x < rect.x0 || p.x > rect.x1 || p.y < rect.y0 || p.y > rect.y1);
-    if (!offscreen.length) { hide(); return; }
+    // If EITHER is out of frame, show both: one ghost appearing on its own,
+    // while its neighbour is still visible on the rack, reads as a different
+    // piece rather than the same pair.
+    const anyOff = pieces.some(p => p.x < rect.x0 || p.x > rect.x1 || p.y < rect.y0 || p.y > rect.y1);
+    if (!anyOff) { hide(); return; }
+    const offscreen = pieces;
 
     // Constant apparent size: the ghost is a HUD affordance, so it should not
     // balloon with the zoom. ~44 CSS px across, the usual touch-target size.
@@ -372,8 +384,11 @@ function _updateMustEnterGhosts() {
         }
         const x = px0 + pad + r + i * (2 * r + pad);
         const y = py1 - pad - r;
-        gh.setPosition(x, y).setVisible(true).setAlpha(i === 0 ? 0.62 : 0.4);
-        gh.body.setRadius(r).setFillStyle(piece.color, 1);
+        gh.setPosition(x, y).setVisible(true).setAlpha(i === 0 ? 0.78 : 0.55);
+        // a white piece at low alpha on the pale board is just a faint ring, so
+        // the body carries the same dark/light rim the real pieces use
+        gh.body.setRadius(r).setFillStyle(piece.color, 1)
+               .setStrokeStyle(2 * worldPerCss, piece.color === 0xffffff ? 0x2a2320 : 0xf2f2f2, 1);
         gh.ring.setRadius(r + 2 * worldPerCss).setStrokeStyle(2.5 * worldPerCss, THEME.accent, 1);
         gh.label.setText(piece.number <= 6 ? String(piece.number) : '')
                 .setFontSize(Math.round(r * 1.2))
@@ -393,9 +408,46 @@ function _updateMustEnterGhosts() {
     for (let i = offscreen.length; i < _ghosts.length; i++) _ghosts[i].setVisible(false);
 }
 
+// The dice matter every turn, and zooming in on the board scrolls them away.
+// Same idea as the ghosts: when the real ones are out of frame, pin a small
+// readout into the visible area -- top right, since the ghosts take bottom left.
+let _hudDice = null;
+function _updateHudDice() {
+    const scene = _setupScene(), g = _currentGame();
+    if (!scene || !scene.add) return;
+    if (!_hudDice) _hudDice = scene.add.graphics().setDepth(80);
+    _hudDice.clear();
+    if (!_isPhone() || !g || g.gameOver || _gameFrozen || _tut.active || !_pageZoomed()) return;
+    const rect = _visibleWorldRect();
+    const dice = g.dice || [];
+    if (!rect || dice.length < 2) return;
+    const out = dice.some(d => d.x < rect.x0 || d.x + d.size > rect.x1 ||
+                               d.y < rect.y0 || d.y + d.size > rect.y1);
+    if (!out) return;
+
+    const worldPerCss = (rect.x1 - rect.x0) / rect.cssW;
+    const size = 34 * worldPerCss, gap = 9 * worldPerCss, pad = 14 * worldPerCss;
+    // Clamp into the visible part OF THE CANVAS: the visible rect runs out into
+    // the letterbox bands, and anything drawn there is off the canvas entirely.
+    const vx0 = Math.max(0, rect.x0), vx1 = Math.min(config.width, rect.x1);
+    const top = Math.max(0, rect.y0) + pad;
+    const left = Math.max(vx0 + pad, vx1 - pad - (2 * size + gap));
+    dice.forEach((d, i) => {
+        paintDie(_hudDice, left + i * (size + gap), top, size, d.value, {
+            dieColor: d.used ? 0x808080 : (g.turn === 'white' ? 0xffffff : 0x000000),
+            dotColor: g.turn === 'white' ? 0x000000 : 0xffffff,
+            borderColor: i === 0 ? colorFirstDie : colorSecondDie,
+            bw: 5 * worldPerCss,
+        });
+    });
+}
+
+// Everything that has to follow the viewport rather than the board.
+function _updateViewportHud() { _updateMustEnterGhosts(); _updateHudDice(); }
+
 if (window.visualViewport) {
-    visualViewport.addEventListener('resize', () => _updateMustEnterGhosts());
-    visualViewport.addEventListener('scroll', () => _updateMustEnterGhosts());
+    visualViewport.addEventListener('resize', () => _updateViewportHud());
+    visualViewport.addEventListener('scroll', () => _updateViewportHud());
 }
 
 function getSoundEnabled()       { return _boolSetting('sound', true); }
@@ -2702,7 +2754,7 @@ class Piece {
     
 
     _afterRackChange() {
-        if (typeof _updateMustEnterGhosts === 'function') setTimeout(_updateMustEnterGhosts, 0);
+        if (typeof _updateViewportHud === 'function') setTimeout(_updateViewportHud, 0);
     }
 
     moveFromRack() {
@@ -2753,7 +2805,7 @@ class Piece {
         this.game.selectedPiece = null;
         // back on the rack means it is enterable again -- and if the rack is off
         // screen its ghost has to come back with it
-        if (typeof _updateMustEnterGhosts === 'function') setTimeout(_updateMustEnterGhosts, 0);
+        if (typeof _updateViewportHud === 'function') setTimeout(_updateViewportHud, 0);
         this.game.tiles.forEach(tile => {
             tile.unhighlight();
         })
@@ -3521,6 +3573,7 @@ class Die {
     setUsed() {
         this.used = true;
         this.drawDie();
+        if (typeof _updateHudDice === 'function') _updateHudDice();
     }
 
     drawDie() {
@@ -3542,52 +3595,40 @@ class Die {
         // just shows two values that are never used. The real game runs through
         // a new create(), which builds new dice with the flag already cleared.
         if (_gameFrozen) return;
-        this.graphics.fillStyle(0x000000, 0.10);
-        this.graphics.fillRoundedRect(this.x, this.y + 4, this.size, this.size, 14);  // soft shadow
-        // Colour-coded border preserved: die A vs die B. Drawn as a slightly
-        // larger filled rounded rect *behind* the face rather than with
-        // strokeRoundedRect: a thick stroked path here left stray coloured
-        // lines running from the dice across the board on some Android GPUs
-        // (the WebGL line batch joining onto the next shape). Two fills have
-        // no path to leak.
-        const borderColor = this.isFirstDie ? colorFirstDie : colorSecondDie;
-        // 5 world px is only ~1.6 CSS px on a phone -- the colour coding was
-        // effectively invisible there.
-        const bw = _isPhone() ? 14 : 5;
-        this.graphics.fillStyle(borderColor, 1);
-        this.graphics.fillRoundedRect(this.x - bw / 2, this.y - bw / 2,
-                                      this.size + bw, this.size + bw, 14 + bw / 2);
-        this.graphics.fillStyle(dieColor, 1);
-        this.graphics.fillRoundedRect(this.x, this.y, this.size, this.size, 14);
-
-        const dotSize = this.size * 0.11; // scales with the die
-        const dotOffset = this.size / 4;
-
-        const drawDot = (dx, dy) => {
-            this.graphics.fillStyle(dotColor, 1);
-            this.graphics.fillCircle(this.x + dx, this.y + dy, dotSize);
-        };
-
-        const midPoint = this.size / 2;
-
-        // Dice faces based on value
-        if ([1, 3, 5].includes(this.value)) drawDot(midPoint, midPoint);
-        if (this.value > 1) {
-            drawDot(dotOffset, dotOffset);
-            drawDot(this.size - dotOffset, this.size - dotOffset);
-        }
-        if (this.value > 3) {
-            drawDot(dotOffset, this.size - dotOffset);
-            drawDot(this.size - dotOffset, dotOffset);
-        }
-        if (this.value === 6) {
-            drawDot(dotOffset, midPoint);
-            drawDot(this.size - dotOffset, midPoint);
-        }
+        paintDie(this.graphics, this.x, this.y, this.size, this.value, {
+            dieColor, dotColor,
+            borderColor: this.isFirstDie ? colorFirstDie : colorSecondDie,
+            // 5 world px is only ~1.6 CSS px on a phone -- the colour coding was
+            // effectively invisible there.
+            bw: _isPhone() ? 14 : 5,
+        });
     }
 }
 
 
+
+// One die face, drawn into any Graphics. Shared by the board dice and by the
+// pinned readout that appears when they are scrolled out of view.
+function paintDie(gfx, x, y, size, value, { dieColor, dotColor, borderColor, bw }) {
+    const r = size * 0.14;
+    gfx.fillStyle(0x000000, 0.10);
+    gfx.fillRoundedRect(x, y + size * 0.04, size, size, r);        // soft shadow
+    // The colour-coded border is a slightly larger filled rounded rect BEHIND
+    // the face rather than a stroke: a thick stroked path here left stray
+    // coloured lines running across the board on some Android GPUs (the WebGL
+    // line batch joining onto the next shape). Two fills have no path to leak.
+    gfx.fillStyle(borderColor, 1);
+    gfx.fillRoundedRect(x - bw / 2, y - bw / 2, size + bw, size + bw, r + bw / 2);
+    gfx.fillStyle(dieColor, 1);
+    gfx.fillRoundedRect(x, y, size, size, r);
+
+    const dot = size * 0.11, off = size / 4, mid = size / 2;
+    const drawDot = (dx, dy) => { gfx.fillStyle(dotColor, 1); gfx.fillCircle(x + dx, y + dy, dot); };
+    if ([1, 3, 5].includes(value)) drawDot(mid, mid);
+    if (value > 1) { drawDot(off, off); drawDot(size - off, size - off); }
+    if (value > 3) { drawDot(off, size - off); drawDot(size - off, off); }
+    if (value === 6) { drawDot(off, mid); drawDot(size - off, mid); }
+}
 
 class Game {
     constructor(scene, startingPlayer = 'white', debug = false) {
@@ -4095,7 +4136,7 @@ class Game {
             this.mustMovePieces = this.mustMovePieces.filter(p => p !== piece);
             }
             if (typeof updateMustMoveHighlights === 'function') updateMustMoveHighlights(this);
-            if (typeof _updateMustEnterGhosts === 'function') _updateMustEnterGhosts();
+            if (typeof _updateViewportHud === 'function') _updateViewportHud();
 
             // clear the now-stale reachability so the next selection recomputes
             // it fresh (a leftover set from before the move otherwise wrongly
@@ -4267,7 +4308,7 @@ class Game {
             this.mustMovePieces = [unenteredRack.pieces[0]]; // The first piece in the unentered rack must move
         }
         if (typeof updateMustMoveHighlights === 'function') updateMustMoveHighlights(this);
-        if (typeof _updateMustEnterGhosts === 'function') _updateMustEnterGhosts();
+        if (typeof _updateViewportHud === 'function') _updateViewportHud();
     }
 
     // Obligatory-move ordering: an obligatory piece may always be selected. A
@@ -4297,6 +4338,7 @@ class Game {
 
     updateDiceColors() {
         this.dice.forEach(die => die.updateColor(this.turn));
+        if (typeof _updateHudDice === 'function') _updateHudDice();
     }
 
     saveOpponentPieces(tile, savedRack) {
@@ -4323,7 +4365,7 @@ switchTurn() {
         // No-save draw accounting happens at the real turn boundary.
         this.updateNoSaveCounter();
         // the other player's rack is a different set of enterable pieces
-        if (typeof _updateMustEnterGhosts === 'function') setTimeout(_updateMustEnterGhosts, 0);
+        if (typeof _updateViewportHud === 'function') setTimeout(_updateViewportHud, 0);
 
         // Record human turns here
         if (!playerObj.isAI) {
@@ -4855,7 +4897,7 @@ endGame(winner, score = null, impasse_caller = null) {
         // Phones get bigger arrows, further apart: at 64 world px they are ~21
         // CSS px with only 36px of world gap, which is easy to mis-hit.
         const buttonSize = _isPhone() ? 110 : 64;
-        this.undoButton = scene.add.image(config.width - (_isPhone() ? 560 : DIE_2_POSITION),
+        this.undoButton = scene.add.image(config.width - (_isPhone() ? 520 : DIE_2_POSITION),
                                           _isPhone() ? 100 : 85, 'leftWavyArrow')
             .setDisplaySize(buttonSize, buttonSize)
             .setInteractive()
@@ -5008,8 +5050,8 @@ class MainGameScene extends Phaser.Scene {
         // just an identity check. See stillCurrent() in the agent-move code.
         this.events.once('shutdown', (g => () => { g.isDefunct = true; })(this.game));
         // the ghosts are scene objects; a restart destroys them, so drop the pool
-        this.events.once('shutdown', () => { _ghosts = []; });
-        _ghosts = [];
+        this.events.once('shutdown', () => { _ghosts = []; _hudDice = null; });
+        _ghosts = []; _hudDice = null;
 
         // Who plays each colour now lives in the settings panel; reflect the
         // persisted choice. checkInitialAIReady below starts the first move, so
