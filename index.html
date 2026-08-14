@@ -28,6 +28,10 @@
         html, body {
             margin: 0;
             height: 100%;
+            /* Chrome Android treats a horizontal drag from the edge as
+               "back", which swallows drags aimed at the board. */
+            overscroll-behavior: none;
+            overflow-x: hidden;
             background: #d5dbe4;
             overflow: hidden;
             -webkit-text-size-adjust: 100%;
@@ -42,6 +46,16 @@
             max-height: 100vh;
             object-fit: contain;
             touch-action: pinch-zoom;
+        }
+        /* Phones draw into a buffer sized in device pixels and display it across
+           the whole viewport. Phaser re-asserts its own inline canvas size on
+           every resize, so this has to win -- without it a rotation leaves the
+           canvas at the previous orientation's width. */
+        body.fill-screen canvas {
+            width: 100vw !important;
+            height: 100vh !important;
+            max-width: none;
+            max-height: none;
         }
         /* On a portrait phone, hint that landscape gives a much bigger board. */
         #rotateHint {

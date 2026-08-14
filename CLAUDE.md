@@ -698,6 +698,27 @@ with it in mind.** Assessment and the concrete implications:
     does the shrink as a smooth image downsample — exactly what FIT used to do.
     Measured: landscape 2597x1200 buffer, portrait 1800x3895, both `zoom 1` and
     1.0 device px per world px, desktop untouched at 1800x1200.
+    **THE CLAMP MUST NOT READ `cam.worldView`.** `worldView` is recomputed at
+    RENDER, so a clamp that reads it right after changing `scrollX` writes the
+    previous frame's position back and silently undoes the move — which is why
+    one-finger panning did nothing at all (owner reported it twice; the first
+    time I mis-read it as being about dragging). Derive the intended view from
+    the current scroll instead: `left = scrollX + (camW - camW/zoom)/2`.
+    **`scale.resize()` emits `resize`.** Answering that event by re-measuring and
+    calling `scale.resize()` again recurses until the stack blows — it broke
+    rotation AND left the camera controls half-wired. Keep two handlers: the
+    WINDOW changing means re-measure and resize the buffer; the SCALE resizing
+    means only re-frame the camera.
+    **Rotation:** `_fitCameraToWorld` must `cam.setSize(gameSize)` or the camera
+    keeps the old orientation's viewport (blank, then a board sized for the old
+    screen). Phaser also re-asserts its own inline canvas size on every resize,
+    so the displayed size is owned by CSS instead: `body.fill-screen canvas
+    { width: 100vw !important; height: 100vh !important }`. Verified rotating
+    both ways twice: canvas == viewport, board fits, no errors.
+    **Residual softness after the buffer fix** was a fractional camera scroll
+    (`-398.5`), which renders every edge across two device pixels;
+    `_setCameraView` now rounds. **Chrome's edge-swipe "back"** was stealing
+    drags: `overscroll-behavior: none` on html/body.
     **Harness note:** every screen<->world conversion in the CDP tests must go
     through `camera.worldView` now; the old `wx * canvasWidth / 1800` mapping is
     only valid under FIT, and using it silently sends taps to the wrong place

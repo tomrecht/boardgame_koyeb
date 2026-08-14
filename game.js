@@ -325,8 +325,11 @@ function _baseZoom(scene) {
 // coordinates of the top-left of the visible area. Phaser centres a zoomed view
 // on scroll + cameraSize/2, so worldView.x = scrollX + (camW - camW/zoom)/2.
 function _setCameraView(cam, left, top) {
-    cam.setScroll(left - (cam.width - cam.width / cam.zoom) / 2,
-                  top - (cam.height - cam.height / cam.zoom) / 2);
+    // Round the scroll: a half-pixel camera offset renders every edge in the
+    // board across two device pixels, which is exactly the residual softness
+    // left after fixing the buffer resolution.
+    cam.setScroll(Math.round(left - (cam.width - cam.width / cam.zoom) / 2),
+                  Math.round(top - (cam.height - cam.height / cam.zoom) / 2));
 }
 
 // Draw at device resolution, display at CSS size: the buffer is the screen in
@@ -337,6 +340,7 @@ function _sizeCanvasToScreen() {
     const dpr = Math.min(window.devicePixelRatio || 1, 3);   // cap: 4x buffers cost more than they show
     const vw = Math.round(window.innerWidth), vh = Math.round(window.innerHeight);
     if (!vw || !vh) return;
+    document.body.classList.add('fill-screen');   // CSS owns the displayed size
     let bw = vw * dpr, bh = vh * dpr;
     // Never let the camera shrink the world at RASTERISATION time. Tile outlines
     // are ~1.5 world px; drawn at a zoom below 1 they fall under a device pixel
@@ -348,17 +352,27 @@ function _sizeCanvasToScreen() {
     const MAX_PX = 9e6;                                      // keep it sane on a phone
     const over = Math.sqrt((bw * bh) / MAX_PX);
     if (over > 1) { bw /= over; bh /= over; }
-    gameInstance.scale.resize(Math.round(bw), Math.round(bh));
-    const cv = gameInstance.canvas;
-    if (cv) { cv.style.width = vw + 'px'; cv.style.height = vh + 'px'; }
+    bw = Math.round(bw); bh = Math.round(bh);
+    // scale.resize() emits 'resize', so this must never be reached FROM that
+    // event or it recurses until the stack blows -- which is what broke rotation
+    // and left the camera controls half-wired (no panning).
+    const sz = gameInstance.scale.gameSize;
+    if (sz.width === bw && sz.height === bh) return;
+    gameInstance.scale.resize(bw, bh);
 }
 
 function _fitCameraToWorld(scene) {
     if (!_isPhone()) return;
     const cam = scene.cameras.main;
+    const sz = scene.scale.gameSize;
+    if (!sz.width || !sz.height) return;
+    // The camera must follow the new buffer size, or a rotation leaves it
+    // rendering the old viewport -- blank, or a board sized for the old screen.
+    cam.setSize(sz.width, sz.height);
     scene._camBase = _baseZoom(scene);
     cam.setZoom(scene._camBase * (scene._camUserZoom || 1));
-    cam.centerOn(WORLD_W / 2, WORLD_H / 2);
+    const vw = cam.width / cam.zoom, vh = cam.height / cam.zoom;
+    _setCameraView(cam, (WORLD_W - vw) / 2, (WORLD_H - vh) / 2);
 }
 
 function _mainCamera() {
@@ -4938,10 +4952,15 @@ endGame(winner, score = null, impasse_caller = null) {
         scene._camWired = true;
         _sizeCanvasToScreen();
         _fitCameraToWorld(scene);
-        const onResize = () => { _sizeCanvasToScreen(); _fitCameraToWorld(scene); _updateViewportHud(); };
-        scene.scale.on('resize', onResize);
-        window.addEventListener('resize', onResize);
-        window.addEventListener('orientationchange', () => setTimeout(onResize, 250));
+        // Two distinct jobs, deliberately not the same handler: the WINDOW
+        // changing means re-measure the screen and resize the buffer; the SCALE
+        // resizing (which our own resize triggers) only means re-frame.
+        const onFrame = () => { _fitCameraToWorld(scene); _updateViewportHud(); };
+        const onScreenChange = () => { _sizeCanvasToScreen(); onFrame(); };
+        scene.scale.on('resize', onFrame);
+        window.addEventListener('resize', onScreenChange);
+        const onOrient = () => setTimeout(onScreenChange, 250);
+        window.addEventListener('orientationchange', onOrient);
 
         const cam = scene.cameras.main;
         const PAN_SLOP = 8, MAX_FACTOR = 4;
@@ -4957,11 +4976,14 @@ endGame(winner, score = null, impasse_caller = null) {
             cam.zoom = Phaser.Math.Clamp(cam.zoom, base, base * MAX_FACTOR);
             scene._camUserZoom = cam.zoom / base;
             const vw = cam.width / cam.zoom, vh = cam.height / cam.zoom;
-            const v = cam.worldView;
-            const left = vw >= WORLD_W ? (WORLD_W - vw) / 2
-                                       : Phaser.Math.Clamp(v.x, 0, WORLD_W - vw);
-            const top  = vh >= WORLD_H ? (WORLD_H - vh) / 2
-                                       : Phaser.Math.Clamp(v.y, 0, WORLD_H - vh);
+            // Derive the intended view from the CURRENT scroll, not from
+            // cam.worldView: worldView is only recomputed at render, so reading
+            // it here writes back the previous frame's position and silently
+            // undoes the pan that just happened.
+            let left = cam.scrollX + (cam.width - vw) / 2;
+            let top  = cam.scrollY + (cam.height - vh) / 2;
+            left = vw >= WORLD_W ? (WORLD_W - vw) / 2 : Phaser.Math.Clamp(left, 0, WORLD_W - vw);
+            top  = vh >= WORLD_H ? (WORLD_H - vh) / 2 : Phaser.Math.Clamp(top, 0, WORLD_H - vh);
             _setCameraView(cam, left, top);
         };
 
@@ -5043,8 +5065,9 @@ endGame(winner, score = null, impasse_caller = null) {
         scene.events.once('shutdown', () => {
             scene._camWired = false;
             scene.events.off('update', edgePan);
-            scene.scale.off('resize', onResize);
-            window.removeEventListener('resize', onResize);
+            scene.scale.off('resize', onFrame);
+            window.removeEventListener('resize', onScreenChange);
+            window.removeEventListener('orientationchange', onOrient);
         });
     }
 
