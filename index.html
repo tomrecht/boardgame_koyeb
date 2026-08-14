@@ -6,7 +6,23 @@
     <meta charset="utf-8">
     <!-- allow pinch-zoom so the board is easy to read/tap on small screens -->
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=6.0, user-scalable=yes, viewport-fit=cover">
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/phaser/3.55.2/phaser.min.js"></script>
+    <title>Board Game</title>
+    <!-- Add to Home Screen launches without browser chrome, which is worth
+         ~15% of the screen on a phone. Android reads the manifest; iOS Safari
+         needs the apple-* meta tags and its own icon link. -->
+    <link rel="manifest" href="manifest.json">
+    <meta name="theme-color" content="#b5623b">
+    <meta name="mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+    <meta name="apple-mobile-web-app-title" content="Board Game">
+    <link rel="apple-touch-icon" href="icon-192.png">
+    <link rel="icon" type="image/png" sizes="192x192" href="icon-192.png">
+    <!-- Phaser is served from here, not a CDN. Two reasons: a packaged or
+         offline app (see CLAUDE.md, "a real Android/iOS app") cannot depend on
+         a third-party host, and a cross-origin script makes every exception it
+         throws arrive as an opaque "Script error." with no stack. -->
+    <script src="phaser.min.js"></script>
     <script src="game.js" defer></script>
     <style>
         html, body {

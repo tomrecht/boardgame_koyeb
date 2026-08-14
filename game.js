@@ -301,6 +301,29 @@ function updateTurnStatus(textOrGame) {
 }
 
 function getSoundEnabled()       { return _boolSetting('sound', true); }
+function getFullscreenPref()     { return _boolSetting('fullscreen', false); }
+
+// Fullscreen buys back the ~15% of a phone screen the browser's own bars take.
+// It can only be entered from a user gesture, so a saved preference is applied
+// on the first tap after load rather than at start-up. Not offered where the
+// API is missing (notably Safari on iPhone, which has no element fullscreen --
+// there the equivalent is Add to Home Screen, hence the manifest).
+function _fullscreenSupported() {
+    return !!(document.documentElement.requestFullscreen && document.fullscreenEnabled);
+}
+function _enterFullscreen() {
+    if (!_fullscreenSupported() || document.fullscreenElement) return Promise.resolve();
+    return (document.documentElement.requestFullscreen() || Promise.resolve()).catch(() => {});
+}
+function _exitFullscreen() {
+    if (document.fullscreenElement && document.exitFullscreen) return document.exitFullscreen().catch(() => {});
+    return Promise.resolve();
+}
+function _armFullscreenOnFirstGesture() {
+    if (!_isPhone() || !getFullscreenPref() || !_fullscreenSupported()) return;
+    const go = () => { _enterFullscreen(); window.removeEventListener('pointerdown', go, true); };
+    window.addEventListener('pointerdown', go, true);
+}
 
 // Segmented pill control -- two or three mutually exclusive choices, sized for
 // a settings row. Returns the element with .value / .setValue / .setDisabled,
@@ -577,6 +600,20 @@ function createSettingsPanel() {
         row.appendChild(cb); row.appendChild(mk('span', null, labelText));
         panel.appendChild(row);
     };
+    // Phones only, and only where the API exists.
+    if (_isPhone() && _fullscreenSupported()) {
+        const frow = mk('label', 'display:flex; align-items:center; gap:8px; cursor:pointer; margin-bottom:8px;');
+        const fsBox = mk('input'); fsBox.type = 'checkbox'; fsBox.id = 'settingsFullscreen';
+        fsBox.checked = !!document.fullscreenElement || getFullscreenPref();
+        fsBox.onchange = () => {
+            try { localStorage.setItem('fullscreen', fsBox.checked ? '1' : '0'); } catch (e) {}
+            fsBox.checked ? _enterFullscreen() : _exitFullscreen();
+        };
+        // the user can leave fullscreen with a system gesture; keep the box honest
+        document.addEventListener('fullscreenchange', () => { fsBox.checked = !!document.fullscreenElement; });
+        frow.appendChild(fsBox); frow.appendChild(mk('span', null, 'Fullscreen'));
+        panel.appendChild(frow);
+    }
     toggle('Move & capture effects', getFeedbackEnabled, 'fxEnabled', true);
     toggle('End turn automatically when both dice used', getAutoEndTurn, 'autoEndTurn', true);
     toggle('Confirm ending a turn with a move left', getConfirmRiskyEnd, 'confirmRiskyEnd', false);
@@ -1169,7 +1206,8 @@ function _tutEnd(startGame) {
 // Defer to after the whole script has run (this file `defer`s, so the DOM is
 // ready; setTimeout ensures later `let` globals like matchTracker are initialised
 // before createSettingsPanel -> refreshSettingsMatchState touches them).
-function _initChrome() { createSettingsPanel(); createLegendButton(); maybeShowFirstRunNudge(); }
+function _initChrome() { createSettingsPanel(); createLegendButton(); maybeShowFirstRunNudge();
+                        _armFullscreenOnFirstGesture(); }
 if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', _initChrome);
 else setTimeout(_initChrome, 0);
 
