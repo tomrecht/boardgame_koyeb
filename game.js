@@ -81,8 +81,13 @@ const DIE_SIZE = _isPhone() ? 120 : 100;
 const DICE_Y = _isPhone() ? 30 : 50;
 const DICE_X2 = (_isPhone() ? 576 : 580) - DIE_SIZE;   // second (right) die
 const DICE_X1 = DICE_X2 - DIE_SIZE - 20;               // first die, 20px gap
-// Rack pieces render a touch larger than board pieces (mockup look).
-const RACK_PR = 22;
+// Rack pieces render a touch larger than board pieces (mockup look), and larger
+// again on a phone, where 22 is only ~14 CSS px. The rack panel grows with the
+// piece radius (drawBackground derives its size from RACK_PR and spacing), so
+// the two racks per side are re-centred on the board's midline to match.
+const RACK_PR = _isPhone() ? 26 : 22;
+const RACK_Y1 = _isPhone() ? 323 : 356;   // unentered rack
+const RACK_Y2 = _isPhone() ? 625 : 622;   // saved rack, directly below it
 
 // ── THEMES ──────────────────────────────────────────────────────────────
 // Board palette. Chosen via the in-game dropdown (persisted in localStorage) or
@@ -3468,10 +3473,10 @@ class Game {
         // rows=4 is 240px), so each side's two racks touch like the mockup.
         // Two racks per side, stacked flush and vertically centred on the board
         // (panel height with rows=4 is 266px; block of two = 532, centred at 600).
-        this.whiteUnenteredRack = new Rack(scene, 75, 356, 'white', 'unentered');
-        this.whiteSavedRack = new Rack(scene, 75, 622, 'white', 'saved');
-        this.blackUnenteredRack = new Rack(scene, 1545, 356, 'black', 'unentered');
-        this.blackSavedRack = new Rack(scene, 1545, 622, 'black', 'saved');
+        this.whiteUnenteredRack = new Rack(scene, 75, RACK_Y1, 'white', 'unentered');
+        this.whiteSavedRack = new Rack(scene, 75, RACK_Y2, 'white', 'saved');
+        this.blackUnenteredRack = new Rack(scene, 1545, RACK_Y1, 'black', 'unentered');
+        this.blackSavedRack = new Rack(scene, 1545, RACK_Y2, 'black', 'saved');
 
         this.setupDragging(scene);
 
@@ -4943,7 +4948,7 @@ class MainGameScene extends Phaser.Scene {
         }).setOrigin(0, 1).setVisible(false).setAlpha(0.75);
         _themedRedraws.push(() => this.impasseText.setColor(THEME.bgInk));
 
-        this.callDrawButton = makeHudButton(this, phone ? 190 : 85, phone ? H - 260 : H - 115,
+        this.callDrawButton = makeHudButton(this, phone ? 190 : 85, phone ? H - 247 : H - 115,
             'Call draw', { ghost: true, k });
         this.callDrawButton.setHudVisible(false);
 

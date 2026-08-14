@@ -548,6 +548,13 @@ expected to self-resolve via the TD run.
     object and set optional keys conditionally. (2) `_placeTurnStatus` assigns
     `style.cssText`, which wipes the `opacity:0` that hides the pill — place
     first, then set opacity, or an empty white pill sits on the end screen.
+  - **Racks on a phone (2026-08-14): RACK_PR 22→26.** Rack pieces go 14.3→16.9
+    CSS px. The panel size derives from RACK_PR and spacing, so the two racks
+    per side are re-centred via `RACK_Y1`/`RACK_Y2` (desktop keeps its literal
+    356/622 and measures byte-identical). 26 is near the ceiling: the binding
+    constraint is the gap between the taller saved rack (bottom 903) and the
+    no-save line (top ~1003), which has to hold the Call-draw button (86 tall,
+    now at H-247); RACK_PR 28 would close that gap to 82 and not fit.
   - **`_isPhone()` MUST STAY ABOVE THE LAYOUT CONSTANTS.** `const DIE_SIZE =
     _isPhone() ? ... ` runs during top-level evaluation, where a `let
     _phoneOverride` declared further down is still in its temporal dead zone;
