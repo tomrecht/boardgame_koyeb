@@ -248,6 +248,9 @@ function _tileTapEnabled() {
     } catch (e) { return false; }
 }
 
+// Re-placing the pill needs the element, which only updateTurnStatus holds.
+let _replaceTurnStatus = null;
+
 function _placeTurnStatus(el) {
     const c = document.querySelector('canvas');
     if (!c) return;
@@ -304,6 +307,7 @@ function updateTurnStatus(textOrGame) {
     // Placement rewrites cssText wholesale, which would drop the opacity below
     // and leave an empty white pill on screen -- so place first, hide second.
     _placeTurnStatus(el);
+    _replaceTurnStatus = () => _placeTurnStatus(el);
     el.style.opacity = text ? '1' : '0';
 }
 
@@ -332,6 +336,13 @@ function _isPortrait() {
         const q = new URLSearchParams(location.search).get('portrait');
         if (q === '0') return false;
         if (q === '1') return true;
+    } catch (e) {}
+    // matchMedia is the orientation the browser actually reports. innerWidth/
+    // innerHeight can be momentarily stale during load and while entering
+    // fullscreen, and a game built on that reading kept the wrong layout.
+    try {
+        const m = window.matchMedia('(orientation: portrait)');
+        if (m && typeof m.matches === 'boolean') return m.matches;
     } catch (e) {}
     return window.innerHeight > window.innerWidth;
 }
@@ -404,6 +415,9 @@ function _sizeGear(el) {
 // widths depend on their labels, so space them from what they actually measure
 // rather than from fixed centres -- at a bigger scale, fixed centres overlapped
 // and ran off both edges.
+function _hudK()   { return _isPortrait() ? 2.6 : (_isPhone() ? 2 : 1); }
+function _scoreK() { return _isPortrait() ? 4.0 : (_isPhone() ? 2.2 : 1); }
+
 function _layoutHudRow(sc) {
     sc = sc || _setupScene();
     if (!sc || !sc._hudRow || !_isPortrait()) return;
@@ -415,7 +429,7 @@ function _layoutHudRow(sc) {
     const room = wd.w - 80;
     const gap = vis.length > 1 ? Math.max(16, (room - total) / (vis.length - 1)) : 0;
     let x = wd.x + Math.max(40, (wd.w - (total + gap * (vis.length - 1))) / 2);
-    vis.forEach((b, i) => { b.setPosition(x + ws[i] / 2, f.hudY); x += ws[i] + gap; });
+    vis.forEach((b, i) => { b.setHudPosition(x + ws[i] / 2, f.hudY); x += ws[i] + gap; });
 }
 
 function _hideRotateHint() {
@@ -428,8 +442,10 @@ function _relayoutFurniture() {
     _sizeGear();
     const g = _currentGame();
     if (!g) return;
+    // Deliberately no "nothing changed" guard: a transient reading at start-up
+    // could otherwise leave the wrong layout stuck, and this is a couple of
+    // dozen setPositions on an event that fires rarely.
     const p = _isPortrait();
-    if (p === _lastPortrait) return;
     _lastPortrait = p;
     const f = _fur();
     [[g.whiteUnenteredRack, f.whiteUn], [g.whiteSavedRack, f.whiteSv],
@@ -459,14 +475,20 @@ function _relayoutFurniture() {
                                    p ? f.impasseAt[1] : (phone ? H - 148 : H - 58));
     }
     if (sc.callDrawButton) {
-        sc.callDrawButton.setPosition(p ? f.callDrawAt[0] : (phone ? 190 : 85),
-                                      p ? f.callDrawAt[1] : (phone ? H - 247 : H - 115));
+        sc.callDrawButton.setHudPosition(p ? f.callDrawAt[0] : (phone ? 190 : 85),
+                                         p ? f.callDrawAt[1] : (phone ? H - 247 : H - 115));
     }
     (sc._hudRow || []).forEach((b, n) => {
-        if (b && b.setPosition) b.setPosition(p ? f.hudX[n] : 150,
-                                              p ? f.hudY : (phone ? 48 + n * 84 : 52 + n * 52));
+        if (!b || !b.setHudPosition) return;
+        b.setHudK(_hudK());
+        b.setHudPosition(p ? f.hudX[n] : 150, p ? f.hudY : (phone ? 48 + n * 84 : 52 + n * 52));
     });
     _layoutHudRow(sc);
+    if (_replaceTurnStatus) _replaceTurnStatus();
+    if (sc.scoreText) {                      // the base size is per-orientation too
+        sc._scoreBaseFs = Math.round(20 * _scoreK());
+        if (sc._fitScoreText) sc._fitScoreText();
+    }
 }
 
 // The zoom at which the whole world just fits the canvas. User zoom multiplies
@@ -1757,21 +1779,14 @@ function makeHudButton(scene, cx, cy, label, { ghost = false, k = 1 } = {}) {
         color: ghost ? HUD_INK : THEME.accentInk,
         padding: { x: Math.round(16 * k), y: Math.round(9 * k) }
     }).setOrigin(0.5).setDepth(2).setInteractive({ useHandCursor: true });
-    const b = txt.getBounds();
-    const r = 9 * k;
     const g = scene.add.graphics().setDepth(1);
-    g.fillStyle(0x000000, 0.12); g.fillRoundedRect(b.x, b.y + 2, b.width, b.height, r);
-    if (ghost) {
-        g.fillStyle(0xffffff, 1); g.fillRoundedRect(b.x, b.y, b.width, b.height, r);
-        g.lineStyle(1, HUD_PANEL_BORDER, 1); g.strokeRoundedRect(b.x, b.y, b.width, b.height, r);
-    } else {
-        g.fillStyle(THEME.accent, 1); g.fillRoundedRect(b.x, b.y, b.width, b.height, r);
-    }
-    txt.bg = g;                       // so callers can show/hide the whole button
-    txt.setHudVisible = (v) => { txt.setVisible(v); g.setVisible(v);
-        if (txt.input) txt.input.enabled = v; return txt; };
-    txt.recolor = () => {             // re-apply theme colours in place (live theme switch)
-        txt.setColor(ghost ? HUD_INK : THEME.accentInk);
+    // The pill is drawn from the text's CURRENT bounds, so it has to be
+    // repainted whenever the text moves or changes size -- moving the text
+    // alone left the pill behind, which is what "the label overhangs its
+    // button" looked like.
+    const paint = () => {
+        const b = txt.getBounds();
+        const r = 9 * (txt._hudK || k);
         g.clear();
         g.fillStyle(0x000000, 0.12); g.fillRoundedRect(b.x, b.y + 2, b.width, b.height, r);
         if (ghost) {
@@ -1780,6 +1795,26 @@ function makeHudButton(scene, cx, cy, label, { ghost = false, k = 1 } = {}) {
         } else {
             g.fillStyle(THEME.accent, 1); g.fillRoundedRect(b.x, b.y, b.width, b.height, r);
         }
+    };
+    txt._hudK = k;
+    paint();
+    txt.bg = g;                       // so callers can show/hide the whole button
+    txt.setHudVisible = (v) => { txt.setVisible(v); g.setVisible(v);
+        if (txt.input) txt.input.enabled = v; return txt; };
+    txt.recolor = () => {             // re-apply theme colours in place (live theme switch)
+        txt.setColor(ghost ? HUD_INK : THEME.accentInk);
+        paint();
+    };
+    txt.setHudPosition = (x, y) => { txt.setPosition(x, y); paint(); return txt; };
+    // Rotation changes how much room a button has, so it can be rescaled in
+    // place; re-rendering the text keeps it crisp where setScale would blur it.
+    txt.setHudK = (nk) => {
+        if (nk === txt._hudK) return txt;
+        txt._hudK = nk;
+        txt.setFontSize(Math.round(19 * nk));
+        txt.setPadding(Math.round(16 * nk), Math.round(9 * nk));
+        paint();
+        return txt;
     };
     _themedRedraws.push(txt.recolor);
     return txt;
@@ -5209,9 +5244,18 @@ endGame(winner, score = null, impasse_caller = null) {
         if (scene._camWired) return;
         scene._camWired = true;
         _sizeCanvasToScreen();
-        _hideRotateHint();
         _sizeGear();
         _fitCameraToWorld(scene);
+        // Re-apply once the browser has settled: on a phone the viewport is
+        // still moving at this point (URL bar, fullscreen), and a game built on
+        // a stale orientation reading would otherwise keep the wrong layout.
+        setTimeout(() => {
+            _relayoutFurniture();
+            _fitCameraToWorld(scene);
+            // The pill measures the canvas rect, which is still stale mid-rotation
+            // -- it stretched into a wide bar across the top when it was not.
+            if (_replaceTurnStatus) _replaceTurnStatus();
+        }, 400);
         // Two distinct jobs, deliberately not the same handler: the WINDOW
         // changing means re-measure the screen and resize the buffer; the SCALE
         // resizing (which our own resize triggers) only means re-frame.
@@ -5676,12 +5720,12 @@ class MainGameScene extends Phaser.Scene {
         // The three HUD buttons are 19px of world font -- ~6 CSS px on a phone.
         // They get scaled and re-spaced there, into the corner box bounded by
         // the dice (x>=309) and the top of the racks (y>=297).
-        const hudK = _isPortrait() ? 2.6 : (_isPhone() ? 2 : 1);
+        const hudK = _hudK();
         const _hf = _fur();
         const hx = (n) => _isPortrait() ? _hf.hudX[n] : 150;
         const hy = (n) => _isPortrait() ? _hf.hudY
                                         : (_isPhone() ? 48 + n * 84 : 52 + n * 52);
-        const newGameButton = makeHudButton(this, hx(0), hy(0), 'New Game', { k: hudK });
+        const newGameButton = makeHudButton(this, hx(0), hy(0), 'New Game', { ghost: true, k: hudK });
         onTap(newGameButton, () => {
             if (matchTracker && !matchTracker.over) return;
             this.showNewGameConfirmationModal();
@@ -5734,7 +5778,7 @@ class MainGameScene extends Phaser.Scene {
         // the three keep clear of each other. The corner is empty background
         // (the board is a circle), so there is room to grow into.
         const phone = _isPhone();
-        const k = _isPortrait() ? 4.0 : (phone ? 2.2 : 1);
+        const k = _scoreK();
         const H = this.sys.game.config.height;
         // Goal 2's arc starts at x=630 and dips to y=1140, so the enlarged score
         // line has to wrap rather than run underneath it. Origin (0,1) means it
