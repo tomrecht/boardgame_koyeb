@@ -6149,10 +6149,14 @@ class EndGameScene extends Phaser.Scene {
         // This card is the whole screen -- there is nothing to collide with --
         // so on a phone it is simply drawn bigger. At K=1 the numbers below are
         // exactly the desktop layout. P() scales the offsets the call sites use.
-        const K = _isPhone() ? 2 : 1;
+        // The card is 820 world px wide at K=1, and portrait's frame is only
+        // 1160 wide -- at a flat K=2 it hung 36px off BOTH sides. Cap the scale
+        // so the card always fits the frame it is drawn into.
+        const _wd = _world();
+        const K = _isPhone() ? Math.min(2, (_wd.w - 80) / 820) : 1;
         const P = (n) => n * K;
         const card = (h) => {
-            const w = 820 * K, x = CENTER_X - w / 2, y = CENTER_Y - (h * K) / 2;
+            const w = 820 * K, x = _wd.x + _wd.w / 2 - w / 2, y = _wd.y + _wd.h / 2 - (h * K) / 2;
             const g = this.add.graphics();
             g.fillStyle(0x000000, 0.10); g.fillRoundedRect(x, y + P(6), w, h * K, P(22));
             g.fillStyle(0xffffff, 1);    g.fillRoundedRect(x, y, w, h * K, P(22));
