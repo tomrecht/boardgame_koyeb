@@ -10,7 +10,7 @@
  *
  * Bump CACHE when the shell list changes; activate() drops every other cache.
  */
-const CACHE = 'quahuru-v2';
+const CACHE = 'quahuru-v3';
 
 // The shell is what a cold, offline start needs to render a board.
 const SHELL = [
@@ -29,6 +29,13 @@ const SHELL = [
     './assets/left-arrow.png',
     './assets/right-arrow.png',
     './assets/thinking.png',
+    // The inference runtime. Big (10.5MB raw, 2.8MB gzipped), so it is
+    // precached deliberately: it is what makes offline PLAY possible, and
+    // fetching it mid-game would be worse than paying for it up front.
+    './ort/ort.wasm.min.js',
+    './ort/ort-wasm-simd-threaded.mjs',
+    './ort/ort-wasm-simd-threaded.wasm',
+    './model.onnx',
 ];
 
 // Files whose content changes under a fixed name -- always try the network.

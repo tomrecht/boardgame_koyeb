@@ -82,6 +82,10 @@ def expected(enc, b):
 
 def main(n=40, out='encoder_fixture.json'):
     enc = E.BoardEncoder()
+    # Ground-truth scores from the deployed graph, so the JS runtime can be
+    # checked end to end rather than only at the encoder boundary.
+    from gnn_backend import make_backend
+    backend = make_backend('model.onnx')
     cases = []
     seed = 0
     while len(cases) < n:
@@ -101,7 +105,9 @@ def main(n=40, out='encoder_fixture.json'):
             b.switch_turn()
         if b.check_game_over()[0]:
             continue
-        cases.append({'seed': seed - 1, 'snapshot': snapshot(b), 'expected': expected(enc, b)})
+        exp = expected(enc, b)
+        exp['score'] = float(backend(enc.encode(b, b.current_player)))
+        cases.append({'seed': seed - 1, 'snapshot': snapshot(b), 'expected': exp})
 
     with open(out, 'w') as f:
         json.dump({'cases': cases}, f)
@@ -122,6 +128,20 @@ def main(n=40, out='encoder_fixture.json'):
             a = np.asarray(c['expected'][k], dtype=np.float32)
             assert np.isfinite(a).all(), f'non-finite value in {k} (seed {c["seed"]})'
     print('self-check: round-trips, all features finite')
+
+    # Batch invariance: scoring two positions together must give the same
+    # numbers as scoring them one at a time. The JS runtime will batch
+    # candidates, so a shape baked into the graph would show up here.
+    if len(cases) >= 2:
+        boards = []
+        for c in cases[:2]:
+            random.seed(c['seed'])
+            bb = Board()
+            boards.append(bb)
+        singles = [float(backend(enc.encode(bb, bb.current_player))) for bb in boards]
+        batched = [float(v) for v in backend([enc.encode(bb, bb.current_player) for bb in boards])]
+        drift = max(abs(a - b) for a, b in zip(singles, batched))
+        print(f'batch invariance: max |single - batched| = {drift:.3e}')
 
 
 if __name__ == '__main__':
