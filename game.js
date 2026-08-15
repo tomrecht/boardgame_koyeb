@@ -1484,9 +1484,13 @@ function _tutFitBoard() {
             b.style.width = bw + 'px';
             b.style.left = 'auto';
             b.style.right = gap + 'px';
-            b.style.top = '50%';
+            // Anchor the TOP, not the centre. Vertically centring means a step
+            // with more text grows both ways, so the card appears to move
+            // between steps even though its box rules never changed -- which is
+            // the drift owner still saw after the width was fixed.
+            b.style.top = gap + 'px';
             b.style.bottom = 'auto';
-            b.style.transform = 'translateY(-50%)';
+            b.style.transform = 'none';
             b.style.maxHeight = (H - 2 * gap) + 'px';
         } else {
             b.style.width = 'min(640px, ' + (W - 2 * gap) + 'px)';
