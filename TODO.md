@@ -157,11 +157,15 @@ apart.
 
 AFTER, same harness:
 
-    positions        save pairs kept   lost all   moves differ   s/move med
-    200 endgame      77% -> 100%       0          3 -> 0         0.123 -> 0.115
+    positions        save pairs kept   lost all    moves differ   s/move med
+    200 endgame      77% -> 100%       0           3 -> 0         0.123 -> 0.115
+    60 walked        55% -> 100%       6 of 11 -> 0  13 (unchanged) 0.257 -> 0.245
 
-No slowdown: the exemption fires where saves are dense, and stage 1 was already
-applying every first move regardless.
+Every save pair now survives, in both samples. No slowdown: the exemption fires
+where saves are dense, and stage 1 was already applying every first move
+regardless. The 13 walked positions that still play a different pair under F=12
+are the ones that never had anything to do with saves -- which is the point of
+the "what this does NOT establish" note below.
 
 **Both twins, one commit.** `agent_gnn.py` and `agent.js` are proven identical
 at 110/110 and that equivalence is an asset, so the change was mirrored and
