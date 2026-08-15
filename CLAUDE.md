@@ -823,6 +823,35 @@ with it in mind.** Assessment and the concrete implications:
     layout, camera and turn pill (the pill measures the canvas rect, stale
     mid-rotation, and stretched into a wide bar when it was).
     Still open: the end-game card's framing in the portrait frame.
+  - **iPHONE SAFE AREA (2026-08-15).** `viewport-fit=cover` was already set, so
+    `env(safe-area-inset-*)` is non-zero on an iPhone, but nothing read it — the
+    portrait button row sits 22 CSS px off the bottom, inside the ~34px
+    home-indicator strip. `_safeBottomWorld()` lifts the row by the inset,
+    measured from a hidden probe element because `env()` is CSS-only.
+    **`?safeinset=NN` forces a value** — the only way to exercise this without an
+    iPhone. Convert with world-units-per-CSS-pixel (`worldView.height / canvas
+    rect height`), NOT camera zoom, which is world units per BUFFER pixel and
+    is 3x off on a DPR-3 screen. Measured: no inset is byte-identical (row
+    bottom 822), a 34px inset puts it at 788, clearing 34 + the original 22.
+  - **APP PACKAGING lives on branch `app-packaging`** (2026-08-15), not main.
+    So far: a **network-first service worker** (`sw.js`) — index.html and
+    game.js always hit the network and fall back to cache only offline, because
+    a cache-first worker serving a stale game.js after a deploy is the exact bug
+    that made this worth deferring; Phaser/icons/manifest are cache-first with a
+    background refresh; API routes and non-GETs are never intercepted. Measured:
+    registers at scope /, an offline reload boots the board (94 tiles), and an
+    edited game.js is picked up on the next load. It gives offline LOADING, not
+    offline PLAY — the AI is still `/select_moves`.
+    **`PORTING.md` holds the on-device-inference plan.** Two decisions already
+    made: (1) the encoder's STATIC half is exported, not ported —
+    `export_encoder_static.py` writes `encoder_static.json` (70 tiles, 186
+    edges, 70x12 base features), because `build_tile_index` collects edges in a
+    `set` and a JS reimplementation would order them differently; float addition
+    is not associative, so scores would differ in the last bits and could flip
+    an argmax in a near-tie. (2) The JS encoder will take a serialisable board
+    SNAPSHOT rather than a ported `Board`, since game.js already has its own
+    different board model — Python emits the same snapshot in the test fixture
+    so every step can be asserted array-equal.
   - **HOW TO PLAY IS WRITTEN TWICE (2026-08-15)**, phone and desktop: a phone
     has no mouse or keyboard and has gestures a desktop lacks. Phone gets
     tap/drag, double-tap, pinch-and-pan, the must-enter ghosts, the floating
