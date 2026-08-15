@@ -2893,6 +2893,9 @@ class Piece {
     }
 
     handleClick(pointer) {
+        // see handleDoubleClick: a just-saved piece leaves its neighbours
+        // shuffling under the finger
+        if (this.game._saveGuardUntil && Date.now() < this.game._saveGuardUntil) return;
         hideStackPicker();   // clicking a piece dismisses an open overflow picker
 
         if (window.setupMode) {
@@ -3060,6 +3063,13 @@ class Piece {
 
         if (this.currentTile.type === 'save') {
             this.save(); // Save the piece if it can be saved
+            // Saving removes this piece, and the tile then re-lays out what is
+            // left -- so another piece slides into the spot under the finger and
+            // a following pointer event selects it. Owner saw exactly that after
+            // double-tapping a numbered piece off its goal. Ignore selections
+            // for a moment; 250ms is well under a deliberate re-tap.
+            this.game._saveGuardUntil = Date.now() + 250;
+            _clearSelection(this.game);
         } else if (this.player === this.game.turn && this.game.sumSave(this)) {
             // not on a goal yet, but one die reaches the goal and the other saves
             // it this turn -> do both at once.
