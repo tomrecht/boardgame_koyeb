@@ -313,12 +313,41 @@ function updateTurnStatus(textOrGame) {
 // unless the page itself is pinch-zoomed. Checking this first also avoids
 // trusting the canvas rect during start-up, before layout has settled -- which
 // briefly reported the racks as off screen and flashed the ghosts up at zoom 1.
+// PORTRAIT. The camera can frame any rectangle in world space, including one
+// with negative coordinates -- so portrait does NOT move the board. It frames a
+// taller, narrower box AROUND the board where it already is, and only the
+// furniture (racks, dice, arrows, score, buttons) is repositioned into the bands
+// above and below. Tile points, hit areas and goal-number text are all cached
+// behind Tile._built/_points, so leaving the board alone avoids invalidating any
+// of it -- and makes rotation a matter of moving a dozen objects, not a rebuild.
+const PORTRAIT = { W: 1160, H: 2510, boardFromTop: 1180 };
+
+function _isPortrait() {
+    if (!_isPhone()) return false;
+    try {
+        const q = new URLSearchParams(location.search).get('portrait');
+        if (q === '0') return false;
+        if (q !== '1') return false;          // opt-in until the furniture moves
+    } catch (e) { return false; }
+    return window.innerHeight > window.innerWidth;
+}
+
+// The world rectangle the camera frames.
+function _world() {
+    if (_isPortrait()) {
+        return { x: CENTER_X - PORTRAIT.W / 2, y: CENTER_Y - PORTRAIT.boardFromTop,
+                 w: PORTRAIT.W, h: PORTRAIT.H };
+    }
+    return { x: 0, y: 0, w: WORLD_W, h: WORLD_H };
+}
+
 // The zoom at which the whole world just fits the canvas. User zoom multiplies
 // this, so "zoom 1" always means "everything visible" whatever the screen is.
 function _baseZoom(scene) {
     if (!_isPhone()) return 1;
     const sz = scene.scale.gameSize;
-    return Math.min(sz.width / WORLD_W, sz.height / WORLD_H) || 1;
+    const wd = _world();
+    return Math.min(sz.width / wd.w, sz.height / wd.h) || 1;
 }
 
 // Put the camera where the world is framed as asked: `left`/`top` are the world
@@ -351,7 +380,8 @@ function _sizeCanvasToScreen() {
     // and the whole board looks dusty and broken up. Enlarging the buffer so the
     // world renders at 1:1 or better puts the shrink back where Scale.FIT used
     // to do it -- a smooth image downsample by the browser.
-    const grow = Math.max(WORLD_W / bw, WORLD_H / bh, 1);
+    const wd = _world();
+    const grow = Math.max(wd.w / bw, wd.h / bh, 1);
     bw *= grow; bh *= grow;
     const MAX_PX = 9e6;                                      // keep it sane on a phone
     const over = Math.sqrt((bw * bh) / MAX_PX);
@@ -376,7 +406,8 @@ function _fitCameraToWorld(scene) {
     scene._camBase = _baseZoom(scene);
     cam.setZoom(scene._camBase * (scene._camUserZoom || 1));
     const vw = cam.width / cam.zoom, vh = cam.height / cam.zoom;
-    _setCameraView(cam, (WORLD_W - vw) / 2, (WORLD_H - vh) / 2);
+    const wd = _world();
+    _setCameraView(cam, wd.x + (wd.w - vw) / 2, wd.y + (wd.h - vh) / 2);
 }
 
 function _mainCamera() {
@@ -461,7 +492,8 @@ function _updateMustEnterGhosts() {
     // The visible rect can extend past the canvas into the letterbox bands, and
     // a ghost placed out there is off the canvas: invisible and untappable.
     // Place within the visible part OF THE CANVAS.
-    const px0 = Math.max(0, rect.x0), py1 = Math.min(config.height, rect.y1);
+    const _wd = _world();
+    const px0 = Math.max(_wd.x, rect.x0), py1 = Math.min(_wd.y + _wd.h, rect.y1);
     offscreen.forEach((piece, i) => {
         let gh = _ghosts[i];
         if (!gh) {
@@ -539,7 +571,8 @@ function _updateHudDice() {
     const size = 34 * worldPerCss, gap = 9 * worldPerCss, pad = 14 * worldPerCss;
     // Clamp into the visible part OF THE CANVAS: the visible rect runs out into
     // the letterbox bands, and anything drawn there is off the canvas entirely.
-    const vx0 = Math.max(0, rect.x0), vx1 = Math.min(config.width, rect.x1);
+    const _wd = _world();
+    const vx0 = Math.max(_wd.x, rect.x0), vx1 = Math.min(_wd.x + _wd.w, rect.x1);
     const top = Math.max(0, rect.y0) + pad;
     const left = Math.max(vx0 + pad, vx1 - pad - (2 * size + gap));
     dice.forEach((d, i) => {
@@ -5063,8 +5096,11 @@ endGame(winner, score = null, impasse_caller = null) {
             // undoes the pan that just happened.
             let left = cam.scrollX + (cam.width - vw) / 2;
             let top  = cam.scrollY + (cam.height - vh) / 2;
-            left = vw >= WORLD_W ? (WORLD_W - vw) / 2 : Phaser.Math.Clamp(left, 0, WORLD_W - vw);
-            top  = vh >= WORLD_H ? (WORLD_H - vh) / 2 : Phaser.Math.Clamp(top, 0, WORLD_H - vh);
+            const wd = _world();
+            left = vw >= wd.w ? wd.x + (wd.w - vw) / 2
+                              : Phaser.Math.Clamp(left, wd.x, wd.x + wd.w - vw);
+            top  = vh >= wd.h ? wd.y + (wd.h - vh) / 2
+                              : Phaser.Math.Clamp(top, wd.y, wd.y + wd.h - vh);
             _setCameraView(cam, left, top);
         };
 
