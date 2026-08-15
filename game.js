@@ -2157,6 +2157,30 @@ function showInstructions() {
 // DOM modal to configure and start a new match. onCancel (optional) runs when
 // the user backs out — used by the welcome screen to return to it, since the
 // first-load game is still frozen and not yet playable.
+// Games are played in colour-swapped pairs, so the count must be even and at
+// least 2. `step="2"` on a number input is only checked at validation and never
+// while typing -- and a phone renders no spinner at all, so it was simply a
+// free-text box. Coerce whatever arrives.
+function _evenGames(v) {
+    const n = parseInt(v, 10);
+    if (!isFinite(n) || n < 2) return MATCH_DEFAULT_GAMES;
+    return Math.max(2, n % 2 === 0 ? n : n + 1);
+}
+
+function _wireGamesStepper($) {
+    const input = $('#mGames');
+    if (!input || input._stepperWired) return;
+    input._stepperWired = true;
+    const step = (delta) => {
+        input.value = String(Math.max(2, _evenGames(input.value) + delta * 2));
+        input.dispatchEvent(new Event('change'));
+    };
+    $('#mGamesDown').onclick = () => step(-1);
+    $('#mGamesUp').onclick = () => step(1);
+    // typing is still allowed; normalise it when the field is left
+    input.onblur = () => { input.value = String(_evenGames(input.value)); };
+}
+
 function showMatchSetup(onCancel) {
     const old = document.getElementById('matchSetup'); if (old) old.remove();
     const box = document.createElement('div');
@@ -2172,7 +2196,13 @@ function showMatchSetup(onCancel) {
           '<label style="display:flex; gap:8px; align-items:center; margin:6px 0; font-size:15px;">' +
             '<input type="radio" name="mmode" value="games" checked> Set number of games (by total score)</label>' +
           '<div id="gamesOpts" style="margin:2px 0 12px 26px; font-size:14px;">' +
-            'Games: <input id="mGames" type="number" min="2" step="2" value="' + MATCH_DEFAULT_GAMES + '" style="width:56px;">' +
+            'Games: <span style="display:inline-flex; align-items:center; gap:6px;">' +
+              '<button id="mGamesDown" type="button" style="width:34px; height:34px; font-size:20px; line-height:1;' +
+                'border-radius:8px; border:1px solid #cfd6df; background:#f6f8fa; cursor:pointer;">\u2212</button>' +
+              '<input id="mGames" type="number" min="2" step="2" value="' + MATCH_DEFAULT_GAMES + '"' +
+                ' inputmode="numeric" style="width:56px; text-align:center;">' +
+              '<button id="mGamesUp" type="button" style="width:34px; height:34px; font-size:20px; line-height:1;' +
+                'border-radius:8px; border:1px solid #cfd6df; background:#f6f8fa; cursor:pointer;">+</button></span>' +
             '<div style="margin-top:8px;">On a tie: ' +
               '<label style="margin-left:4px;"><input type="radio" name="mtie" value="extra" checked> extra pair</label>' +
               '<label style="margin-left:10px;"><input type="radio" name="mtie" value="draw"> draw</label></div></div>' +
@@ -2194,6 +2224,8 @@ function showMatchSetup(onCancel) {
         const mode = [...modeRadios].find(r => r.checked).value;
         $('#gamesOpts').style.opacity = mode === 'games' ? '1' : '.5';
         $('#mGames').disabled = mode !== 'games';
+        $('#mGamesDown').disabled = $('#mGamesUp').disabled = mode !== 'games';
+        _wireGamesStepper($);
         box.querySelectorAll('input[name=mtie]').forEach(r => r.disabled = mode !== 'games');
         $('#raceOpts').style.opacity = mode === 'race' ? '1' : '.5';
         $('#mRace').disabled = mode !== 'race';
@@ -2216,7 +2248,7 @@ function showMatchSetup(onCancel) {
         const mode = [...modeRadios].find(r => r.checked).value;
         let target, tieRule = 'extra';
         if (mode === 'games') {
-            target = Math.max(2, parseInt($('#mGames').value) || MATCH_DEFAULT_GAMES);
+            target = _evenGames($('#mGames').value);
             if (target % 2 !== 0) target += 1;                       // keep it even
             tieRule = [...box.querySelectorAll('input[name=mtie]')].find(r => r.checked).value;
         } else {
