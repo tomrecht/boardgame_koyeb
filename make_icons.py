@@ -55,7 +55,7 @@ def _hex(h):
 
 def render(geom, size, pad_frac, pieces=0, seed=7, board_frac=None, ring=False,
            tail_scale=1.0, concentric=False, goal_extend=0.0, tail=None,
-           drop_outer_field=False):
+           drop_outer_field=False, no_tail=False, piece_tiles=None):
     """board_frac: the board's DIAMETER as a fraction of the padded box. The
     original fit sized the whole drawing -- board plus tail -- to that box, which
     made the board smaller than it needed to be and left a crescent of empty
@@ -82,6 +82,15 @@ def render(geom, size, pad_frac, pieces=0, seed=7, board_frac=None, ring=False,
     (ir 450, alongside the goals at ir 450-540). Once the wedges are extended
     those tiles sit in the gaps between them and read as confusing fragments
     rather than as board detail.
+
+    no_tail: drop the curl entirely and draw all SIX goals. Without it the board
+    is no longer limited by the tail's diagonal reach, so it fills the frame --
+    which is most of the point of trying it.
+
+    piece_tiles: [(ring, mid-angle degrees), ...] to place pieces deliberately
+    rather than by `seed`. Rings are 1 (inner) to 6 (outer field); goals are
+    ring 7 at 45 105 165 225 285 345 degrees (goals 4 2 5 3 6 1). A piece on
+    ring 6 touches its wedge and one on ring 1 touches the hub.
 
     tail: an alternative cubic Bezier (four control points, board units) for the
     curl. TAIL_SHAPES holds the named ones.
@@ -126,7 +135,8 @@ def render(geom, size, pad_frac, pieces=0, seed=7, board_frac=None, ring=False,
     if concentric:
         # Board on the canvas centre; scale so the furthest drawn point -- the
         # tail tip, always -- lands on the padded circle.
-        reach = max([outer] + [math.hypot(x, y) + w for x, y, w in dabs_u()])
+        reach = outer if no_tail else max([outer] + [math.hypot(x, y) + w
+                                                     for x, y, w in dabs_u()])
         scale = (S / 2 - pad) / reach
         cx = cy = S / 2
     elif board_frac is None:
@@ -156,7 +166,8 @@ def render(geom, size, pad_frac, pieces=0, seed=7, board_frac=None, ring=False,
         return (cx + r * scale * math.cos(a), cy + r * scale * math.sin(a))
 
     def tail_dabs():
-        return [(cx + x * scale, cy + y * scale, w * scale) for x, y, w in dabs_u()]
+        return [] if no_tail else [(cx + x * scale, cy + y * scale, w * scale)
+                                   for x, y, w in dabs_u()]
 
     def is_goal4(t):
         return t['type'] == 'save' and abs((t['s'] + t['e']) / 2 - TAIL_MID) < 0.05
@@ -167,7 +178,7 @@ def render(geom, size, pad_frac, pieces=0, seed=7, board_frac=None, ring=False,
         return ([pt(t['or'], a0 + (a1 - a0) * i / steps) for i in range(steps + 1)] +
                 [pt(t['ir'], a1 - (a1 - a0) * i / steps) for i in range(steps + 1)])
 
-    ordered = sorted([t for t in tiles if not is_goal4(t)],
+    ordered = sorted([t for t in tiles if no_tail or not is_goal4(t)],
                      key=lambda t: t['type'] == 'save')          # goals on top
     def sector(a0, a1, r0, r1):
         steps = max(8, int((a1 - a0) / 0.02))
@@ -218,11 +229,22 @@ def render(geom, size, pad_frac, pieces=0, seed=7, board_frac=None, ring=False,
     edge = edge.filter(ImageFilter.MaxFilter(k)).point(lambda v: 255 if v > 40 else 0)
     im.paste(Image.new('RGB', (S, S), INK), (0, 0), edge)
 
-    if pieces:
-        rnd = random.Random(seed)
-        outfield = [t for t in tiles if t['type'] == 'field' and t['ir'] >= 210]
+    if pieces or piece_tiles:
         pr = 30 * scale
-        for t in rnd.sample(outfield, pieces):
+        if piece_tiles:
+            rings = sorted({round(t['ir']) for t in tiles if t['type'] == 'field'})
+            chosen = []
+            for ring, deg in piece_tiles:
+                ir = rings[ring - 1]
+                hit = min((t for t in tiles
+                           if t['type'] == 'field' and round(t['ir']) == ir),
+                          key=lambda t: abs(math.degrees((t['s'] + t['e']) / 2) - deg))
+                chosen.append(hit)
+        else:
+            rnd = random.Random(seed)
+            outfield = [t for t in tiles if t['type'] == 'field' and t['ir'] >= 210]
+            chosen = rnd.sample(outfield, pieces)
+        for t in chosen:
             x, y = pt((t['ir'] + t['or']) / 2, (t['s'] + t['e']) / 2)
             d.ellipse([x - pr, y - pr, x + pr, y + pr], fill=PIECE)
 
