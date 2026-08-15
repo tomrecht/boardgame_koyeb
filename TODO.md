@@ -129,6 +129,7 @@ Against true ground truth (`BASELINE=40,0`, i.e. no first-move prefilter):
     positions        save pairs kept   lost all   moves differ   saves lost
     60 walked        55%               6 of 11    13 of 60       0
     40 endgame       77%               0 of 31    0 of 40        0 (of 30)
+    200 endgame      77%               0 of 164   3 of 200       0 (of 160)
 
 The served F=12 really does discard save pairs -- over half of them in walked
 positions, and in 6 of 11 it discards every one, so the agent frequently never
@@ -140,6 +141,24 @@ not have chosen.
 So the gap is real in principle and inert in practice, and the fix would change
 play for no measured gain. Parked.
 
+**Decided against applying it anyway (2026-08-15).** The tempting argument was
+alignment: F is a SERVED-only setting (the library default is 0, so training,
+self-play and the arena never use it), so restoring the culled save pairs would
+move the served agent closer to the configuration everything was evaluated
+under. That argument does not survive the numbers. The served-vs-training
+divergence is 3 of 200 moves in endgames and 13 of 60 in walked positions --
+and the walked ones have nothing to do with saves, so the save fix would barely
+touch the bulk of it. It buys a ~1.5% slice of endgame divergence that is
+already measured to cost nothing.
+
+Against that: there are now TWO agents. `agent.js` is proven identical at
+110/110, and that equivalence is an asset -- any change to `select_move_pair`
+has to be mirrored and the trace-diff re-run, or the two silently diverge. Plus
+`get_saving_die` reads `game_stages`, and stage 1 applies a move WITHOUT calling
+`get_valid_moves` (the side effect that refreshes stages), which is the exact
+drift that once scored identical candidates 20-80 points apart. Not worth it for
+an effect bounded at ~1.9%.
+
 **Read the denominators, not the zeros.** This took three attempts to measure,
 each defeated by an empty denominator: asking whether a save was legal as a
 first MOVE qualified 1 position in 60; the next cut had 5; the walked run had 30
@@ -148,8 +167,8 @@ lost" could not fire. Only hand-built endgames put a real denominator (30) under
 the question. A "0" from this harness means nothing until the denominator beside
 it is checked.
 
-**What this does NOT establish.** 0 of 30 is not "never" -- by the rule of three
-the 95% upper bound is ~10% of endgame save opportunities. The endgames are
+**What this does NOT establish.** 0 of 160 is not "never" -- by the rule of three
+the 95% upper bound is ~1.9% of endgame save opportunities. The endgames are
 synthetic. And 13 of 60 walked positions DO play a different move under F=12;
 none lost a save, but whether those differences cost strength is unmeasured --
 that is what `match_topk.py match` would answer, and it never has been for F

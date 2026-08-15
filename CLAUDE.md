@@ -921,10 +921,19 @@ with it in mind.** Assessment and the concrete implications:
     keeps only 55% of the baseline's save pairs on walked positions and drops
     them entirely in 6 of 11, so the agent often never sees a save pair — but it
     never changes the MOVE. On 40 hand-built endgames, where the baseline banks
-    a piece in 30, F=12 plays the identical pair in all 40 (0 moves differ, 0
-    saves lost). Real in principle, inert in practice; the fix would change play
-    for no measured gain. NOT an explanation for pass-over-save. Caveat: 0 of 30
-    bounds the rate at ~10% (rule of three), not zero.
+    a piece in 160 of 200, F=12 plays the identical pair in 197 and loses a save
+    in NONE (0 of 160; rule of three bounds it at ~1.9%, not zero). Real in
+    principle, inert in practice; NOT an explanation for pass-over-save.
+    **Decided against fixing it even so.** The alignment argument — F is
+    served-only, so the fix moves the served agent toward the F=0 config that
+    training and the arena actually use — does not survive the numbers: the
+    divergence is 3 of 200 endgame moves and 13 of 60 walked ones, and the
+    walked ones are not save-related, so the fix addresses a ~1.5% slice that
+    already costs nothing. Against it, `agent.js` is proven identical at 110/110
+    and any change to `select_move_pair` must be mirrored there and re-verified,
+    and `get_saving_die` reads `game_stages` while stage 1 applies moves without
+    the `get_valid_moves` call that refreshes them — the stale-stage drift that
+    has bitten this code before.
     **Read the denominator, not the zero.** This took three attempts, each
     defeated by an empty one — 1 qualifying position in 60, then 5, then 30
     positions in which the baseline never actually played a save. Any "0" out of
