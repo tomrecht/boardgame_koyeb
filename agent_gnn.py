@@ -54,6 +54,39 @@ def _position_key(board):
     return (_piece_locs(board), board.dice[0].used, board.dice[1].used)
 
 
+def _move_sort_key(move):
+    """A total order on moves that does not depend on Python's hash seed.
+
+    Enumeration runs over `set`s of move tuples, so the ITERATION ORDER varies
+    per process. Wherever a tie is resolved by "whichever came first" -- the
+    argmax, the stable sorts in the prefilter, the fewest-relocations tie-break
+    -- that made the agent's answer a function of the hash seed. Measured over
+    30 pinned positions: 3 gave a different pair under a different PYTHONHASHSEED,
+    every one of them a transposition (same piece, same destination, dice in the
+    other order), i.e. the same end-of-turn position at the same score.
+
+    Ordering the ties by this key instead makes select_move_pair a pure function
+    of the position. It only ever reorders EXACT ties, so it cannot change which
+    line the agent judges best -- verified by scoring the old and new choices.
+    """
+    if not (isinstance(move, tuple) and len(move) == 3):
+        return (3, '', 0, 0, 0)
+    piece_id, destination, roll = move
+    if not isinstance(piece_id, tuple):                 # pass (0,0,0) / draw (1,1,1)
+        return (0, '', int(piece_id), 0, int(roll))
+    player, number = piece_id
+    if destination == 'save':
+        return (1, player, int(number), 0, int(roll))
+    if destination == 0:                                # block-save
+        return (2, player, int(number), 0, int(roll))
+    ring, pos = destination
+    return (3, player, int(number), int(ring) * 1000 + int(pos), int(roll))
+
+
+def _pair_sort_key(pair):
+    return tuple(_move_sort_key(m) for m in pair)
+
+
 def _pair_relocations(pair):
     """How many of a pair's moves shuffle a piece around the board, as opposed
     to saving it or passing -- the legibility cost of a line."""
@@ -321,7 +354,9 @@ class GNNAgent:
                 first_scored.append((sc, move))
                 while len(board.moves) > base:
                     board.undo_last_move()
-            first_scored.sort(key=lambda x: x[0], reverse=True)
+            # Ties broken canonically, not by set-iteration order: which first
+            # moves survive the cut decides which pairs the GNN ever sees.
+            first_scored.sort(key=lambda x: (-x[0], _move_sort_key(x[1])))
             keep = [m for _, m in first_scored[:self.first_move_prefilter]]
             kept = set(keep)
             # a first move that saves a piece is never culled here, for the same
@@ -447,7 +482,7 @@ class GNNAgent:
             ranked = list(zip(final_scores.tolist(), move_keys))
             if draw_legal:
                 ranked.append((0.0, draw_pair))   # exact terminal value, not network-estimated
-            ranked.sort(key=lambda x: x[0], reverse=True)
+            ranked.sort(key=lambda x: (-x[0], _pair_sort_key(x[1])))
             return ranked
 
         # A draw's true value is exactly 0, in the same raw*SCORE_SCALE units
@@ -462,6 +497,16 @@ class GNNAgent:
         # plays visibly weaker without ever making obviously terrible moves.
         best_idx = self._pick_move_index(final_scores, difficulty)
 
+        # Exact score ties (transpositions reaching the same position score
+        # identically) used to be settled by whichever candidate the set
+        # happened to enumerate first. Settle them canonically instead; this
+        # runs after the difficulty pick, so it makes the tie deterministic
+        # without overriding the sampled choice.
+        top = float(final_scores[best_idx])
+        tied = [i for i, s in enumerate(final_scores) if float(s) == top]
+        if len(tied) > 1:
+            best_idx = min(tied, key=lambda i: _pair_sort_key(move_keys[i]))
+
         # Among candidates that leave the board in exactly the same state, take
         # the one that moves the fewest pieces. This costs nothing -- the
         # position after the turn is identical and a die left unused is worthless
@@ -473,7 +518,8 @@ class GNNAgent:
             key = outcome_keys[best_idx]
             same = [i for i, k in enumerate(outcome_keys) if k == key]
             if len(same) > 1:
-                best_idx = min(same, key=lambda i: (_pair_relocations(move_keys[i]), i))
+                best_idx = min(same, key=lambda i: (_pair_relocations(move_keys[i]),
+                                                    _pair_sort_key(move_keys[i])))
 
         chosen = move_keys[best_idx]
 
@@ -676,7 +722,8 @@ class GNNAgent:
         n = len(scored)
         if n == 0:
             return []
-        scored = sorted(scored, key=lambda x: x[0], reverse=True)
+        # Ties by canonical move key, not enumeration order -- see _move_sort_key.
+        scored = sorted(scored, key=lambda x: (-x[0], _pair_sort_key(x[1])))
 
         # 1) adaptive count from the normalized score cutoff
         alpha = self.prefilter_score_alpha
