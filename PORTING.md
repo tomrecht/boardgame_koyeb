@@ -77,19 +77,20 @@ be reused without checking.
    in the fixture since JSON has no infinity.
    **Verified against encoder.py over 40 positions: 960/960 shortest routes and
    5760/5760 goal distances, 0 blocked-set mismatches.**
-4. Port dynamic tile features → piece features → global features → edges, each
-   asserted array-equal against the fixture.
-   - **tile features: done** (`encoder.js` `tileFeatures`). 33600/33600 cells
-     match over 40 positions. Note the counts are per CURRENT PLAYER, so a
-     position encodes differently depending on whose turn it is — `encode()`
-     takes the player explicitly, mirroring `encode(board, player)`.
-   - piece features (`encode_piece_features`, ~110 lines, needs the status
-     enum, the distance bins and MAX_DIST=14 normalisation) — **next**, and the
-     one to be careful with: its row order is `all_pieces`, recorded in the
-     fixture as `piece_order`, and the edge arrays index into it.
-   - global features (`encode_global_features`, ~70 lines).
-   - piece↔tile edges (`encode_piece_tile_edges`, ~25 lines, trivial once the
-     piece order is right).
+4. ~~Port the feature encoders.~~ **done** — `encoder.js`. Verified against
+   encoder.py over 40 positions, exactly: tile_feats 33600/33600 cells,
+   piece_feats 23040/23040, global_feats 440/440, both edge arrays 40/40, and
+   piece_order 40/40.
+   Three things that would have been silent bugs:
+   - Tile counts are per CURRENT PLAYER, so `encode()` takes the player
+     explicitly rather than reading the snapshot.
+   - `distance_category` runs the OPPOSITE way from `_dist_bin`: unreachable is
+     0 and "close" is 1, where the bin has unreachable at 1.
+   - Game stage is computed FRESH, never read from the snapshot's
+     `game_stages` — that dict is mutated as a side effect of get_valid_moves
+     and goes stale during candidate enumeration (the bug that once scored
+     identical candidates 20-80 points apart).
+
 5. Wire onnxruntime-web; assert the ONNX output matches Python's scores for the
    same positions (the existing `onnx_export.py` self-check is the model here:
    it got graph-vs-torch agreement to 8.8e-08).

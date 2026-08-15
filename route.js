@@ -135,6 +135,7 @@ function piecesFromSnapshot(graph, snapshot) {
         player: p.player,
         number: p.number,
         saved: p.kind === 'saved',
+        unentered: p.kind === 'unentered',
         tile: p.kind === 'tile' ? graph.indexOf(p.ring, p.pos) : -1,
     }));
 }
