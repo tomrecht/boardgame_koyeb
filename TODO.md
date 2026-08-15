@@ -41,7 +41,35 @@ sees. F=12 was adopted only after 120 paired games showed no measurable loss.
   it still fires rather than assuming.
 - Run locally on the Mac (BOARDGAME_DEVICE=cpu), not on the server.
 
-**Written, not yet run: `match_topk.py`** (2026-08-15). Two modes, and the
+**RUN, and the answer is: leave top_k alone (2026-08-15).** 200 positions,
+F pinned at the served 12:
+
+    top_k  cand med  cand max  s/move med  s/move p90  lost all  saves kept
+       40        40       115       0.253       0.354         0        100%
+       24        24        99       0.206       0.304         0        100%
+       16        16        91       0.194       0.296         0        100%
+       10        10        85       0.164       0.247         0        100%
+
+- **Safe, as designed.** 31 of the 200 positions carry save pairs and every one
+  survives at every top_k, with zero "lost all". Save PAIRS are exempt from the
+  top-K cull, so this holds by construction rather than by luck.
+- **But not worth taking on its own.** Median 0.253 -> 0.164 s/move is ~35%, and
+  the number that matters for how a phone FEELS is the tail: cand max only falls
+  115 -> 85 (26%), because `prefilter_min_k`, the save exemption and the pass
+  pair all survive the cull whatever top_k is. Scaled to the browser (~4x) that
+  is p90 ~1.4s -> ~1.0s. Owner's call: not touching it for now.
+- **The floor is stage 1**, which scores ~150 first moves before any pair is
+  expanded; top_k cannot reach that. It is also the stage where the
+  save-enabling-first-move gap lives (see the next section), so that is where
+  both the time and the correctness questions actually are.
+- Strength was NOT measured -- the paired match was not run, since there is no
+  point measuring the cost of a change we are not making.
+
+Earlier n=60 runs reported ~2.3x speedups and non-monotonic orderings (top_k=10
+slower than top_k=16); that was machine load, not signal. Timings need n in the
+hundreds and a quiet machine.
+
+**The harness: `match_topk.py`** (2026-08-15). Two modes, and the
 order matters:
 
     python match_topk.py probe 60                  # minutes, no games
