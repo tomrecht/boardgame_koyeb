@@ -375,6 +375,11 @@ function _fur() {
                  blackUn: [1545, RACK_Y1], blackSv: [1545, RACK_Y2] };
     }
     const cols = 6, rows = 2;
+    // The tutorial hides the gear and the turn pill (see _sizeGear), so the top
+    // strip they occupy is free -- lift the whole column into it, which is what
+    // buys the bottom band enough room for the tutorial card to sit clear of
+    // black's racks.
+    const lift = (typeof _tut !== 'undefined' && _tut.active) ? 260 : 0;
     const pr = _rackPR(), ds = _dieSize();
     const spacing = pr * 2 + 12;
     const panelW = cols * spacing + pr;                // matches drawBackground
@@ -384,17 +389,19 @@ function _fur() {
     // The human's racks go in the top band; with two humans (or two AIs) white
     // does, matching landscape's white-left / black-right reading order.
     const topIsWhite = !WHITE_IS_AI || BLACK_IS_AI;
-    const yTop = wd.y + 240, yBot = wd.y + 1790;
+    const yTop = wd.y + 240 - lift, yBot = wd.y + 1790 - lift;
     const w = { un: [x1, topIsWhite ? yTop : yBot], sv: [x2, topIsWhite ? yTop : yBot] };
     const b = { un: [x1, topIsWhite ? yBot : yTop], sv: [x2, topIsWhite ? yBot : yTop] };
     // Arrows keep landscape's 190px spacing -- closer together they are easy to
     // mis-hit -- and sit against the right margin.
-    return { diceX: [wd.x + 60, wd.x + 60 + ds + 20], diceY: wd.y + 455, dieSize: ds,
-             undoX: wd.x + 855, endX: wd.x + 1045, arrowY: wd.y + 530,
+    return { diceX: [wd.x + 60, wd.x + 60 + ds + 20], diceY: wd.y + 455 - lift, dieSize: ds,
+             undoX: wd.x + 855, endX: wd.x + 1045, arrowY: wd.y + 530 - lift,
              cols, rows,
-             scoreAt: [wd.x + wd.w / 2, wd.y + 2040], scoreOrigin: [0.5, 0],
-             impasseAt: [wd.x + wd.w / 2, wd.y + 2225], callDrawAt: [wd.x + wd.w / 2, wd.y + 2290],
-             hudX: [wd.x + 230, wd.x + 550, wd.x + 870], hudY: wd.y + 2395 - _safeBottomWorld(),
+             scoreAt: [wd.x + wd.w / 2, wd.y + 2040 - lift], scoreOrigin: [0.5, 0],
+             impasseAt: [wd.x + wd.w / 2, wd.y + 2225 - lift],
+             callDrawAt: [wd.x + wd.w / 2, wd.y + 2290 - lift],
+             hudX: [wd.x + 230, wd.x + 550, wd.x + 870],
+             hudY: wd.y + 2395 - lift - _safeBottomWorld(),
              whiteUn: w.un, whiteSv: w.sv, blackUn: b.un, blackSv: b.sv };
 }
 
@@ -406,6 +413,10 @@ let _lastPortrait = null;
 function _sizeGear(el) {
     const gear = el || document.getElementById('settingsGear');
     if (!gear) return;
+    // Hidden during a portrait tutorial: the card needs the bottom of the screen,
+    // and the strip the gear sits in is what the layout lifts into.
+    const hide = _isPortrait() && typeof _tut !== 'undefined' && _tut.active;
+    gear.style.display = hide ? 'none' : '';
     const px = _isPortrait() ? 48 : 64;
     gear.style.width = gear.style.height = px + 'px';
     gear.style.fontSize = Math.round(px * 0.53) + 'px';
@@ -1473,14 +1484,21 @@ function _tutFitBoard() {
             // fraction of the screen: the board is centred, so the space either
             // side is (screen - board)/2, and anything wider necessarily covers
             // part of it. Measured from the camera so it follows any zoom.
-            let free = Math.round(W * 0.32);
-            const cam = _mainCamera(), cv = gameInstance && gameInstance.canvas;
-            const rect = cv && cv.getBoundingClientRect();
-            if (cam && rect && cam.worldView.width) {
-                const boardCss = 1080 * (rect.width / cam.worldView.width);   // board is 1080 world px
-                free = Math.floor((W - boardCss) / 2) - 2 * gap;
+            // Measure ONCE per tutorial and reuse it. worldView changes when a
+            // step zooms the camera, so recomputing per step made the width
+            // vary -- and with the right edge pinned, the left edge walked. That
+            // is the sideways drift left after anchoring the top.
+            if (!_tut._cardW) {
+                let free = Math.round(W * 0.32);
+                const cam = _mainCamera(), cv = gameInstance && gameInstance.canvas;
+                const rect = cv && cv.getBoundingClientRect();
+                if (cam && rect && cam.worldView.width) {
+                    const boardCss = 1080 * (rect.width / cam.worldView.width);  // board is 1080 world px
+                    free = Math.floor((W - boardCss) / 2) - 2 * gap;
+                }
+                _tut._cardW = Math.max(180, Math.min(300, free));
             }
-            const bw = Math.max(180, Math.min(300, free));
+            const bw = _tut._cardW;
             b.style.width = bw + 'px';
             b.style.left = 'auto';
             b.style.right = gap + 'px';
@@ -1554,8 +1572,8 @@ function _tutHudVisible(on) {
     const scene = _setupScene();
     if (scene && scene.hudButtons) scene.hudButtons.forEach(b => b.setHudVisible && b.setHudVisible(on));
 }
-window.addEventListener('resize', () => { if (_tut.active) setTimeout(_tutFitBoard, 60); });
-window.addEventListener('orientationchange', () => { if (_tut.active) setTimeout(_tutFitBoard, 250); });
+window.addEventListener('resize', () => { if (_tut.active) { _tut._cardW = null; setTimeout(_tutFitBoard, 60); } });
+window.addEventListener('orientationchange', () => { if (_tut.active) { _tut._cardW = null; setTimeout(_tutFitBoard, 250); } });
 
 function _tutNudge() {
     const b = _tut.bubble; if (!b) return;
@@ -1828,6 +1846,8 @@ function startTutorial() {
     _tutBubble();
     _tutRender();
     _tutFitBoard();
+    _sizeGear();
+    if (typeof _relayoutFurniture === 'function') { _lastPortrait = null; _relayoutFurniture(); }
     clearInterval(_tut.timer); _tut.timer = setInterval(_tutPoll, 300);
 }
 function _tutEnd(startGame) {
@@ -1836,6 +1856,7 @@ function _tutEnd(startGame) {
     clearInterval(_tut.timer); _tut.timer = null;
     clearInterval(_tut.shake); _tut.shake = null;
     if (_tut.bubble) { _tut.bubble.remove(); _tut.bubble = null; }
+    _tut._cardW = null;
     _tutFitBoard();                       // give the board the full window back
     _tutHudVisible(true);
     const scene = _setupScene();
