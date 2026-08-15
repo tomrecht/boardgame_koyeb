@@ -10,6 +10,16 @@ The question this answers is what it costs in play.
 NOT a knob to turn blind: these settings decide which moves the value net ever
 sees. F=12 was adopted only after 120 paired games showed no measurable loss.
 
+Measured (60 positions, 2026-08-15): `top_k` is the SAFE lever and `F` is not.
+Saves kept is 100% at every top_k from 40 down to 10 -- save pairs are exempt
+from the top-K cull -- but falls to 94% at F=8 and 91% at F=6, flat across
+top_k. The mechanism: stage 1's exemption only protects first moves that are
+THEMSELVES saves, so a pair whose SECOND move is the save is discarded when its
+first move is culled and the pair is never expanded. That is exactly "a pair
+whose first move looks poor alone but is strong in combination", and saves are
+only the part of it we can measure -- the same cull drops non-save pairs
+invisibly, so 9% is a lower bound on what F=6 loses.
+
 Two modes:
 
     python match_topk.py probe [positions]
@@ -54,7 +64,12 @@ N_WORKERS = int(os.environ.get('N_WORKERS', '8'))
 SEED_BASE = 7_900_000            # disjoint from match_prefilter.py's 7_700_000
 MAX_TURNS, STUCK_LIMIT = 200, 60
 
-BASELINE = (40, 12)              # what app.py serves: prefilter_top_k, F
+# What app.py serves: prefilter_top_k, F. Override to measure against a
+# DIFFERENT ground truth -- in particular BASELINE=40,0 disables the first-move
+# prefilter entirely and answers "what does the served F=12 already drop?",
+# which is a question about the shipped agent, not about proposed settings.
+#     BASELINE=40,0 python match_topk.py probe 60 40 12,8,6
+BASELINE = tuple(int(x) for x in os.environ.get('BASELINE', '40,12').split(','))
 
 _CACHE = {}
 
