@@ -4,7 +4,7 @@
   "description": "A hub-and-spoke dice game: race your pieces around the board and bring them safely home.",
   "start_url": "./",
   "scope": "./",
-  "display": "standalone",
+  "display": "fullscreen",
   "orientation": "any",
   "background_color": "#d5dbe4",
   "theme_color": "#b5623b",
