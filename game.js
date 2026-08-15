@@ -3699,6 +3699,14 @@ class Tile {
                     this.game.selectedPiece = null;
                 } else {
                     console.log('Move not possible');
+                    // A refused move must leave the selection exactly as it was.
+                    // Something downstream clears the board's highlights, so
+                    // re-assert them rather than leave the piece selected with
+                    // nothing lit -- which looks like the selection was lost.
+                    if (this.game.selectedPiece === piece) {
+                        piece.reachableTiles = this.game.getReachableTilesByDice(piece);
+                        if (piece.highlightReachableTiles) piece.highlightReachableTiles();
+                    }
                 }
             }
         }
