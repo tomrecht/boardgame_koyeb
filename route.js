@@ -141,9 +141,13 @@ function piecesFromSnapshot(graph, snapshot) {
 }
 
 // Usable from Node (tests) and from the browser (the app), without a
-// bundler: CommonJS when there is a module object, globals otherwise.
-const _api = { buildGraph, blockedTiles, shortestRouteToGoal, allGoalDistances,
+// bundler. Wrapped in an IIFE because classic scripts SHARE one global
+// lexical scope: a top-level `const _api` in two files is a redeclaration
+// and kills the second file with a SyntaxError, silently.
+(function () {
+    const api = { buildGraph, blockedTiles, shortestRouteToGoal, allGoalDistances,
                    isSaveableOn, piecesFromSnapshot };
-if (typeof module !== 'undefined' && module.exports) module.exports = _api;
-else Object.assign(typeof window !== 'undefined' ? window : self, _api);
+    if (typeof module !== 'undefined' && module.exports) module.exports = api;
+    else Object.assign(typeof window !== 'undefined' ? window : self, api);
+})();
 

@@ -91,9 +91,26 @@ be reused without checking.
      and goes stale during candidate enumeration (the bug that once scored
      identical candidates 20-80 points apart).
 
-5. Wire onnxruntime-web; assert the ONNX output matches Python's scores for the
-   same positions (the existing `onnx_export.py` self-check is the model here:
-   it got graph-vs-torch agreement to 8.8e-08).
+5. ~~Wire onnxruntime-web.~~ **done** — `infer.js` + `infer_test.html`.
+   **Max |JS - Python| = 4.47e-08 over 40 positions**, the same order as
+   onnx_export.py's own graph-vs-torch check (8.8e-08), so the JS path adds no
+   meaningful error. Batching verified (5 positions in one call), which matters
+   because the search scores thousands of candidates a move.
+   Four traps, all of which presented as something other than what they were:
+   - `ort.env.wasm.wasmPaths` must be ROOT-ABSOLUTE. The loader dynamically
+     imports the `.mjs` beside the wasm, and a relative path is not a valid
+     module specifier -- it fails as "no available backend found", which reads
+     like a missing build.
+   - Classic scripts share ONE global lexical scope, so a top-level `const` of
+     the same name in two files is a redeclaration that kills the second file
+     with a SyntaxError and leaves its exports undefined. Hit twice
+     (`buildGraph`, then `_api`); both export footers are now IIFE-wrapped and
+     the route import is namespaced as `_R`.
+   - The service worker was serving stale copies of route/encoder/infer.js,
+     because ALWAYS_FRESH listed only index.html and game.js. A fix literally
+     could not reach the browser.
+   - The threaded wasm runs single-threaded via `numThreads = 1`, so no
+     COOP/COEP headers are needed.
 6. Port the prefilter + 2-ply search; then the real proof:
    **a seeded trace-diff** — `PYTHONHASHSEED=0`, identical move traces over 40
    turns against the Python agent, the standard already used for the game-logic
