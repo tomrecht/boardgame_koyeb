@@ -640,10 +640,21 @@ function _resolveDestination(game, tile, wx, wy) {
 }
 
 function getSoundEnabled()       { return _boolSetting('sound', true); }
-function getFullscreenPref()     { return _boolSetting('fullscreen', false); }
+// ON by default on phones: besides the screen it buys back, immersive fullscreen
+// is the ONLY thing that stops Android's system back gesture eating edge drags
+// (confirmed on a device -- no page-level mitigation touches it). An explicit
+// opt-out still wins, since _boolSetting only falls back when nothing is stored.
+function getFullscreenPref() {
+    // ?fullscreen=0/1 overrides, so a device can be A/B'd without clearing storage
+    try {
+        const q = new URLSearchParams(location.search).get('fullscreen');
+        if (q === '0' || q === '1') return q === '1';
+    } catch (e) {}
+    return _boolSetting('fullscreen', _isPhone());
+}
 
 // Fullscreen buys back the ~15% of a phone screen the browser's own bars take.
-// It can only be entered from a user gesture, so a saved preference is applied
+// It can only be entered from a user gesture, so the preference is applied
 // on the first tap after load rather than at start-up. Not offered where the
 // API is missing (notably Safari on iPhone, which has no element fullscreen --
 // there the equivalent is Add to Home Screen, hence the manifest).
@@ -658,10 +669,13 @@ function _exitFullscreen() {
     if (document.fullscreenElement && document.exitFullscreen) return document.exitFullscreen().catch(() => {});
     return Promise.resolve();
 }
+// On pointerUP, not down: entering fullscreen resizes the viewport, and doing
+// that mid-gesture ate the first drag of a session (measured -- the drag simply
+// did nothing). Waiting for the release lets the first gesture finish first.
 function _armFullscreenOnFirstGesture() {
     if (!_isPhone() || !getFullscreenPref() || !_fullscreenSupported()) return;
-    const go = () => { _enterFullscreen(); window.removeEventListener('pointerdown', go, true); };
-    window.addEventListener('pointerdown', go, true);
+    const go = () => { _enterFullscreen(); window.removeEventListener('pointerup', go, true); };
+    window.addEventListener('pointerup', go, true);
 }
 
 // Segmented pill control -- two or three mutually exclusive choices, sized for

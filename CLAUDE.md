@@ -735,7 +735,17 @@ with it in mind.** Assessment and the concrete implications:
     toggle, or the installed app, whose manifest `display` is therefore
     **`fullscreen`, not `standalone`** (the spec's fallback chain degrades to
     standalone by itself). Keep the 24px suppression — it is free and covers
-    3-button nav. Not reproducible headless; confirm on a device.
+    3-button nav. Not reproducible headless; **confirmed on the device: in
+    fullscreen the edge swipe no longer navigates back.**
+    **Fullscreen is therefore ON BY DEFAULT on phones** (`getFullscreenPref`
+    falls back to `_isPhone()`); an explicit opt-out still wins, since
+    `_boolSetting` only uses the default when nothing is stored, and
+    `?fullscreen=0/1` overrides both so a device can be A/B'd without clearing
+    storage. It is entered on the first pointer**up**, not pointerdown:
+    entering resizes the viewport, and doing that mid-gesture ate the first
+    drag of a session. Measured over four cases — phone with nothing stored
+    (pref on, `requestFullscreen` called once, and only after a tap), phone
+    opted out, phone opted in, desktop (no row, never called).
     **NEAR-MISS TILE TARGETING (2026-08-14, phones).** Aiming at a destination on
     a crowded board lands on the WRONG tile, not on empty space, and the move is
     then refused. `_resolveDestination` redirects when exactly ONE legal
