@@ -43,7 +43,8 @@ def _hex(h):
     return tuple(int(h[i:i + 2], 16) for i in (1, 3, 5))
 
 
-def render(geom, size, pad_frac, pieces=0, seed=7, board_frac=None, ring=False):
+def render(geom, size, pad_frac, pieces=0, seed=7, board_frac=None, ring=False,
+           tail_scale=1.0, concentric=False):
     """board_frac: the board's DIAMETER as a fraction of the padded box. The
     original fit sized the whole drawing -- board plus tail -- to that box, which
     made the board smaller than it needed to be and left a crescent of empty
@@ -54,7 +55,18 @@ def render(geom, size, pad_frac, pieces=0, seed=7, board_frac=None, ring=False):
     is untouched -- it scales with the board, as it must to stay attached.
 
     ring: colour the whole perimeter, not just the six goal wedges, so the Q's
-    bowl is one unbroken band."""
+    bowl is one unbroken band.
+
+    tail_scale: shrinks the tail about the point where it meets the rim, so the
+    bowl can grow into the room it gives up. The tail is what limits the board
+    in a CONCENTRIC layout, since it reaches further from the centre than the
+    rim does.
+
+    concentric: centre the BOARD on the canvas, rather than centring the
+    board-plus-tail. An Android icon is always cropped to a shape centred on the
+    canvas, so a board that is not concentric with it sits visibly off-centre
+    inside the bubble -- which is only worth fixing this way if the bubble is
+    there to stay."""
     bg, field, goal, hub_fill = _hex(BG), _hex(FIELD), _hex(GOAL), _hex(HUB)
     tiles = [t for t in geom['tiles'] if t['type'] not in ('nogo', 'home')]
     outer = max(t['or'] for t in tiles)
@@ -76,9 +88,21 @@ def render(geom, size, pad_frac, pieces=0, seed=7, board_frac=None, ring=False):
             out.append((m ** 3 * p0[0] + 3 * m * m * u * p1[0] + 3 * m * u * u * p2[0] + u ** 3 * p3[0],
                         m ** 3 * p0[1] + 3 * m * m * u * p1[1] + 3 * m * u * u * p2[1] + u ** 3 * p3[1],
                         86 - 58 * u ** 1.25))       # tapers toward the tip
+        if tail_scale != 1.0:
+            # About the ATTACHMENT point, so the tail stays welded to the rim
+            # and only its reach and thickness change.
+            ax, ay = TAIL[0]
+            out = [(ax + (x - ax) * tail_scale, ay + (y - ay) * tail_scale, w * tail_scale)
+                   for x, y, w in out]
         return out
 
-    if board_frac is None:
+    if concentric:
+        # Board on the canvas centre; scale so the furthest drawn point -- the
+        # tail tip, always -- lands on the padded circle.
+        reach = max([outer] + [math.hypot(x, y) + w for x, y, w in dabs_u()])
+        scale = (S / 2 - pad) / reach
+        cx = cy = S / 2
+    elif board_frac is None:
         # Historical fit: the whole drawing, tail included, inside the padded box.
         ux, uy = [], []
         for q in range(4):
