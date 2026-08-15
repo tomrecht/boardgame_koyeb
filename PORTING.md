@@ -79,6 +79,17 @@ be reused without checking.
    5760/5760 goal distances, 0 blocked-set mismatches.**
 4. Port dynamic tile features → piece features → global features → edges, each
    asserted array-equal against the fixture.
+   - **tile features: done** (`encoder.js` `tileFeatures`). 33600/33600 cells
+     match over 40 positions. Note the counts are per CURRENT PLAYER, so a
+     position encodes differently depending on whose turn it is — `encode()`
+     takes the player explicitly, mirroring `encode(board, player)`.
+   - piece features (`encode_piece_features`, ~110 lines, needs the status
+     enum, the distance bins and MAX_DIST=14 normalisation) — **next**, and the
+     one to be careful with: its row order is `all_pieces`, recorded in the
+     fixture as `piece_order`, and the edge arrays index into it.
+   - global features (`encode_global_features`, ~70 lines).
+   - piece↔tile edges (`encode_piece_tile_edges`, ~25 lines, trivial once the
+     piece order is right).
 5. Wire onnxruntime-web; assert the ONNX output matches Python's scores for the
    same positions (the existing `onnx_export.py` self-check is the model here:
    it got graph-vs-torch agreement to 8.8e-08).
