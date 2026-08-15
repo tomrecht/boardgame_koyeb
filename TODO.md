@@ -41,6 +41,21 @@ sees. F=12 was adopted only after 120 paired games showed no measurable loss.
   it still fires rather than assuming.
 - Run locally on the Mac (BOARDGAME_DEVICE=cpu), not on the server.
 
+**Written, not yet run: `match_topk.py`** (2026-08-15). Two modes, and the
+order matters:
+
+    python match_topk.py probe 60                  # minutes, no games
+    N_WORKERS=8 python match_topk.py match 120 24,16,10 12
+
+`probe` walks recorded positions and reports, per setting, the candidate count,
+seconds per move, and how often a save was legal but NO save pair survived the
+cull. Run it FIRST: saves are exempt from the top-K cull because the heuristic
+undervalues them, so at small k that exemption becomes load-bearing, and a
+setting that drops saves is disqualified whatever the match data says.
+`match` is the paired-seed measurement against the served baseline (top_k=40,
+F=12), colours swapped within each pair. Seed base 7_900_000, disjoint from
+match_prefilter.py's 7_700_000.
+
 Watch-out: the arena finding applies here too -- promotion-gate-style single
 matchups mislead, and the top four champions were statistically inseparable at
 9-16 games per matchup. Budget the sample before starting, not after.
