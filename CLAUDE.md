@@ -879,8 +879,72 @@ with it in mind.** Assessment and the concrete implications:
     rect height`), NOT camera zoom, which is world units per BUFFER pixel and
     is 3x off on a DPR-3 screen. Measured: no inset is byte-identical (row
     bottom 822), a 34px inset puts it at 788, clearing 34 + the original 22.
-  - **APP PACKAGING lives on branch `app-packaging`** (2026-08-15), not main.
-    So far: a **network-first service worker** (`sw.js`) — index.html and
+  - **ON-DEVICE INFERENCE: THE PORT IS DONE AND PROVEN (2026-08-15).** The JS
+    agent plays the same game as the Python one. `PORTING.md` has the full
+    account and every watch-out; the headline numbers, each against a Python
+    fixture:
+      * `route.js` 960/960 routes, 5760/5760 goal distances
+      * `encoder.js` every array exact (33600 tile cells, 23040 piece cells)
+      * `infer.js` max |JS − Python| **4.5e-08** over 40 positions
+      * `engine.js` move sets 50/50, position after a move 3054/3054, undo 3054/3054
+      * `heuristic.js` **2646/2646 bit-exact** (worst gap 0.0)
+      * `agent.js` 50/50 chosen pairs against a stubbed net
+      * **trace-diff 110/110** chosen pairs over two real games with real
+        browser inference — the actual proof
+    **`select_move_pair` is now deterministic** (see the determinism entry under
+    Learnings): it had to be, because a trace-diff needs Python to agree with
+    itself first. 30 of those 110 turns are decided by a margin under 1e-5 and
+    the smallest is exactly 0, yet none diverge — the fewest-relocations
+    tie-break groups by RESULTING POSITION, not by score equality, so it fires
+    identically on both sides whatever the last bits do.
+    **Measured in-browser latency** (`latency_test.html`, 40 positions): desktop
+    median 0.29s / p90 0.71s; at 4x CPU throttle (~mid-range phone) median
+    **1.25s** / p90 **2.97s** / max 4.11s, init 2.55s. Candidates scored: 40
+    median (= `prefilter_top_k`), 145 max. Playable, but the p90 is worse than
+    the served agent's 1.28s worst plus network on a warm connection — local
+    wins decisively only when the server is cold or absent. TODO.md plans the
+    top-k experiment that would buy the time back, and why it must not be tuned
+    blind.
+    **NOT YET WIRED IN.** `game.js` still calls `/select_moves`. Step 7 in
+    PORTING.md has the settled design: both platforms (not phone-only), lazy —
+    start on the server, load the runtime in the background, switch when ready,
+    fall back for good. `Engine.snapshot()` is the bridge and is already
+    exercised by the trace test.
+  - **HOSTING: THE GOAL IS NO APPLICATION SERVER AT ALL (owner + agent,
+    2026-08-15).** Once inference is local, nothing needs Python at runtime and
+    the Flask app becomes a folder of static files. That is the endpoint — not a
+    smaller instance. The arguments, recorded because they decide later work:
+      * **Scaling is inverted today.** eMicro is 1 worker / 2 threads on a
+        fractional vCPU and a move costs ~0.1-1.3s of server CPU. Fine for one
+        player; ten concurrent players queue. `MOVE_BUDGET` exists precisely
+        because moves already ran long. The server is the only component that
+        degrades as the game succeeds.
+      * **A dead backend is a permanently dead app.** Every installed copy
+        breaks if the free tier changes or the instance goes away. Local
+        inference means an installed app keeps working — which is what a
+        home-screen icon promises.
+      * **Cost inverts**: server cost grows per player, client inference is free
+        to us and constant.
+      * Static hosting is free, CDN-backed and scales past anything eMicro takes;
+        a Capacitor build bundles the assets and needs no host at all.
+    **Implied work after step 7:** audit what is left server-side —
+    `/call_draw`, `/start_game`, `/evaluate_board`, `/query_agent_move`, the
+    `record_*` routes. Human-play recording is already off and draw handling is
+    client-side, so most are likely REMOVABLE rather than portable — but check,
+    do not assume.
+  - **THE ICON IS FINAL (2026-08-15)**, shipped: concentric, goals extended 25%
+    on each side, the `tighter` curl at full size, the outer field ring dropped,
+    three pieces. Board 69% of the canvas against 59% for the old fit.
+    **The grey "bubble" on Android is the icon's own parchment ground** (owner
+    confirmed: same colour as the nogo areas, which ARE background since nogo
+    tiles are never drawn) and cannot be removed — Android always fills the
+    adaptive-icon shape, so a transparent ground merely hands its colour to
+    Chrome. Making the board concentric with the mask and as large as the tail
+    allows is the whole fix. The real limit is the mask's radius (50% of the
+    canvas), NOT the conservative 40% safe zone. The launcher icon is baked at
+    install time, so any icon change needs a remove-and-re-add to see.
+  - **APP PACKAGING (2026-08-15), merged to main** — was branch `app-packaging`.
+    A **network-first service worker** (`sw.js`) — index.html and
     game.js always hit the network and fall back to cache only offline, because
     a cache-first worker serving a stale game.js after a deploy is the exact bug
     that made this worth deferring; Phaser/icons/manifest are cache-first with a
@@ -888,8 +952,8 @@ with it in mind.** Assessment and the concrete implications:
     registers at scope /, an offline reload boots the board (94 tiles), and an
     edited game.js is picked up on the next load. It gives offline LOADING, not
     offline PLAY — the AI is still `/select_moves`.
-    **`PORTING.md` holds the on-device-inference plan.** Two decisions already
-    made: (1) the encoder's STATIC half is exported, not ported —
+    **`PORTING.md` holds the on-device-inference plan** (now the record of a
+    completed port — see the entry above). Two decisions made at the outset: (1) the encoder's STATIC half is exported, not ported —
     `export_encoder_static.py` writes `encoder_static.json` (70 tiles, 186
     edges, 70x12 base features), because `build_tile_index` collects edges in a
     `set` and a JS reimplementation would order them differently; float addition
