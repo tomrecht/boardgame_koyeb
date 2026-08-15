@@ -2018,6 +2018,10 @@ function showInstructions() {
     box.id = 'howToPlay';
     box.style.cssText = 'position:fixed; inset:0; z-index:60; display:grid; place-items:center;' +
         'background:rgba(0,0,0,.5); font-family:' + HUD_FONT + ';';
+    // Two variants: a phone has no mouse and no keyboard, and it has gestures a
+    // desktop does not, so the wording differs rather than covering both at once.
+    const phone = _isPhone();
+    const dbl = phone ? 'double-tap' : 'double-click';
     const sections = [
         ['Goal', 'Be the first to <i>save</i> all your pieces. Your score for a win is the number of pieces your opponent still had left — so winning big is worth more.'],
         ['Your pieces', 'You have 12: six numbered (1–6) and six blank. They start on your side rack.'],
@@ -2026,10 +2030,15 @@ function showInstructions() {
         ['Capturing &amp; blocking', 'Land on a field tile holding a single enemy piece and you capture it — it goes back to the home tile and its owner must re-enter it before doing anything else. A tile with <b>two or more</b> enemy pieces is a wall: you can’t enter or pass through it.'],
         ['Saving', 'The six coloured wedges on the rim are goals, numbered 1–6. To save a piece, get it onto a goal and roll that goal’s number to lift it off the board. A numbered piece can only be saved from its own goal; a blank piece from any goal. (You can start saving once all your pieces are on the board.)'],
         ['Endgame', 'When every piece you have left is saved or sitting on a goal it can be saved from, you’re in the endgame: blank pieces can now be saved with a roll <i>higher</i> than their goal’s number, as long as you have nothing waiting on a higher-numbered goal.'],
-        ['A couple of special moves', '• Break a wall: past the opening and with no captured pieces, double-click (or drag from the picker) one piece of an enemy two-stack to save it for them — it costs both your dice and hands the opponent a piece, but turns the wall into a lone piece.<br>• Last piece: if you start a turn with a single piece left and it’s a numbered one sitting on its goal, it becomes blank (savable by any roll of that goal number or higher).'],
+        ['A couple of special moves', '• Break a wall: past the opening and with no captured pieces, ' + dbl + ' (or drag from the picker) one piece of an enemy two-stack to save it for them — it costs both your dice and hands the opponent a piece, but turns the wall into a lone piece.<br>• Last piece: if you start a turn with a single piece left and it’s a numbered one sitting on its goal, it becomes blank (savable by any roll of that goal number or higher).'],
         ['Stalemate', 'If 10 full rounds pass with nobody saving a piece, either player may call a draw. Any save resets the counter.'],
         ['Matches', 'A match is several games, and it is won on <b>total score</b> — the sum of your winning margins — not on games won. Two formats: a set number of games (highest total score at the end wins), or a race to a target score. Starters alternate; if the scores finish level the match goes to whoever won more games, and if that is level too it is extended by a pair of games. The score line under the board tracks the match.'],
-        ['Controls', 'Tap or drag a piece to move it; drag onto its goal — or double-click — to save. The ↶ arrow undoes one die at a time; ↷ ends your turn. On a crowded tile the <b>+N</b> badge opens a picker (drag a piece straight out of it). Theme, difficulty and options live under the ⚙ settings, and <b>New Match</b> starts a multi-game match.<br>On desktop: <b>Z</b> undoes one die · <b>Enter</b> or <b>Space</b> ends your turn · <b>Esc</b> deselects the piece you’re holding.'],
+        ['Controls', phone
+            ? 'Tap a piece, then tap where it should go — or just drag it there. Drag onto its goal, or double-tap, to save. The ↶ arrow undoes one die at a time; ↷ ends your turn. On a crowded tile the <b>+N</b> badge opens a picker (drag a piece straight out of it). Theme, difficulty and options live under the ⚙ settings, and <b>New Match</b> starts a multi-game match.'
+              + '<br>Pinch to zoom, and drag the board to move around it. While you are zoomed in, a piece you still have to enter hovers at the bottom left and the dice appear at the top right — the hovering piece can be tapped, or dragged straight onto the board.'
+              + '<br>Settings › <b>Fullscreen</b> hides the browser bars, and stops a swipe from the edge of the screen going back a page.'
+            : 'Click a piece, then click where it should go — or just drag it there. Drag onto its goal, or double-click, to save. The ↶ arrow undoes one die at a time; ↷ ends your turn. On a crowded tile the <b>+N</b> badge opens a picker (drag a piece straight out of it). Theme, difficulty and options live under the ⚙ settings, and <b>New Match</b> starts a multi-game match.'
+              + '<br>Keyboard: <b>Z</b> undoes one die · <b>Enter</b> or <b>Space</b> ends your turn · <b>Esc</b> deselects the piece you’re holding.'],
     ];
     // Wide two-column card so the whole thing is readable at a glance instead of
     // scrolled through; collapses to one scrolling column on a narrow screen.
