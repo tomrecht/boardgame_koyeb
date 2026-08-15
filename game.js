@@ -1452,6 +1452,40 @@ function _tutFitBoard() {
     const mode = _tutLayout();
     const gap = 16;
 
+    // Phones use Scale.NONE and the canvas always fills the viewport, so the
+    // board CANNOT be shrunk to make room -- setParentSize does nothing here.
+    // Stacking the bubble under the board therefore put it below the fold
+    // (measured: top 860 on an 844-tall screen, so it never appeared). Overlay
+    // it on the board instead, pinned to the bottom of the viewport; it has a
+    // solid background and sits above the canvas.
+    if (_isPhone()) {
+        // A FIXED box, identical for every step: the size used to follow the
+        // step's content, so later steps grew and crept over the board (owner
+        // saw step 1 clear of it and step 2 onward covering a quarter).
+        if (mode === 'side') {
+            const bw = Math.min(300, Math.round(W * 0.32));
+            b.style.width = bw + 'px';
+            b.style.left = 'auto';
+            b.style.right = gap + 'px';
+            b.style.top = '50%';
+            b.style.bottom = 'auto';
+            b.style.transform = 'translateY(-50%)';
+            b.style.maxHeight = (H - 2 * gap) + 'px';
+        } else {
+            b.style.width = 'min(640px, ' + (W - 2 * gap) + 'px)';
+            b.style.left = '50%';
+            b.style.right = 'auto';
+            b.style.top = 'auto';
+            b.style.bottom = gap + 'px';
+            b.style.transform = 'translateX(-50%)';
+            b.style.maxHeight = Math.round(H * 0.45) + 'px';
+        }
+        b.style.overflowY = 'auto';
+        s.setParentSize(W, H);
+        if (s.canvas) { s.canvas.style.marginLeft = ''; s.canvas.style.marginTop = ''; }
+        return;
+    }
+
     if (mode === 'side') {
         // Text in a column beside the board, board pinned to the other side.
         const bw = Math.min(380, Math.round(W * 0.34));
