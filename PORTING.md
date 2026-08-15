@@ -15,7 +15,9 @@ has to be ported to JS is the *input* side and the search:
 | piece↔tile edges | `encoder.py:encode_piece_tile_edges` | ~25 lines | trivial |
 | global features | `encoder.py:encode_global_features` | ~70 lines | |
 | route BFS | `game.py:shortest_route_to_goal`, `all_goal_distances`, `_get_blocked_key` | ~120 lines | the measured hot spot (~35% of worker time) |
-| 2-ply search + heuristic prefilter | `agent_gnn.py` | ~400 lines of the 1452 | `select_move_pair` + `first_move_prefilter` |
+| 2-ply search + heuristic prefilter | `agent_gnn.py` | ~400 lines of the 1452 | **DONE** — `agent.js` |
+| game engine | `game.py` | ~600 lines | **DONE** — `engine.js` (the search needs apply/undo) |
+| heuristic evaluator | `agent.py` | ~250 lines | **DONE** — `heuristic.js` (the prefilter needs it) |
 
 ## Decision: export the static half, don't port it
 
@@ -203,9 +205,23 @@ be reused without checking.
    `_dedupe_save_pair` and `_pick_move_index`. `_fix_never_good` is disabled by
    default (`enable_never_good=False`) and can be skipped.
 
-   **6.4 the proof.** With 6.0 in place the criterion is exact: identical chosen
-   pairs over a 40-turn seeded game. Compare against the SERVED config (prefilter
-   on, F=12), not the library default of 0.
+   **6.4 (done): the proof.** `dump_trace_fixture.py` + `trace_test.html`.
+   Two seeded games played by the SERVED agent (real model.onnx, prefilter
+   F=12), 110 turns, each position replayed through the JS agent with real
+   browser inference: **110/110 identical chosen pairs**, and the candidate sets
+   agree 110/110.
+   The worry going in was that infer.js matches Python to 4.5e-08 rather than
+   exactly, so a Python tie can be a 1e-8 gap in JS and the canonical tie-break
+   would not fire. It is a real effect — **30 of the 110 turns are decided by a
+   margin below 1e-5, and the smallest is exactly 0** — but it does not reach the
+   answer, because those ties are almost all TRANSPOSITIONS, and the
+   fewest-relocations tie-break groups candidates by their RESULTING POSITION
+   rather than by score equality. It therefore fires identically on both sides
+   whatever the last bits do. A tie between genuinely different positions could
+   still diverge; none occurred here.
+   Run it: serve the repo, `python dump_trace_fixture.py 2`, then open
+   `/trace_test.html` (or drive it with the CDP runner). onnxruntime-node is not
+   installed, so the browser is the only place the JS agent can score.
 
 ## Watch-outs carried over
 

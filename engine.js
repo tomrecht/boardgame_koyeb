@@ -20,7 +20,11 @@
 const _RT = (typeof require !== 'undefined') ? require('./route.js')
                                              : (typeof window !== 'undefined' ? window : self);
 
-const NUM_PIECES = 12;
+// NOT `NUM_PIECES`: encoder.js already declares a top-level const of that name,
+// and classic scripts share ONE global lexical scope -- the redeclaration is a
+// SyntaxError that kills whichever file loads second, silently, leaving its
+// exports undefined. Third time this has bitten (buildGraph, _api, now this).
+const ENGINE_NUM_PIECES = 12;
 const NO_SAVE_TURNS_FOR_DRAW = 10;
 
 class Engine {
@@ -124,8 +128,8 @@ class Engine {
     checkGameOver() {
         if (this.drawCalled) return ['draw', 0];
         const w = this.savedRack('white').length, b = this.savedRack('black').length;
-        if (w === NUM_PIECES) return ['white', NUM_PIECES - b];
-        if (b === NUM_PIECES) return ['black', NUM_PIECES - w];
+        if (w === ENGINE_NUM_PIECES) return ['white', ENGINE_NUM_PIECES - b];
+        if (b === ENGINE_NUM_PIECES) return ['black', ENGINE_NUM_PIECES - w];
         return [null, null];
     }
 
@@ -419,10 +423,37 @@ class Engine {
             if (unsaved.length === 1 && unsaved[0].number <= 6) {
                 const p = unsaved[0];
                 this.lookup.delete(p.player + ',' + p.number);
-                p.number = NUM_PIECES + 1;
+                p.number = ENGINE_NUM_PIECES + 1;
                 this.lookup.set(p.player + ',' + p.number, p);
             }
         }
+    }
+
+    /* The shape encoder.js takes. This is the join between the two halves of
+       the port: the engine owns the position, the encoder owns the features,
+       and neither knows about the other's representation. Keys and kinds match
+       dump_encoder_fixture.py's snapshot() exactly. */
+    snapshot() {
+        const pieces = this.pieces.map(p => {
+            const base = { player: p.player, number: p.number };
+            if (p.tile >= 0) {
+                const [ring, pos] = this.coords[p.tile];
+                return Object.assign(base, { kind: 'tile', ring, pos });
+            }
+            return Object.assign(base, { kind: p.rack === 'saved' ? 'saved' : 'unentered' });
+        });
+        return {
+            current_player: this.currentPlayer,
+            dice: this.dice.map(d => ({ value: d.value, used: !!d.used })),
+            game_stages: Object.assign({}, this.stages),
+            pieces,
+            racks: {
+                white_unentered: this.racks.white_unentered.map(p => p.number),
+                black_unentered: this.racks.black_unentered.map(p => p.number),
+                white_saved: this.racks.white_saved.map(p => p.number),
+                black_saved: this.racks.black_saved.map(p => p.number),
+            },
+        };
     }
 
     /* --- comparison ----------------------------------------------------- */
@@ -485,7 +516,7 @@ const moveCmp = (a, b) => {
 // classic scripts share one global lexical scope, so a bare top-level const of
 // a name another file also uses is a silent SyntaxError.
 (function () {
-    const api = { Engine, moveKey, moveCmp, NUM_PIECES, NO_SAVE_TURNS_FOR_DRAW };
+    const api = { Engine, moveKey, moveCmp, NO_SAVE_TURNS_FOR_DRAW };
     if (typeof module !== 'undefined' && module.exports) module.exports = api;
     else Object.assign(typeof window !== 'undefined' ? window : self, api);
 })();

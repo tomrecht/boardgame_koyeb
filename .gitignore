@@ -21,4 +21,5 @@ encoder_fixture.json
 engine_fixture.json
 heuristic_fixture.json
 agent_fixture.json
+trace_fixture.json
 ort/*.gz    # generated at image build time (see Dockerfile)
