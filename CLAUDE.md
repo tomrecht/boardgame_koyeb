@@ -956,6 +956,18 @@ with it in mind.** Assessment and the concrete implications:
     Owner's rule, stated precisely after a first attempt overshot it: you may
     bring the SECOND rack piece out first, but this is a **reordering within the
     turn only** — the set of end-of-turn positions must be exactly what it was.
+    **THE ENGINE DOES NOT IMPLEMENT IT (owner, 2026-08-15).** The reordering is
+    a FRONTEND affordance only: `game.py`'s `get_enterable_pieces` returns the
+    front piece alone. Since the end-of-turn positions are provably identical,
+    the engine gained nothing by enumerating the alternative orderings and paid
+    for them — in the opening it doubled first-move candidates (21 -> 42 in a
+    measured position) to reach exactly the same positions. The agent never has
+    to generate a human's move either: `/select_moves` receives the board STATE,
+    not move tuples. `origin_rack_index` in save_move/undo is KEPT — two lines,
+    strictly more correct, and the mirror of the frontend's `_rackIndexOnLeave`.
+    What follows describes the rule the FRONTEND enforces; the three constraints
+    were verified in the engine before it was reverted, and the equivalence
+    proof is what licensed reverting it.
     Three constraints make that true, and all three are needed:
     1. **The front piece must still enter this turn.** Entering the second does
        not discharge the entry obligation: `apply_move` records `front_owed` on

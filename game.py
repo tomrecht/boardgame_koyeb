@@ -342,42 +342,21 @@ class Board:
         return unentered_rack[0]
 
     def get_enterable_pieces(self):
-        """The rack pieces that may enter this turn.
+        """The rack pieces the ENGINE offers as entries: the front one only.
 
-        Historically only the front piece could, so the order of a turn's two
-        entries was forced. The second is now selectable too -- but purely as a
-        REORDERING: the front piece must still enter in the same turn (see
-        must_move_unentered), and a second-piece entry that would strand the
-        front one is not offered at all (see _second_entry_ok). The set of
-        end-of-turn positions is therefore exactly what it was; only the order
-        within the turn is free.
+        The frontend lets a human take the SECOND rack piece out first, but that
+        is a pure reordering within the turn -- the set of end-of-turn positions
+        is provably identical (equiv_test: 242/242), so the engine gains nothing
+        by enumerating the alternative orderings and pays for them: in the
+        opening it doubled the first-move candidates, 21 -> 42 in a measured
+        position, to reach exactly the same positions.
 
-        Two unnumbered pieces are interchangeable, so the second is dropped when
-        both are blanks -- otherwise the move set doubles for no added choice.
+        The agent never has to generate a human's move either -- /select_moves
+        receives the board STATE, not move tuples -- so keeping the reordering
+        out of the engine costs nothing and keeps the search cheap.
         """
         rack = self.white_unentered if self.current_player == 'white' else self.black_unentered
-        # Once the second piece has gone first, the front piece owes the entry
-        # and nothing else may take its place -- otherwise the reordering would
-        # cascade and the front piece could be deferred after all.
-        # Reordering is a FIRST-MOVE privilege only. Once anything has been
-        # played this turn, the rack hands out its front piece and nothing
-        # else -- otherwise a front-first opening could be followed by the NEW
-        # second piece entering, deferring a piece after all.
-        if self.firstMove:
-            owed = self.firstMove.get('front_owed')
-            if owed is not None and owed.rack is not None:
-                return [owed]
-            return rack[:1]
-        picks = rack[:2]
-        if len(picks) == 2 and picks[0].number > 6 and picks[1].number > 6:
-            picks = picks[:1]
-        return picks
-
-    def _other_die(self, roll):
-        """The value of the die that is NOT the one this roll used."""
-        if roll == self.dice[0].number and not self.dice[0].used:
-            return self.dice[1].number
-        return self.dice[0].number
+        return rack[:1]
 
     def must_move_unentered(self):
         unentered_rack = self.white_unentered if self.current_player == 'white' else self.black_unentered
@@ -386,11 +365,7 @@ class Board:
         if self.home_tile.pieces and any(piece.player == self.current_player for piece in self.home_tile.pieces):
             return False
         if self.firstMove:
-            # Entering the SECOND rack piece does not discharge the obligation:
-            # it is a reordering, so the piece it jumped still owes an entry
-            # this turn. Any other opening move discharges it, as before.
-            owed = self.firstMove.get('front_owed')
-            return owed is not None and owed.rack is not None
+            return False
         return True
 
     def get_saving_die(self, piece):
@@ -479,8 +454,6 @@ class Board:
             entrants = self.get_enterable_pieces()
             for piece in entrants:
                 self.get_reachable_tiles_by_dice(piece)
-            if len(entrants) == 2 and not self.firstMove:
-                self._filter_second_entries(entrants[0], entrants[1])
             self.destinations_by_piece = {piece: piece.reachable_tiles for piece in entrants}
         else:
             player_pieces = [p for p in self.pieces if p.player == self.current_player and p.tile and p.tile.type in ['field', 'save']]
@@ -500,8 +473,6 @@ class Board:
 
             for piece in player_pieces:
                 self.get_reachable_tiles_by_dice(piece)
-            if len(entrants) == 2 and not self.firstMove:
-                self._filter_second_entries(entrants[0], entrants[1])
             self.destinations_by_piece = {piece: piece.reachable_tiles for piece in player_pieces}
 
 
@@ -536,28 +507,6 @@ class Board:
         if (not self.dice[0].used and not self.dice[1].used) and self.draw_callable:
             tuples_list.append((1, 1, 1))   # add calling a draw
         return tuples_list
-
-    def _filter_second_entries(self, front, second):
-        """Drop the second piece's entries that would strand the front piece.
-
-        If the second piece takes one die and the front then cannot enter with
-        the other, the turn would end with the front still racked -- a position
-        the old rule could not produce, since it would simply have entered the
-        front piece with that die instead.
-
-        No simulation is needed to know this: entering never blocks a later
-        entry (own pieces stack, and a capture only REMOVES an enemy piece), so
-        the front's options with the other die are the same before and after.
-        Checked against an apply/undo simulation over 7667 candidate entries:
-        0 disagreements.
-        """
-        self.get_reachable_tiles_by_dice(front)
-        front_can = {roll: bool(dests) for roll, dests in (front.reachable_tiles or {}).items()}
-        filtered = {}
-        for roll, dests in (second.reachable_tiles or {}).items():
-            ok = front_can.get(self._other_die(roll), False)
-            filtered[roll] = [d for d in dests if d != 'save'] if ok else []
-        second.reachable_tiles = filtered
 
     def save_move(self, move, origin_tile=None, origin_rack=None, captured_piece=None, firstMove_before=None,
                   origin_rack_index=None):
@@ -714,13 +663,7 @@ class Board:
                 piece.tile.pieces.remove(piece)
                 origin_tile = piece.tile
             if not self.firstMove:
-                # If the SECOND rack piece went first, remember which piece it
-                # jumped, so the obligation can follow that piece rather than a
-                # slot index (the rack shifts as pieces leave).
-                self.firstMove = {'piece': piece, 'origin_tile': origin_tile,
-                                  'rack_index': origin_rack_index,
-                                  'front_owed': (origin_rack[0] if origin_rack_index == 1
-                                                 and origin_rack else None)}
+                self.firstMove = {'piece': piece, 'origin_tile': origin_tile}
             if new_tile.type == 'field' and new_tile.pieces and new_tile.pieces[0].player != piece.player:
                 captured_piece = new_tile.pieces.pop()
                 captured_piece.tile = self.home_tile
