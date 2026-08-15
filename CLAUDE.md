@@ -258,14 +258,27 @@ Two modes, both implemented and validated:
   pinned hash seed, dump per-position records minus the wall-clock game_id)
   is the standard of proof to use — single-run "it didn't crash" tests and
   cross-process profile comparisons both proved misleading here.
-- **Self-play is not run-to-run deterministic by default**: candidate move
-  pairs reaching transposed-identical positions get identical GNN scores,
-  and the argmax tie-break follows `set` iteration order, which depends on
-  Python's per-process string hash seed (move tuples contain strings). Same
-  seeds therefore produce different games across processes unless
-  `PYTHONHASHSEED` is pinned. Harmless for training (dice seeds still
-  control the real randomness) but essential to know for any exact
-  reproducibility or A/B comparison.
+- **Self-play was not run-to-run deterministic; the AGENT now is (2026-08-15).**
+  Candidate pairs reaching transposed-identical positions score identically, and
+  every tie in `select_move_pair` was settled by `set` iteration order, which
+  depends on the per-process string hash seed. Measured over 30 *pinned*
+  positions: **3 chose a different pair under a different PYTHONHASHSEED**, all
+  transpositions (same piece, same destination, dice the other way round). Ties
+  now break on a canonical move key (`_move_sort_key` / `_pair_sort_key`,
+  applied at the argmax, both prefilter sorts, the fewest-relocations tie-break
+  and the `return_scores` ranking). Verified: identical choices across three
+  hash seeds, and where the choice differs from the old code its score is
+  identical to 0.0 — only exact ties moved, so no strength question. Done as the
+  prerequisite for the JS port's trace-diff proof, which needs Python to agree
+  with itself first.
+  **`get_valid_moves`' return ORDER is still unstable** — it walks a `set` of
+  Tile objects, whose hashes are ids, so it varies per process regardless of
+  PYTHONHASHSEED. Anything consuming that list positionally (a random walk, a
+  "first legal move" pick) must sort it canonically or it will drift.
+  **Measurement trap:** the first probe of this said 24/30, because the random
+  walk building the positions was itself drifting — it was measuring position
+  divergence, not agent divergence. Pin the walk and record a position
+  fingerprint next to the choice.
 - **Profiling learnings**: cProfile on a directly-called `worker_play` (see
   `profile_worker.py`) attributes Python-level time reliably; macOS `sample`
   only shows C frames, and `py-spy` fought macOS permissions repeatedly.

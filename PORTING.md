@@ -111,16 +111,60 @@ be reused without checking.
      could not reach the browser.
    - The threaded wasm runs single-threaded via `numThreads = 1`, so no
      COOP/COEP headers are needed.
-6. Port the prefilter + 2-ply search; then the real proof:
-   **a seeded trace-diff** — `PYTHONHASHSEED=0`, identical move traces over 40
-   turns against the Python agent, the standard already used for the game-logic
-   optimisation and the ONNX refactor.
+6. Port the prefilter + 2-ply search; then the real proof: **a trace-diff** —
+   identical move traces over 40 turns against the Python agent.
+
+   **6.0 (done): the Python agent now agrees with itself.** The trace-diff
+   standard was not reachable as written. `select_move_pair` enumerates over
+   `set`s of move tuples, so its order varies with the hash seed, and every tie
+   was settled by "whichever came first" — the argmax, the prefilter's stable
+   sorts, and the fewest-relocations tie-break. Measured over 30 *pinned*
+   positions, **3 chose a different pair under a different PYTHONHASHSEED**, all
+   transpositions (same piece, same destination, dice the other way round).
+   Ties now break on a canonical move key (`_move_sort_key`): identical choices
+   across three hash seeds, and where the choice differs from the old code the
+   score is identical to 0.0, so only exact ties moved.
+   *Measurement trap this hid behind:* the first probe showed 24/30 differing,
+   because `get_valid_moves` walks a `set` of **Tile** objects whose hashes are
+   ids — so the random walk building the positions diverged too, and it was
+   measuring position drift, not agent drift. Pin the walk (`sorted(..., key=repr)`)
+   and record a position fingerprint alongside the choice.
+
+   **6.1 the engine.** This is the part the plan understated: the search runs on
+   `get_valid_moves` / `apply_move` / `undo_last_move` / `check_game_over`, so it
+   needs an engine, not just the search. game.js's board model is NOT usable —
+   it is entangled with Phaser display objects, has no search-shaped undo, and
+   deliberately diverges (it offers the rack reordering the engine does not).
+   Port `game.py`'s Board as plain data (`engine.js`), fed by the same snapshot
+   shape `encoder.js` already takes. ~600 lines. Fixture first: dump
+   `sorted(get_valid_moves())` plus the resulting position after each move, for
+   N seeded positions, and assert against it.
+   Watch-outs, all of which are silent if wrong: block-save (`destination == 0`)
+   marks BOTH dice used and its undo must clear both unconditionally, and it
+   restores the turn to the mover's OPPONENT; `undo` returns a rack piece to
+   `origin_rack_index`, not the front; `game_stages` is mutated as a side effect
+   of `get_valid_moves`; and `apply_last_piece_rule` RENUMBERS a piece to 13.
+
+   **6.2 the heuristic** (`agent.py`, ~414 lines) — needed because the served
+   config prefilters (`FIRST_MOVE_PREFILTER=12`), so the candidate set the GNN
+   sees depends on it.
+
+   **6.3 `select_move_pair`** itself (~290 lines) plus `_select_filtered`,
+   `_dedupe_save_pair` and `_pick_move_index`. `_fix_never_good` is disabled by
+   default (`enable_never_good=False`) and can be skipped.
+
+   **6.4 the proof.** With 6.0 in place the criterion is exact: identical chosen
+   pairs over a 40-turn seeded game. Compare against the SERVED config (prefilter
+   on, F=12), not the library default of 0.
 
 ## Watch-outs carried over
 
-- Self-play is **not** run-to-run deterministic unless `PYTHONHASHSEED` is
-  pinned: transposed-identical candidates score identically and the argmax
-  tie-break follows `set` iteration order. Pin it for any comparison.
+- ~~Self-play is **not** run-to-run deterministic unless `PYTHONHASHSEED` is
+  pinned.~~ Fixed for the AGENT by 6.0 above — `select_move_pair` is now a pure
+  function of the position. `get_valid_moves`' own return ORDER is still
+  unstable (it walks a `set` of Tile objects, whose hashes are ids), so anything
+  that consumes that list positionally — a random walk, a "pick the first legal
+  move" — must still sort it canonically.
 - The served prefilter is `FIRST_MOVE_PREFILTER=12`; the library default is 0.
   Match whichever you are comparing against, or the traces will diverge for
   reasons that have nothing to do with the port.
