@@ -236,3 +236,44 @@ be reused without checking.
   reasons that have nothing to do with the port.
 - `agent_gnn` does top-k/argmax/difficulty-softmax in numpy already
   (`gnn_backend.py`), so those are small and mechanical.
+
+
+## Step 7: wiring it into game.js (next)
+
+Measured first, because it decides the shape. `latency_test.html` runs the real
+agent over 40 recorded positions:
+
+| | init | median move | p90 | max | candidates scored |
+|---|---|---|---|---|---|
+| desktop (no throttle) | 0.68s | 0.29s | 0.71s | 0.96s | 40 median, 145 max |
+| 4x CPU throttle (~mid-range phone) | 2.55s | **1.25s** | **2.97s** | 4.11s | same |
+
+Playable on a phone but not free: the p90 is ~3s against the served agent's
+measured worst of 1.28s plus network. The tuning lever if it needs one is
+`first_move_prefilter` and `prefilter_top_k` (40 median candidates comes from
+top_k=40); the encoder's per-candidate BFS is the likely hot spot, not the
+forward pass, so cutting candidates cuts nearly all of it. Do NOT lower these
+blind -- they change which moves the net sees, and match_prefilter.py is the
+tool for showing that a change costs no strength.
+
+**The design, settled:**
+- **Both platforms**, not phone-only. Leaving desktop on `/select_moves` keeps
+  the Koyeb instance, the cold starts and MOVE_BUDGET alive and maintains two AI
+  paths forever, which is the whole cost the port was meant to remove.
+- **Lazy, with the server as fallback.** Start each session on `/select_moves`,
+  load onnxruntime in the background, switch to local once ready. A first-time
+  browser visitor would otherwise pay ~4.5 MB (2.9 MB gzipped runtime + 1.66 MB
+  model) before the AI can move; an installed app has already paid it. If local
+  init fails -- old browser, no WASM -- it simply never switches.
+- Koyeb then becomes a fallback that can be switched off when confident, rather
+  than a dependency.
+
+**Two things easy to get wrong:**
+- `game.js` builds the snapshot from its OWN board model, which is the one place
+  the two engines meet -- and it is the model that deliberately diverges on rack
+  reordering. The snapshot must describe what the ENGINE would see, not what the
+  UI offers.
+- `model.onnx` is precached cache-first by the service worker, so swapping the
+  deployed model stops being a server-side file replace and becomes a deploy
+  plus a CACHE bump. engine/heuristic/agent.js are already ALWAYS_FRESH; add
+  them and latency/trace pages to the shell list when they go live.

@@ -1,0 +1,50 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>Move latency — in-browser agent</title>
+<body style="font:13px ui-monospace,monospace; padding:16px">
+<pre id="out">running…</pre>
+<script src="ort/ort.wasm.min.js"></script>
+<script src="route.js"></script>
+<script src="encoder.js"></script>
+<script src="infer.js"></script>
+<script src="engine.js"></script>
+<script src="heuristic.js"></script>
+<script src="agent.js"></script>
+<script>
+const out = document.getElementById('out');
+(async () => {
+    const [staticData, W, fx] = await Promise.all([
+        fetch('encoder_static.json').then(r => r.json()),
+        fetch('heuristic_weights.json').then(r => r.json()),
+        fetch('trace_fixture.json').then(r => r.json()),
+    ]);
+    const t0 = performance.now();
+    await Infer.init({ ort, modelUrl: 'model.onnx', staticUrl: 'encoder_static.json', wasmPath: '/ort/' });
+    const initMs = performance.now() - t0;
+
+    const times = [], counts = [];
+    const cases = fx.cases.slice(0, 40);
+    for (const c of cases) {
+        const e = Engine.fromState(staticData, c.state);
+        const moves = e.getValidMoves();
+        const t = performance.now();
+        await selectMovePair(e, W, moves, c.player, {
+            snapshot: (eng) => eng.snapshot(),
+            score: async (snaps) => { counts.push(snaps.length); return Infer.score(ort, snaps, c.player); },
+        });
+        times.push(performance.now() - t);
+        out.textContent = `${times.length}/${cases.length}`;
+    }
+    const q = (a, p) => a.slice().sort((x, y) => x - y)[Math.min(a.length - 1, Math.floor(a.length * p))];
+    window.__result = {
+        initMs: Math.round(initMs),
+        turns: times.length,
+        medianMs: Math.round(q(times, 0.5)),
+        p90Ms: Math.round(q(times, 0.9)),
+        maxMs: Math.round(Math.max(...times)),
+        medianCandidates: q(counts, 0.5),
+        maxCandidates: Math.max(...counts),
+    };
+    out.textContent = JSON.stringify(window.__result, null, 1);
+})().catch(e => { window.__result = { error: String(e) }; out.textContent = 'ERROR ' + e; });
+</script>
