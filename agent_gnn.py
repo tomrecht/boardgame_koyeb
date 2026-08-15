@@ -357,18 +357,35 @@ class GNNAgent:
                 if sc is None:
                     sc, _ = self.heuristic.evaluate(board, player)
                     eval_cache[key] = sc
-                first_scored.append((sc, move))
+                # Does a save become available after this move? Exempt it from
+                # the cull if so. Stage 1 ranks first moves ALONE, so "step onto
+                # the goal with one die, save with the other" is judged on the
+                # step -- which can score poorly by itself, culling the pair
+                # before the value head ever sees the save.
+                # get_saving_die reads game_stages, and stage 1 applies moves
+                # without the get_valid_moves call that refreshes them, so
+                # compute the stage fresh and put it back -- leaving it changed
+                # would drift the candidates scored after this one (the bug that
+                # once scored identical candidates 20-80 points apart).
+                prev_stage = board.game_stages[player]
+                board.game_stages[player] = board.get_game_stage(player)
+                enables = any(board.get_saving_die(p) for p in board.pieces
+                              if p.player == player)
+                board.game_stages[player] = prev_stage
+                first_scored.append((sc, move, enables))
                 while len(board.moves) > base:
                     board.undo_last_move()
             # Ties broken canonically, not by set-iteration order: which first
             # moves survive the cut decides which pairs the GNN ever sees.
             first_scored.sort(key=lambda x: (-x[0], _move_sort_key(x[1])))
-            keep = [m for _, m in first_scored[:self.first_move_prefilter]]
+            keep = [m for _, m, _e in first_scored[:self.first_move_prefilter]]
             kept = set(keep)
-            # a first move that saves a piece is never culled here, for the same
-            # reason save PAIRS are exempt from the top-K cull below
-            keep += [m for _, m in first_scored
-                     if m not in kept and isinstance(m, tuple) and m[1] == 'save']
+            # A first move that saves a piece is never culled here, for the same
+            # reason save PAIRS are exempt from the top-K cull below -- nor is
+            # one that ENABLES a save as the pair's second half. "Never cull a
+            # save" should hold by construction rather than by luck.
+            keep += [m for _, m, e in first_scored
+                     if m not in kept and ((isinstance(m, tuple) and m[1] == 'save') or e)]
             moves_iter = keep
 
         truncated = False

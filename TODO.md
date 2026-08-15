@@ -89,7 +89,7 @@ matchups mislead, and the top four champions were statistically inseparable at
 9-16 games per matchup. Budget the sample before starting, not after.
 
 
-## Stage 1 can cull a save-ENABLING first move — MEASURED, PARKED (2026-08-15)
+## Stage 1 could cull a save-ENABLING first move — FIXED (2026-08-15)
 
 Found while probing top_k. `select_move_pair`'s first-move prefilter exempts a
 first move that IS a save:
@@ -122,42 +122,59 @@ so while it is applied, ask whether a save has become available:
 and exempt the move from the cull if so. No simulation, no second move
 generation.
 
-**MEASURED, and it does not bite. Not shipping it.**
-
-Against true ground truth (`BASELINE=40,0`, i.e. no first-move prefilter):
+**MEASURED: real, but it never changed a move.** Against true ground truth
+(`BASELINE=40,0`, i.e. no first-move prefilter), BEFORE the fix:
 
     positions        save pairs kept   lost all   moves differ   saves lost
     60 walked        55%               6 of 11    13 of 60       0
     40 endgame       77%               0 of 31    0 of 40        0 (of 30)
     200 endgame      77%               0 of 164   3 of 200       0 (of 160)
 
-The served F=12 really does discard save pairs -- over half of them in walked
-positions, and in 6 of 11 it discards every one, so the agent frequently never
-sees a save pair at all. But it never changes the MOVE: in the endgames, where
-saves are dense and the baseline banks a piece in 30 of 40 positions, F=12
-plays the identical pair every time. The culled pairs are ones the net would
-not have chosen.
+The served F=12 really did discard save pairs -- over half of them in walked
+positions, and in 6 of 11 it discarded every one, so the agent frequently never
+saw a save pair at all. But it never changed the MOVE: in the endgames, where
+saves are dense and the baseline banks a piece in 163 of 166 positions, F=12
+played the identical pair every time. The culled pairs were ones the net would
+not have chosen. 0 of 160 is not "never", though -- by the rule of three the 95%
+upper bound is ~1.9% of endgame save opportunities.
 
-So the gap is real in principle and inert in practice, and the fix would change
-play for no measured gain. Parked.
+**APPLIED ANYWAY (owner's call, 2026-08-15): "never cull a save pair" should
+hold by construction, not by luck.** Stage 1 already APPLIES each first move in
+order to score it, so while it is applied it now asks whether a save has become
+available and exempts the move if so -- no simulation, no second-move
+generation:
 
-**Decided against applying it anyway (2026-08-15).** The tempting argument was
-alignment: F is a SERVED-only setting (the library default is 0, so training,
-self-play and the arena never use it), so restoring the culled save pairs would
-move the served agent closer to the configuration everything was evaluated
-under. That argument does not survive the numbers. The served-vs-training
-divergence is 3 of 200 moves in endgames and 13 of 60 in walked positions --
-and the walked ones have nothing to do with saves, so the save fix would barely
-touch the bulk of it. It buys a ~1.5% slice of endgame divergence that is
-already measured to cost nothing.
+    prev_stage = board.game_stages[player]
+    board.game_stages[player] = board.get_game_stage(player)
+    enables = any(board.get_saving_die(p) for p in board.pieces if p.player == player)
+    board.game_stages[player] = prev_stage
 
-Against that: there are now TWO agents. `agent.js` is proven identical at
-110/110, and that equivalence is an asset -- any change to `select_move_pair`
-has to be mirrored and the trace-diff re-run, or the two silently diverge. Plus
-`get_saving_die` reads `game_stages`, and stage 1 applies a move WITHOUT calling
-`get_valid_moves` (the side effect that refreshes stages), which is the exact
-drift that once scored identical candidates 20-80 points apart. Not worth it for
-an effect bounded at ~1.9%.
+The stage is computed fresh and PUT BACK deliberately: `get_saving_die` reads
+`game_stages`, and stage 1 applies a move without the `get_valid_moves` call
+that refreshes them, so leaving it changed would drift the candidates scored
+after it -- the exact bug that once scored identical candidates 20-80 points
+apart.
+
+AFTER, same harness:
+
+    positions        save pairs kept   lost all   moves differ   s/move med
+    200 endgame      77% -> 100%       0          3 -> 0         0.123 -> 0.115
+
+No slowdown: the exemption fires where saves are dense, and stage 1 was already
+applying every first move regardless.
+
+**Both twins, one commit.** `agent_gnn.py` and `agent.js` are proven identical
+at 110/110 and that equivalence is an asset, so the change was mirrored and
+committed together, and the fixtures REGENERATED first (they encode Python's
+choices -- testing new JS against an old fixture compares the change with
+itself). `agent_test.js` re-passed 50/50 on candidate sets and chosen pairs.
+
+Note this is served-only in effect: `first_move_prefilter`'s library default is
+0, so training, self-play and the arena never ran stage 1 at all and are
+unchanged. It is NOT a fix for the pass-over-save rough edge, which is not
+observed in the current champion; `debug_pass_over_save` distinguishes "the save
+was scored and rejected" (value error) from "no save pair reached the net"
+(candidate drop), and this only ever addressed the second.
 
 **Read the denominators, not the zeros.** This took three attempts to measure,
 each defeated by an empty denominator: asking whether a save was legal as a
@@ -167,9 +184,10 @@ lost" could not fire. Only hand-built endgames put a real denominator (30) under
 the question. A "0" from this harness means nothing until the denominator beside
 it is checked.
 
-**What this does NOT establish.** 0 of 160 is not "never" -- by the rule of three
-the 95% upper bound is ~1.9% of endgame save opportunities. The endgames are
-synthetic. And 13 of 60 walked positions DO play a different move under F=12;
-none lost a save, but whether those differences cost strength is unmeasured --
-that is what `match_topk.py match` would answer, and it never has been for F
-itself (the original F=12 validation compared win rates, not pair coverage).
+**What this still does NOT establish.** The endgames are synthetic. And the
+walked positions play a different move under F=12 for reasons that have nothing
+to do with saves; whether THOSE differences cost strength is unmeasured -- that
+is what `match_topk.py match` would answer, and it never has been for F itself
+(the original F=12 validation compared win rates, not pair coverage). The fix
+above closes the save-coverage gap only; it does not make served F=12 equal to
+the F=0 configuration training and the arena use.

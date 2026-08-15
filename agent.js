@@ -199,15 +199,35 @@ async function selectMovePair(engine, W, moves, player, opts = {}) {
                 const win = [move, PASS];
                 return o.returnScores ? [{ score: Infinity, pair: win }] : win;
             }
-            firstScored.push({ score: heur(), move });
+            // Scored BEFORE the stage is touched, matching the Python twin's
+            // order exactly (the block below restores the stage, so the two are
+            // equivalent either way -- but the twins are kept textually parallel
+            // on purpose).
+            const s = heur();
+            // Does a save become available after this move? See the twin in
+            // agent_gnn.py: stage 1 ranks first moves ALONE, so "step onto the
+            // goal with one die, save with the other" is judged on the step and
+            // can be culled before the value head sees the save. getSavingDie
+            // reads the stages, and stage 1 applies moves without the
+            // getValidMoves call that refreshes them, so compute fresh and put
+            // it back -- leaving it changed would drift later candidates.
+            const prevStage = engine.stages[player];
+            engine.stages[player] = engine.getGameStage(player);
+            const enables = engine.pieces.some(p => p.player === player
+                                                    && engine.getSavingDie(p).length);
+            engine.stages[player] = prevStage;
+            firstScored.push({ score: s, move, enables });
             while (engine.moves.length > base) engine.undoLastMove();
         }
         firstScored.sort((a, b) => (b.score - a.score) || cmpKey(_AG.moveKey(a.move), _AG.moveKey(b.move)));
         const keep = firstScored.slice(0, o.firstMovePrefilter).map(x => x.move);
         const kept = new Set(keep);
         // A first move that SAVES is never culled, for the same reason save
-        // pairs are exempt from the top-K cull below.
-        for (const x of firstScored) if (!kept.has(x.move) && isSave(x.move)) keep.push(x.move);
+        // pairs are exempt from the top-K cull below -- nor is one that ENABLES
+        // a save as the pair's second half.
+        for (const x of firstScored) {
+            if (!kept.has(x.move) && (isSave(x.move) || x.enables)) keep.push(x.move);
+        }
         movesIter = keep;
     }
 
