@@ -512,11 +512,17 @@ function _relayoutFurniture() {
         if (sc._fitScoreText) sc._fitScoreText();
     }
     if (sc.impasseText) {
+        // The SIZE is per-orientation too, not just the position: it is baked
+        // from _scoreK() at create time, so rotating out of portrait left this
+        // line at portrait scale (84 world px against landscape's 46) and it
+        // ran over the board.
+        sc.impasseText.setFontSize(Math.round(21 * _scoreK()));
         sc.impasseText.setOrigin(p ? 0.5 : 0, p ? 0 : 1)
                       .setPosition(p ? f.impasseAt[0] : 24,
                                    p ? f.impasseAt[1] : (phone ? H - 148 : H - 58));
     }
     if (sc.callDrawButton) {
+        sc.callDrawButton.setHudK(p ? 2.4 : _scoreK());
         sc.callDrawButton.setHudPosition(p ? f.callDrawAt[0] : (phone ? 190 : 85),
                                          p ? f.callDrawAt[1] : (phone ? H - 247 : H - 115));
     }
