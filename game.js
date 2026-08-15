@@ -1025,8 +1025,37 @@ function flashNotice(text, ms = 2400) {
 }
 
 // ── KEYBOARD SHORTCUTS ──────────────────────────────────────────────────
-// Z = undo one die, Enter/Space = end turn, Esc = deselect.
+// Esc backs out of whatever is on top, innermost first. Each one is dismissed
+// through its OWN cancel path rather than by removing the element, so a
+// callback like match-setup's "back to the welcome screen" still runs.
+// Deliberately NOT dismissible: the welcome screen (there is nothing behind it
+// -- the game underneath is frozen) and the coin flip (it closes itself).
+// Returns true when it consumed the key, so the piece-deselect below cannot
+// also fire underneath an open dialog.
+function _escDismissTop() {
+    const click = (box, sel) => {
+        const btn = box.querySelector(sel);
+        if (btn) btn.click(); else box.remove();
+        return true;
+    };
+    const dlg = document.getElementById('confirmDlg');
+    if (dlg) return click(dlg, '#cNo');                    // z70, above the rest
+    const setup = document.getElementById('matchSetup');
+    if (setup) return click(setup, '#mCancel');
+    const howto = document.getElementById('howToPlay');
+    if (howto) { howto.remove(); return true; }
+    const panel = document.getElementById('settingsPanel');
+    if (panel && panel.style.display !== 'none') { panel.style.display = 'none'; return true; }
+    const legend = document.getElementById('legendPop');
+    if (legend && legend.style.display === 'block') { legend.style.display = 'none'; return true; }
+    return false;
+}
+
+// Z = undo one die, Enter/Space = end turn, Esc = close an overlay, else deselect.
 document.addEventListener('keydown', (e) => {
+    // Before the INPUT guard: Esc must still cancel match setup while the
+    // caret is in its games field.
+    if (e.key === 'Escape' && _escDismissTop()) { e.preventDefault(); return; }
     if (e.target && /^(INPUT|SELECT|TEXTAREA)$/.test(e.target.tagName)) return;
     if (document.getElementById('matchSetup') || document.getElementById('howToPlay')) return;
     const g = _currentGame();
@@ -2184,7 +2213,7 @@ function showInstructions() {
         ['Capturing &amp; blocking', 'Land on a field tile holding a single enemy piece and you capture it — it goes back to the home tile and its owner must re-enter it before doing anything else. A tile with <b>two or more</b> enemy pieces is a wall: you can’t enter or pass through it.'],
         ['Saving', 'The six coloured wedges on the rim are goals, numbered 1–6. To save a piece, get it onto a goal and roll that goal’s number to lift it off the board. A numbered piece can only be saved from its own goal; a blank piece from any goal. (You can start saving once all your pieces are on the board.)'],
         ['Endgame', 'When every piece you have left is saved or sitting on a goal it can be saved from, you’re in the endgame: blank pieces can now be saved with a roll <i>higher</i> than their goal’s number, as long as you have nothing waiting on a higher-numbered goal.'],
-        ['A couple of special moves', '• Break a wall: past the opening and with no captured pieces, ' + dbl + ' (or drag from the picker) one piece of an enemy two-stack to save it for them — it costs both your dice and hands the opponent a piece, but turns the wall into a lone piece.<br>• Last piece: if you start a turn with a single piece left and it’s a numbered one sitting on its goal, it becomes blank (savable by any roll of that goal number or higher).'],
+        ['A couple of special moves', '• Break a wall: past the opening and with no captured pieces, ' + dbl + ' (or drag from the picker) one piece of an enemy stack to save it for them — it costs both your dice and hands the opponent a piece, but turns the wall into a lone piece.<br>• Last piece: if you start a turn with a single piece left and it’s a numbered one sitting on its goal, it becomes blank (savable by any roll of that goal number or higher).'],
         ['Stalemate', 'If 10 full rounds pass with nobody saving a piece, either player may call a draw. Any save resets the counter.'],
         ['Matches', 'A match is several games, and it is won on <b>total score</b> — the sum of your winning margins — not on games won. Two formats: a set number of games (highest total score at the end wins), or a race to a target score. Starters alternate; if the scores finish level the match goes to whoever won more games, and if that is level too it is extended by a pair of games. The score line under the board tracks the match.'],
         ['Controls', phone
@@ -2270,7 +2299,7 @@ function showMatchSetup(onCancel) {
         'width:min(360px,90vw); box-sizing:border-box; box-shadow:0 18px 50px rgba(0,0,0,.3);">' +
           '<h2 style="margin:0 0 14px; font-size:22px;">New match</h2>' +
           '<label style="display:flex; gap:8px; align-items:center; margin:6px 0; font-size:15px;">' +
-            '<input type="radio" name="mmode" value="games" checked> Set number of games (by total score)</label>' +
+            '<input type="radio" name="mmode" value="games" checked> Set number of games (win by total score)</label>' +
           '<div id="gamesOpts" style="margin:2px 0 12px 26px; font-size:14px;">' +
             'Games: <span style="display:inline-flex; align-items:center; gap:6px;">' +
               '<button id="mGamesDown" type="button" style="width:34px; height:34px; font-size:20px; line-height:1;' +
