@@ -67,5 +67,14 @@
     </style>
 </head>
 <body>
+    <script>
+        // Offline shell. Registered late (on load) so it never competes with
+        // the game's own start-up, and skipped on file:// where it cannot work.
+        if ('serviceWorker' in navigator && location.protocol.startsWith('http')) {
+            window.addEventListener('load', () => {
+                navigator.serviceWorker.register('sw.js').catch(e => console.warn('sw registration failed', e));
+            });
+        }
+    </script>
 </body>
 </html>
