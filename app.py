@@ -9,7 +9,7 @@ import sys
 # var at import time); an explicitly exported BOARDGAME_DEVICE still wins.
 os.environ.setdefault('BOARDGAME_DEVICE', 'cpu')
 
-from flask import Flask, request, jsonify, session
+from flask import Flask, request, jsonify, session, send_file, abort
 from flask_cors import CORS
 import json
 import uuid
@@ -259,6 +259,41 @@ def cleanup_stale_games(max_age_seconds=3600):
 # -------------------------
 # API ENDPOINTS
 # -------------------------
+
+# Precompressed static assets. The inference runtime is 10.5 MB raw and 2.8 MB
+# gzipped, and Flask does not compress anything by default -- so without this
+# every first visit downloads the full 10.5 MB. Compressing on the fly instead
+# would burn CPU on a small instance for every new client, so the file is
+# gzipped once at image build time (see Dockerfile) and served as-is here.
+#
+# Falls straight through to the normal static handler when no .gz exists, which
+# is what happens in local development.
+@app.route('/ort/<path:filename>')
+def serve_ort(filename):
+    directory = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'ort')
+    raw = os.path.join(directory, filename)
+    gz = raw + '.gz'
+    accepts_gzip = 'gzip' in request.headers.get('Accept-Encoding', '')
+    if accepts_gzip and os.path.exists(gz):
+        resp = send_file(gz, mimetype=_ort_mimetype(filename), conditional=True)
+        resp.headers['Content-Encoding'] = 'gzip'
+        # Vary matters: a cache that saw the gzipped reply must not hand it to a
+        # client that cannot decode it.
+        resp.headers['Vary'] = 'Accept-Encoding'
+        return resp
+    if not os.path.exists(raw):
+        abort(404)
+    return send_file(raw, mimetype=_ort_mimetype(filename), conditional=True)
+
+
+def _ort_mimetype(filename):
+    # WebAssembly.instantiateStreaming REFUSES anything but application/wasm.
+    if filename.endswith('.wasm'):
+        return 'application/wasm'
+    if filename.endswith('.mjs') or filename.endswith('.js'):
+        return 'text/javascript'
+    return 'application/octet-stream'
+
 
 @app.route('/')
 def index():
