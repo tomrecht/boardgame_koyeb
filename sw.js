@@ -10,7 +10,7 @@
  *
  * Bump CACHE when the shell list changes; activate() drops every other cache.
  */
-const CACHE = 'quahuru-v5';
+const CACHE = 'quahuru-v6';
 
 // The shell is what a cold, offline start needs to render a board.
 const SHELL = [

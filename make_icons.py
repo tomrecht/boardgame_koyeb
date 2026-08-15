@@ -235,25 +235,34 @@ def render(geom, size, pad_frac, pieces=0, seed=7, board_frac=None, ring=False,
 def main():
     path = sys.argv[1] if len(sys.argv) > 1 else 'board_geom.json'
     geom = json.load(open(path))
-    # board_frac sizes the BOARD rather than the board-plus-tail, so the bowl
-    # uses the empty crescent opposite the tail (owner picked 0.88).
-    render(geom, 192, 0.05, board_frac=0.88).save('icon-192.png')
-    render(geom, 512, 0.05, board_frac=0.88).save('icon-512.png')
-    # Maskable at BOTH launcher densities. Android crops a maskable icon to its
-    # own shape (circle, squircle, ...), so these carry extra padding -- the
-    # drawn board lands inside the central 80% "safe zone" and the parchment
-    # runs to all four edges. The background must stay OPAQUE: a transparent
-    # one is composited onto the system's own grey, which is the grey bubble it
-    # would appear to be there to remove.
-    # The maskable gets a BIGGER board (1.00), not a smaller one: the visible
-    # "grey bubble" on Android is this file's own parchment ground showing
-    # around a board that was too small for the mask. The real limit is the
-    # mask itself -- radius 50% of the canvas -- not the conservative 40% safe
-    # zone: measured, the furthest drawn pixel is the tail tip at 47.1%, which
-    # a circular mask keeps. 0.88 here would leave the board at 60% of the
-    # canvas inside an 80% mask, i.e. the bubble owner is seeing.
-    render(geom, 192, 0.16, board_frac=1.00).save('icon-192-maskable.png')
-    render(geom, 512, 0.16, board_frac=1.00).save('icon-512-maskable.png')
+
+    # The shipped design (owner's picks, 2026-08-15):
+    #   concentric      -- an Android mask is centred on the canvas, so the board
+    #                      must be too, or it sits visibly off-centre in the
+    #                      circle. The bubble cannot be removed (see below), so
+    #                      the board is made concentric with it instead.
+    #   goal_extend .25 -- widens each wedge by a quarter of its own width on
+    #                      each side: enough to read as a Q's bowl, not so much
+    #                      that it becomes a solid band. Six wedges is the point.
+    #   tighter curl    -- hooks back sooner, which buys board size (59% -> 69%
+    #                      of the canvas) WITHOUT the tail looking shrunken, as
+    #                      simply scaling it down did.
+    #   drop_outer_field-- the nine field tiles at ir 450 sit between the
+    #                      extended wedges and read as fragments.
+    #   3 pieces        -- a touch of life at 512. They are 3px specks at 96 and
+    #                      the icon reads fine without them, so this is the one
+    #                      choice here that is taste rather than geometry.
+    design = dict(concentric=True, goal_extend=0.25, drop_outer_field=True,
+                  tail=TAIL_SHAPES['tighter'], pieces=3, seed=5)
+
+    render(geom, 192, 0.03, **design).save('icon-192.png')
+    render(geom, 512, 0.03, **design).save('icon-512.png')
+    # The maskable pads more: with concentric fitting, the tail tip lands ON the
+    # padded circle, and 0.03 would put it at 47% of the canvas -- inside a
+    # circular mask (50%) but with nothing to spare on a launcher that crops
+    # tighter. 0.08 brings it to 42%.
+    render(geom, 192, 0.08, **design).save('icon-192-maskable.png')
+    render(geom, 512, 0.08, **design).save('icon-512-maskable.png')
     print('wrote icon-192.png, icon-512.png, icon-192-maskable.png, icon-512-maskable.png')
 
 
