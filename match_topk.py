@@ -15,12 +15,17 @@ Two modes:
     python match_topk.py probe [positions]
         Cheap and fast. No games: walks recorded positions and reports, per
         setting, the candidate count, the seconds per move, and -- the one that
-        matters for correctness rather than speed -- how often a save was legal
-        but NO save pair survived the cull to reach the net. Save pairs are
-        exempt from the top-K cull precisely because the heuristic undervalues
-        them; at k=40 that exemption rarely binds, at k=10 it is load-bearing,
-        and pass-over-save is already a known rough edge. Run this FIRST: if a
+        matters for correctness rather than speed -- which of the BASELINE's
+        save-carrying pairs still reach the net. Save pairs are exempt from the
+        top-K cull precisely because the heuristic undervalues them; at k=40
+        that exemption rarely binds, at k=10 it is load-bearing, and
+        pass-over-save is already a known rough edge. Run this FIRST: if a
         setting drops saves, no amount of match data makes it acceptable.
+
+        Judged against the baseline's kept set, NOT against "was a save legal".
+        A save is as often the second half of a pair as the first, so the
+        first cut of this -- which asked whether a save was legal as a first
+        MOVE -- qualified 1 position in 60 and reported a meaningless 0/1.
 
     python match_topk.py match [pairs] [top_k[,top_k...]] [F]
         The real measurement. Each candidate setting plays the served baseline
@@ -112,32 +117,65 @@ def _walk_positions(n, seed0=0):
     return out
 
 
+def _save_pairs(ranked):
+    """The save-carrying pairs that actually reached the net, as a comparable
+    set. A save is as often the SECOND half of a pair as the first, so asking
+    whether a save was legal as a first MOVE badly undercounts -- a first cut of
+    this probe reported 0/1 over 60 positions, i.e. it never really ran."""
+    out = set()
+    for _, pair in ranked:
+        if any(_has_save(m) for m in pair):
+            out.add(repr(pair))
+    return out
+
+
 def probe(n_positions, settings):
     boards = _walk_positions(n_positions)
-    print(f'{len(boards)} positions\n')
+    print(f'{len(boards)} positions')
+
+    # The BASELINE's kept set is the ground truth: a smaller setting is judged
+    # on what it drops relative to what the served agent would have scored, not
+    # on an independent notion of "a save was available".
+    base = _agent(*BASELINE)
+    base_saves, with_saves = [], 0
+    for b in boards:
+        ranked = base.select_move_pair(list(b.get_valid_moves()), b,
+                                       b.current_player, return_scores=True)
+        sp = _save_pairs(ranked)
+        base_saves.append(sp)
+        if sp:
+            with_saves += 1
+    print(f'{with_saves} of them score at least one save pair at the baseline '
+          f'(top_k={BASELINE[0]}, F={BASELINE[1]})\n')
+
     print(f'{"top_k":>6} {"F":>3} {"cand med":>9} {"cand max":>9} '
-          f'{"s/move med":>11} {"s/move p90":>11} {"save dropped":>13}')
+          f'{"s/move med":>11} {"s/move p90":>11} {"lost all":>9} {"saves kept":>11}')
     for top_k, F in settings:
         a = _agent(top_k, F)
-        counts, times, save_legal, save_dropped = [], [], 0, 0
-        for b in boards:
+        counts, times = [], []
+        lost_all, kept, total = 0, 0, 0
+        for b, want in zip(boards, base_saves):
             moves = list(b.get_valid_moves())
             player = b.current_player
             t = time.perf_counter()
             ranked = a.select_move_pair(moves, b, player, return_scores=True)
             times.append(time.perf_counter() - t)
             counts.append(len(ranked))
-            if any(_has_save(m) for m in moves):
-                save_legal += 1
-                # Did any pair carrying a save survive to be scored?
-                if not any(any(_has_save(m) for m in pair) for _, pair in ranked):
-                    save_dropped += 1
+            if want:
+                got = _save_pairs(ranked)
+                total += len(want)
+                kept += len(want & got)
+                if not got:
+                    lost_all += 1
         q = lambda a_, p: sorted(a_)[min(len(a_) - 1, int(len(a_) * p))]
-        drop = f'{save_dropped}/{save_legal}' if save_legal else 'n/a'
+        pct = f'{100 * kept / total:.0f}%' if total else 'n/a'
         print(f'{top_k:>6} {F:>3} {q(counts, .5):>9} {max(counts):>9} '
-              f'{q(times, .5):>11.3f} {q(times, .9):>11.3f} {drop:>13}')
-    print('\n"save dropped" = positions where a save was legal but no save pair '
-          'reached the net.\nAnything above zero is disqualifying on its own.')
+              f'{q(times, .5):>11.3f} {q(times, .9):>11.3f} '
+              f'{lost_all:>9} {pct:>11}')
+    print('\n"lost all"   = positions where the baseline scored a save pair and '
+          'this setting scored NONE.\n               Above zero is disqualifying '
+          'on its own.\n"saves kept" = share of the baseline\'s save pairs that '
+          'still reach the net.')
 
 
 # ---------------------------------------------------------------- match mode
