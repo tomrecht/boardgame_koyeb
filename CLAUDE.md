@@ -974,9 +974,21 @@ with it in mind.** Assessment and the concrete implications:
     Verified: apply/undo round-trips over 25 random games, rack order survives
     enter+undo of the second piece, both platforms ring 2 and enter the second
     with 18 destinations lit, tutorial still starts clean.
-    **NOTE: this changes the legal move set, so existing champions were trained
-    under the old rule** — as with the block-save rule change, cross-rule
-    strength comparisons are not apples-to-apples.
+    **What this actually changes (owner pushed back, and the test settled it).**
+    For a turn where BOTH pieces come out it mostly only permutes: the old rule
+    already let the front piece take either die, so "2nd with die A, front with
+    die B" was reachable as "front with die B, then 2nd with die A". The real
+    change is that a turn can now END with the 2nd piece entered and the front
+    one still racked — verified: after entering it the obligation is discharged
+    and pass is legal. That position was unreachable before, and the choice
+    recurs every turn, so a player can defer the front piece indefinitely and
+    effectively reorder their own rack. (Smaller second case: even when both
+    enter, order matters if the first entry captures a blot or takes the tile
+    the other wanted.) So the legal move set does change, and existing champions
+    were trained without these options — but it is deferral, not a new KIND of
+    move. Narrower variant if ever wanted: allow 2nd-first but require the front
+    piece to enter with the other die when it legally can (pure permutation, no
+    deferral); rejected for now as an obligation that fires only sometimes.
     **Three pre-existing engine facts this testing pinned down** (all verified
     identical on the pre-change commit, none worth fixing):
     (a) the pass `(0,0,0)` and call-draw `(1,1,1)` moves end the turn and record
