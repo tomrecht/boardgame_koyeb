@@ -130,7 +130,35 @@ be reused without checking.
    measuring position drift, not agent drift. Pin the walk (`sorted(..., key=repr)`)
    and record a position fingerprint alongside the choice.
 
-   **6.1 the engine.** This is the part the plan understated: the search runs on
+   **6.1 (done): the engine.** `engine.js` + `dump_engine_fixture.py`.
+   Verified over 50 positions (10 opening / 30 midgame / 10 endgame): positions
+   rebuilt identically 50/50, move sets 50/50, position after a move 3054/3054,
+   undo restores the start 3054/3054.
+   Four things that were only visible because the fixture checked them:
+   - **Within-tile occupancy order is not semantic, and the engine does not
+     preserve it** — undo APPENDS to origin_tile rather than restoring the
+     index, which reordered 125 of 739 apply/undo pairs. Every reader is
+     `pieces[0].player` on a field tile (only ever one player's, since landing
+     on a lone enemy captures it) or `pieces.pop()` on a single-enemy tile, so
+     the contract is the multiset.
+   - **`board.pieces` ORDER is observable** through the dedupe of
+     interchangeable blanks on one tile (it keeps whichever comes first), so
+     the same destinations get attributed to a different blank. The served path
+     always rebuilds via `update_state` → `assign_piece_indices` (white first,
+     then by number); a Board built and walked in a script keeps
+     `initialize_pieces`' shuffle. Canonicalise, or the two disagree.
+   - **`get_valid_moves` mutates `game_stages`** for the current player, and
+     later code reads it. The port reproduces the side effect deliberately.
+   - `encoder_static.json`'s tile order is identical to `tile_neighbors.json`'s
+     file order and so to `game.py`'s indices (asserted 70/70), so a tile index
+     means the same thing on both sides and no second geometry file is needed.
+     Neighbour ORDER is not load-bearing (the one place it is walked wraps the
+     result in `set()`).
+   A random walk never reaches the endgame — saving needs a piece parked on its
+   own goal — so those positions are hand-built (`endgame_board`). Without them
+   the sample was 38 opening / 2 midgame / 0 endgame.
+
+   **6.1 as originally written** (kept for the reasoning): the search runs on
    `get_valid_moves` / `apply_move` / `undo_last_move` / `check_game_over`, so it
    needs an engine, not just the search. game.js's board model is NOT usable —
    it is entangled with Phaser display objects, has no search-shaped undo, and
