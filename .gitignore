@@ -15,4 +15,5 @@ opponent_model.txt
 _attic/
 encoder_fixture.json    # derived; regenerate with dump_encoder_fixture.py
 engine_fixture.json     # derived; regenerate with dump_engine_fixture.py
+heuristic_fixture.json  # derived; regenerate with dump_heuristic_fixture.py
 ort/*.gz    # generated at image build time (see Dockerfile)

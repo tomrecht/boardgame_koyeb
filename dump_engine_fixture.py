@@ -54,8 +54,11 @@ def fingerprint(b):
         'racks': {
             'white_unentered': [p.number for p in b.white_unentered],
             'black_unentered': [p.number for p in b.black_unentered],
-            'white_saved': sorted(p.number for p in b.white_saved),
-            'black_saved': sorted(p.number for p in b.black_saved),
+            # In SAVE order, not sorted: agent.py sums saved_bonuses over the
+            # rack in order, so the order is observable in the score's last
+            # bits (it was worth 9e-13, enough to reorder a prefilter tie).
+            'white_saved': [p.number for p in b.white_saved],
+            'black_saved': [p.number for p in b.black_saved],
         },
         'dice': [[d.number, bool(d.used)] for d in b.dice],
         'current_player': b.current_player,

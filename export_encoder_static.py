@@ -35,8 +35,28 @@ def main(out='encoder_static.json'):
     types = [tile_info[(r, s)]['type'] for r, s in coords]
     numbers = [tile_info[(r, s)].get('number', 0) for r, s in coords]
 
+    # Neighbour lists in tile_neighbors.json's own order, which the ENGINE port
+    # needs. tile_edge_index is not a substitute: its column order comes out of
+    # a Python set, and while that is fine for anything order-independent (the
+    # GNN's sum-aggregation, a shortest-path length), it is NOT fine for
+    # count_enemy_blots_on_shortest_path -- a plain FIFO BFS where the first
+    # predecessor to reach a tile fixes its blot count, so neighbour order
+    # changes the answer. Measured: 946 evaluations differed on exactly that
+    # component until this was exported.
+    raw = json.load(open('tile_neighbors.json'))
+    key_of = {}
+    for k in raw:
+        r, sec = (int(x) for x in k.replace('ring', '').replace('sector', '').split('_'))
+        key_of[(r, sec)] = k
+    neighbors = []
+    for r, s in coords:
+        nb = raw[key_of[(r, s)]]['neighbors']
+        neighbors.append([tile_index[(d['ring'], d['sector'])] for d in nb
+                          if (d['ring'], d['sector']) in tile_index])
+
     payload = {
         'num_tiles': len(coords),
+        'tile_neighbors': neighbors,
         'tile_coords': coords,
         'tile_types': types,
         'tile_numbers': numbers,
@@ -60,7 +80,16 @@ def main(out='encoder_static.json'):
     back = json.load(open(out))
     assert np.array_equal(np.array(back['tile_edge_index'], dtype=np.int64), tile_edge_index)
     assert np.array_equal(np.array(back['base_tile_feats'], dtype=np.float32), base)
-    print('self-check: edge index and base features round-trip exactly')
+    assert back['tile_neighbors'] == neighbors
+    # The exported adjacency must agree with the engine's own, as a SET.
+    from game import Board
+    b = Board()
+    for t in b.tiles:
+        want = sorted(tile_index[(n2.ring, n2.pos)] for n2 in t.neighbors
+                      if (n2.ring, n2.pos) in tile_index)
+        assert sorted(neighbors[tile_index[(t.ring, t.pos)]]) == want, t
+    print('self-check: edge index, base features and neighbour lists round-trip '
+          'exactly, and the neighbour lists match game.py\'s Board')
 
 
 if __name__ == '__main__':

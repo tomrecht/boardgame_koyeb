@@ -26,6 +26,14 @@ const NO_SAVE_TURNS_FOR_DRAW = 10;
 class Engine {
     constructor(staticData) {
         this.graph = _RT.buildGraph(staticData);
+        // Neighbour ORDER is load-bearing after all, so prefer the exported
+        // lists (tile_neighbors.json's own order) over the ones route.js
+        // derives from tile_edge_index, whose column order came out of a Python
+        // set. It makes no difference to a shortest-path LENGTH, which is why
+        // the route port passed without it -- but the heuristic's blot count is
+        // a FIFO BFS where the first predecessor to reach a tile fixes its
+        // count, and 946 evaluations differed on exactly that component.
+        if (staticData.tile_neighbors) this.graph.neighbors = staticData.tile_neighbors;
         this.coords = staticData.tile_coords;      // index -> [ring, pos]
         this.home = this.graph.home;
         this.pieces = [];
@@ -439,8 +447,8 @@ class Engine {
             racks: {
                 white_unentered: numbersIn('white_unentered'),
                 black_unentered: numbersIn('black_unentered'),
-                white_saved: numbersIn('white_saved').slice().sort((a, b) => a - b),
-                black_saved: numbersIn('black_saved').slice().sort((a, b) => a - b),
+                white_saved: numbersIn('white_saved'),      // save ORDER, see the dumper
+                black_saved: numbersIn('black_saved'),
             },
             dice: this.dice.map(d => [d.value, !!d.used]),
             current_player: this.currentPlayer,
