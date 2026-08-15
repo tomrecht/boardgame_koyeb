@@ -173,9 +173,31 @@ be reused without checking.
    `origin_rack_index`, not the front; `game_stages` is mutated as a side effect
    of `get_valid_moves`; and `apply_last_piece_rule` RENUMBERS a piece to 13.
 
-   **6.2 the heuristic** (`agent.py`, ~414 lines) — needed because the served
-   config prefilters (`FIRST_MOVE_PREFILTER=12`), so the candidate set the GNN
-   sees depends on it.
+   **6.2 (done): the heuristic.** `heuristic.js` + `export_heuristic_weights.py`
+   + `dump_heuristic_fixture.py`. Only `evaluate` is ported — that is all
+   agent_gnn uses it for; agent.py's own `select_move_pair` is the retired
+   evolutionary agent. **2646/2646 evaluations bit-exact** (worst |JS − Python|
+   = 0), over 37 positions and the position after every legal move.
+   Weights are EXPORTED for the same reason the static encoder half is: the
+   served values are `get_weights()`'s merge of best_weights.json over
+   INITIAL_WEIGHTS (the file has no `enemy_blot_penalties`,
+   `high_goal_proximity_penalties` or `permanent_block_bonus`), then
+   `_expand_weights`' `a*n**b` tables. A wrong exponent would be silent.
+   Three traps, the first of which contradicts 6.1's own note:
+   - **NEIGHBOUR ORDER IS LOAD-BEARING.** It makes no difference to a
+     shortest-path length — which is why route.js passed 960/960 without it —
+     but `count_enemy_blots_on_shortest_path` is a plain FIFO BFS where the
+     first predecessor to reach a tile fixes its blot count. 946 evaluations
+     differed until `tile_neighbors.json`'s own order was exported
+     (`tile_neighbors` in encoder_static.json) and used in place of the order
+     derived from `tile_edge_index`, which came out of a Python set.
+   - **The SAVED RACK's order is observable**: `saved_bonuses` is summed over
+     the rack in order, so sorting it in the fixture moved the score by 9e-13.
+     Tiny, but enough to reorder a prefilter near-tie, and bit-exactness is
+     worth keeping — it removes float noise as a suspect in 6.4 entirely.
+   - `if p.tile` in Python is true for ANY Tile **including home**, whose index
+     is 0. In JS `p.tile` alone is falsy there; the faithful test is
+     `p.tile >= 0`.
 
    **6.3 `select_move_pair`** itself (~290 lines) plus `_select_filtered`,
    `_dedupe_save_pair` and `_pick_move_index`. `_fix_never_good` is disabled by
