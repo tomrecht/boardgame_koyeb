@@ -383,13 +383,23 @@ function _fur() {
              cols, rows,
              scoreAt: [wd.x + wd.w / 2, wd.y + 2020], scoreOrigin: [0.5, 0],
              impasseAt: [wd.x + wd.w / 2, wd.y + 2160], callDrawAt: [wd.x + wd.w / 2, wd.y + 2245],
-             hudX: [wd.x + 250, wd.x + 580, wd.x + 910], hudY: wd.y + 2390,
+             hudX: [wd.x + 230, wd.x + 550, wd.x + 870], hudY: wd.y + 2390,
              whiteUn: w.un, whiteSv: w.sv, blackUn: b.un, blackSv: b.sv };
 }
 
 // Rotation changes which band each piece of furniture belongs in. Because the
 // board itself never moves, this is a dozen setPositions rather than a rebuild.
 let _lastPortrait = null;
+// Portrait brings the rack band up under the gear, and at 64px it overlapped.
+// 48 still clears the 44px touch-target guideline.
+function _sizeGear(el) {
+    const gear = el || document.getElementById('settingsGear');
+    if (!gear) return;
+    const px = _isPortrait() ? 48 : 64;
+    gear.style.width = gear.style.height = px + 'px';
+    gear.style.fontSize = Math.round(px * 0.53) + 'px';
+}
+
 function _hideRotateHint() {
     const el = document.getElementById('rotateHint');
     if (el) el.style.display = _isPortrait() ? 'none' : '';
@@ -397,6 +407,7 @@ function _hideRotateHint() {
 
 function _relayoutFurniture() {
     _hideRotateHint();
+    _sizeGear();
     const g = _currentGame();
     if (!g) return;
     const p = _isPortrait();
@@ -1002,6 +1013,7 @@ function createSettingsPanel() {
         'color:#28313b; font-size:34px; line-height:1; cursor:pointer; opacity:.6;' +
         'display:grid; place-items:center; transition:opacity .15s;', '⚙');
     gear.id = 'settingsGear'; gear.title = 'Settings';
+    _sizeGear(gear);          // not yet in the DOM, so pass it directly
     gear.onmouseenter = () => gear.style.opacity = '1';
     gear.onmouseleave = () => gear.style.opacity = '.6';
 
@@ -5170,6 +5182,7 @@ endGame(winner, score = null, impasse_caller = null) {
         scene._camWired = true;
         _sizeCanvasToScreen();
         _hideRotateHint();
+        _sizeGear();
         _fitCameraToWorld(scene);
         // Two distinct jobs, deliberately not the same handler: the WINDOW
         // changing means re-measure the screen and resize the buffer; the SCALE
