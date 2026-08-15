@@ -10,13 +10,14 @@
  *
  * Bump CACHE when the shell list changes; activate() drops every other cache.
  */
-const CACHE = 'quahuru-v6';
+const CACHE = 'quahuru-v8';
 
 // The shell is what a cold, offline start needs to render a board.
 const SHELL = [
     './',
     './index.html',
     './game.js',
+    './local_agent.js',
     './phaser.min.js',
     './manifest.json',
     './icon-192.png',
@@ -37,6 +38,19 @@ const SHELL = [
     './ort/ort-wasm-simd-threaded.mjs',
     './ort/ort-wasm-simd-threaded.wasm',
     './model.onnx',
+    // The ported agent itself. local_agent.js injects these lazily, so without
+    // precaching they would only ever be cached AFTER a first online move --
+    // i.e. the offline app would load and then be unable to move a piece.
+    // They stay ALWAYS_FRESH below (they are our own .js), so precaching them
+    // cannot serve a stale copy after a deploy; it only guarantees a fallback.
+    './route.js',
+    './encoder.js',
+    './infer.js',
+    './engine.js',
+    './heuristic.js',
+    './agent.js',
+    './encoder_static.json',
+    './heuristic_weights.json',
 ];
 
 // Files whose content changes under a fixed name -- always try the network.

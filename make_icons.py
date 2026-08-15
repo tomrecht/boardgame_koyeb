@@ -254,35 +254,35 @@ def render(geom, size, pad_frac, pieces=0, seed=7, board_frac=None, ring=False,
     return im.resize((size, size), Image.LANCZOS)
 
 
+# The two designs. Switch SHIPPED to go back and forth; both are kept because
+# the choice between them is a judgement, not a measurement -- the board reads
+# better at 96px and fills 95% of the canvas against the Q's 69%, but the Q ties
+# the icon to the name and the board alone does not. Owner has not settled it.
+DESIGN_Q = dict(
+    concentric=True, goal_extend=0.25, drop_outer_field=True,
+    tail=TAIL_SHAPES['tighter'], pieces=3, seed=5,
+)
+DESIGN_BOARD = dict(
+    concentric=True, goal_extend=0.25, drop_outer_field=True, no_tail=True,
+    # Placed, not sampled: ring 6 touches its wedge and ring 1 touches the hub,
+    # and a seed cannot be asked to avoid them. (ring, mid-angle degrees);
+    # goals are at 45 105 165 225 285 345 = goals 4 2 5 3 6 1.
+    piece_tiles=[(4, 285), (5, 127.5), (5, 225), (3, 15)],
+)
+SHIPPED = DESIGN_BOARD
+
+
 def main():
     path = sys.argv[1] if len(sys.argv) > 1 else 'board_geom.json'
     geom = json.load(open(path))
-
-    # The shipped design (owner's picks, 2026-08-15):
-    #   concentric      -- an Android mask is centred on the canvas, so the board
-    #                      must be too, or it sits visibly off-centre in the
-    #                      circle. The bubble cannot be removed (see below), so
-    #                      the board is made concentric with it instead.
-    #   goal_extend .25 -- widens each wedge by a quarter of its own width on
-    #                      each side: enough to read as a Q's bowl, not so much
-    #                      that it becomes a solid band. Six wedges is the point.
-    #   tighter curl    -- hooks back sooner, which buys board size (59% -> 69%
-    #                      of the canvas) WITHOUT the tail looking shrunken, as
-    #                      simply scaling it down did.
-    #   drop_outer_field-- the nine field tiles at ir 450 sit between the
-    #                      extended wedges and read as fragments.
-    #   3 pieces        -- a touch of life at 512. They are 3px specks at 96 and
-    #                      the icon reads fine without them, so this is the one
-    #                      choice here that is taste rather than geometry.
-    design = dict(concentric=True, goal_extend=0.25, drop_outer_field=True,
-                  tail=TAIL_SHAPES['tighter'], pieces=3, seed=5)
+    design = SHIPPED
 
     render(geom, 192, 0.03, **design).save('icon-192.png')
     render(geom, 512, 0.03, **design).save('icon-512.png')
-    # The maskable pads more: with concentric fitting, the tail tip lands ON the
-    # padded circle, and 0.03 would put it at 47% of the canvas -- inside a
-    # circular mask (50%) but with nothing to spare on a launcher that crops
-    # tighter. 0.08 brings it to 42%.
+    # The maskable pads more. With the concentric fit the outermost drawn point
+    # lands ON the padded circle, and 0.03 would put it at ~47% of the canvas --
+    # inside a circular mask (50%) but with nothing spare on a launcher that
+    # crops tighter. 0.08 brings it to ~42%.
     render(geom, 192, 0.08, **design).save('icon-192-maskable.png')
     render(geom, 512, 0.08, **design).save('icon-512-maskable.png')
     print('wrote icon-192.png, icon-512.png, icon-192-maskable.png, icon-512-maskable.png')
