@@ -5310,6 +5310,20 @@ endGame(winner, score = null, impasse_caller = null) {
     // Undo one move at a time (one die), not the whole turn. Each committed move
     // pushes its pre-move snapshot; undo pops and restores the most recent one.
     undoOneMove() {
+        // A piece that has only been PICKED UP -- tentatively entered onto the
+        // home tile, no die spent -- is not a move yet and is not on the undo
+        // stack. Popping the stack would therefore revert the previous REAL
+        // move and drop this piece back along with it. Put it back and stop.
+        const colour = this.turn === 'white' ? 0xffffff : 0x000000;
+        const pending = this.pieces.find(p => p.justMovedHome && p.color === colour
+                                              && p.currentTile && p.currentTile.type === 'home');
+        if (pending) {
+            pending.returnToRack();
+            this._pendingPreMove = null;
+            if (typeof updateMustMoveHighlights === 'function') updateMustMoveHighlights(this);
+            if (typeof _updateViewportHud === 'function') _updateViewportHud();
+            return;
+        }
         if (this.undoStack && this.undoStack.length > 0) {
             this.restoreState(this.undoStack.pop());
         } else {

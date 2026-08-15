@@ -1009,6 +1009,15 @@ with it in mind.** Assessment and the concrete implications:
     `origin_rack_index` fix — the same bug in two places, for the same reason.
     Covers Esc/`_clearSelection` and the click-return path, which both funnel
     through `returnToRack`.
+    (a3) **undo after picking a piece up reverted the previous move too.**
+    Sequence: bring out piece 1 for real, click piece 2 onto the home square,
+    press undo — piece 1 came back to the rack as well. A tentative entry is
+    NOT a move: it spends no die and never reaches `undoStack` (which is pushed
+    when a move completes), so popping the stack reverted the last real move and
+    the picked-up piece fell back with it. `undoOneMove` now consumes a pending
+    pick-up first — the current player's piece with `justMovedHome` on the home
+    tile — and returns just that. Measured: piece 1 stays placed, piece 2 goes
+    back to its slot, dice unchanged.
     (b) **entering ANY piece on a dice sum never handed the turn over.**
     `maybeAutoEndTurn` returned early while `mustMovePieces` was non-empty, and
     `updateMovablePieces` re-imposes the entry obligation whenever the rack is
