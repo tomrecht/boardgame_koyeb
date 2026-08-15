@@ -765,7 +765,25 @@ with it in mind.** Assessment and the concrete implications:
     landscape, and high above it in portrait. It now calls `_fitCameraToWorld`
     in `create()` and on resize. Measured centred on both axes in landscape,
     portrait and desktop. **Any new scene must do the same.**
-  - **GHOST DRAGGING FIXED (2026-08-14): the camera was panning underneath it.**
+  - **GHOST DRAGGING: IT WAS NEVER ENABLED (2026-08-14).** Two real causes, and
+    one process failure worth remembering.
+    (1) `scene.input.setDraggable(gh.body)` was still COMMENTED OUT in every
+    commit — an earlier "re-enable" edit silently failed (a python edit script
+    asserted and aborted before writing) and the test that "proved" it worked
+    was calling `setDraggable` itself in its own instrumentation. **Always grep
+    the file after a scripted edit, and never let a test enable the thing it is
+    testing.**
+    (2) Even once enabled it would not have survived: `_updateMustEnterGhosts`
+    called `setInteractive()` on every refresh, and in Phaser that REPLACES the
+    interactive object and clears the draggable flag with it. The hit area is
+    now re-shaped in place (`input.hitArea.setTo(...)`) and `setDraggable` is
+    called only when the flag is missing. Measured: still draggable after six
+    HUD refreshes, drag enters the piece and lands it on the target tile.
+    Harness traps hit while chasing this: `camera.worldView` is stale until a
+    frame renders, so centring the camera and refreshing the HUD in the SAME
+    evaluate shows no ghosts at all (looked like "not draggable"); and a drop
+    aimed at an annular sector's computed centroid can fall outside the sector.
+  - **GHOST DRAGGING, earlier fix: the camera was panning underneath it.**
     Owner reported it not working on his phone while it passed in emulation —
     because the emulated assertions only checked where the piece ended up, not
     what the board did. Measured directly: during a ghost drag the camera
@@ -780,6 +798,18 @@ with it in mind.** Assessment and the concrete implications:
     through the drag, piece entered, landed on a legal destination.
     **Lesson:** when a gesture "doesn't work" on a device but passes in
     emulation, assert what the CAMERA did as well as what the piece did.
+  - **CHROME'S EDGE-SWIPE "BACK" (2026-08-14): cancelled, narrowly.** `touchmove`
+    is preventDefault-ed only for gestures that BEGIN within 24px of the left or
+    right screen edge AND do not begin on a piece or ghost. Both conditions are
+    needed, each measured: cancelling every touchmove stops piece dragging
+    outright, and cancelling edge-started ones alone still breaks it because the
+    racks sit inside that strip in portrait (a drag from the left rack at CSS
+    x=20 entered the piece but never moved it; the same drag from x=339 worked).
+    The draggable test uses our own geometry, never `hitTestPointer`, which
+    corrupts drag state when called from a pointer handler. Verified: edge swipe
+    on empty board cancelled, mid-screen drag untouched, rack drag inside the
+    strip works, desktop unaffected. **The back gesture itself cannot be
+    reproduced headless — this needs confirming on a device.**
   - **Pinch has a 6% dead zone** on the finger separation: two fingers dragged
     together still wobble apart by a few pixels, and feeding that into the zoom
     made a two-finger pan shimmer (owner: "as if it's trying to zoom in and out

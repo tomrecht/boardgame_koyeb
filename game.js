@@ -488,20 +488,25 @@ function _updateMustEnterGhosts() {
         // so the second is a preview that another entry is still available.
         gh.body.disableInteractive();
         if (i === 0) {
-            gh.body.setInteractive(new Phaser.Geom.Circle(r, r, r + pad), Phaser.Geom.Circle.Contains);
+            // Build the interactive object ONCE. setInteractive() replaces it
+            // and drops the draggable flag with it, and this function runs on
+            // every camera move and viewport event -- so calling it each time
+            // would leave the ghost draggable only until the next refresh.
+            if (!gh.body.input || !gh.body.input.hitArea) {
+                gh.body.setInteractive(new Phaser.Geom.Circle(r, r, r + pad), Phaser.Geom.Circle.Contains);
+            } else {
+                gh.body.input.hitArea.setTo(r, r, r + pad);   // just re-shape it
+                gh.body.input.enabled = true;
+            }
             gh.body.off('pointerdown'); gh.body.off('pointerup');
             onTap(gh.body, () => {
                 piece.handleClick({ rightButtonDown: () => false });
                 _updateMustEnterGhosts();
             });
-            // DRAGGING A GHOST IS UNFINISHED -- tap-only for now. The drag
-            // handlers below do run (the piece is entered on drop, measured),
-            // but the drop itself never lands on the tile: `tileAtPoint` at the
-            // release point resolves to nothing usable even when the tile IS in
-            // the piece's reachable set. Left disabled rather than shipping a
-            // gesture that enters a piece and then appears to do nothing.
+            // The ghost stands in for the piece, so it drags like one: drag it
+            // onto a tile and the piece is entered and moved there in one go.
             gh.body.__ghost = { piece, ghost: gh };
-            // scene.input.setDraggable(gh.body);
+            if (!gh.body.input.draggable) scene.input.setDraggable(gh.body);
         }
     });
     for (let i = offscreen.length; i < _ghosts.length; i++) _ghosts[i].setVisible(false);
@@ -6574,15 +6579,59 @@ setTimeout(() => {
 // can claim them. Phaser's own `capture` flag did not actually cancel here
 // (measured: capture true, defaultPrevented false), and Chrome decides whether a
 // drag is an edge-swipe "back" on the first uncancelled touchmove.
-// CHROME'S EDGE-SWIPE "BACK" IS STILL UNSOLVED. Tried and reverted, each
-// measured: `overscroll-behavior: none` (no effect -- the page has no scroll
-// container for it to apply to); cancelling touchstart+touchmove in the capture
-// phase (stopped tapping working at all); cancelling touchmove alone (stopped
-// piece DRAGGING -- the drop never reached a tile). Phaser's own `capture` flag
-// does not cancel here either: measured capture true, defaultPrevented false.
-// Next thing to try: cancel touchmove ONLY for gestures that began within ~24px
-// of the screen edge, which is the region Chrome reserves for the gesture,
-// leaving every other drag untouched.
+// CHROME'S EDGE-SWIPE "BACK": cancel touchmove, but ONLY for gestures that began
+// within a whisker of the left or right screen edge -- the strip Chrome reserves
+// for history navigation. Blunter versions were tried and reverted, each
+// measured: `overscroll-behavior: none` had no effect (the page has no scroll
+// container for it to apply to); cancelling touchstart as well stopped tapping
+// working at all; cancelling EVERY touchmove stopped piece dragging. Phaser's
+// own `capture` flag does not cancel here either (measured: capture true,
+// defaultPrevented false), which is why this is done by hand.
+const EDGE_STRIP = 24;
+let _edgeGesture = false;
+// Is this touch starting on something the player can drag? Own geometry, not
+// Phaser's hit test -- calling that from a pointer handler corrupts drag state.
+function _touchStartsOnDraggable(clientX, clientY) {
+    const cam = _mainCamera(), cv = gameInstance && gameInstance.canvas;
+    const g = _currentGame();
+    if (!cam || !cv || !g) return false;
+    const r = cv.getBoundingClientRect();
+    if (!r.width || !r.height) return false;
+    const v = cam.worldView;
+    const wx = v.x + (clientX - r.left) * (v.width / r.width);
+    const wy = v.y + (clientY - r.top) * (v.height / r.height);
+    const slop = 30;
+    const near = (o, rad) => o && Math.hypot((o.x || 0) - wx, (o.y || 0) - wy) <= rad + slop;
+    if ((g.pieces || []).some(p => !p.hidden && near(p, p.radius || STACK_PR))) return true;
+    return _ghosts.some(gh => gh && gh.visible && near(gh, (gh.body && gh.body.radius) || 40));
+}
+
+window.addEventListener('touchstart', (e) => {
+    if (!_isPhone() || !e.touches || e.touches.length !== 1) return;
+    const t = e.touches[0];
+    const atEdge = t.clientX <= EDGE_STRIP || t.clientX >= window.innerWidth - EDGE_STRIP;
+    // The racks sit inside the edge strip in portrait, so a gesture that starts
+    // on a piece must never be treated as an edge swipe -- cancelling its moves
+    // was measured to stop the drag happening at all.
+    _edgeGesture = atEdge && !_touchStartsOnDraggable(t.clientX, t.clientY);
+}, { capture: true, passive: true });
+
+window.addEventListener('touchmove', (e) => {
+    if (!_isPhone() || !_edgeGesture || !e.cancelable) return;
+    // Stop interfering once a real drag is under way: the racks sit inside the
+    // edge strip in portrait, and cancelling every move of a piece drag was
+    // measured to break it. Chrome decides on the FIRST moves, which are still
+    // cancelled here, so the back gesture is still suppressed.
+    const sc = _setupScene();
+    if (sc && (sc._draggingPiece || sc._draggingGhost)) return;
+    e.preventDefault();
+}, { capture: true, passive: false });
+
+['touchend', 'touchcancel'].forEach(type => {
+    window.addEventListener(type, (e) => {
+        if (!e.touches || e.touches.length === 0) _edgeGesture = false;
+    }, { capture: true, passive: true });
+});
 
 // ── PANNING A ZOOMED BOARD ──────────────────────────────────────────────
 // Panning is NOT done by handing gestures to the browser. `touch-action` stays
