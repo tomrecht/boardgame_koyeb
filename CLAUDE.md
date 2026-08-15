@@ -301,7 +301,13 @@ similarly: 9/16 for Tom (~56%), i.e. no measurable strength change yet at
 one iteration removed. Known rough edges observed in play
 (may or may not be resolved by TD — open question, not yet root-caused
 as a code defect): occasional pass-over-save-looking decisions, and
-occasional offgoaling of a numbered piece in the endgame. Plan is to run
+occasional offgoaling of a numbered piece in the endgame.
+**UPDATE (owner, 2026-08-15): pass-over-save is NOT being seen in the current
+champion** (the deployed `symaug_champ_July27_iter6`). It was reproduced on the
+aux_iter14 lineage, so it may simply have been trained out. Taken with the
+measurement that the prefilter never costs a save (0 of 160 endgame
+opportunities — see TODO.md), there is currently no live evidence for this rough
+edge at all: not from the candidate set, and not from play. Plan is to run
 TD first and see if better value estimates resolve these before doing any
 separate hand-debugging.
 
