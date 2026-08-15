@@ -37,6 +37,16 @@ PIECE = (24, 24, 24)
 BG, FIELD, GOAL, HUB = '#ece3d3', '#fffdf8', '#5c2a5e', '#d9a441'
 TAIL_MID = math.radians(45)                      # goal 4's mid-angle
 TAIL = ((300, 380), (495, 668), (742, 560), (652, 322))    # cubic Bezier, board units
+# Curl variants. All start at the same point on the rim; they differ in how far
+# the tail reaches before hooking back, and how tightly it hooks. A tighter curl
+# buys board size without the tail LOOKING smaller, which a uniform tail_scale
+# cannot do.
+TAIL_SHAPES = {
+    'current': TAIL,
+    'tight':   ((300, 380), (470, 610), (660, 505), (566, 300)),
+    'tighter': ((300, 380), (452, 566), (606, 470), (516, 296)),
+    'coiled':  ((300, 380), (455, 560), (600, 430), (470, 330)),
+}
 
 
 def _hex(h):
@@ -44,7 +54,7 @@ def _hex(h):
 
 
 def render(geom, size, pad_frac, pieces=0, seed=7, board_frac=None, ring=False,
-           tail_scale=1.0, concentric=False):
+           tail_scale=1.0, concentric=False, goal_extend=0.0, tail=None):
     """board_frac: the board's DIAMETER as a fraction of the padded box. The
     original fit sized the whole drawing -- board plus tail -- to that box, which
     made the board smaller than it needed to be and left a crescent of empty
@@ -61,6 +71,14 @@ def render(geom, size, pad_frac, pieces=0, seed=7, board_frac=None, ring=False,
     bowl can grow into the room it gives up. The tail is what limits the board
     in a CONCENTRIC layout, since it reaches further from the centre than the
     rim does.
+
+    goal_extend: widen each goal wedge by this fraction of its own angular width
+    on EACH side. A middle road between six wedges and a solid band: the rim
+    reads as more continuous without giving up the six goals the board actually
+    has. At the point where the extensions meet, it becomes the band.
+
+    tail: an alternative cubic Bezier (four control points, board units) for the
+    curl. TAIL_SHAPES holds the named ones.
 
     concentric: centre the BOARD on the canvas, rather than centring the
     board-plus-tail. An Android icon is always cropped to a shape centred on the
@@ -80,7 +98,7 @@ def render(geom, size, pad_frac, pieces=0, seed=7, board_frac=None, ring=False,
     # The tail sticks out on one side only, so fitting by radius would waste a
     # lot of frame. Fit to the actual drawn bounds instead.
     def dabs_u():
-        (p0, p1, p2, p3) = TAIL
+        (p0, p1, p2, p3) = tail or TAIL
         out = []
         for i in range(241):
             u = i / 240
@@ -91,7 +109,7 @@ def render(geom, size, pad_frac, pieces=0, seed=7, board_frac=None, ring=False,
         if tail_scale != 1.0:
             # About the ATTACHMENT point, so the tail stays welded to the rim
             # and only its reach and thickness change.
-            ax, ay = TAIL[0]
+            ax, ay = (tail or TAIL)[0]
             out = [(ax + (x - ax) * tail_scale, ay + (y - ay) * tail_scale, w * tail_scale)
                    for x, y, w in out]
         return out
@@ -142,8 +160,21 @@ def render(geom, size, pad_frac, pieces=0, seed=7, board_frac=None, ring=False,
 
     ordered = sorted([t for t in tiles if not is_goal4(t)],
                      key=lambda t: t['type'] == 'save')          # goals on top
+    def sector(a0, a1, r0, r1):
+        steps = max(8, int((a1 - a0) / 0.02))
+        return ([pt(r1, a0 + (a1 - a0) * i / steps) for i in range(steps + 1)] +
+                [pt(r0, a1 - (a1 - a0) * i / steps) for i in range(steps + 1)])
+
+    def wide_goal(t):
+        span = t['e'] - t['s']
+        return sector(t['s'] - span * goal_extend, t['e'] + span * goal_extend,
+                      t['ir'], t['or'])
+
     for t in ordered:
-        d.polygon(poly(t), fill=goal if t['type'] == 'save' else field)
+        if t['type'] == 'save' and goal_extend:
+            d.polygon(wide_goal(t), fill=goal)
+        else:
+            d.polygon(poly(t), fill=goal if t['type'] == 'save' else field)
 
     # `ring`: a continuous band at the goals' own radii, all the way round, so
     # the bowl of the Q has no breaks. It cannot be done by recolouring tiles --
@@ -168,7 +199,7 @@ def render(geom, size, pad_frac, pieces=0, seed=7, board_frac=None, ring=False,
     mask = Image.new('L', (S, S), 0)
     md = ImageDraw.Draw(mask)
     for t in ordered:
-        md.polygon(poly(t), fill=255)
+        md.polygon(wide_goal(t) if (t['type'] == 'save' and goal_extend) else poly(t), fill=255)
     if ring:
         md.polygon(annulus(), fill=255)
     for x, y, w in tail_dabs():
