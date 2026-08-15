@@ -3260,6 +3260,7 @@ class Piece {
 
     moveFromRack() {
         const homeTile = this.game.tiles.find(tile => tile.type === 'home');
+        this._rackIndexOnLeave = this.rack.pieces.indexOf(this);
         this.rack.removePiece(this);
         this.rack.shiftPiecesUp();
         this.rack = null;
@@ -3270,7 +3271,7 @@ class Piece {
         this._afterRackChange();          // one fewer piece left to bring out
     }
 
-    moveToRack(rack, addToFront = false) {
+    moveToRack(rack, addToFront = false, index = null) {
         this.rack = rack;
         this.x = rack.nextX();
         this.y = rack.nextY();
@@ -3282,7 +3283,9 @@ class Piece {
             this.text.setPosition(this.x, this.y);
         }
         this.setVisible(true);   // a piece hidden as tile overflow reappears in the rack
-        if (addToFront) {
+        if (index != null && rack.addPieceAt) {
+            rack.addPieceAt(this, index);      // back to its own slot
+        } else if (addToFront) {
         rack.addPieceToFirstPosition(this);
         } else {
         rack.addPiece(this);
@@ -3300,7 +3303,11 @@ class Piece {
 
     returnToRack() {
         const unenteredRack = this.color === 0xffffff ? this.game.whiteUnenteredRack : this.game.blackUnenteredRack;
-        this.moveToRack(unenteredRack, true);
+        // Back to the slot it left, not the front: taking the second piece out
+        // and putting it back used to promote it to first place.
+        const slot = (this._rackIndexOnLeave != null) ? this._rackIndexOnLeave : 0;
+        this._rackIndexOnLeave = null;
+        this.moveToRack(unenteredRack, true, slot);
         this.justMovedHome = false;
         this.reachableTiles = null;
         this.game.selectedPiece = null;
@@ -4009,6 +4016,17 @@ class Rack {
                 piece.setSize(this.pr);
             }
         }
+    }
+
+    // Put a piece back at a specific slot. returnToRack used to unshift it to
+    // the front, which silently reordered the rack once the SECOND piece could
+    // be taken out and put back.
+    addPieceAt(piece, index) {
+        const i = Math.max(0, Math.min(index | 0, this.pieces.length));
+        this.pieces.splice(i, 0, piece);
+        piece.rack = this;
+        this.shiftPiecesUp();          // canonical re-layout of the whole rack
+        if (piece._applyHitArea) piece._applyHitArea();
     }
 
     addPieceToFirstPosition(piece) {

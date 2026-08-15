@@ -1000,6 +1000,15 @@ with it in mind.** Assessment and the concrete implications:
     nothing could tell a reordering entry from an ordinary one — `onClick` now
     records `game._reorderEntry` before the piece leaves the rack, and clears it
     wherever the piece is placed or returned.
+    (a2) **returning the second piece to the rack promoted it to first place.**
+    `returnToRack` -> `moveToRack(rack, true)` -> `addPieceToFirstPosition`
+    always unshifted, which was harmless while only the front piece could ever
+    leave. `moveFromRack` now records `_rackIndexOnLeave` and the piece goes
+    back to that slot via the new `Rack.addPieceAt` (splice + `shiftPiecesUp`
+    for a canonical re-layout). This is the frontend twin of the engine's
+    `origin_rack_index` fix — the same bug in two places, for the same reason.
+    Covers Esc/`_clearSelection` and the click-return path, which both funnel
+    through `returnToRack`.
     (b) **entering ANY piece on a dice sum never handed the turn over.**
     `maybeAutoEndTurn` returned early while `mustMovePieces` was non-empty, and
     `updateMovablePieces` re-imposes the entry obligation whenever the rack is
