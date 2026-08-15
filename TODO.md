@@ -89,7 +89,7 @@ matchups mislead, and the top four champions were statistically inseparable at
 9-16 games per matchup. Budget the sample before starting, not after.
 
 
-## Candidate fix: stage 1 can cull a save-ENABLING first move (2026-08-15)
+## Stage 1 can cull a save-ENABLING first move — MEASURED, PARKED (2026-08-15)
 
 Found while probing top_k. `select_move_pair`'s first-move prefilter exempts a
 first move that IS a save:
@@ -122,7 +122,35 @@ so while it is applied, ask whether a save has become available:
 and exempt the move from the cull if so. No simulation, no second move
 generation.
 
-**Do not ship it unmeasured.** It changes which candidates the net sees, i.e.
-it changes play. Validate the same way F=12 itself was validated -- paired games
-via match_topk.py match -- and re-run the probe with BASELINE=40,0 first to size
-how often the case actually arises.
+**MEASURED, and it does not bite. Not shipping it.**
+
+Against true ground truth (`BASELINE=40,0`, i.e. no first-move prefilter):
+
+    positions        save pairs kept   lost all   moves differ   saves lost
+    60 walked        55%               6 of 11    13 of 60       0
+    40 endgame       77%               0 of 31    0 of 40        0 (of 30)
+
+The served F=12 really does discard save pairs -- over half of them in walked
+positions, and in 6 of 11 it discards every one, so the agent frequently never
+sees a save pair at all. But it never changes the MOVE: in the endgames, where
+saves are dense and the baseline banks a piece in 30 of 40 positions, F=12
+plays the identical pair every time. The culled pairs are ones the net would
+not have chosen.
+
+So the gap is real in principle and inert in practice, and the fix would change
+play for no measured gain. Parked.
+
+**Read the denominators, not the zeros.** This took three attempts to measure,
+each defeated by an empty denominator: asking whether a save was legal as a
+first MOVE qualified 1 position in 60; the next cut had 5; the walked run had 30
+save-carrying positions but the baseline PLAYED a save in none of them, so "save
+lost" could not fire. Only hand-built endgames put a real denominator (30) under
+the question. A "0" from this harness means nothing until the denominator beside
+it is checked.
+
+**What this does NOT establish.** 0 of 30 is not "never" -- by the rule of three
+the 95% upper bound is ~10% of endgame save opportunities. The endgames are
+synthetic. And 13 of 60 walked positions DO play a different move under F=12;
+none lost a save, but whether those differences cost strength is unmeasured --
+that is what `match_topk.py match` would answer, and it never has been for F
+itself (the original F=12 validation compared win rates, not pair coverage).

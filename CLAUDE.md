@@ -916,10 +916,21 @@ with it in mind.** Assessment and the concrete implications:
     table, the warning that n=60 timings were machine load rather than signal,
     and the one live BUG it turned up: **stage 1 can cull a save-ENABLING first
     move**, because its exemption covers only first moves that ARE saves. Saves
-    kept falls to 94% at F=8 and 91% at F=6 through exactly that path, and F=12
-    likely escapes it only because `goal_bonuses` happens to score such moves
-    well. Relevant to the pass-over-save rough edge, and nearly free to fix —
-    stage 1 already applies each move, so `get_saving_die` answers it in place.
+    kept falls to 94% at F=8 and 91% at F=6 through exactly that path.
+    **Measured against true ground truth (F=0) and PARKED:** the served F=12
+    keeps only 55% of the baseline's save pairs on walked positions and drops
+    them entirely in 6 of 11, so the agent often never sees a save pair — but it
+    never changes the MOVE. On 40 hand-built endgames, where the baseline banks
+    a piece in 30, F=12 plays the identical pair in all 40 (0 moves differ, 0
+    saves lost). Real in principle, inert in practice; the fix would change play
+    for no measured gain. NOT an explanation for pass-over-save. Caveat: 0 of 30
+    bounds the rate at ~10% (rule of three), not zero.
+    **Read the denominator, not the zero.** This took three attempts, each
+    defeated by an empty one — 1 qualifying position in 60, then 5, then 30
+    positions in which the baseline never actually played a save. Any "0" out of
+    `match_topk.py probe` is meaningless until the denominator beside it is
+    checked, and `POSITIONS=endgame` is what puts a real one under any question
+    about saves.
     **NOT YET WIRED IN.** `game.js` still calls `/select_moves`. Step 7 in
     PORTING.md has the settled design: both platforms (not phone-only), lazy —
     start on the server, load the runtime in the background, switch when ready,
