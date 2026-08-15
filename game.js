@@ -1463,7 +1463,18 @@ function _tutFitBoard() {
         // step's content, so later steps grew and crept over the board (owner
         // saw step 1 clear of it and step 2 onward covering a quarter).
         if (mode === 'side') {
-            const bw = Math.min(300, Math.round(W * 0.32));
+            // Size it to the free column BESIDE the board rather than a
+            // fraction of the screen: the board is centred, so the space either
+            // side is (screen - board)/2, and anything wider necessarily covers
+            // part of it. Measured from the camera so it follows any zoom.
+            let free = Math.round(W * 0.32);
+            const cam = _mainCamera(), cv = gameInstance && gameInstance.canvas;
+            const rect = cv && cv.getBoundingClientRect();
+            if (cam && rect && cam.worldView.width) {
+                const boardCss = 1080 * (rect.width / cam.worldView.width);   // board is 1080 world px
+                free = Math.floor((W - boardCss) / 2) - 2 * gap;
+            }
+            const bw = Math.max(180, Math.min(300, free));
             b.style.width = bw + 'px';
             b.style.left = 'auto';
             b.style.right = gap + 'px';
