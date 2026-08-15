@@ -23,6 +23,10 @@
          a third-party host, and a cross-origin script makes every exception it
          throws arrive as an opaque "Script error." with no stack. -->
     <script src="phaser.min.js"></script>
+    <!-- On-device move selection. Tiny by itself: it pulls in onnxruntime, the
+         model and the ported agent lazily, in the background, the first time the
+         computer is asked to move (see local_agent.js / PORTING.md step 7). -->
+    <script src="local_agent.js" defer></script>
     <script src="game.js" defer></script>
     <style>
         html, body {

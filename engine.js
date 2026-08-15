@@ -25,7 +25,12 @@ const _RT = (typeof require !== 'undefined') ? require('./route.js')
 // SyntaxError that kills whichever file loads second, silently, leaving its
 // exports undefined. Third time this has bitten (buildGraph, _api, now this).
 const ENGINE_NUM_PIECES = 12;
-const NO_SAVE_TURNS_FOR_DRAW = 10;
+// Prefixed for the same reason, and this one is not hypothetical: game.js
+// declares `const NO_SAVE_TURNS_FOR_DRAW` at top level too, so loading this
+// file into the game page (step 7) redeclared it and killed engine.js outright,
+// leaving `Engine` undefined and the local agent unreachable with no error the
+// page could see. Nothing reads this value; it is kept as documentation.
+const ENGINE_NO_SAVE_TURNS_FOR_DRAW = 10;
 
 class Engine {
     constructor(staticData) {
@@ -81,11 +86,19 @@ class Engine {
         e.stages = Object.assign({}, st.stages);
         e.drawCalled = !!st.draw_called;
         e.drawCallable = !!st.draw_callable;
+        // reindex() BEFORE resolving first_move: it is what builds `lookup`, and
+        // find() against an empty lookup returned null, so firstMove.piece was
+        // always null. That is silent -- `firstMove.piece === piece` simply never
+        // matches, so the turn's first mover is not held to the dice SUM and the
+        // move list comes out wrong. Every one of step 6.1's 50 fixture cases had
+        // first_move null (a random walk samples turn starts), which is why
+        // 3054/3054 passed over a branch it never entered; step 7 hit it at once,
+        // because update_state sets firstMove from a posted reachableBySum.
+        e.reindex();
         if (st.first_move) {
             const [player, number, originTile] = st.first_move;
             e.firstMove = { piece: e.find(player, number), originTile };
         }
-        e.reindex();
         return e;
     }
 
@@ -516,7 +529,7 @@ const moveCmp = (a, b) => {
 // classic scripts share one global lexical scope, so a bare top-level const of
 // a name another file also uses is a silent SyntaxError.
 (function () {
-    const api = { Engine, moveKey, moveCmp, NO_SAVE_TURNS_FOR_DRAW };
+    const api = { Engine, moveKey, moveCmp, ENGINE_NO_SAVE_TURNS_FOR_DRAW };
     if (typeof module !== 'undefined' && module.exports) module.exports = api;
     else Object.assign(typeof window !== 'undefined' ? window : self, api);
 })();

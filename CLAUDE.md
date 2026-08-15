@@ -466,6 +466,69 @@ with it in mind.** Assessment and the concrete implications:
 
 ## Current state
 
+- **SESSION UPDATE (2026-08-15) — THE AI NOW RUNS ON THE DEVICE.** Port step 7 is
+  done: `local_agent.js` loads the ported stack lazily and `getAgentMoves` uses
+  it, with `/select_moves` as the fallback. PORTING.md §7 has the full account.
+  - **Design as shipped:** both platforms; the session starts on the server while
+    onnxruntime + the model (~4.5 MB) load in the background; it switches once
+    genuinely ready. Any local failure — missing file, no WASM, a bad answer —
+    retires the local path for the session and re-asks the server, so a
+    half-working port costs a moment rather than the game. `?localai=0` forces
+    the server, `?aicompare=1` checks every local answer against it.
+  - **Proof.** The only new logic is `LocalAgent.engineState` (game.js's board →
+    the engine's, a mirror of `update_state`). Against `update_state` over the
+    181 states three real games posted, plus firstMove-carrying variants:
+    **702/702 positions and 702/702 legal-move sets**, 523/523 firstMove. End to
+    end with `?aicompare=1`: **162/162 identical pairs over three complete
+    games**. `state_test.html` is committed; regenerate its fixture with
+    `scratchpad/state_expected.py`.
+  - **A REAL BUG in already-"verified" ported code.** `Engine.fromState` called
+    `e.find()` for `first_move` BEFORE `reindex()` built the lookup, so
+    `firstMove.piece` was always null — silently, since `firstMove.piece ===
+    piece` then never matches and the first mover is not held to the dice sum.
+    **All 50 of step 6.1's fixture cases had `first_move: null`**, so 3054/3054
+    passed over a branch it never entered. Fixed; the 6.1 fixture is identical
+    before and after. **Check a fixture's denominator for the branch you think it
+    covers, not just its pass rate** — the same lesson as the "read the
+    denominators" note in TODO.md, hit independently.
+  - **A NAME COLLISION WOULD HAVE KILLED IT SILENTLY.** `game.js` and `engine.js`
+    both declared a top-level `const NO_SAVE_TURNS_FOR_DRAW`; classic scripts
+    share ONE global lexical scope, so loading engine.js into the game page is a
+    redeclaration SyntaxError that kills the file and leaves `Engine` undefined.
+    Renamed in engine.js. A script that fails to PARSE still fires `load`, so
+    `local_agent.js` checks for the EXPORTS themselves before declaring itself
+    ready. This is the fourth time this trap has bitten the port.
+  - **Don't trust a long-lived dev server.** Seven apparent disagreements were a
+    stale Flask process running pre-determinism-fix code, reached because
+    `SERVER_URL` is hardcoded to `localhost:10000` for any local page and
+    `init()` re-applied it every turn. `?aiserver=` now pins the compare target.
+    Check `ps -o lstart=` on the listener before blaming the port, and restart
+    dev servers after touching the agent.
+  - **KNOWN COST, not yet paid down:** inference is on the MAIN THREAD, so the UI
+    freezes for a move (0.29s median desktop, 1.25s / p90 2.97s at 4x throttle).
+    Only the computer's turn, when there is nothing to interact with. A Worker is
+    the follow-up; every port file already falls back to `self`.
+  - **sw.js is at `quahuru-v8`**, precaching the six port files plus
+    `encoder_static.json` and `heuristic_weights.json` — they stay ALWAYS_FRESH,
+    so precaching cannot serve a stale copy, it only guarantees an offline
+    fallback. Without it the offline app would load and then be unable to move.
+  - **NOT yet done:** the hosting audit (`/call_draw`, `/start_game`,
+    `/evaluate_board`, `/query_agent_move`, `record_*` — likely removable rather
+    than portable, but check), and no on-device play on a real phone yet.
+
+- **SESSION UPDATE (2026-08-15) — stage 1 no longer culls a save-ENABLING first
+  move.** `select_move_pair` exempted a first move that IS a save but not one
+  that enables a save as the pair's second half ("step onto the goal with one
+  die, save with the other"); if that step scored poorly alone it was culled and
+  the save never reached the value head. Now exempt in both twins —
+  `agent_gnn.py` and `agent.js`, committed together so they cannot diverge.
+  Served-only in effect (`first_move_prefilter`'s library default is 0, so
+  training, self-play and the arena are unchanged). Owner's call was to fix it
+  even though it was measured not to bite: **"never cull a save pair" should hold
+  by construction, not by luck.** This is NOT a fix for pass-over-save, which is
+  not observed in the current champion. TODO.md carries the before/after numbers;
+  `agent_test.js` re-passed 50/50 against a regenerated fixture.
+
 - **SESSION UPDATE (2026-08-04) — LIVE ON KOYEB: deployed model, latency,
   and a rendering bug.** `main` == `td-lambda` == `frontend-overhaul`; the
   `fast-prefilter` branch is merged. Koyeb tracks main, so pushing deploys.

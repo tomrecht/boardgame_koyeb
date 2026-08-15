@@ -238,7 +238,66 @@ be reused without checking.
   (`gnn_backend.py`), so those are small and mechanical.
 
 
-## Step 7: wiring it into game.js (next)
+## Step 7: wiring it into game.js — DONE (2026-08-15)
+
+`local_agent.js` + a rewritten `getAgentMoves`. The computer now moves on the
+device, with `/select_moves` as the fallback. Shipped as designed below: both
+platforms, lazy, server as fallback.
+
+**What was actually new.** The port was already proven; the only fresh logic is
+`LocalAgent.engineState`, which turns game.js's board into the engine's. It is
+written as a direct mirror of `game.py`'s `Board.update_state` and takes the SAME
+payload `getGameState()` posts, which is what makes the differential check below
+a real test rather than an approximation.
+
+**Verified, in this order:**
+
+* **The rebuild** — `state_test.html` + `scratchpad/state_expected.py`, over the
+  181 states three real games actually posted, plus firstMove-carrying variants:
+  **702/702 positions and 702/702 legal-move sets identical to `update_state`,
+  523/523 with a firstMove set.**
+* **End to end** — `?aicompare=1` plays the real app with both sides Computer and
+  asks the server the same question every turn: **162/162 identical pairs over
+  three complete games**, no page errors.
+* **Fail-closed** — `?localai=0` never loads it; an injected failure mid-game
+  retires the local path and the game plays on from the server.
+
+**A REAL BUG THIS FOUND, in code that was already "verified".**
+`Engine.fromState` resolved `first_move` with `e.find()` *before* `reindex()`,
+which is what builds `lookup` — so `firstMove.piece` was **always null**. That is
+silent: `firstMove.piece === piece` simply never matches, so the turn's first
+mover is not held to the dice SUM and the legal-move list comes out wrong.
+**Every one of step 6.1's 50 fixture cases had `first_move: null`** (a random
+walk samples turn starts), so 3054/3054 passed over a branch it never entered.
+Step 7 hit it immediately, because `update_state` sets `firstMove` from a posted
+`reachableBySum`. Fixed; the 6.1 fixture is byte-identical before and after.
+*Lesson for the rest of the port: check the fixture's DENOMINATOR for the branch
+you think it covers, not just its pass rate.*
+
+**A measurement trap that cost an hour, worth remembering.** The first compare
+run showed 7 disagreements, all of them the canonically-smaller pair losing —
+the exact signature of a missing tie-break. It was neither the port nor the
+agent: `game.js` hardcodes `SERVER_URL` to `localhost:10000` for any local page,
+and `LocalAgent.init()` re-applied that argument on every call, so a harness
+testing against a second Flask instance had its comparison silently retargeted
+at the first one — which was a **stale process running code from before the step
+6.0 determinism fix**. Two things came out of it: `?aiserver=` now pins the
+compare target explicitly, and `init()` no longer lets a later call move it.
+Before blaming the port, check the server you are actually talking to
+(`ps -o lstart=` on the listener) — and never leave a long-lived dev server
+running across a change to the agent.
+
+**Known cost, not yet paid down:** inference runs on the MAIN THREAD, so the UI
+is frozen for the length of a move (0.29s median desktop, 1.25s at 4x throttle).
+Only the computer's turn is affected, when there is nothing to interact with.
+Moving it to a Worker is the follow-up — every port file already falls back to
+`self`, so they are worker-ready by construction.
+
+**Still on `/select_moves`:** nothing, for move selection. `/call_draw`,
+`/start_game`, `/evaluate_board`, `/query_agent_move` and the `record_*` routes
+are untouched and are the subject of the hosting audit (see CLAUDE.md).
+
+### The design as it was settled (kept for the reasoning)
 
 Measured first, because it decides the shape. `latency_test.html` runs the real
 agent over 40 recorded positions:

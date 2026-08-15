@@ -22,4 +22,7 @@ engine_fixture.json
 heuristic_fixture.json
 agent_fixture.json
 trace_fixture.json
+# 4 MB. Regenerate with dump_state_fixture.py from states_sample.json, which IS
+# committed (238 KB) so the fixture is reproducible without a browser session.
+state_expected.json
 ort/*.gz    # generated at image build time (see Dockerfile)

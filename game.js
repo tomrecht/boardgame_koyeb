@@ -6640,14 +6640,16 @@ function evaluateBoard(gameState) {
 // Bumped for every Game built; an agent reply naming an older one is discarded.
 let _gameInstanceSeq = 0;
 let _agentRetries = 0;
-function getAgentMoves(gameState) {
-    // difficulty 1 = full strength (argmax); lower = more top-p sampling (weaker)
-    gameState = Object.assign({}, gameState, { difficulty: getAIDifficulty() });
-    // Which game asked. Starting a new game while the computer is thinking used
-    // to let the reply land on the board that replaced it, applying moves for
-    // pieces that no longer exist.
-    const askedBy = (_currentGame() || {}).instanceId;
-    console.log('Sending game state to agent:', gameState);
+
+// On-device inference (see local_agent.js and PORTING.md step 7). Kicked off the
+// first time the computer is asked to move, so a human-vs-human session never
+// pays for it; the session's first move goes to the server while it loads.
+function _startLocalAI() {
+    if (typeof LocalAgent === 'undefined' || !LocalAgent.enabled()) return;
+    LocalAgent.init({ serverUrl: SERVER_URL });
+}
+
+function _askServerForMoves(gameState) {
     return fetch(`${SERVER_URL}/select_moves`, {
         method: 'POST',
         headers: {
@@ -6663,7 +6665,36 @@ function getAgentMoves(gameState) {
         // forever. Treat a bad response as a failed move and recover.
         if (!response.ok) throw new Error('server responded ' + response.status);
         return response.json();
-    })
+    });
+}
+
+// Answer from this device, in the shape the server's reply has. Any failure
+// here retires the local path for the session and re-asks the server, so a
+// half-working port costs a moment rather than the game.
+function _askLocalForMoves(gameState) {
+    return LocalAgent.selectMoves(gameState)
+        .then(move => (LocalAgent.comparing() && move
+                            ? LocalAgent.compareWithServer(gameState, move)
+                            : move))
+        .then(move => ({ message: 'Success', move: move, local: true }))
+        .catch(err => {
+            LocalAgent.disable(err);
+            flashNotice('Switching the computer back to the server', 2500);
+            return _askServerForMoves(gameState);
+        });
+}
+
+function getAgentMoves(gameState) {
+    // difficulty 1 = full strength (argmax); lower = more top-p sampling (weaker)
+    gameState = Object.assign({}, gameState, { difficulty: getAIDifficulty() });
+    // Which game asked. Starting a new game while the computer is thinking used
+    // to let the reply land on the board that replaced it, applying moves for
+    // pieces that no longer exist.
+    const askedBy = (_currentGame() || {}).instanceId;
+    console.log('Sending game state to agent:', gameState);
+    _startLocalAI();
+    const useLocal = typeof LocalAgent !== 'undefined' && LocalAgent.ready();
+    return (useLocal ? _askLocalForMoves(gameState) : _askServerForMoves(gameState))
     .then(data => {
         const now = (_currentGame() || {}).instanceId;
         if (askedBy !== undefined && now !== askedBy) {
@@ -6674,7 +6705,7 @@ function getAgentMoves(gameState) {
         _agentRetries = 0;
         updateNoSaveDisplay();
         if (data.move) {
-            console.log('Agent moves:', data.move);
+            console.log('Agent moves:', data.move, data.local ? '(on-device)' : '(server)');
             applyMovePair(data.move);
         } else {
             console.log('No move to apply:', data.message);
