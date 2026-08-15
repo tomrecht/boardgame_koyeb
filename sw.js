@@ -10,7 +10,7 @@
  *
  * Bump CACHE when the shell list changes; activate() drops every other cache.
  */
-const CACHE = 'quahuru-v1';
+const CACHE = 'quahuru-v2';
 
 // The shell is what a cold, offline start needs to render a board.
 const SHELL = [
@@ -22,6 +22,13 @@ const SHELL = [
     './icon-192.png',
     './icon-512.png',
     './icon-512-maskable.png',
+    // Phaser preloads these; they MUST be precached rather than left to
+    // cache-first. On the very first visit the worker is not controlling the
+    // page yet, so the requests Phaser makes during that load are never seen
+    // and never cached -- and the next (offline) load has no arrows.
+    './assets/left-arrow.png',
+    './assets/right-arrow.png',
+    './assets/thinking.png',
 ];
 
 // Files whose content changes under a fixed name -- always try the network.
