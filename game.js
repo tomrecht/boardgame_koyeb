@@ -272,6 +272,10 @@ function _placeTurnStatus(el) {
         const w = Math.round((onLeft ? r.left : window.innerWidth - r.right) - 16);
         set(`top:${onLeft ? 10 : 84}px; ${onLeft ? 'left' : 'right'}:8px; transform:none;` +
             `width:${w}px; font-size:12px; text-align:center; white-space:normal; line-height:1.25;`);
+    } else if (_isPortrait()) {
+        // The strip above the rack band is free apart from the gear, which owns
+        // the top right.
+        set('left:12px; top:14px; transform:none; font-size:12px; padding:4px 10px;');
     } else {
         // No band at all -- on a phone the canvas now fills the screen. Sit under
         // the settings gear on the right: the top left holds the HUD buttons and
@@ -327,12 +331,16 @@ function _isPortrait() {
     try {
         const q = new URLSearchParams(location.search).get('portrait');
         if (q === '0') return false;
-        if (q !== '1') return false;          // opt-in until the furniture moves
-    } catch (e) { return false; }
+        if (q === '1') return true;
+    } catch (e) {}
     return window.innerHeight > window.innerWidth;
 }
 
 // The world rectangle the camera frames.
+// Portrait has the width for a much bigger rack: two panels of six fill it.
+function _rackPR()  { return _isPortrait() ? 34 : RACK_PR; }
+function _dieSize() { return _isPortrait() ? 150 : DIE_SIZE; }
+
 function _world() {
     if (_isPortrait()) {
         return { x: CENTER_X - PORTRAIT.W / 2, y: CENTER_Y - PORTRAIT.boardFromTop,
@@ -351,15 +359,16 @@ function _fur() {
                  undoX: config.width - (_isPhone() ? 520 : DIE_2_POSITION),
                  endX:  config.width - (_isPhone() ? 330 : DIE_1_POSITION),
                  arrowY: _isPhone() ? 100 : 85,
-                 cols: 3, rows: 4,
+                 cols: 3, rows: 4, dieSize: DIE_SIZE,
                  whiteUn: [75, RACK_Y1], whiteSv: [75, RACK_Y2],
                  blackUn: [1545, RACK_Y1], blackSv: [1545, RACK_Y2] };
     }
     const cols = 6, rows = 2;
-    const spacing = RACK_PR * 2 + 12;
-    const panelW = cols * spacing + RACK_PR;           // matches drawBackground
+    const pr = _rackPR(), ds = _dieSize();
+    const spacing = pr * 2 + 12;
+    const panelW = cols * spacing + pr;                // matches drawBackground
     const gap = 40;
-    const x1 = wd.x + (wd.w - (2 * panelW + gap)) / 2 + RACK_PR;
+    const x1 = wd.x + (wd.w - (2 * panelW + gap)) / 2 + pr;
     const x2 = x1 + panelW + gap;
     // The human's racks go in the top band; with two humans (or two AIs) white
     // does, matching landscape's white-left / black-right reading order.
@@ -367,16 +376,27 @@ function _fur() {
     const yTop = wd.y + 240, yBot = wd.y + 1790;
     const w = { un: [x1, topIsWhite ? yTop : yBot], sv: [x2, topIsWhite ? yTop : yBot] };
     const b = { un: [x1, topIsWhite ? yBot : yTop], sv: [x2, topIsWhite ? yBot : yTop] };
-    return { diceX: [wd.x + 60, wd.x + 60 + DIE_SIZE + 20], diceY: wd.y + 470,
-             undoX: wd.x + 905, endX: wd.x + 1045, arrowY: wd.y + 530,
+    // Arrows keep landscape's 190px spacing -- closer together they are easy to
+    // mis-hit -- and sit against the right margin.
+    return { diceX: [wd.x + 60, wd.x + 60 + ds + 20], diceY: wd.y + 455, dieSize: ds,
+             undoX: wd.x + 855, endX: wd.x + 1045, arrowY: wd.y + 530,
              cols, rows,
+             scoreAt: [wd.x + wd.w / 2, wd.y + 2020], scoreOrigin: [0.5, 0],
+             impasseAt: [wd.x + wd.w / 2, wd.y + 2160], callDrawAt: [wd.x + wd.w / 2, wd.y + 2245],
+             hudX: [wd.x + 250, wd.x + 580, wd.x + 910], hudY: wd.y + 2390,
              whiteUn: w.un, whiteSv: w.sv, blackUn: b.un, blackSv: b.sv };
 }
 
 // Rotation changes which band each piece of furniture belongs in. Because the
 // board itself never moves, this is a dozen setPositions rather than a rebuild.
 let _lastPortrait = null;
+function _hideRotateHint() {
+    const el = document.getElementById('rotateHint');
+    if (el) el.style.display = _isPortrait() ? 'none' : '';
+}
+
 function _relayoutFurniture() {
+    _hideRotateHint();
     const g = _currentGame();
     if (!g) return;
     const p = _isPortrait();
@@ -387,13 +407,36 @@ function _relayoutFurniture() {
      [g.blackUnenteredRack, f.blackUn], [g.blackSavedRack, f.blackSv]].forEach(([r, xy]) => {
         if (!r) return;
         r.x = xy[0]; r.y = xy[1]; r.cols = f.cols; r.rows = f.rows;
+        r.pr = _rackPR(); r.spacing = r.pr * 2 + 12;
         r.drawBackground();
         r.shiftPiecesUp();
     });
-    (g.dice || []).forEach((d, i) => { d.x = f.diceX[i]; d.y = f.diceY; d.drawDie(); });
+    (g.dice || []).forEach((d, i) => { d.x = f.diceX[i]; d.y = f.diceY; d.size = f.dieSize; d.drawDie(); });
     if (g.undoButton) g.undoButton.setPosition(f.undoX, f.arrowY);
     if (g.switchTurnButton) g.switchTurnButton.setPosition(f.endX, f.arrowY);
     if (g.updateMustMoveHighlights) g.updateMustMoveHighlights();
+
+    const sc = _setupScene();
+    if (!sc) return;
+    const H = config.height, phone = _isPhone();
+    if (sc.scoreText) {
+        sc.scoreText.setOrigin(p ? 0.5 : 0, p ? 0 : 1)
+                    .setPosition(p ? f.scoreAt[0] : 24, p ? f.scoreAt[1] : H - 24);
+        if (sc._fitScoreText) sc._fitScoreText();
+    }
+    if (sc.impasseText) {
+        sc.impasseText.setOrigin(p ? 0.5 : 0, p ? 0 : 1)
+                      .setPosition(p ? f.impasseAt[0] : 24,
+                                   p ? f.impasseAt[1] : (phone ? H - 148 : H - 58));
+    }
+    if (sc.callDrawButton) {
+        sc.callDrawButton.setPosition(p ? f.callDrawAt[0] : (phone ? 190 : 85),
+                                      p ? f.callDrawAt[1] : (phone ? H - 247 : H - 115));
+    }
+    (sc._hudRow || []).forEach((b, n) => {
+        if (b && b.setPosition) b.setPosition(p ? f.hudX[n] : 150,
+                                              p ? f.hudY : (phone ? 48 + n * 84 : 52 + n * 52));
+    });
 }
 
 // The zoom at which the whole world just fits the canvas. User zoom multiplies
@@ -3082,7 +3125,7 @@ class Piece {
         this.rack = rack;
         this.x = rack.nextX();
         this.y = rack.nextY();
-        this.setSize(RACK_PR);
+        this.setSize(_rackPR());
         this.body.setPosition(this.x, this.y);
         this.circle.setPosition(this.x, this.y);
         this._layoutSheen();
@@ -3785,7 +3828,8 @@ class Rack {
         this.pieces = [];
         this.rows = rows;
         this.cols = cols;
-        this.spacing = RACK_PR * 2 + 12;
+        this.pr = _rackPR();
+        this.spacing = this.pr * 2 + 12;
         this.verticalPadding = 22;
         this.horizontalPadding = 18;
         this.background = scene.add.graphics();
@@ -3813,7 +3857,7 @@ class Rack {
             piece.setVisible(true);   // ensure a formerly-hidden overflow piece shows in the rack
                     // Force size reset when on rack
             if (this.type === 'unentered' || this.type === 'saved') {
-                piece.setSize(RACK_PR);
+                piece.setSize(this.pr);
             }
         }
     }
@@ -3853,9 +3897,9 @@ class Rack {
         this.background.clear();
         // Clean Modern (matches mockup): white rounded panel + soft shadow +
         // faint empty capacity slots. No text.
-        const bx = this.x - RACK_PR, by = this.y - RACK_PR;
-        const bw = this.cols * this.spacing + RACK_PR;
-        const bh = this.rows * this.spacing + RACK_PR + this.verticalPadding;
+        const bx = this.x - this.pr, by = this.y - this.pr;
+        const bw = this.cols * this.spacing + this.pr;
+        const bh = this.rows * this.spacing + this.pr + this.verticalPadding;
         this.background.fillStyle(0x000000, 0.07);
         this.background.fillRoundedRect(bx, by + 5, bw, bh, 16);      // soft drop shadow
         this.background.fillStyle(0xffffff, 1);
@@ -3867,7 +3911,7 @@ class Rack {
         for (let i = 0; i < this.cols * this.rows; i++) {
             const sx = this.x + this.horizontalPadding + (i % this.cols) * this.spacing;
             const sy = this.y + this.verticalPadding + Math.floor(i / this.cols) * this.spacing;
-            this.background.strokeCircle(sx, sy, RACK_PR);
+            this.background.strokeCircle(sx, sy, this.pr);
         }
     }
 }
@@ -3875,12 +3919,12 @@ class Rack {
 
 
 class Die {
-    constructor(scene, x, y, isFirstDie) {
+    constructor(scene, x, y, isFirstDie, size) {
         this.scene = scene;
         this.value = Phaser.Math.Between(1, 6);
         this.x = x;
         this.y = y;
-        this.size = DIE_SIZE;
+        this.size = size || DIE_SIZE;
         this.used = false;
         this.isFirstDie = isFirstDie;
 
@@ -3961,8 +4005,8 @@ class Game {
         this.startingPlayer = startingPlayer;
         this.turn = this.startingPlayer;
         const _f = _fur();
-        this.dice = [new Die(scene, _f.diceX[0], _f.diceY, true),
-                     new Die(scene, _f.diceX[1], _f.diceY, false)];
+        this.dice = [new Die(scene, _f.diceX[0], _f.diceY, true, _f.dieSize),
+                     new Die(scene, _f.diceX[1], _f.diceY, false, _f.dieSize)];
         this.gameOver = false;
         this.instanceId = ++_gameInstanceSeq;   // see getAgentMoves: drop stale replies
         this.score = { 'white': 0, 'black': 0 };
@@ -4037,13 +4081,13 @@ class Game {
         blackPieces = Phaser.Utils.Array.Shuffle(blackPieces);
 
         whitePieces.forEach(piece => {
-            piece.setSize(RACK_PR);
+            piece.setSize(piece.rack ? piece.rack.pr : _rackPR());
             piece.setPosition(this.whiteUnenteredRack.nextX(), this.whiteUnenteredRack.nextY());
             this.whiteUnenteredRack.addPiece(piece);
         });
 
         blackPieces.forEach(piece => {
-            piece.setSize(RACK_PR);
+            piece.setSize(piece.rack ? piece.rack.pr : _rackPR());
             piece.setPosition(this.blackUnenteredRack.nextX(), this.blackUnenteredRack.nextY());
             this.blackUnenteredRack.addPiece(piece);
         });
@@ -5099,8 +5143,8 @@ endGame(winner, score = null, impasse_caller = null) {
     rackAtPoint(x, y) {
         const racks = [this.whiteUnenteredRack, this.whiteSavedRack, this.blackUnenteredRack, this.blackSavedRack];
         for (const r of racks) {
-            const bx = r.x - RACK_PR, by = r.y - RACK_PR;
-            const bw = r.cols * r.spacing + RACK_PR, bh = r.rows * r.spacing + RACK_PR + r.verticalPadding;
+            const bx = r.x - r.pr, by = r.y - r.pr;
+            const bw = r.cols * r.spacing + r.pr, bh = r.rows * r.spacing + r.pr + r.verticalPadding;
             if (x >= bx && x <= bx + bw && y >= by && y <= by + bh) return r;
         }
         return null;
@@ -5125,6 +5169,7 @@ endGame(winner, score = null, impasse_caller = null) {
         if (scene._camWired) return;
         scene._camWired = true;
         _sizeCanvasToScreen();
+        _hideRotateHint();
         _fitCameraToWorld(scene);
         // Two distinct jobs, deliberately not the same handler: the WINDOW
         // changing means re-measure the screen and resize the buffer; the SCALE
@@ -5591,8 +5636,11 @@ class MainGameScene extends Phaser.Scene {
         // They get scaled and re-spaced there, into the corner box bounded by
         // the dice (x>=309) and the top of the racks (y>=297).
         const hudK = _isPhone() ? 2 : 1;
-        const hy = (n) => _isPhone() ? 48 + n * 84 : 52 + n * 52;
-        const newGameButton = makeHudButton(this, 150, hy(0), 'New Game', { k: hudK });
+        const _hf = _fur();
+        const hx = (n) => _isPortrait() ? _hf.hudX[n] : 150;
+        const hy = (n) => _isPortrait() ? _hf.hudY
+                                        : (_isPhone() ? 48 + n * 84 : 52 + n * 52);
+        const newGameButton = makeHudButton(this, hx(0), hy(0), 'New Game', { k: hudK });
         onTap(newGameButton, () => {
             if (matchTracker && !matchTracker.over) return;
             this.showNewGameConfirmationModal();
@@ -5601,7 +5649,7 @@ class MainGameScene extends Phaser.Scene {
 
         // New Match sits where New Game would be during a match; starting one
         // mid-match asks for confirmation first.
-        const newMatchButton = makeHudButton(this, 150, hy(inMatch ? 0 : 1), 'New Match', { ghost: true, k: hudK });
+        const newMatchButton = makeHudButton(this, hx(inMatch ? 0 : 1), hy(inMatch ? 0 : 1), 'New Match', { ghost: true, k: hudK });
         onTap(newMatchButton, () => {
             if (matchTracker && !matchTracker.over) {
                 showConfirm('Abandon the current match and start a new one?', () => showMatchSetup());
@@ -5610,8 +5658,9 @@ class MainGameScene extends Phaser.Scene {
             }
         });
 
-        const instructionsButton = makeHudButton(this, 150, hy(inMatch ? 1 : 2), 'How to Play', { ghost: true, k: hudK });
+        const instructionsButton = makeHudButton(this, hx(inMatch ? 1 : 2), hy(inMatch ? 1 : 2), 'How to Play', { ghost: true, k: hudK });
         onTap(instructionsButton, () => { showInstructions(); });
+        this._hudRow = [newGameButton, newMatchButton, instructionsButton];
         // The tutorial hides these: New Game / New Match restart the scene, which
         // would leave the step runner talking to a board that no longer exists.
         this.hudButtons = [newGameButton, newMatchButton, instructionsButton];
@@ -5660,19 +5709,27 @@ class MainGameScene extends Phaser.Scene {
         // throws inside create() and leaves everything after this unbuilt. The
         // phone's line break is inserted into the text instead (see the setText
         // that assembles it), so no wrap width is needed at all.
-        this.scoreText = this.add.text(24, H - 24, '', scoreStyle).setOrigin(0, 1);
+        const _pf = _fur();
+        this.scoreText = _isPortrait()
+            ? this.add.text(_pf.scoreAt[0], _pf.scoreAt[1], '', Object.assign({}, scoreStyle, { align: 'center' }))
+                  .setOrigin(_pf.scoreOrigin[0], _pf.scoreOrigin[1])
+            : this.add.text(24, H - 24, '', scoreStyle).setOrigin(0, 1);
         _themedRedraws.push(() => this.scoreText.setColor(THEME.bgInk));
 
         this.updateScoreText();
 
         // No-save counter: a quiet HUD line (not a boxed red warning), with the
         // draw offer as a standard ghost pill underneath it when it applies.
-        this.impasseText = this.add.text(24, phone ? H - 148 : H - 58, '', {
+        this.impasseText = this.add.text(
+            _isPortrait() ? _pf.impasseAt[0] : 24,
+            _isPortrait() ? _pf.impasseAt[1] : (phone ? H - 148 : H - 58), '', {
             fontSize: Math.round(21 * k) + 'px', fontFamily: HUD_FONT, color: THEME.bgInk
-        }).setOrigin(0, 1).setVisible(false).setAlpha(0.75);
+        }).setOrigin(_isPortrait() ? 0.5 : 0, _isPortrait() ? 0 : 1).setVisible(false).setAlpha(0.75);
         _themedRedraws.push(() => this.impasseText.setColor(THEME.bgInk));
 
-        this.callDrawButton = makeHudButton(this, phone ? 190 : 85, phone ? H - 247 : H - 115,
+        this.callDrawButton = makeHudButton(this,
+            _isPortrait() ? _pf.callDrawAt[0] : (phone ? 190 : 85),
+            _isPortrait() ? _pf.callDrawAt[1] : (phone ? H - 247 : H - 115),
             'Call draw', { ghost: true, k });
         this.callDrawButton.setHudVisible(false);
 
@@ -5703,7 +5760,9 @@ class MainGameScene extends Phaser.Scene {
     // widest line, which is exactly the constraint.
     _fitScoreText() {
         if (!_isPhone() || !this.scoreText) return;
-        const maxW = 582;                       // 630 minus the 24px left margin, with a little slack
+        // Landscape: 630 (goal 2's arc) minus the 24px left margin. Portrait puts
+        // the score in a clear band, so only the frame constrains it.
+        const maxW = _isPortrait() ? _world().w - 140 : 582;
         this.scoreText.setFontSize(this._scoreBaseFs);
         if (this.scoreText.width > maxW) {
             const shrunk = Math.floor(this._scoreBaseFs * maxW / this.scoreText.width);
