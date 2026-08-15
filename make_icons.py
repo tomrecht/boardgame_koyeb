@@ -131,8 +131,15 @@ def main():
     geom = json.load(open(path))
     render(geom, 192, 0.05).save('icon-192.png')
     render(geom, 512, 0.05).save('icon-512.png')
+    # Maskable at BOTH launcher densities. Android crops a maskable icon to its
+    # own shape (circle, squircle, ...), so these carry extra padding -- the
+    # drawn board lands inside the central 80% "safe zone" and the parchment
+    # runs to all four edges. The background must stay OPAQUE: a transparent
+    # one is composited onto the system's own grey, which is the grey bubble it
+    # would appear to be there to remove.
+    render(geom, 192, 0.16).save('icon-192-maskable.png')
     render(geom, 512, 0.16).save('icon-512-maskable.png')
-    print('wrote icon-192.png, icon-512.png, icon-512-maskable.png')
+    print('wrote icon-192.png, icon-512.png, icon-192-maskable.png, icon-512-maskable.png')
 
 
 if __name__ == '__main__':

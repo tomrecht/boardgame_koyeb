@@ -10,7 +10,7 @@
  *
  * Bump CACHE when the shell list changes; activate() drops every other cache.
  */
-const CACHE = 'quahuru-v4';
+const CACHE = 'quahuru-v5';
 
 // The shell is what a cold, offline start needs to render a board.
 const SHELL = [
@@ -21,6 +21,7 @@ const SHELL = [
     './manifest.json',
     './icon-192.png',
     './icon-512.png',
+    './icon-192-maskable.png',
     './icon-512-maskable.png',
     // Phaser preloads these; they MUST be precached rather than left to
     // cache-first. On the very first visit the worker is not controlling the
