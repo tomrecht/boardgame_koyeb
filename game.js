@@ -341,6 +341,61 @@ function _world() {
     return { x: 0, y: 0, w: WORLD_W, h: WORLD_H };
 }
 
+// Where the furniture sits. Landscape reproduces the historical literals
+// exactly; portrait puts a rack band above and below the board, with the dice
+// and arrows tucked immediately above it so they stay grouped with the board.
+function _fur() {
+    const wd = _world();
+    if (!_isPortrait()) {
+        return { diceX: [DICE_X1, DICE_X2], diceY: DICE_Y,
+                 undoX: config.width - (_isPhone() ? 520 : DIE_2_POSITION),
+                 endX:  config.width - (_isPhone() ? 330 : DIE_1_POSITION),
+                 arrowY: _isPhone() ? 100 : 85,
+                 cols: 3, rows: 4,
+                 whiteUn: [75, RACK_Y1], whiteSv: [75, RACK_Y2],
+                 blackUn: [1545, RACK_Y1], blackSv: [1545, RACK_Y2] };
+    }
+    const cols = 6, rows = 2;
+    const spacing = RACK_PR * 2 + 12;
+    const panelW = cols * spacing + RACK_PR;           // matches drawBackground
+    const gap = 40;
+    const x1 = wd.x + (wd.w - (2 * panelW + gap)) / 2 + RACK_PR;
+    const x2 = x1 + panelW + gap;
+    // The human's racks go in the top band; with two humans (or two AIs) white
+    // does, matching landscape's white-left / black-right reading order.
+    const topIsWhite = !WHITE_IS_AI || BLACK_IS_AI;
+    const yTop = wd.y + 240, yBot = wd.y + 1790;
+    const w = { un: [x1, topIsWhite ? yTop : yBot], sv: [x2, topIsWhite ? yTop : yBot] };
+    const b = { un: [x1, topIsWhite ? yBot : yTop], sv: [x2, topIsWhite ? yBot : yTop] };
+    return { diceX: [wd.x + 60, wd.x + 60 + DIE_SIZE + 20], diceY: wd.y + 470,
+             undoX: wd.x + 905, endX: wd.x + 1045, arrowY: wd.y + 530,
+             cols, rows,
+             whiteUn: w.un, whiteSv: w.sv, blackUn: b.un, blackSv: b.sv };
+}
+
+// Rotation changes which band each piece of furniture belongs in. Because the
+// board itself never moves, this is a dozen setPositions rather than a rebuild.
+let _lastPortrait = null;
+function _relayoutFurniture() {
+    const g = _currentGame();
+    if (!g) return;
+    const p = _isPortrait();
+    if (p === _lastPortrait) return;
+    _lastPortrait = p;
+    const f = _fur();
+    [[g.whiteUnenteredRack, f.whiteUn], [g.whiteSavedRack, f.whiteSv],
+     [g.blackUnenteredRack, f.blackUn], [g.blackSavedRack, f.blackSv]].forEach(([r, xy]) => {
+        if (!r) return;
+        r.x = xy[0]; r.y = xy[1]; r.cols = f.cols; r.rows = f.rows;
+        r.drawBackground();
+        r.shiftPiecesUp();
+    });
+    (g.dice || []).forEach((d, i) => { d.x = f.diceX[i]; d.y = f.diceY; d.drawDie(); });
+    if (g.undoButton) g.undoButton.setPosition(f.undoX, f.arrowY);
+    if (g.switchTurnButton) g.switchTurnButton.setPosition(f.endX, f.arrowY);
+    if (g.updateMustMoveHighlights) g.updateMustMoveHighlights();
+}
+
 // The zoom at which the whole world just fits the canvas. User zoom multiplies
 // this, so "zoom 1" always means "everything visible" whatever the screen is.
 function _baseZoom(scene) {
@@ -3721,7 +3776,7 @@ class Tile {
 }
 
 class Rack {
-    constructor(scene, x, y, color, type, rows = 4) {
+    constructor(scene, x, y, color, type, rows = 4, cols = 3) {
         this.scene = scene;
         this.x = x;
         this.y = y;
@@ -3729,7 +3784,7 @@ class Rack {
         this.type = type;
         this.pieces = [];
         this.rows = rows;
-        this.cols = 3;
+        this.cols = cols;
         this.spacing = RACK_PR * 2 + 12;
         this.verticalPadding = 22;
         this.horizontalPadding = 18;
@@ -3793,6 +3848,9 @@ class Rack {
     }
 
     drawBackground() {
+        // Clear first: this is redrawn on rotation now, and a Graphics replays
+        // its entire command list every frame.
+        this.background.clear();
         // Clean Modern (matches mockup): white rounded panel + soft shadow +
         // faint empty capacity slots. No text.
         const bx = this.x - RACK_PR, by = this.y - RACK_PR;
@@ -3902,7 +3960,9 @@ class Game {
         this.players = [new Player('white', WHITE_IS_AI), new Player('black', BLACK_IS_AI)];
         this.startingPlayer = startingPlayer;
         this.turn = this.startingPlayer;
-        this.dice = [new Die(scene, DICE_X1, DICE_Y, true), new Die(scene, DICE_X2, DICE_Y, false)];
+        const _f = _fur();
+        this.dice = [new Die(scene, _f.diceX[0], _f.diceY, true),
+                     new Die(scene, _f.diceX[1], _f.diceY, false)];
         this.gameOver = false;
         this.instanceId = ++_gameInstanceSeq;   // see getAgentMoves: drop stale replies
         this.score = { 'white': 0, 'black': 0 };
@@ -3924,10 +3984,10 @@ class Game {
         // rows=4 is 240px), so each side's two racks touch like the mockup.
         // Two racks per side, stacked flush and vertically centred on the board
         // (panel height with rows=4 is 266px; block of two = 532, centred at 600).
-        this.whiteUnenteredRack = new Rack(scene, 75, RACK_Y1, 'white', 'unentered');
-        this.whiteSavedRack = new Rack(scene, 75, RACK_Y2, 'white', 'saved');
-        this.blackUnenteredRack = new Rack(scene, 1545, RACK_Y1, 'black', 'unentered');
-        this.blackSavedRack = new Rack(scene, 1545, RACK_Y2, 'black', 'saved');
+        this.whiteUnenteredRack = new Rack(scene, _f.whiteUn[0], _f.whiteUn[1], 'white', 'unentered', _f.rows, _f.cols);
+        this.whiteSavedRack = new Rack(scene, _f.whiteSv[0], _f.whiteSv[1], 'white', 'saved', _f.rows, _f.cols);
+        this.blackUnenteredRack = new Rack(scene, _f.blackUn[0], _f.blackUn[1], 'black', 'unentered', _f.rows, _f.cols);
+        this.blackSavedRack = new Rack(scene, _f.blackSv[0], _f.blackSv[1], 'black', 'saved', _f.rows, _f.cols);
 
         this.setupDragging(scene);
         this.setupCameraControls(scene);
@@ -5070,7 +5130,7 @@ endGame(winner, score = null, impasse_caller = null) {
         // changing means re-measure the screen and resize the buffer; the SCALE
         // resizing (which our own resize triggers) only means re-frame.
         const onFrame = () => { _fitCameraToWorld(scene); _updateViewportHud(); };
-        const onScreenChange = () => { _sizeCanvasToScreen(); onFrame(); };
+        const onScreenChange = () => { _sizeCanvasToScreen(); _relayoutFurniture(); onFrame(); };
         scene.scale.on('resize', onFrame);
         window.addEventListener('resize', onScreenChange);
         const onOrient = () => setTimeout(onScreenChange, 250);
@@ -5354,8 +5414,7 @@ endGame(winner, score = null, impasse_caller = null) {
         // Phones get bigger arrows, further apart: at 64 world px they are ~21
         // CSS px with only 36px of world gap, which is easy to mis-hit.
         const buttonSize = _isPhone() ? 110 : 64;
-        this.undoButton = scene.add.image(config.width - (_isPhone() ? 520 : DIE_2_POSITION),
-                                          _isPhone() ? 100 : 85, 'leftWavyArrow')
+        this.undoButton = scene.add.image(_fur().undoX, _fur().arrowY, 'leftWavyArrow')
             .setDisplaySize(buttonSize, buttonSize)
             .setInteractive();
         onTap(this.undoButton, () => {
@@ -5371,8 +5430,7 @@ endGame(winner, score = null, impasse_caller = null) {
 
     createSwitchTurnButton(scene) {
         const buttonSize = _isPhone() ? 110 : 64;
-        this.switchTurnButton = scene.add.image(config.width - (_isPhone() ? 330 : DIE_1_POSITION),
-                                                _isPhone() ? 100 : 85, 'rightWavyArrow')
+        this.switchTurnButton = scene.add.image(_fur().endX, _fur().arrowY, 'rightWavyArrow')
             .setDisplaySize(buttonSize, buttonSize)
             .setInteractive();
         onTap(this.switchTurnButton, () => {
