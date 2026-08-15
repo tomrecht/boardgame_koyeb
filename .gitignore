@@ -13,7 +13,11 @@ training_data/
 weights*.json
 opponent_model.txt
 _attic/
-encoder_fixture.json    # derived; regenerate with dump_encoder_fixture.py
-engine_fixture.json     # derived; regenerate with dump_engine_fixture.py
-heuristic_fixture.json  # derived; regenerate with dump_heuristic_fixture.py
+# Derived test fixtures, regenerated on demand by their dump_*.py scripts.
+# NB a trailing "# comment" on a gitignore line is NOT a comment -- it is part
+# of the pattern, so these have to sit on their own lines. The encoder line
+# carried one for weeks and silently matched nothing.
+encoder_fixture.json
+engine_fixture.json
+heuristic_fixture.json
 ort/*.gz    # generated at image build time (see Dockerfile)
