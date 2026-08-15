@@ -381,9 +381,9 @@ function _fur() {
     return { diceX: [wd.x + 60, wd.x + 60 + ds + 20], diceY: wd.y + 455, dieSize: ds,
              undoX: wd.x + 855, endX: wd.x + 1045, arrowY: wd.y + 530,
              cols, rows,
-             scoreAt: [wd.x + wd.w / 2, wd.y + 2020], scoreOrigin: [0.5, 0],
-             impasseAt: [wd.x + wd.w / 2, wd.y + 2160], callDrawAt: [wd.x + wd.w / 2, wd.y + 2245],
-             hudX: [wd.x + 230, wd.x + 550, wd.x + 870], hudY: wd.y + 2390,
+             scoreAt: [wd.x + wd.w / 2, wd.y + 2040], scoreOrigin: [0.5, 0],
+             impasseAt: [wd.x + wd.w / 2, wd.y + 2225], callDrawAt: [wd.x + wd.w / 2, wd.y + 2290],
+             hudX: [wd.x + 230, wd.x + 550, wd.x + 870], hudY: wd.y + 2395,
              whiteUn: w.un, whiteSv: w.sv, blackUn: b.un, blackSv: b.sv };
 }
 
@@ -398,6 +398,24 @@ function _sizeGear(el) {
     const px = _isPortrait() ? 48 : 64;
     gear.style.width = gear.style.height = px + 'px';
     gear.style.fontSize = Math.round(px * 0.53) + 'px';
+}
+
+// The three HUD buttons are a row along the bottom in portrait, and their
+// widths depend on their labels, so space them from what they actually measure
+// rather than from fixed centres -- at a bigger scale, fixed centres overlapped
+// and ran off both edges.
+function _layoutHudRow(sc) {
+    sc = sc || _setupScene();
+    if (!sc || !sc._hudRow || !_isPortrait()) return;
+    const wd = _world(), f = _fur();
+    const vis = sc._hudRow.filter(b => b && b.visible !== false && b.getBounds);
+    if (!vis.length) return;
+    const ws = vis.map(b => b.getBounds().width);
+    const total = ws.reduce((a, w) => a + w, 0);
+    const room = wd.w - 80;
+    const gap = vis.length > 1 ? Math.max(16, (room - total) / (vis.length - 1)) : 0;
+    let x = wd.x + Math.max(40, (wd.w - (total + gap * (vis.length - 1))) / 2);
+    vis.forEach((b, i) => { b.setPosition(x + ws[i] / 2, f.hudY); x += ws[i] + gap; });
 }
 
 function _hideRotateHint() {
@@ -448,6 +466,7 @@ function _relayoutFurniture() {
         if (b && b.setPosition) b.setPosition(p ? f.hudX[n] : 150,
                                               p ? f.hudY : (phone ? 48 + n * 84 : 52 + n * 52));
     });
+    _layoutHudRow(sc);
 }
 
 // The zoom at which the whole world just fits the canvas. User zoom multiplies
@@ -5648,7 +5667,7 @@ class MainGameScene extends Phaser.Scene {
         // The three HUD buttons are 19px of world font -- ~6 CSS px on a phone.
         // They get scaled and re-spaced there, into the corner box bounded by
         // the dice (x>=309) and the top of the racks (y>=297).
-        const hudK = _isPhone() ? 2 : 1;
+        const hudK = _isPortrait() ? 2.6 : (_isPhone() ? 2 : 1);
         const _hf = _fur();
         const hx = (n) => _isPortrait() ? _hf.hudX[n] : 150;
         const hy = (n) => _isPortrait() ? _hf.hudY
@@ -5674,6 +5693,7 @@ class MainGameScene extends Phaser.Scene {
         const instructionsButton = makeHudButton(this, hx(inMatch ? 1 : 2), hy(inMatch ? 1 : 2), 'How to Play', { ghost: true, k: hudK });
         onTap(instructionsButton, () => { showInstructions(); });
         this._hudRow = [newGameButton, newMatchButton, instructionsButton];
+        _layoutHudRow(this);
         // The tutorial hides these: New Game / New Match restart the scene, which
         // would leave the step runner talking to a board that no longer exists.
         this.hudButtons = [newGameButton, newMatchButton, instructionsButton];
@@ -5705,7 +5725,7 @@ class MainGameScene extends Phaser.Scene {
         // the three keep clear of each other. The corner is empty background
         // (the board is a circle), so there is room to grow into.
         const phone = _isPhone();
-        const k = phone ? 2.2 : 1;
+        const k = _isPortrait() ? 4.0 : (phone ? 2.2 : 1);
         const H = this.sys.game.config.height;
         // Goal 2's arc starts at x=630 and dips to y=1140, so the enlarged score
         // line has to wrap rather than run underneath it. Origin (0,1) means it
@@ -5743,7 +5763,7 @@ class MainGameScene extends Phaser.Scene {
         this.callDrawButton = makeHudButton(this,
             _isPortrait() ? _pf.callDrawAt[0] : (phone ? 190 : 85),
             _isPortrait() ? _pf.callDrawAt[1] : (phone ? H - 247 : H - 115),
-            'Call draw', { ghost: true, k });
+            'Call draw', { ghost: true, k: _isPortrait() ? 2.4 : k });
         this.callDrawButton.setHudVisible(false);
 
             onTap(this.callDrawButton, () => {
