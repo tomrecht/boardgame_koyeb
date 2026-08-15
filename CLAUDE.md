@@ -902,9 +902,24 @@ with it in mind.** Assessment and the concrete implications:
     **1.25s** / p90 **2.97s** / max 4.11s, init 2.55s. Candidates scored: 40
     median (= `prefilter_top_k`), 145 max. Playable, but the p90 is worse than
     the served agent's 1.28s worst plus network on a warm connection — local
-    wins decisively only when the server is cold or absent. TODO.md plans the
-    top-k experiment that would buy the time back, and why it must not be tuned
-    blind.
+    wins decisively only when the server is cold or absent.
+    **`prefilter_top_k` was measured and deliberately left alone (2026-08-15).**
+    Over 200 positions at the served F=12, cutting it 40 → 10 is SAFE — 31 of
+    those positions carry save pairs and 100% survive at every value, zero lost,
+    because save PAIRS are exempt from the top-K cull by construction — but it
+    buys only ~35% of the median (0.253 → 0.164 s/move) and 26% of the tail
+    (candidates max 115 → 85), since `prefilter_min_k`, the save exemption and
+    the pass pair survive the cull regardless. The tail is what makes a phone
+    feel slow, so that is not enough to justify changing play. The real floor is
+    stage 1, which scores ~150 first moves before any pair is expanded.
+    `match_topk.py` is the harness (probe mode plays no games); TODO.md has the
+    table, the warning that n=60 timings were machine load rather than signal,
+    and the one live BUG it turned up: **stage 1 can cull a save-ENABLING first
+    move**, because its exemption covers only first moves that ARE saves. Saves
+    kept falls to 94% at F=8 and 91% at F=6 through exactly that path, and F=12
+    likely escapes it only because `goal_bonuses` happens to score such moves
+    well. Relevant to the pass-over-save rough edge, and nearly free to fix —
+    stage 1 already applies each move, so `get_saving_die` answers it in place.
     **NOT YET WIRED IN.** `game.js` still calls `/select_moves`. Step 7 in
     PORTING.md has the settled design: both platforms (not phone-only), lazy —
     start on the server, load the runtime in the background, switch when ready,
