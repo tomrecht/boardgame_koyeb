@@ -987,9 +987,27 @@ with it in mind.** Assessment and the concrete implications:
     could enter; the index is now saved as `origin_rack_index`).
     Frontend mirrors all three (`_entrantsOf` returns two only before a die is
     spent, `getReachableTilesByDice` filters the second piece's dice and clears
-    its sum). Both entrants get the amber ring, both ghosts are interactive, and
-    after the second enters the front is the only movable piece — measured on
-    both platforms. The tutorial keeps its own front-piece check.
+    its sum). Both ghosts are interactive and after the second enters the front
+    is the only movable piece — measured on both platforms. The tutorial keeps
+    its own front-piece check.
+    **Only the FRONT piece wears the amber ring** (owner): the ring means "this
+    piece must move this turn", and the second one need not move at all — taking
+    it first is a permission, not an alternative obligation. Selectability
+    (`_entrantsOf`) and obligation (`mustMovePieces`) are therefore separate.
+    **Two bugs owner found in the first cut, both fixed:**
+    (a) the second piece could still come out on a dice SUM, because the
+    tentative entry moves it onto the home tile and OUT of the rack, after which
+    nothing could tell a reordering entry from an ordinary one — `onClick` now
+    records `game._reorderEntry` before the piece leaves the rack, and clears it
+    wherever the piece is placed or returned.
+    (b) **entering ANY piece on a dice sum never handed the turn over.**
+    `maybeAutoEndTurn` returned early while `mustMovePieces` was non-empty, and
+    `updateMovablePieces` re-imposes the entry obligation whenever the rack is
+    non-empty — so a sum entry (which spends BOTH dice at once) left an
+    obligation that could no longer be discharged, blocking the auto-end
+    forever. Past that point every die is already spent, so a remaining
+    obligation is moot and no longer blocks. Pre-existing, not caused by the
+    rule change. Measured: sum entry -> dice [true,true] -> turn white->black.
     **Because it only reorders, the legal end-of-turn positions are unchanged,
     so existing champions are NOT playing a different game** — the move
     enumeration gains alternative orderings, nothing else.

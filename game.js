@@ -2371,6 +2371,7 @@ function _setupPlaceOnTile(piece, tile) {
     piece.currentTile = tile;
     piece.rack = null;
     piece.justMovedHome = false;
+    if (piece.game && piece.game._reorderEntry === piece) piece.game._reorderEntry = null;
     tile.addPiece(piece);            // pushes + updatePositions() => positions & sizes the piece
 }
 function _setupPlaceInRack(piece, rack, atFront) {
@@ -2383,6 +2384,7 @@ function _setupPlaceInRack(piece, rack, atFront) {
     rack.shiftPiecesUp();            // canonical re-layout of the whole rack
     piece.currentTile = null;
     piece.justMovedHome = false;
+    if (piece.game && piece.game._reorderEntry === piece) piece.game._reorderEntry = null;
 }
 
 // Double-click a piece: cycle board -> saved rack -> unentered rack -> board(home).
@@ -2963,6 +2965,12 @@ class Piece {
             // snapshot the pre-entry state (piece still on the rack) so undoing
             // the entry move returns the piece to the top of the rack, not home.
             this.game._pendingPreMove = this.game.captureState();
+            // Remember whether this was the FRONT piece BEFORE it leaves the
+            // rack. Once it sits on the home tile it is no longer in the rack,
+            // so nothing downstream could otherwise tell a reordering entry
+            // from an ordinary one -- which let the second piece keep its sum
+            // destinations and come out on a dice sum.
+            this.game._reorderEntry = (this.rack.pieces[0] !== this) ? this : null;
             this.moveFromRack();
             this.justMovedHome = true;
             this.game.selectedPiece = this;
@@ -4535,7 +4543,7 @@ class Game {
         // (No simulation needed -- entering never blocks a later entry, since
         // own pieces stack and a capture only removes an enemy.) Mirrors
         // game.py's _filter_second_entries.
-        if (piece === _secondEntrant(this)) {
+        if (piece === _secondEntrant(this) || piece === this._reorderEntry) {
             const front = (this.turn === 'white' ? this.whiteUnenteredRack : this.blackUnenteredRack).pieces[0];
             const home = this.tiles.find(t => t.type === 'home');
             const frontBy0 = !d0.used && this.getReachableTiles(home, d0.value).length > 0;
@@ -4763,7 +4771,12 @@ class Game {
             this.mustMovePieces = this.mustMovePieces.filter(
                 p => p.currentTile || (p.rack && p.rack.type === 'unentered'));
         }
-        if (this.mustMovePieces && this.mustMovePieces.length > 0) return;
+        // Deliberately NOT returning on a remaining obligation: every die is
+        // already spent by this point, so an obligation that has not been met
+        // can no longer be met, and blocking the auto-end just strands the
+        // player on a finished turn. This is what made a dice-SUM entry (which
+        // spends both dice at once, leaving the rack still non-empty and so
+        // still "obligatory") never hand the turn over.
         if (this._autoEndScheduled) return;
         this._autoEndScheduled = true;
         const t = this.turn;
@@ -4835,10 +4848,11 @@ class Game {
 
         // Check if there's a piece in the unentered rack
         if (unenteredRack.pieces.length > 0) {
-            // Both selectable rack pieces get the ring: either one satisfies
-            // the entry obligation, so ringing only the front one would be a
-            // lie about which you may pick.
-            this.mustMovePieces = _entrantsOf(unenteredRack);
+            // The amber ring means "this piece MUST move this turn", and only
+            // the front piece is obliged: taking the second one first is a
+            // reordering, not an alternative obligation -- the front still has
+            // to enter. Selectability is a separate question (_entrantsOf).
+            this.mustMovePieces = [unenteredRack.pieces[0]];
         }
         if (typeof updateMustMoveHighlights === 'function') updateMustMoveHighlights(this);
         if (typeof _updateViewportHud === 'function') _updateViewportHud();
