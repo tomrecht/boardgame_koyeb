@@ -37,6 +37,16 @@ Two modes:
         first cut of this -- which asked whether a save was legal as a first
         MOVE -- qualified 1 position in 60 and reported a meaningless 0/1.
 
+        To ask what the SERVED agent already drops, make F=0 the ground truth:
+
+            BASELINE=40,0 python match_topk.py probe 200 40 12
+
+        Slow -- F=0 heuristically scores every PAIR, ~10k evaluations a move,
+        which is the ~94% of move time the first-move prefilter exists to
+        remove -- so budget minutes, not seconds, and start at 60 positions.
+        Read the "save lost" column: dropped save PAIRS only cost something if
+        the move actually changes.
+
     python match_topk.py match [pairs] [top_k[,top_k...]] [F]
         The real measurement. Each candidate setting plays the served baseline
         (top_k=40, F=12) over paired seeds with colours swapped, so dice luck
@@ -152,24 +162,33 @@ def probe(n_positions, settings):
     # on what it drops relative to what the served agent would have scored, not
     # on an independent notion of "a save was available".
     base = _agent(*BASELINE)
-    base_saves, with_saves = [], 0
+    base_saves, base_chose, with_saves, base_save_choice = [], [], 0, 0
     for b in boards:
-        ranked = base.select_move_pair(list(b.get_valid_moves()), b,
-                                       b.current_player, return_scores=True)
+        moves = list(b.get_valid_moves())
+        ranked = base.select_move_pair(moves, b, b.current_player, return_scores=True)
         sp = _save_pairs(ranked)
         base_saves.append(sp)
         if sp:
             with_saves += 1
+        # What the baseline actually PLAYS. A dropped save pair only matters if
+        # it would have been chosen -- "9% of save pairs culled" says nothing
+        # about whether any move changed.
+        chosen = base.select_move_pair(moves, b, b.current_player)
+        base_chose.append(chosen)
+        if any(_has_save(m) for m in chosen):
+            base_save_choice += 1
     print(f'{with_saves} of them score at least one save pair at the baseline '
-          f'(top_k={BASELINE[0]}, F={BASELINE[1]})\n')
+          f'(top_k={BASELINE[0]}, F={BASELINE[1]}); '
+          f'the baseline PLAYS a save in {base_save_choice}\n')
 
     print(f'{"top_k":>6} {"F":>3} {"cand med":>9} {"cand max":>9} '
-          f'{"s/move med":>11} {"s/move p90":>11} {"lost all":>9} {"saves kept":>11}')
+          f'{"s/move med":>11} {"s/move p90":>11} {"lost all":>9} {"saves kept":>11} '
+          f'{"move differs":>13} {"save lost":>10}')
     for top_k, F in settings:
         a = _agent(top_k, F)
         counts, times = [], []
-        lost_all, kept, total = 0, 0, 0
-        for b, want in zip(boards, base_saves):
+        lost_all, kept, total, differs, save_lost = 0, 0, 0, 0, 0
+        for b, want, base_pair in zip(boards, base_saves, base_chose):
             moves = list(b.get_valid_moves())
             player = b.current_player
             t = time.perf_counter()
@@ -182,15 +201,25 @@ def probe(n_positions, settings):
                 kept += len(want & got)
                 if not got:
                     lost_all += 1
+            chosen = a.select_move_pair(moves, b, player)
+            if repr(chosen) != repr(base_pair):
+                differs += 1
+                # The case that actually costs something: the baseline banked a
+                # piece here and this setting does not.
+                if any(_has_save(m) for m in base_pair) and not any(_has_save(m) for m in chosen):
+                    save_lost += 1
         q = lambda a_, p: sorted(a_)[min(len(a_) - 1, int(len(a_) * p))]
         pct = f'{100 * kept / total:.0f}%' if total else 'n/a'
         print(f'{top_k:>6} {F:>3} {q(counts, .5):>9} {max(counts):>9} '
               f'{q(times, .5):>11.3f} {q(times, .9):>11.3f} '
-              f'{lost_all:>9} {pct:>11}')
-    print('\n"lost all"   = positions where the baseline scored a save pair and '
-          'this setting scored NONE.\n               Above zero is disqualifying '
-          'on its own.\n"saves kept" = share of the baseline\'s save pairs that '
-          'still reach the net.')
+              f'{lost_all:>9} {pct:>11} {differs:>13} {save_lost:>10}')
+    print('\n"lost all"     = positions where the baseline scored a save pair '
+          'and this setting scored NONE.\n"saves kept"   = share of the '
+          'baseline\'s save pairs that still reach the net.\n'
+          '"move differs" = positions where this setting PLAYS a different pair.\n'
+          '"save lost"    = of those, where the baseline banked a piece and this '
+          'setting does not.\n                 This is the one that costs '
+          'something; the rest may be free.')
 
 
 # ---------------------------------------------------------------- match mode
