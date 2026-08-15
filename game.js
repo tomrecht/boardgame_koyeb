@@ -657,7 +657,7 @@ function _updateMustEnterGhosts() {
         }
         const x = px0 + pad + r + i * (2 * r + pad);
         const y = py1 - pad - r;
-        gh.setPosition(x, y).setVisible(true).setAlpha(i === 0 ? 0.78 : 0.55);
+        gh.setPosition(x, y).setVisible(true).setAlpha(i === 0 ? 0.78 : 0.68);
         // a white piece at low alpha on the pale board is just a faint ring, so
         // the body carries the same dark/light rim the real pieces use
         gh.body.setRadius(r).setFillStyle(piece.color, 1)
@@ -666,10 +666,11 @@ function _updateMustEnterGhosts() {
         gh.label.setText(piece.number <= 6 ? String(piece.number) : '')
                 .setFontSize(Math.round(r * 1.2))
                 .setColor(piece.color === 0xffffff ? '#000000' : '#ffffff');
-        // Only the first is actionable: the rack hands out one piece at a time,
-        // so the second is a preview that another entry is still available.
+        // Both are actionable now that either of the first two rack pieces may
+        // enter -- the second used to be a dimmed preview because tapping it
+        // could only ever have entered the first.
         gh.body.disableInteractive();
-        if (i === 0) {
+        {
             // Build the interactive object ONCE. setInteractive() replaces it
             // and drops the draggable flag with it, and this function runs on
             // every camera move and viewport event -- so calling it each time
@@ -2593,6 +2594,20 @@ function ensureStackPicker() {
 function hideStackPicker() { if (_stackPicker) _stackPicker.style.display = 'none'; }
 function stackPickerOpen() { return !!(_stackPicker && _stackPicker.style.display !== 'none'); }
 // Ring the obligatory-to-move pieces so the player can see them.
+// The rack pieces that may enter, mirroring game.py's get_enterable_pieces:
+// the first TWO, so the player chooses which of a turn's two entries goes
+// first. Two is the cap because an entry costs one die. Unlike the engine we
+// do NOT drop a second blank -- picking either gives the same result, so
+// offering both is friendlier, and the engine only dedupes to keep its move
+// set small.
+function _entrantsOf(rack) {
+    return (rack && rack.type === 'unentered') ? rack.pieces.slice(0, 2) : [];
+}
+function _isEntrant(piece) {
+    return !!piece && !!piece.rack && piece.rack.type === 'unentered'
+        && _entrantsOf(piece.rack).includes(piece);
+}
+
 function updateMustMoveHighlights(game) {
     if (!game || !game.pieces) return;
     const must = game.mustMovePieces || [];
@@ -2767,7 +2782,7 @@ class Piece {
         if (this.game.dice[0].used && this.game.dice[1].used) return;
         if (this.player !== this.game.turn) return;
         if (this.rack && this.rack.type === 'saved') return;
-        if (this.rack && this.rack.type === 'unentered' && this.rack.pieces[0] !== this) return;
+        if (this.rack && this.rack.type === 'unentered' && !_isEntrant(this)) return;
         if (!this.game.canSelectForMove(this)) return false;
         // A touch screen has no hover: a finger that leaves often sends no
         // pointerout at all, so setting this would strand the highlight on.
@@ -2870,7 +2885,7 @@ class Piece {
             this.isSelected = false;
         }
         // if (this.player !== this.game.turn) return; 
-        if (this.rack && this.rack.type === 'unentered' && this.rack.pieces[0] !== this) return;
+        if (this.rack && this.rack.type === 'unentered' && !_isEntrant(this)) return;
         if (this.player === this.game.turn && !this.game.canSelectForMove(this)) {
             console.log("Must keep a die for the obligatory piece(s)");
             return false;
@@ -4658,9 +4673,9 @@ class Game {
         const candidates = this.mustMovePieces.length > 0
             ? this.mustMovePieces.slice()
             : this.pieces.filter(p => p.color === color &&
-                (p.currentTile || (p.rack && p.rack.type === 'unentered' && p.rack.pieces[0] === p)));
+                (p.currentTile || _isEntrant(p)));
         for (const p of candidates) {
-            if (p.rack && p.rack.type === 'unentered' && p.rack.pieces[0] !== p) continue;
+            if (p.rack && p.rack.type === 'unentered' && !_isEntrant(p)) continue;
             const rt = this.getReachableTilesByDice(p);
             if (rt && (rt.reachableByFirstDie.length || rt.reachableBySecondDie.length || rt.reachableBySum.length)) return true;
             if (p.currentTile && p.currentTile.type === 'save' && p.canBeSaved && p.canBeSaved()) return true;
@@ -4752,7 +4767,10 @@ class Game {
 
         // Check if there's a piece in the unentered rack
         if (unenteredRack.pieces.length > 0) {
-            this.mustMovePieces = [unenteredRack.pieces[0]]; // The first piece in the unentered rack must move
+            // Both selectable rack pieces get the ring: either one satisfies
+            // the entry obligation, so ringing only the front one would be a
+            // lie about which you may pick.
+            this.mustMovePieces = _entrantsOf(unenteredRack);
         }
         if (typeof updateMustMoveHighlights === 'function') updateMustMoveHighlights(this);
         if (typeof _updateViewportHud === 'function') _updateViewportHud();

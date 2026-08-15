@@ -923,20 +923,41 @@ with it in mind.** Assessment and the concrete implications:
     piece. Measured: sum 0, single-die destinations unaffected, piece still
     selectable. (Owner spotted this while specifying the rack-selection change
     below; it was already live.)
-    **Backlog — CHOOSE WHICH UNENTERED PIECE ENTERS (owner, 2026-08-14, both
-    platforms).** Today only the top rack piece can ever enter: `game.py`'s
-    `get_unentered_piece()` returns `unentered_rack[0]` and that is the only
-    entry `get_valid_moves` offers, and `handleClick` mirrors it
-    (`rack.pieces[0] !== this` returns). Owner wants the second rack piece
-    selectable too, so you can bring it out first — the dice arithmetic already
-    exists as `canSelectForMove` (a non-obligatory piece may go first only if
-    enough dice remain for the obligatory one), it simply never applies to rack
-    pieces. Touches `game.py` (entry generation), the AI's move set, and the
-    frontend guard. **When it lands, both selectable rack pieces get the amber
-    must-move ring** (`updateMustMoveHighlights`) — with captured pieces still
-    taking precedence, since they crowd entries out entirely. Until then the
-    second must-enter ghost stays a dimmed preview rather than a tappable
-    target, because tapping it could only ever enter the *first* piece.
+    **CHOOSE WHICH UNENTERED PIECE ENTERS — DONE (2026-08-15, both platforms).**
+    Previously only the front rack piece could ever enter, so the order of a
+    turn's two entries was forced. `game.py`'s new `get_enterable_pieces()`
+    returns the first TWO (two is the cap: an entry costs one die), and
+    `get_valid_moves` uses it in both the obligation branch and the free branch.
+    Two unnumbered pieces are interchangeable, so the engine drops the second
+    when both are blanks — otherwise the move set doubles for no added choice;
+    the frontend deliberately does NOT dedupe, since picking either gives the
+    same result and offering both is friendlier.
+    **Undo had to change with it:** it reinserted an entrant at `insert(0, …)`,
+    which silently reordered the rack once a non-front piece could enter. The
+    rack index is now recorded in `save_move` (`origin_rack_index`) and restored.
+    Frontend: `_entrantsOf`/`_isEntrant` replace the three `rack.pieces[0] ===
+    piece` guards, **both entrants get the amber must-move ring** (either one
+    satisfies the obligation, so ringing one was a lie), and both must-enter
+    ghosts are now interactive — the second used to be a dimmed preview because
+    tapping it could only have entered the first. Captured pieces still take
+    precedence (they crowd entries out entirely). The tutorial keeps its own
+    front-piece check (`_tutIsFrontRack`), since it scripts specific moves.
+    Verified: apply/undo round-trips over 25 random games, rack order survives
+    enter+undo of the second piece, both platforms ring 2 and enter the second
+    with 18 destinations lit, tutorial still starts clean.
+    **NOTE: this changes the legal move set, so existing champions were trained
+    under the old rule** — as with the block-save rule change, cross-rule
+    strength comparisons are not apples-to-apples.
+    **Three pre-existing engine facts this testing pinned down** (all verified
+    identical on the pre-change commit, none worth fixing):
+    (a) the pass `(0,0,0)` and call-draw `(1,1,1)` moves end the turn and record
+    nothing, so they are NOT undoable; (b) `apply_move`'s `switch_turn=True`
+    path rolls fresh dice, so apply/undo is only a round trip with
+    `switch_turn=False` — which is what every search path in `agent.py`/
+    `agent_gnn.py` passes; (c) with DOUBLES, apply marks one die and undo's
+    first branch clears the other, swapping which of two identical dice is
+    spent — invisible to play because the values match. Compare dice as a
+    multiset when asserting round-trips.
   - **Drag a just-entered piece off the home tile (done 2026-08-14, both
     platforms).** `onClick` returned a `justMovedHome` piece to the rack, and it
     runs on pointer DOWN — so the press itself put the piece back and a drag

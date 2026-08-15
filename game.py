@@ -341,6 +341,23 @@ class Board:
             return None
         return unentered_rack[0]
 
+    def get_enterable_pieces(self):
+        """The rack pieces that may enter this turn.
+
+        Historically only the front piece could, so the order of a turn's two
+        entries was forced. The first TWO are now selectable, which lets the
+        player bring the second one out first. Two is the cap because a turn has
+        two dice and an entry costs one die each.
+
+        Two unnumbered pieces are interchangeable, so the second is dropped when
+        both are blanks -- otherwise the move set doubles for no added choice.
+        """
+        rack = self.white_unentered if self.current_player == 'white' else self.black_unentered
+        picks = rack[:2]
+        if len(picks) == 2 and picks[0].number > 6 and picks[1].number > 6:
+            picks = picks[:1]
+        return picks
+
     def must_move_unentered(self):
         unentered_rack = self.white_unentered if self.current_player == 'white' else self.black_unentered
         if len(unentered_rack) == 0:
@@ -434,14 +451,13 @@ class Board:
                 self.get_reachable_tiles_by_dice(piece)
             self.destinations_by_piece = {piece: piece.reachable_tiles for piece in captured_pieces}
         elif self.must_move_unentered():
-            piece = self.get_unentered_piece()
-            self.get_reachable_tiles_by_dice(piece)
-            self.destinations_by_piece = {piece: piece.reachable_tiles}
+            entrants = self.get_enterable_pieces()
+            for piece in entrants:
+                self.get_reachable_tiles_by_dice(piece)
+            self.destinations_by_piece = {piece: piece.reachable_tiles for piece in entrants}
         else:
             player_pieces = [p for p in self.pieces if p.player == self.current_player and p.tile and p.tile.type in ['field', 'save']]
-            unentered_piece = self.get_unentered_piece()
-            if unentered_piece:
-                player_pieces.append(unentered_piece)
+            player_pieces.extend(self.get_enterable_pieces())
 
             # Deduplicate among unnumbered pieces (number > 6) on the same tile since they're interchangeable
             deduped = []
@@ -491,12 +507,14 @@ class Board:
             tuples_list.append((1, 1, 1))   # add calling a draw
         return tuples_list
 
-    def save_move(self, move, origin_tile=None, origin_rack=None, captured_piece=None, firstMove_before=None):
+    def save_move(self, move, origin_tile=None, origin_rack=None, captured_piece=None, firstMove_before=None,
+                  origin_rack_index=None):
         piece_id, destination, roll = move
         move_to_save = dict()
         move_to_save['piece'] = self.piece_lookup.get(piece_id)
         move_to_save['origin_tile'] = origin_tile
         move_to_save['origin_rack'] = origin_rack
+        move_to_save['origin_rack_index'] = origin_rack_index
         move_to_save['destination'] = destination
         move_to_save['captured_piece'] = captured_piece
         move_to_save['roll'] = roll
@@ -558,7 +576,10 @@ class Board:
                 origin_tile.pieces.append(piece)
                 piece.tile = origin_tile
             elif origin_rack is not None:
-                origin_rack.insert(0, piece)
+                # Back to its own slot, not the front: with the second rack
+                # piece now enterable, insert(0) would silently reorder the rack.
+                idx = last_move.get('origin_rack_index')
+                origin_rack.insert(0 if idx is None else min(idx, len(origin_rack)), piece)
                 piece.rack = origin_rack
             if captured_piece:
                 self.home_tile.pieces.remove(captured_piece)
@@ -588,6 +609,7 @@ class Board:
         captured_piece = None
         origin_tile = None
         origin_rack = None
+        origin_rack_index = None
         if move == (0, 0, 0):
             self.firstMove = None
             if switch_turn:
@@ -633,6 +655,7 @@ class Board:
             new_tile = self.get_tile(ring, pos)
             if piece.rack:
                 origin_rack = piece.rack
+                origin_rack_index = origin_rack.index(piece)
                 piece.rack.remove(piece)
                 piece.rack = None
             if piece.tile:
@@ -652,7 +675,7 @@ class Board:
             self.dice[0].used = True
         elif roll == self.dice[1].number and not self.dice[1].used:
             self.dice[1].used = True
-        self.save_move(move, origin_tile, origin_rack, captured_piece, firstMove_before)
+        self.save_move(move, origin_tile, origin_rack, captured_piece, firstMove_before, origin_rack_index)
         if switch_turn and all(die.used for die in self.dice):
             self.switch_turn()
 
