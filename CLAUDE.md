@@ -789,6 +789,56 @@ with it in mind.** Assessment and the concrete implications:
     returns early while `scene._draggingGhost` is set, so the refresh that
     entering triggers cannot snatch the ghost back to its corner. Measured: 18
     tiles lit mid-drag, drop still lands, camera does not pan underneath.
+  - **PORTRAIT LAYOUT (2026-08-15) — the board never moves.** A phone held
+    upright now gets a portrait frame; `?portrait=0` forces the old behaviour.
+    The key decision: `Tile` caches its points, hit area and goal-number text
+    behind `_points`/`_built`, so re-centring the board live would invalidate all
+    of it — instead the CAMERA frames a different rectangle. `_world()` returns
+    `(0,0,1800,1200)` in landscape and **`(320,-580,1160,2510)`** in portrait: a
+    taller, narrower box AROUND the board where it already is (negative world
+    coordinates are fine). Only the furniture moves, so rotation is a couple of
+    dozen `setPosition`s rather than a rebuild. Board **363 CSS px** in portrait
+    vs 351 landscape and 234 before — portrait is now the BIGGER board, which is
+    why the "rotate to landscape" hint is deleted.
+    `_fur()` owns every furniture position (landscape returns the historical
+    literals unchanged, so landscape and desktop are byte-identical). Portrait:
+    two rack panels side by side **6x2 instead of 3x4**, `RACK_PR` 26→34 so they
+    fill the width (rack pieces 17.5→23 CSS px); dice 120→150; arrows keep
+    landscape's 190px spacing; score/impasse/Call-draw centred in the band under
+    the bottom rack; the three HUD buttons a row along the bottom. The human's
+    racks take the top band — white's when both sides are human. The gear is
+    48px in portrait (64 elsewhere) because the rack band reaches up under it.
+    **`makeHudButton` draws its pill from the text's bounds ONCE**, into a
+    separate Graphics — so moving the text left the pill behind, and rotating
+    kept every button at its creation-time scale. Use `setHudPosition` /
+    `setHudK`, which repaint; re-rendering the text keeps it crisp where
+    `setScale` would blur it. The button row is laid out from MEASURED widths,
+    not fixed centres: widths depend on the labels and fixed centres overlapped
+    and ran off both edges at the larger scale.
+    **`_isPortrait()` reads `matchMedia('(orientation: portrait)')`**, not
+    `innerWidth/innerHeight` — those are stale during load and while entering
+    fullscreen, and a game built on that reading kept the wrong layout with no
+    later event to correct it. `_relayoutFurniture` deliberately has no
+    "nothing changed" guard, and a **settle pass 400ms after boot** re-applies
+    layout, camera and turn pill (the pill measures the canvas rect, stale
+    mid-rotation, and stretched into a wide bar when it was).
+    Still open: the end-game card's framing in the portrait frame.
+  - **HOW TO PLAY IS WRITTEN TWICE (2026-08-15)**, phone and desktop: a phone
+    has no mouse or keyboard and has gestures a desktop lacks. Phone gets
+    tap/drag, double-tap, pinch-and-pan, the must-enter ghosts, the floating
+    dice and the Fullscreen toggle; desktop keeps click/double-click and the
+    Z/Enter/Esc shortcuts. Assert the phone text contains no "click" and no
+    keyboard reference, and the desktop text no tap/pinch.
+  - **APP ICON IS THE BOARD AS A Q (2026-08-15).** `make_icons.py` replaces
+    goal 4 (30-60 degrees — exactly where a Q's tail belongs) with a tapered
+    cubic-Bezier tail in the goal colour, and fits to the drawn BOUNDS rather
+    than the radius, since the tail sticks out on one side only. Palette is the
+    **Plum Night** theme (`THEMES.plum`), so icon and theme cannot drift; the
+    manifest's `background_color`/`theme_color` match it. **No pieces are
+    drawn** — at 96px they read as specks, and black on the dark ground is
+    nearly invisible. Owner iterated the tail shape over several sheets: it must
+    sweep down-right and hook UP at the tip, and stay compact, because every
+    extra unit of reach shrinks the bowl.
   - **A MOVED PIECE COULD STAY HIGHLIGHTED — fixed, both platforms.** Owner saw a
     piece look selected after a capture from the home tile, intermittently.
     Cause: `onOut()` began with guards (another piece selected, not your turn any
