@@ -6250,6 +6250,7 @@ class EndGameScene extends Phaser.Scene {
     }
 
     init(data) {
+        this._data = data;          // kept so a rotation can rebuild the card
         this.winner = data.winner;
         this.score = data.score;
         this.impasse_caller = data.impasse_caller;
@@ -6263,7 +6264,18 @@ class EndGameScene extends Phaser.Scene {
         // framing it the card, drawn at world centre, sat ~400px left of the
         // visible centre in landscape and high above it in portrait.
         _fitCameraToWorld(this);
-        this.scale.on('resize', () => _fitCameraToWorld(this));
+        // The card's size and position are computed from _world() HERE, so a
+        // rotation invalidates them -- a card built in landscape is 1640 wide
+        // and the portrait frame is 1160, so it hangs off both sides. Re-framing
+        // the camera cannot fix geometry that was baked in; rebuild instead.
+        // Only when the frame actually changed shape, so ordinary resize
+        // chatter does not restart the scene under the player.
+        const worldKey = () => { const w = _world(); return [w.x, w.y, w.w, w.h].join(','); };
+        this._worldKey = worldKey();
+        this.scale.on('resize', () => {
+            _fitCameraToWorld(this);
+            if (worldKey() !== this._worldKey) this.scene.restart(this._data);
+        });
 
         let message;
         if (this.winner === 'draw') {
