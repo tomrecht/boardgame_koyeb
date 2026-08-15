@@ -54,7 +54,8 @@ def _hex(h):
 
 
 def render(geom, size, pad_frac, pieces=0, seed=7, board_frac=None, ring=False,
-           tail_scale=1.0, concentric=False, goal_extend=0.0, tail=None):
+           tail_scale=1.0, concentric=False, goal_extend=0.0, tail=None,
+           drop_outer_field=False):
     """board_frac: the board's DIAMETER as a fraction of the padded box. The
     original fit sized the whole drawing -- board plus tail -- to that box, which
     made the board smaller than it needed to be and left a crescent of empty
@@ -77,6 +78,11 @@ def render(geom, size, pad_frac, pieces=0, seed=7, board_frac=None, ring=False,
     reads as more continuous without giving up the six goals the board actually
     has. At the point where the extensions meet, it becomes the band.
 
+    drop_outer_field: drop the nine field tiles in the outermost field ring
+    (ir 450, alongside the goals at ir 450-540). Once the wedges are extended
+    those tiles sit in the gaps between them and read as confusing fragments
+    rather than as board detail.
+
     tail: an alternative cubic Bezier (four control points, board units) for the
     curl. TAIL_SHAPES holds the named ones.
 
@@ -87,6 +93,9 @@ def render(geom, size, pad_frac, pieces=0, seed=7, board_frac=None, ring=False,
     there to stay."""
     bg, field, goal, hub_fill = _hex(BG), _hex(FIELD), _hex(GOAL), _hex(HUB)
     tiles = [t for t in geom['tiles'] if t['type'] not in ('nogo', 'home')]
+    if drop_outer_field:
+        rim = min(t['ir'] for t in tiles if t['type'] == 'save')
+        tiles = [t for t in tiles if t['type'] == 'save' or t['ir'] < rim - 1]
     outer = max(t['or'] for t in tiles)
     hub_r = geom['homeRadius'] * 2          # deliberately twice the real hub
 
