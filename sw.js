@@ -10,7 +10,7 @@
  *
  * Bump CACHE when the shell list changes; activate() drops every other cache.
  */
-const CACHE = 'quahuru-v3';
+const CACHE = 'quahuru-v4';
 
 // The shell is what a cold, offline start needs to render a board.
 const SHELL = [
@@ -39,7 +39,14 @@ const SHELL = [
 ];
 
 // Files whose content changes under a fixed name -- always try the network.
-const ALWAYS_FRESH = /\/(index\.html|game\.js)?(\?.*)?$/;
+// That is ALL of our own JavaScript, not just game.js: route.js, encoder.js and
+// infer.js change on every deploy too, and leaving them cache-first served a
+// stale copy during development (it cost an hour chasing a fix that had already
+// been made). Third-party pinned files are excluded -- phaser.min.js and
+// everything under /ort/ only change when their version does.
+const VENDORED = /\/(phaser\.min\.js|ort\/)/;
+const ALWAYS_FRESH = (path) =>
+    !VENDORED.test(path) && /(\/|\.html|\.js|\.json)$/.test(path);
 
 self.addEventListener('install', (e) => {
     e.waitUntil((async () => {
@@ -70,7 +77,7 @@ self.addEventListener('fetch', (e) => {
     // API calls must never be served from cache.
     if (/^\/(select_moves|evaluate_board|call_draw|start_game|abort_game|update_impasse|query_agent_move|debug_piece_blots|training_data_stats|record_)/.test(url.pathname)) return;
 
-    const fresh = req.mode === 'navigate' || ALWAYS_FRESH.test(url.pathname);
+    const fresh = req.mode === 'navigate' || ALWAYS_FRESH(url.pathname);
     e.respondWith(fresh ? networkFirst(req) : cacheFirst(req));
 });
 

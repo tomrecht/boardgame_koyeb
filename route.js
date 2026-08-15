@@ -140,5 +140,10 @@ function piecesFromSnapshot(graph, snapshot) {
     }));
 }
 
-module.exports = { buildGraph, blockedTiles, shortestRouteToGoal, allGoalDistances,
+// Usable from Node (tests) and from the browser (the app), without a
+// bundler: CommonJS when there is a module object, globals otherwise.
+const _api = { buildGraph, blockedTiles, shortestRouteToGoal, allGoalDistances,
                    isSaveableOn, piecesFromSnapshot };
+if (typeof module !== 'undefined' && module.exports) module.exports = _api;
+else Object.assign(typeof window !== 'undefined' ? window : self, _api);
+

@@ -8,8 +8,13 @@
  * depending on whose turn it is -- the caller passes currentPlayer explicitly
  * rather than reading it off the snapshot, matching encode(board, player).
  */
-const { buildGraph, blockedTiles, shortestRouteToGoal, allGoalDistances,
-        isSaveableOn, piecesFromSnapshot } = require('./route.js');
+// Namespaced, NOT destructured into top-level consts: classic scripts share one
+// global lexical scope, so `const buildGraph` here collides with route.js's
+// function of the same name and this whole file then fails to parse -- silently,
+// as a SyntaxError in the console with everything downstream simply undefined.
+const _R = (typeof require !== 'undefined')
+    ? require('./route.js')
+    : (typeof window !== 'undefined' ? window : self);
 
 const TILE_FEAT_DIM = 12;
 const PIECE_FEAT_DIM = 24;
@@ -51,7 +56,7 @@ function pieceStatus(graph, p) {
     if (p.unentered) return ST_UNENTERED;
     if (p.tile >= 0) {
         if (graph.types[p.tile] === 'home') return ST_ON_HOME;
-        if (isSaveableOn(graph, p.tile, p.number)) return ST_CAN_BE_SAVED;
+        if (_R.isSaveableOn(graph, p.tile, p.number)) return ST_CAN_BE_SAVED;
         return ST_ON_BOARD;
     }
     return ST_ON_BOARD;
@@ -102,7 +107,7 @@ function pieceFeatures(graph, snapshot, pieces, currentPlayer) {
     const blockedFor = new Map();
     const blockedOf = (player) => {
         let b = blockedFor.get(player);
-        if (!b) blockedFor.set(player, (b = blockedTiles(graph, pieces, player)));
+        if (!b) blockedFor.set(player, (b = _R.blockedTiles(graph, pieces, player)));
         return b;
     };
 
@@ -114,8 +119,8 @@ function pieceFeatures(graph, snapshot, pieces, currentPlayer) {
         const rp = rackPos.get(p.player + p.number) || 0;
         const isBlot = (p.tile >= 0 && graph.types[p.tile] === 'field'
                         && occupancy.get(p.tile) === 1) ? 1.0 : 0.0;
-        const dist = shortestRouteToGoal(graph, p, blocked);
-        const goals = allGoalDistances(graph, p, blocked);
+        const dist = _R.shortestRouteToGoal(graph, p, blocked);
+        const goals = _R.allGoalDistances(graph, p, blocked);
 
         const raw = [], binned = [];
         for (let g = 1; g <= 6; g++) {
@@ -147,7 +152,7 @@ function pieceFeatures(graph, snapshot, pieces, currentPlayer) {
 function gameStage(graph, pieces, snapshot, player) {
     if ((snapshot.racks[player + '_unentered'] || []).length > 0) return 0.0;   // opening
     const mine = pieces.filter(p => p.player === player);
-    const saveable = (p) => p.saved || isSaveableOn(graph, p.tile, p.number);
+    const saveable = (p) => p.saved || _R.isSaveableOn(graph, p.tile, p.number);
     return mine.every(saveable) ? 1.0 : 0.5;                                    // endgame : midgame
 }
 
@@ -157,7 +162,7 @@ function highestOccupiedGoal(graph, pieces, player) {
     for (const p of pieces) {
         if (p.player !== player || p.tile < 0) continue;
         if (graph.types[p.tile] !== 'save') continue;
-        if (!isSaveableOn(graph, p.tile, p.number)) continue;
+        if (!_R.isSaveableOn(graph, p.tile, p.number)) continue;
         best = Math.max(best, graph.numbers[p.tile]);
     }
     return best;
@@ -169,7 +174,7 @@ function globalFeatures(graph, snapshot, pieces, currentPlayer) {
     const savedNumbered = (player) => pieces.filter(
         p => p.player === player && p.number <= 6 && p.saved).length;
     const saveable = pieces.filter(
-        p => p.player === currentPlayer && (p.saved || isSaveableOn(graph, p.tile, p.number))).length;
+        p => p.player === currentPlayer && (p.saved || _R.isSaveableOn(graph, p.tile, p.number))).length;
     return [
         d1.value / 6.0,
         d2.value / 6.0,
@@ -195,8 +200,8 @@ function pieceTileEdges(allPieces) {
 
 /* The encoder's whole input for one position. */
 function encode(staticData, snapshot, currentPlayer) {
-    const graph = buildGraph(staticData);
-    const pieces = piecesFromSnapshot(graph, snapshot);
+    const graph = _R.buildGraph(staticData);
+    const pieces = _R.piecesFromSnapshot(graph, snapshot);
     const player = currentPlayer || snapshot.current_player;
     const { rows, allPieces } = pieceFeatures(graph, snapshot, pieces, player);
     const edges = pieceTileEdges(allPieces);
@@ -211,8 +216,13 @@ function encode(staticData, snapshot, currentPlayer) {
     };
 }
 
-module.exports = { buildGraph, blockedTiles, shortestRouteToGoal, allGoalDistances,
-                   isSaveableOn, piecesFromSnapshot, tileFeatures, pieceFeatures,
+// Usable from Node (tests) and from the browser (the app), without a
+// bundler: CommonJS when there is a module object, globals otherwise.
+const _api = { buildGraph: _R.buildGraph, blockedTiles: _R.blockedTiles, shortestRouteToGoal: _R.shortestRouteToGoal, allGoalDistances: _R.allGoalDistances,
+                   isSaveableOn: _R.isSaveableOn, piecesFromSnapshot: _R.piecesFromSnapshot, tileFeatures, pieceFeatures,
                    pieceStatus, distBin, distanceCategory, globalFeatures,
                    gameStage, highestOccupiedGoal, pieceTileEdges, encode,
                    TILE_FEAT_DIM, PIECE_FEAT_DIM };
+if (typeof module !== 'undefined' && module.exports) module.exports = _api;
+else Object.assign(typeof window !== 'undefined' ? window : self, _api);
+
