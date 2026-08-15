@@ -5169,7 +5169,15 @@ endGame(winner, score = null, impasse_caller = null) {
         scene.input.dragDistanceThreshold = _isPhone() ? 34 : 6;
 
         const onDragStart = (pointer, obj) => {
-            if (obj.__ghost) { scene._draggingGhost = obj.__ghost; return; }
+            if (obj.__ghost) {
+                scene._draggingGhost = obj.__ghost;
+                // Enter the piece NOW, not on drop: entering is what selects it
+                // and lights up its destinations, so doing it at the end left
+                // the whole drag with no highlights to aim at.
+                const gp = obj.__ghost.piece;
+                if (gp && gp.rack) gp.handleClick({ rightButtonDown: () => false });
+                return;
+            }
             const piece = obj.__piece; if (!piece) return;
             // a press that became a drag is not a click, so it must not send a
             // just-entered piece back to the rack when the finger lifts
@@ -5220,6 +5228,8 @@ endGame(winner, score = null, impasse_caller = null) {
                 // tap -- the same near-miss resolution as any other drop.
                 const { piece: ghostPiece } = obj.__ghost;
                 scene._draggingGhost = null;
+                // normally entered at dragstart; this covers a drag that somehow
+                // began without it
                 if (ghostPiece.rack) ghostPiece.handleClick({ rightButtonDown: () => false });
                 const t = ghostPiece.game.tileAtPoint(pointer.worldX, pointer.worldY);
                 const drop = _resolveDestination(ghostPiece.game, t, pointer.worldX, pointer.worldY);
