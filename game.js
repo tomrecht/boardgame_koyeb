@@ -495,6 +495,10 @@ function _relayoutFurniture() {
         r.shiftPiecesUp();
     });
     (g.dice || []).forEach((d, i) => { d.x = f.diceX[i]; d.y = f.diceY; d.size = f.dieSize; d.drawDie(); });
+    // drawDie() paints the DEFAULT colour, not the current player's -- so the
+    // relayout has to re-apply it, or a black opening shows black dice that
+    // flip to white when the settle pass runs 400ms after boot.
+    if (g.updateDiceColors) g.updateDiceColors();
     if (g.undoButton) g.undoButton.setPosition(f.undoX, f.arrowY);
     if (g.switchTurnButton) g.switchTurnButton.setPosition(f.endX, f.arrowY);
     if (g.updateMustMoveHighlights) g.updateMustMoveHighlights();
