@@ -13,3 +13,4 @@ training_data/
 weights*.json
 opponent_model.txt
 _attic/
+encoder_fixture.json    # derived; regenerate with dump_encoder_fixture.py

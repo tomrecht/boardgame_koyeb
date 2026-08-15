@@ -59,8 +59,14 @@ be reused without checking.
 ## Order of work
 
 1. ~~Export the static half + self-check.~~ **done**
-2. Fixture: `dump_encoder_fixture.py` writes N seeded positions as
-   `{snapshot, expected:{tile_feats, piece_feats, global_feats, p2t, t2p}}`.
+2. ~~Fixture.~~ **done** — `python dump_encoder_fixture.py [n] [out.json]`
+   writes N seeded positions as `{snapshot, expected}`. 40 positions is 538 KB,
+   so it is gitignored and regenerated on demand (seeded, so deterministic).
+   `snapshot` is the shape the JS encoder takes: pieces with their tile/rack
+   location, rack ORDER (entry order matters), dice, current player, stages.
+   `expected` carries tile_feats 70x12, piece_feats 24x24, global 11, both edge
+   arrays, and **`piece_order`** — `all_pieces` decides the row order of
+   piece_feats and the edge indices, so the port has to reproduce it.
 3. Port the BFS trio; verify against the fixture's distances alone first.
 4. Port dynamic tile features → piece features → global features → edges, each
    asserted array-equal against the fixture.
