@@ -334,10 +334,16 @@ class GNNAgent:
         # Every score here is also the score of that move's (move, pass) pair --
         # a pass changes nothing -- so stage 2 gets these back from eval_cache
         # for free.
-        moves_iter = moves_set
+        # Canonical ENUMERATION order, not just canonical tie-breaks. The
+        # winning-move short-circuits below return the first win they meet, and
+        # a position can have several (the same save with either die) -- so the
+        # order itself has to be deterministic or that return is hash-seed
+        # dependent. Costs one sort of a few hundred moves against thousands of
+        # heuristic evaluations.
+        moves_iter = sorted(moves_set, key=_move_sort_key)
         if prefilter and self.first_move_prefilter and len(moves_set) > self.first_move_prefilter:
             first_scored = []
-            for move in moves_set:
+            for move in moves_iter:
                 base = len(board.moves)
                 board.apply_move(move, switch_turn=False)
                 wgo, _ = board.check_game_over()
@@ -410,7 +416,7 @@ class GNNAgent:
             next_moves.discard((0, 0, 0))
             next_moves.discard((1, 1, 1))   # draw is only ever legal as a lone first action
 
-            for next_move in next_moves:
+            for next_move in sorted(next_moves, key=_move_sort_key):
                 if not isinstance(next_move, tuple) or len(next_move) != 3:
                     raise ValueError('Invalid next move format.')
                 board.apply_move(next_move, switch_turn=False)
