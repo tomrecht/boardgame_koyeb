@@ -43,7 +43,18 @@ def _hex(h):
     return tuple(int(h[i:i + 2], 16) for i in (1, 3, 5))
 
 
-def render(geom, size, pad_frac, pieces=0, seed=7):
+def render(geom, size, pad_frac, pieces=0, seed=7, board_frac=None, ring=False):
+    """board_frac: the board's DIAMETER as a fraction of the padded box. The
+    original fit sized the whole drawing -- board plus tail -- to that box, which
+    made the board smaller than it needed to be and left a crescent of empty
+    ground opposite the tail (owner: "a good bit of space at the 10 o'clock
+    part"). Sizing the BOARD instead and letting the tail run into the
+    bottom-right CORNER uses that space: a corner is sqrt(2) further from the
+    centre than an edge, and the tail happens to point at one. The tail's SHAPE
+    is untouched -- it scales with the board, as it must to stay attached.
+
+    ring: colour the whole perimeter, not just the six goal wedges, so the Q's
+    bowl is one unbroken band."""
     bg, field, goal, hub_fill = _hex(BG), _hex(FIELD), _hex(GOAL), _hex(HUB)
     tiles = [t for t in geom['tiles'] if t['type'] not in ('nogo', 'home')]
     outer = max(t['or'] for t in tiles)
@@ -67,15 +78,28 @@ def render(geom, size, pad_frac, pieces=0, seed=7):
                         86 - 58 * u ** 1.25))       # tapers toward the tip
         return out
 
-    ux, uy = [], []
-    for q in range(4):
-        ux.append(outer * math.cos(q * math.pi / 2)); uy.append(outer * math.sin(q * math.pi / 2))
-    for x, y, w in dabs_u():
-        ux += [x - w, x + w]; uy += [y - w, y + w]
-    x0, x1, y0, y1 = min(ux), max(ux), min(uy), max(uy)
-    scale = (S - 2 * pad) / max(x1 - x0, y1 - y0)
-    cx = S / 2 - (x0 + x1) / 2 * scale
-    cy = S / 2 - (y0 + y1) / 2 * scale
+    if board_frac is None:
+        # Historical fit: the whole drawing, tail included, inside the padded box.
+        ux, uy = [], []
+        for q in range(4):
+            ux.append(outer * math.cos(q * math.pi / 2)); uy.append(outer * math.sin(q * math.pi / 2))
+        for x, y, w in dabs_u():
+            ux += [x - w, x + w]; uy += [y - w, y + w]
+        x0, x1, y0, y1 = min(ux), max(ux), min(uy), max(uy)
+        scale = (S - 2 * pad) / max(x1 - x0, y1 - y0)
+        cx = S / 2 - (x0 + x1) / 2 * scale
+        cy = S / 2 - (y0 + y1) / 2 * scale
+    else:
+        # Size the BOARD, centre it, then slide it just far enough up-left that
+        # the tail still clears the padding -- into the space the tail's own
+        # side does not use.
+        scale = (S - 2 * pad) * board_frac / (2 * outer)
+        cx = cy = S / 2
+        tx1 = max(x + w for x, y, w in dabs_u()) * scale + cx
+        ty1 = max(y + w for x, y, w in dabs_u()) * scale + cy
+        lim = S - pad
+        cx -= max(0.0, tx1 - lim)
+        cy -= max(0.0, ty1 - lim)
 
     def pt(r, a):
         return (cx + r * scale * math.cos(a), cy + r * scale * math.sin(a))
@@ -96,6 +120,22 @@ def render(geom, size, pad_frac, pieces=0, seed=7):
                      key=lambda t: t['type'] == 'save')          # goals on top
     for t in ordered:
         d.polygon(poly(t), fill=goal if t['type'] == 'save' else field)
+
+    # `ring`: a continuous band at the goals' own radii, all the way round, so
+    # the bowl of the Q has no breaks. It cannot be done by recolouring tiles --
+    # the goal wedges stick out PAST the field ring, so there is no tile at
+    # those radii between them; the band has to be drawn.
+    goals = [t for t in tiles if t['type'] == 'save']
+    gir, gor = min(t['ir'] for t in goals), max(t['or'] for t in goals)
+
+    def annulus():
+        steps = 240
+        outer_pts = [pt(gor, 2 * math.pi * i / steps) for i in range(steps + 1)]
+        inner_pts = [pt(gir, 2 * math.pi * (steps - i) / steps) for i in range(steps + 1)]
+        return outer_pts + inner_pts
+
+    if ring:
+        d.polygon(annulus(), fill=goal)
     for x, y, w in tail_dabs():
         d.ellipse([x - w, y - w, x + w, y + w], fill=goal)
 
@@ -105,6 +145,8 @@ def render(geom, size, pad_frac, pieces=0, seed=7):
     md = ImageDraw.Draw(mask)
     for t in ordered:
         md.polygon(poly(t), fill=255)
+    if ring:
+        md.polygon(annulus(), fill=255)
     for x, y, w in tail_dabs():
         md.ellipse([x - w, y - w, x + w, y + w], fill=255)
     edge = mask.filter(ImageFilter.FIND_EDGES)
@@ -129,16 +171,25 @@ def render(geom, size, pad_frac, pieces=0, seed=7):
 def main():
     path = sys.argv[1] if len(sys.argv) > 1 else 'board_geom.json'
     geom = json.load(open(path))
-    render(geom, 192, 0.05).save('icon-192.png')
-    render(geom, 512, 0.05).save('icon-512.png')
+    # board_frac sizes the BOARD rather than the board-plus-tail, so the bowl
+    # uses the empty crescent opposite the tail (owner picked 0.88).
+    render(geom, 192, 0.05, board_frac=0.88).save('icon-192.png')
+    render(geom, 512, 0.05, board_frac=0.88).save('icon-512.png')
     # Maskable at BOTH launcher densities. Android crops a maskable icon to its
     # own shape (circle, squircle, ...), so these carry extra padding -- the
     # drawn board lands inside the central 80% "safe zone" and the parchment
     # runs to all four edges. The background must stay OPAQUE: a transparent
     # one is composited onto the system's own grey, which is the grey bubble it
     # would appear to be there to remove.
-    render(geom, 192, 0.16).save('icon-192-maskable.png')
-    render(geom, 512, 0.16).save('icon-512-maskable.png')
+    # The maskable gets a BIGGER board (1.00), not a smaller one: the visible
+    # "grey bubble" on Android is this file's own parchment ground showing
+    # around a board that was too small for the mask. The real limit is the
+    # mask itself -- radius 50% of the canvas -- not the conservative 40% safe
+    # zone: measured, the furthest drawn pixel is the tail tip at 47.1%, which
+    # a circular mask keeps. 0.88 here would leave the board at 60% of the
+    # canvas inside an 80% mask, i.e. the bubble owner is seeing.
+    render(geom, 192, 0.16, board_frac=1.00).save('icon-192-maskable.png')
+    render(geom, 512, 0.16, board_frac=1.00).save('icon-512-maskable.png')
     print('wrote icon-192.png, icon-512.png, icon-192-maskable.png, icon-512-maskable.png')
 
 
