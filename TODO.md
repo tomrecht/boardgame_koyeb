@@ -59,3 +59,42 @@ match_prefilter.py's 7_700_000.
 Watch-out: the arena finding applies here too -- promotion-gate-style single
 matchups mislead, and the top four champions were statistically inseparable at
 9-16 games per matchup. Budget the sample before starting, not after.
+
+
+## Candidate fix: stage 1 can cull a save-ENABLING first move (2026-08-15)
+
+Found while probing top_k. `select_move_pair`'s first-move prefilter exempts a
+first move that IS a save:
+
+    keep += [m for _, m in first_scored if m not in kept and m[1] == 'save']
+
+but nothing protects a first move that ENABLES a save as the second half of the
+pair -- step a piece onto its goal with one die, save it with the other. If that
+first move scores poorly on its own it is culled, and the pair is never
+expanded, so the save never reaches the value head at all.
+
+Measured (match_topk.py probe, 60 positions, saves kept vs the F=12 baseline):
+100% at every top_k from 40 to 10, but 94% at F=8 and 91% at F=6. So the cull
+that loses save pairs is stage ONE, not the top-K cull -- top_k is safe by
+construction because save PAIRS are exempt there.
+
+Probably rare at the served F=12 because `goal_bonuses` is large, so a move
+landing on a goal tends to score well alone and survive anyway. But that is the
+heuristic happening to agree, not a guarantee -- and the exemption exists
+precisely because the heuristic's view of saves is not trusted. Relevant to the
+known pass-over-save rough edge: `debug_pass_over_save` already distinguishes
+"the save was scored and rejected" (value error) from "no save pair reached the
+net" (candidate drop), and this is a mechanism for the second.
+
+**The fix is nearly free.** Stage 1 already APPLIES each first move to score it,
+so while it is applied, ask whether a save has become available:
+
+    any(board.get_saving_die(p) for p in board.pieces if p.player == player)
+
+and exempt the move from the cull if so. No simulation, no second move
+generation.
+
+**Do not ship it unmeasured.** It changes which candidates the net sees, i.e.
+it changes play. Validate the same way F=12 itself was validated -- paired games
+via match_topk.py match -- and re-run the probe with BASELINE=40,0 first to size
+how often the case actually arises.
