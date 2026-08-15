@@ -207,9 +207,9 @@ function turnStatusText(game) {
     // nothing to say before the player has started a game (welcome screen up)
     if (!game || game.gameOver || _gameFrozen) return '';
     const p = game.turn;
-    // In the tutorial you always play White and the script moves Black, whatever
-    // the players are set to outside it.
-    if (_tut.active) return p === 'white' ? 'Your turn' : 'Black’s turn';
+    // The tutorial says whose turn it is in its own card, and it is stripped
+    // back to board, racks, dice and arrows -- no pill, gear or score line.
+    if (_tut.active) return '';
     const isAI = (p === 'black' && BLACK_IS_AI) || (p === 'white' && WHITE_IS_AI);
     if (isAI) return 'Computer thinking…';
     // "Your turn" only makes sense when exactly one side is yours
@@ -352,10 +352,41 @@ function _isPortrait() {
 function _rackPR()  { return _isPortrait() ? 34 : RACK_PR; }
 function _dieSize() { return _isPortrait() ? 150 : DIE_SIZE; }
 
+// The tutorial hides the gear, the turn pill and the score stack, which frees a
+// strip at the top of the portrait frame and a band at the bottom. Sliding the
+// whole assembly up into that strip is what gives the card room to sit clear of
+// black's racks.
+//
+// It takes BOTH halves to be a slide. `_fur()` subtracts the lift from every
+// furniture y, which moves the furniture up in WORLD space -- i.e. up relative
+// to the board, which does not move. On its own that walked the bottom rack
+// into the board. The frame has to travel with it: dropping the same amount off
+// boardFromTop moves the frame's origin down by the lift, so every `wd.y + k -
+// lift` lands back at its original absolute world position and it is the BOARD
+// that rises on screen. The bottom edge of the frame then sits `lift` further
+// below the lowest furniture, which is the space the card gets.
+//
+// Bounded by the top rack: its panel starts 206 world px below the frame's top
+// edge (rack y + 240, less the panel's own 34px overhang), so a lift beyond
+// that pushes it off screen. 160 keeps ~15 CSS px of margin.
+function _tutLift() {
+    return (_isPortrait() && typeof _tut !== 'undefined' && _tut.active) ? 160 : 0;
+}
+
+// The lift alone is not enough. Measured at 390x844: it leaves a 203 CSS px
+// band under the racks, and every one of the eleven steps wants 227-336 px at
+// that width. A taller FRAME buys the rest -- the camera fits the whole
+// rectangle, so adding empty world below the furniture scales the assembly
+// down and turns into screen space at the bottom. 300 world px costs the board
+// 363 -> ~325 CSS px (still far above the 234 it had before the portrait
+// layout) and is only in force while the tutorial runs.
+function _tutFrameExtra() { return _tutLift() ? 300 : 0; }
+
 function _world() {
     if (_isPortrait()) {
-        return { x: CENTER_X - PORTRAIT.W / 2, y: CENTER_Y - PORTRAIT.boardFromTop,
-                 w: PORTRAIT.W, h: PORTRAIT.H };
+        return { x: CENTER_X - PORTRAIT.W / 2,
+                 y: CENTER_Y - (PORTRAIT.boardFromTop - _tutLift()),
+                 w: PORTRAIT.W, h: PORTRAIT.H + _tutFrameExtra() };
     }
     return { x: 0, y: 0, w: WORLD_W, h: WORLD_H };
 }
@@ -375,11 +406,7 @@ function _fur() {
                  blackUn: [1545, RACK_Y1], blackSv: [1545, RACK_Y2] };
     }
     const cols = 6, rows = 2;
-    // The tutorial hides the gear and the turn pill (see _sizeGear), so the top
-    // strip they occupy is free -- lift the whole column into it, which is what
-    // buys the bottom band enough room for the tutorial card to sit clear of
-    // black's racks.
-    const lift = (typeof _tut !== 'undefined' && _tut.active) ? 260 : 0;
+    const lift = _tutLift();          // paired with _world()'s -- see _tutLift
     const pr = _rackPR(), ds = _dieSize();
     const spacing = pr * 2 + 12;
     const panelW = cols * spacing + pr;                // matches drawBackground
@@ -413,9 +440,10 @@ let _lastPortrait = null;
 function _sizeGear(el) {
     const gear = el || document.getElementById('settingsGear');
     if (!gear) return;
-    // Hidden during a portrait tutorial: the card needs the bottom of the screen,
-    // and the strip the gear sits in is what the layout lifts into.
-    const hide = _isPortrait() && typeof _tut !== 'undefined' && _tut.active;
+    // Hidden for the whole tutorial, on every platform: the script owns the
+    // screen, none of the settings apply to it, and in portrait the strip the
+    // gear sits in is what the layout lifts into.
+    const hide = typeof _tut !== 'undefined' && _tut.active;
     gear.style.display = hide ? 'none' : '';
     const px = _isPortrait() ? 48 : 64;
     gear.style.width = gear.style.height = px + 'px';
@@ -496,6 +524,11 @@ function _relayoutFurniture() {
     // dozen setPositions on an event that fires rarely.
     const p = _isPortrait();
     _lastPortrait = p;
+    // The frame itself can change, not just what sits in it -- rotation, and
+    // the tutorial's lift, both move it. Without this the camera keeps framing
+    // the old rectangle and the furniture walks relative to the board.
+    const sc0 = _setupScene();
+    if (sc0) _fitCameraToWorld(sc0);
     const f = _fur();
     [[g.whiteUnenteredRack, f.whiteUn], [g.whiteSavedRack, f.whiteSv],
      [g.blackUnenteredRack, f.blackUn], [g.blackSavedRack, f.blackSv]].forEach(([r, xy]) => {
@@ -622,6 +655,16 @@ function _fitCameraToWorld(scene) {
 function _mainCamera() {
     const sc = _setupScene();
     return (sc && sc.cameras && sc.cameras.main) || null;
+}
+
+// A world y as a CSS y on the page, for laying DOM out against the board.
+// Reads worldView, which is only correct AFTER a frame has rendered -- callers
+// that have just changed the camera must wait one.
+function _worldYToCss(wy) {
+    const cam = _mainCamera(), cv = gameInstance && gameInstance.canvas;
+    const rect = cv && cv.getBoundingClientRect();
+    if (!cam || !rect || !rect.height || !cam.worldView.height) return null;
+    return rect.top + (wy - cam.worldView.y) * (rect.height / cam.worldView.height);
 }
 function _pageZoomed() {
     const sc = _setupScene(), cam = _mainCamera();
@@ -1537,7 +1580,7 @@ function _tutFitBoard() {
             // the drift owner still saw after the width was fixed.
             b.style.top = gap + 'px';
             b.style.bottom = 'auto';
-            b.style.transform = 'none';
+            b.style.transform = _tut._xform = 'none';
             b.style.maxHeight = (H - 2 * gap) + 'px';
         } else {
             b.style.width = 'min(640px, ' + (W - 2 * gap) + 'px)';
@@ -1545,10 +1588,24 @@ function _tutFitBoard() {
             b.style.right = 'auto';
             b.style.top = 'auto';
             b.style.bottom = gap + 'px';
-            b.style.transform = 'translateX(-50%)';
-            b.style.maxHeight = Math.round(H * 0.45) + 'px';
+            b.style.transform = _tut._xform = 'translateX(-50%)';
+            // Portrait: cap the card to the band BELOW the lower rack rather
+            // than to a fraction of the screen, so it cannot cover black's
+            // pieces. That band is what hiding the score stack, and the lift in
+            // _tutLift, are for. Falls back to the fraction if the camera has
+            // not rendered a frame yet.
+            let cap = Math.round(H * 0.45);
+            if (_isPortrait()) {
+                const f = _fur(), pr = _rackPR(), spacing = pr * 2 + 12;
+                // Rack panel bottom: drawBackground runs from y - pr for
+                // rows*spacing + pr + verticalPadding.
+                const below = Math.max(f.whiteUn[1], f.blackUn[1]) + f.rows * spacing + 22;
+                const cssY = _worldYToCss(below);
+                if (cssY !== null) cap = Math.max(120, Math.round(H - cssY - 2 * gap));
+            }
+            b.style.maxHeight = cap + 'px';
         }
-        b.style.overflowY = 'auto';
+        b.style.overflowY = 'hidden';   // #tutText scrolls instead, so the buttons stay put
         s.setParentSize(W, H);
         if (s.canvas) { s.canvas.style.marginLeft = ''; s.canvas.style.marginTop = ''; }
         return;
@@ -1562,9 +1619,9 @@ function _tutFitBoard() {
         b.style.right = gap + 'px';
         b.style.bottom = 'auto';
         b.style.top = '50%';
-        b.style.transform = 'translateY(-50%)';
+        b.style.transform = _tut._xform = 'translateY(-50%)';
         b.style.maxHeight = (H - 2 * gap) + 'px';
-        b.style.overflowY = 'auto';
+        b.style.overflowY = 'hidden';   // #tutText scrolls instead, so the buttons stay put
         _tutMeasureBubble(bw);
         s.setParentSize(Math.max(320, W - bw - 2 * gap), H);
         if (s.canvas) { s.canvas.style.marginLeft = '0px'; s.canvas.style.marginTop = ''; }
@@ -1576,12 +1633,12 @@ function _tutFitBoard() {
         b.style.right = 'auto';                   // collapse the card to fit-content
         b.style.left = '50%';
         b.style.bottom = 'auto';
-        b.style.transform = 'translateX(-50%)';
+        b.style.transform = _tut._xform = 'translateX(-50%)';
         // On a tall narrow screen the text would otherwise eat most of the
         // height; cap it and let the longest steps scroll.
         const cap = Math.round(H * 0.45);
         b.style.maxHeight = cap + 'px';
-        b.style.overflowY = 'auto';
+        b.style.overflowY = 'hidden';   // #tutText scrolls instead, so the buttons stay put
         _tutMeasureBubble(bw);
         const bh = Math.min(cap, _tut.bubbleH || Math.round(b.getBoundingClientRect().height));
         s.setParentSize(W, Math.max(200, H - bh - 2 * gap));
@@ -1597,21 +1654,44 @@ function _tutFitBoard() {
     // offset by the margins we just changed.
     if (s.canvas) s.updateBounds();
 }
+// The tutorial is stripped to board, racks, dice and arrows on every platform:
+// no HUD buttons (they restart the scene out from under the runner), no score
+// line, no impasse counter, no Call draw, no turn pill, no gear. None of it
+// applies to a scripted game, and in portrait the bottom band it occupies is
+// what the card needs.
 function _tutHudVisible(on) {
     const scene = _setupScene();
     if (scene && scene.hudButtons) scene.hudButtons.forEach(b => b.setHudVisible && b.setHudVisible(on));
+    if (scene) {
+        if (scene.scoreText) scene.scoreText.setVisible(on);
+        if (scene.impasseText && !on) scene.impasseText.setVisible(false);
+        if (scene.callDrawButton && !on) scene.callDrawButton.setHudVisible(false);
+    }
+    _sizeGear();
+    if (typeof updateTurnStatus === 'function') updateTurnStatus(_currentGame());
+    // Coming back out, the counter's own rule decides whether it shows.
+    if (on && typeof updateNoSaveDisplay === 'function') updateNoSaveDisplay();
 }
 window.addEventListener('resize', () => { if (_tut.active) { _tut._cardW = null; setTimeout(_tutFitBoard, 60); } });
 window.addEventListener('orientationchange', () => { if (_tut.active) { _tut._cardW = null; setTimeout(_tutFitBoard, 250); } });
 
+// The shake must be applied ON TOP of whatever transform the current layout
+// uses, not on top of an assumed one. It used to hard-code translateX(-50%) --
+// correct for the bottom-centred card, but the landscape phone card is pinned
+// by its RIGHT edge with no transform at all, so one nudge moved it half its
+// own width to the left and left it there. That is the sideways drift: it fires
+// on an off-script move, which is why stepping through the script never showed
+// it.
 function _tutNudge() {
     const b = _tut.bubble; if (!b) return;
     clearInterval(_tut.shake);
+    const base = _tut._xform || 'translateX(-50%)';
+    const at = (dx) => (base === 'none' ? '' : base + ' ') + 'translateX(' + dx + 'px)';
     let n = 0;
     b.style.transition = 'transform .08s ease-in-out';
     _tut.shake = setInterval(() => {
-        b.style.transform = 'translateX(-50%) translateX(' + ((n % 2) ? 7 : -7) + 'px)';
-        if (++n > 3) { clearInterval(_tut.shake); _tut.shake = null; b.style.transform = 'translateX(-50%)'; }
+        b.style.transform = at((n % 2) ? 7 : -7);
+        if (++n > 3) { clearInterval(_tut.shake); _tut.shake = null; b.style.transform = base; }
     }, 80);
 }
 
@@ -1763,9 +1843,14 @@ function _tutStepHtml(step, idx) {
     return '<div style="font-size:12px; letter-spacing:.04em; text-transform:uppercase; color:#8b95a3; margin-bottom:3px;">' +
             'Tutorial · Step ' + (idx + 1) + ' of ' + _tutSteps.length + '</div>' +
         '<div style="font-weight:700; font-size:17px; margin-bottom:5px;">' + step.title + '</div>' +
-        '<div style="font-family:' + BODY_FONT + '; font-size:14.5px; line-height:1.5; color:#33404b;">' + step.text + '</div>' +
+        // The TEXT scrolls, not the card: with the card scrolling as a whole,
+        // Exit/Skip sit at the end of the flex column and go below the fold on
+        // any step taller than the cap -- which on a portrait phone is all of
+        // them. min-height:0 is what lets a flex child shrink enough to scroll.
+        '<div id="tutText" style="font-family:' + BODY_FONT + '; font-size:14.5px; line-height:1.5;' +
+            'color:#33404b; overflow-y:auto; min-height:0; flex:1 1 auto;">' + step.text + '</div>' +
         '<div id="tutBtns" style="display:flex; gap:8px; margin-top:auto; padding-top:13px;' +
-            'justify-content:flex-end; min-height:32px; align-items:center;"></div>';
+            'justify-content:flex-end; min-height:32px; align-items:center; flex:0 0 auto;"></div>';
 }
 // The board must not resize from step to step, so the bubble reserves the same
 // height throughout: measure the tallest step once (off-screen, at the real
@@ -1826,15 +1911,13 @@ function _tutNext() {
 // Black's scripted reply: slide each piece to its new tile, then carry on.
 function _tutPlayBlack(game, moves, cb) {
     if (!moves || !moves.length) { cb(); return; }
+    // "Black plays…" in the card is the only turn indication the tutorial gives;
+    // the pill is suppressed throughout (see turnStatusText).
     _tutNote('<span style="color:#8b95a3; font-weight:700; font-size:13px;">Black plays…</span>');
-    if (typeof updateTurnStatus === 'function') updateTurnStatus('Black’s turn');
     let i = 0;
     const next = () => {
         if (!_tut.active) { cb(); return; }
-        if (i >= moves.length) {
-            if (typeof updateTurnStatus === 'function') updateTurnStatus(game);
-            setTimeout(cb, 400); return;
-        }
+        if (i >= moves.length) { setTimeout(cb, 400); return; }
         const m = moves[i++];
         const piece = _tutPiece(game, 'black', m.n), tile = _tutTile(game, m.to[0], m.to[1]);
         if (piece && tile) {
@@ -1874,9 +1957,13 @@ function startTutorial() {
     _tutHudVisible(false);
     _tutBubble();
     _tutRender();
+    // Layout first: the tutorial changes the world rect (see _tutLift), and the
+    // card is sized against where the racks end up. worldView is only right
+    // after a frame has rendered, so fit the card again on the next one.
+    if (typeof _relayoutFurniture === 'function') { _lastPortrait = null; _relayoutFurniture(); }
     _tutFitBoard();
     _sizeGear();
-    if (typeof _relayoutFurniture === 'function') { _lastPortrait = null; _relayoutFurniture(); }
+    requestAnimationFrame(() => { if (_tut.active) _tutFitBoard(); });
     clearInterval(_tut.timer); _tut.timer = setInterval(_tutPoll, 300);
 }
 function _tutEnd(startGame) {
@@ -2930,8 +3017,9 @@ function updateNoSaveDisplay() {
     const game = scene.game;
 
     // Show the counter once both players are past the opening, OR always when
-    // in sandbox (which doesn't track game stages).
-    const show = window.setupMode || game.bothInMidgame();
+    // in sandbox (which doesn't track game stages). Never during the tutorial --
+    // its steps reach the endgame, where this would otherwise appear.
+    const show = !_tut.active && (window.setupMode || game.bothInMidgame());
     if (!show) {
         scene.impasseText.setVisible(false);
         scene.callDrawButton.setHudVisible(false);

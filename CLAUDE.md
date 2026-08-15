@@ -823,6 +823,39 @@ with it in mind.** Assessment and the concrete implications:
     layout, camera and turn pill (the pill measures the canvas rect, stale
     mid-rotation, and stretched into a wide bar when it was).
     Still open: the end-game card's framing in the portrait frame.
+  - **TUTORIAL CHROME AND CARD (2026-08-15).** The tutorial is stripped to
+    board, racks, dice and arrows on EVERY platform: no turn pill
+    (`turnStatusText` returns '' — `_tutPlayBlack`'s "Black plays…" in the card
+    is the only turn cue), no gear, no score line, no impasse counter, no Call
+    draw (`_tutHudVisible` hides them; `updateNoSaveDisplay` is gated on
+    `_tut.active`, since the script reaches the endgame where it would appear).
+    **The portrait lift needs BOTH halves.** `_fur()` subtracts `_tutLift()`
+    from every furniture y, which moves furniture up in WORLD space — i.e. up
+    relative to the board, which never moves — and on its own walked the bottom
+    rack into the board (owner: "the board is now underneath black's racks").
+    `_world()` must drop the same amount off `boardFromTop`, so the frame
+    travels with it and it is the BOARD that rises on screen. Lift is 160,
+    bounded by the top rack (its panel starts 206 world px below the frame's top
+    edge). Measured portrait: racks 14–544 CSS, board 144–469, card 580–828.
+    **A taller frame buys the rest of the card's room.** The lift alone left 203
+    CSS px under the racks and all eleven steps want 227–336 at that width, so
+    `_tutFrameExtra()` adds 300 world px of empty frame below the furniture:
+    the camera fits the whole rectangle, so that scales the assembly down and
+    turns into screen space. Board 363 → 325 CSS px, cap 203 → 268, tutorial
+    only. **The card's TEXT scrolls, not the card** (`#tutText`, `min-height:0`
+    to let a flex child shrink): with the card scrolling as a whole, Exit/Skip
+    sit at the end of the flex column and went below the fold on every step.
+    **THE LANDSCAPE CARD'S SIDEWAYS DRIFT WAS `_tutNudge`.** It hard-coded
+    `translateX(-50%)` — right for the bottom-centred card, but the landscape
+    phone card is pinned by its RIGHT edge with `transform: none`, so one nudge
+    moved it half its own width left and left it there. It now shakes around
+    `_tut._xform`, recorded wherever `_tutFitBoard` sets a transform. **This is
+    why three fixes "passed":** a nudge fires on an OFF-SCRIPT move, and a
+    harness that steps through the script correctly never makes one. Verified
+    portrait/landscape/desktop: card box identical across all ten steps, and
+    unmoved by a nudge.
+    `_relayoutFurniture` now calls `_fitCameraToWorld` — the FRAME can change,
+    not just what sits in it, and nothing else re-framed on a tutorial start.
   - **iPHONE SAFE AREA (2026-08-15).** `viewport-fit=cover` was already set, so
     `env(safe-area-inset-*)` is non-zero on an iPhone, but nothing read it — the
     portrait button row sits 22 CSS px off the bottom, inside the ~34px
@@ -1212,8 +1245,9 @@ with it in mind.** Assessment and the concrete implications:
     is ephemeral in deployment.
   - **Tutorial finished** (10 steps + closing panel) — see the entry below; the
     late additions were: ends at the start screen rather than a running game,
-    "Black's turn" pill during scripted replies, no status pill before a game
-    starts, How to Play as one wider column at 18px.
+    no status pill before a game starts, How to Play as one wider column at
+    18px. (The "Black's turn" pill during scripted replies was later removed
+    with the rest of the chrome — see TUTORIAL CHROME 2026-08-15.)
 
 - **SESSION UPDATE (2026-07-24/25) — FRONTEND OVERHAUL (branch
   `frontend-overhaul`).** A large, professional GUI redesign of the web client,
