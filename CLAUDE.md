@@ -765,15 +765,21 @@ with it in mind.** Assessment and the concrete implications:
     landscape, and high above it in portrait. It now calls `_fitCameraToWorld`
     in `create()` and on resize. Measured centred on both axes in landscape,
     portrait and desktop. **Any new scene must do the same.**
-  - **OPEN (owner, 2026-08-14): ghost dragging does not work on his phone**,
-    though it passes in emulation end-to-end (enters the piece, lands on a legal
-    destination). Leads to check on a device: the drag threshold is 34 GAME px,
-    which is ~11 CSS px at the landscape buffer but ~7 in portrait; the ghost's
-    hit circle is only `r + pad`, so the finger must start well inside it; and
-    anything that calls `_updateViewportHud()` mid-drag re-places the ghosts,
-    which would snatch the ghost back from the finger (`visualViewport`
-    resize/scroll events still fire on a phone even though we no longer use
-    browser zoom).
+  - **GHOST DRAGGING FIXED (2026-08-14): the camera was panning underneath it.**
+    Owner reported it not working on his phone while it passed in emulation —
+    because the emulated assertions only checked where the piece ended up, not
+    what the board did. Measured directly: during a ghost drag the camera
+    scrolled (102,200) → (-294,363), i.e. the whole board slid under the finger,
+    which is exactly what "the drag doesn't work" looks like. Cause: the pan
+    handler refuses to start only when the press lands on a `__piece`, and a
+    ghost carries `__ghost`. It now refuses for either, and `pointermove` also
+    bails while `scene._draggingGhost` is set. Second fix alongside it:
+    `_updateMustEnterGhosts` returns early while a ghost is being dragged — it
+    runs on camera moves and viewport events and would otherwise snatch the
+    ghost back to its corner mid-gesture. Verified: camera scroll unchanged
+    through the drag, piece entered, landed on a legal destination.
+    **Lesson:** when a gesture "doesn't work" on a device but passes in
+    emulation, assert what the CAMERA did as well as what the piece did.
   - **Pinch has a 6% dead zone** on the finger separation: two fingers dragged
     together still wobble apart by a few pixels, and feeding that into the zoom
     made a two-finger pan shimmer (owner: "as if it's trying to zoom in and out

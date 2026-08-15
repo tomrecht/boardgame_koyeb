@@ -439,6 +439,10 @@ function _updateMustEnterGhosts() {
     if (!scene || !scene.add) return;
     const hide = () => _ghosts.forEach(gh => gh.setVisible(false));
     if (!_isPhone() || _tut.active || !_pageZoomed()) { hide(); return; }
+    // Never re-place a ghost that is currently being dragged: this runs on
+    // camera moves and viewport events, and would snatch it back to its corner
+    // mid-gesture.
+    if (scene._draggingGhost) return;
 
     const rect = _visibleWorldRect();
     const pieces = _enterableUnentered(g);
@@ -5068,12 +5072,15 @@ endGame(winner, score = null, impasse_caller = null) {
                 };
                 return;
             }
-            // A drag that starts on a piece belongs to the piece. Use the list
-            // Phaser hands us -- calling hitTestPointer() from inside a pointer
-            // handler re-runs hit testing mid-update and clobbers the drag state
-            // Phaser is in the middle of setting up, which killed piece dragging
-            // on a phone entirely.
-            if ((currentlyOver || []).some(o => o && o.__piece)) { panFrom = null; return; }
+            // A drag that starts on anything draggable belongs to that thing, not
+            // to the camera: pieces (__piece) AND the must-enter ghosts
+            // (__ghost). Missing the ghosts meant the board panned out from
+            // under a ghost drag, which reads as the drag simply not working.
+            // Use the list Phaser hands us -- calling hitTestPointer() from
+            // inside a pointer handler re-runs hit testing mid-update and
+            // clobbers the drag state Phaser is setting up, which killed piece
+            // dragging on a phone entirely.
+            if ((currentlyOver || []).some(o => o && (o.__piece || o.__ghost))) { panFrom = null; return; }
             panFrom = { x: pointer.x, y: pointer.y, sx: cam.scrollX, sy: cam.scrollY };
         });
 
@@ -5101,7 +5108,7 @@ endGame(winner, score = null, impasse_caller = null) {
                 }
                 return;
             }
-            if (!panFrom || !pointer.isDown || scene._draggingPiece) return;
+            if (!panFrom || !pointer.isDown || scene._draggingPiece || scene._draggingGhost) return;
             const dx = pointer.x - panFrom.x, dy = pointer.y - panFrom.y;
             if (!panning && Math.hypot(dx, dy) < PAN_SLOP) return;   // still might be a tap
             panning = true;
