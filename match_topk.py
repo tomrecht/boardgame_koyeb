@@ -41,6 +41,14 @@ Two modes:
 
             BASELINE=40,0 python match_topk.py probe 200 40 12
 
+        POSITIONS=endgame is what the save questions need. Over 60 WALKED
+        positions the F=0 baseline played a save 0 times, so "save lost" could
+        not fire at all -- saves are legal there but rarely best. Measured on
+        walked positions: F=12 keeps only 55% of the baseline's save pairs and
+        drops them ENTIRELY in 6 of 11 positions, so the deployed agent often
+        never sees a save pair; whether that changes the move is the endgame
+        run's job to say.
+
         Slow -- F=0 heuristically scores every PAIR, ~10k evaluations a move,
         which is the ~94% of move time the first-move prefilter exists to
         remove -- so budget minutes, not seconds, and start at 60 positions.
@@ -111,6 +119,26 @@ def _has_save(move):
 
 # ---------------------------------------------------------------- probe mode
 
+def _endgame_positions(n):
+    """Hand-built endgames, where saves are dense AND decisive.
+
+    A random walk will not do for the save questions: over 60 walked positions
+    the F=0 baseline PLAYED a save exactly 0 times, so "save lost" had no
+    opportunity to fire. Saves are legal there but rarely best. The endgame is
+    where banking a piece is the move, and it is also where the pass-over-save
+    rough edge was originally reproduced."""
+    from dump_engine_fixture import endgame_board
+    rng = random.Random(4242)
+    out = []
+    while len(out) < n:
+        b = endgame_board(rng)
+        if b.check_game_over()[0] or not b.get_valid_moves():
+            continue
+        b.assign_piece_indices()
+        out.append(b)
+    return out
+
+
 def _walk_positions(n, seed0=0):
     """Seeded positions spanning opening/midgame/endgame. Canonicalised, both
     because get_valid_moves' order is not reproducible and because the served
@@ -155,8 +183,16 @@ def _save_pairs(ranked):
 
 
 def probe(n_positions, settings):
-    boards = _walk_positions(n_positions)
-    print(f'{len(boards)} positions')
+    # POSITIONS=endgame is what the save questions need; see _endgame_positions.
+    kind = os.environ.get('POSITIONS', 'walk')
+    if kind == 'endgame':
+        boards = _endgame_positions(n_positions)
+    elif kind == 'mixed':
+        half = n_positions // 2
+        boards = _walk_positions(n_positions - half) + _endgame_positions(half)
+    else:
+        boards = _walk_positions(n_positions)
+    print(f'{len(boards)} {kind} positions')
 
     # The BASELINE's kept set is the ground truth: a smaller setting is judged
     # on what it drops relative to what the served agent would have scored, not
