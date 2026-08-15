@@ -28,11 +28,13 @@ import sys
 
 from PIL import Image, ImageDraw, ImageFilter
 
-INK = (91, 74, 112)          # outline; black on the dark ground disappears
+INK = (32, 26, 20)           # outline
 PIECE = (24, 24, 24)
 
-# Plum Night (THEMES.plum in game.js), so icon and theme cannot drift apart.
-BG, FIELD, GOAL, HUB = '#241f31', '#eee7f2', '#c77dff', '#ffd166'
+# Deep plum on the parchment ground (owner's pick from icon_options.png): the
+# plum reads as the game's colour without the icon going dark, and the gold hub
+# gives it a focal point at 96px where teal was too close in value.
+BG, FIELD, GOAL, HUB = '#ece3d3', '#fffdf8', '#5c2a5e', '#d9a441'
 TAIL_MID = math.radians(45)                      # goal 4's mid-angle
 TAIL = ((300, 380), (495, 668), (742, 560), (652, 322))    # cubic Bezier, board units
 

@@ -4002,6 +4002,12 @@ class Rack {
 
     removePiece(piece) {
         this.pieces = this.pieces.filter(p => p !== piece);
+        // Close the gap HERE rather than trusting each caller to. While only
+        // the front piece could leave, a caller that forgot left the hole at
+        // the end where nothing showed; now a piece can leave from the middle,
+        // and a forgotten relayout is a visible empty slot. Cheap and
+        // idempotent, so the callers that already do it lose nothing.
+        this.shiftPiecesUp();
     }
 
     shiftPiecesUp() {
