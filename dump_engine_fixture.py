@@ -107,6 +107,13 @@ def jmove(move):
 
 
 def case(b):
+    # Canonical piece order, as the SERVED path always has it: every request
+    # goes through update_state, which calls assign_piece_indices (white first,
+    # then by number). A Board built here and walked keeps initialize_pieces'
+    # SHUFFLE instead, and that order is visible in the move list -- the dedupe
+    # of interchangeable blanks on one tile keeps whichever comes first, so a
+    # shuffled board attributes the same destinations to a different blank.
+    b.assign_piece_indices()
     start = state(b)
     moves = sorted(b.get_valid_moves(), key=canon)
     # get_valid_moves has a SIDE EFFECT: it recomputes game_stages for the
