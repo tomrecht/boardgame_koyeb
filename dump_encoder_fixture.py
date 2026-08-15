@@ -49,6 +49,20 @@ def snapshot(b):
     }
 
 
+def distances(b):
+    """Raw BFS output per piece, so the ported BFS can be verified on its own
+    before anything depends on it. Infinity is not valid JSON, so it is null."""
+    inf = float('inf')
+    j = lambda v: (None if v == inf else v)
+    out = []
+    for p in b.pieces:
+        goals = b.all_goal_distances(p)
+        out.append({'player': p.player, 'number': p.number,
+                    'shortest': j(b.shortest_route_to_goal(p)),
+                    'goals': {str(k): j(v) for k, v in sorted(goals.items())}})
+    return out
+
+
 def expected(enc, b):
     out = enc.encode(b, b.current_player)
     # all_pieces ordering decides the row order of piece_feats and the edge
@@ -61,6 +75,8 @@ def expected(enc, b):
         'piece_to_tile': np.asarray(out['piece_to_tile']).astype(int).tolist(),
         'tile_to_piece': np.asarray(out['tile_to_piece']).astype(int).tolist(),
         'piece_order': [[p.player, p.number] for p in all_pieces],
+        'distances': distances(b),
+        'blocked': sorted(int(i) for i in b._get_blocked_key(b.current_player)),
     }
 
 

@@ -67,7 +67,16 @@ be reused without checking.
    `expected` carries tile_feats 70x12, piece_feats 24x24, global 11, both edge
    arrays, and **`piece_order`** — `all_pieces` decides the row order of
    piece_feats and the edge indices, so the port has to reproduce it.
-3. Port the BFS trio; verify against the fixture's distances alone first.
+3. ~~Port the BFS trio.~~ **done** — `route.js`: `blockedTiles`,
+   `shortestRouteToGoal`, `allGoalDistances`, plus `piecesFromSnapshot` to turn
+   a fixture snapshot into the piece shape they want. The tile graph is built
+   from `encoder_static.json`, whose exclusion of nogo tiles is equivalent here
+   (nogo is never traversable and never a goal). Two details that matter: the
+   goal test runs BEFORE the traversability test, so a goal is found even though
+   goals are not walked through; and unreachable is `Infinity`, stored as null
+   in the fixture since JSON has no infinity.
+   **Verified against encoder.py over 40 positions: 960/960 shortest routes and
+   5760/5760 goal distances, 0 blocked-set mismatches.**
 4. Port dynamic tile features → piece features → global features → edges, each
    asserted array-equal against the fixture.
 5. Wire onnxruntime-web; assert the ONNX output matches Python's scores for the

@@ -3695,7 +3695,15 @@ class Tile {
                     }
                     pushHumanMove([piece.player, piece.number], [this.ring, this.sector], dieUsed);
                     piece.isSelected = false;
+                    // Clear the piece's OWN selection flag and the board's
+                    // highlights too, not just the game's selectedPiece: a
+                    // capturing entry left isSelected true and the destinations
+                    // lit, so the piece looked selected and swallowed the second
+                    // die until it was manually deselected.
+                    piece.isSelected = false;
+                    piece.reachableTiles = null;
                     piece.updateColor();
+                    this.game.unhighlightAllTiles();
                     this.game.selectedPiece = null;
                 } else {
                     console.log('Move not possible');
