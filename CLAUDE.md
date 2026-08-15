@@ -953,52 +953,46 @@ with it in mind.** Assessment and the concrete implications:
     selectable. (Owner spotted this while specifying the rack-selection change
     below; it was already live.)
     **CHOOSE WHICH UNENTERED PIECE ENTERS — DONE (2026-08-15, both platforms).**
-    Previously only the front rack piece could ever enter, so the order of a
-    turn's two entries was forced. `game.py`'s new `get_enterable_pieces()`
-    returns the first TWO (two is the cap: an entry costs one die), and
-    `get_valid_moves` uses it in both the obligation branch and the free branch.
-    Two unnumbered pieces are interchangeable, so the engine drops the second
-    when both are blanks — otherwise the move set doubles for no added choice;
-    the frontend deliberately does NOT dedupe, since picking either gives the
-    same result and offering both is friendlier.
-    **Undo had to change with it:** it reinserted an entrant at `insert(0, …)`,
-    which silently reordered the rack once a non-front piece could enter. The
-    rack index is now recorded in `save_move` (`origin_rack_index`) and restored.
-    Frontend: `_entrantsOf`/`_isEntrant` replace the three `rack.pieces[0] ===
-    piece` guards, **both entrants get the amber must-move ring** (either one
-    satisfies the obligation, so ringing one was a lie), and both must-enter
-    ghosts are now interactive — the second used to be a dimmed preview because
-    tapping it could only have entered the first. Captured pieces still take
-    precedence (they crowd entries out entirely). The tutorial keeps its own
-    front-piece check (`_tutIsFrontRack`), since it scripts specific moves.
-    Verified: apply/undo round-trips over 25 random games, rack order survives
-    enter+undo of the second piece, both platforms ring 2 and enter the second
-    with 18 destinations lit, tutorial still starts clean.
-    **What this actually changes (owner pushed back, and the test settled it).**
-    For a turn where BOTH pieces come out it mostly only permutes: the old rule
-    already let the front piece take either die, so "2nd with die A, front with
-    die B" was reachable as "front with die B, then 2nd with die A". The real
-    change is that a turn can now END with the 2nd piece entered and the front
-    one still racked — verified: after entering it the obligation is discharged
-    and pass is legal. That position was unreachable before, and the choice
-    recurs every turn, so a player can defer the front piece indefinitely and
-    effectively reorder their own rack. (Smaller second case: even when both
-    enter, order matters if the first entry captures a blot or takes the tile
-    the other wanted.) So the legal move set does change, and existing champions
-    were trained without these options — but it is deferral, not a new KIND of
-    move. Narrower variant if ever wanted: allow 2nd-first but require the front
-    piece to enter with the other die when it legally can (pure permutation, no
-    deferral); rejected for now as an obligation that fires only sometimes.
-    **Three pre-existing engine facts this testing pinned down** (all verified
-    identical on the pre-change commit, none worth fixing):
-    (a) the pass `(0,0,0)` and call-draw `(1,1,1)` moves end the turn and record
-    nothing, so they are NOT undoable; (b) `apply_move`'s `switch_turn=True`
-    path rolls fresh dice, so apply/undo is only a round trip with
-    `switch_turn=False` — which is what every search path in `agent.py`/
-    `agent_gnn.py` passes; (c) with DOUBLES, apply marks one die and undo's
-    first branch clears the other, swapping which of two identical dice is
-    spent — invisible to play because the values match. Compare dice as a
-    multiset when asserting round-trips.
+    Owner's rule, stated precisely after a first attempt overshot it: you may
+    bring the SECOND rack piece out first, but this is a **reordering within the
+    turn only** — the set of end-of-turn positions must be exactly what it was.
+    Three constraints make that true, and all three are needed:
+    1. **The front piece must still enter this turn.** Entering the second does
+       not discharge the entry obligation: `apply_move` records `front_owed` on
+       `firstMove` (the piece the second jumped), and `must_move_unentered`
+       stays True while that piece is still racked. It follows the PIECE, not a
+       slot index, because the rack shifts as pieces leave.
+    2. **Reordering is a FIRST-MOVE privilege.** `get_enterable_pieces` returns
+       two only when `firstMove` is None; afterwards it returns the front piece
+       (or the owed one). Without this a front-first opening could be followed
+       by the NEW second piece entering — the choice cascades and a piece IS
+       deferred. This was the actual bug: the equivalence test found 216 extra
+       end-of-turn positions from exactly this path.
+    3. **A second-piece entry that would strand the front one is not offered.**
+       `_filter_second_entries` drops a die from the second piece unless the
+       front can still enter with the other. **No simulation is needed**:
+       entering never blocks a later entry (own pieces stack, and a capture only
+       REMOVES an enemy), so the front's options are the same before and after —
+       checked against an apply/undo simulation over 7667 candidate entries, 0
+       disagreements. That also makes it trivial to port to JS.
+    Consequence owner noted: **the second piece cannot come out on a dice sum**,
+    which falls out of (2) — once it has entered, only the front piece's moves
+    are generated, so there is no continuation for it.
+    **The proof** (`equiv_test.py`, scratchpad): for every position where both
+    rack pieces were enterable, expand the whole turn both ways — new rule, and
+    with entrants forced to the front piece (the old rule) — and compare the
+    sets of end-of-turn positions. **242/242 identical.** Also: apply/undo
+    round-trips over 25 games, and rack order survives enter+undo (undo used to
+    `insert(0, …)`, which silently reordered the rack once a non-front piece
+    could enter; the index is now saved as `origin_rack_index`).
+    Frontend mirrors all three (`_entrantsOf` returns two only before a die is
+    spent, `getReachableTilesByDice` filters the second piece's dice and clears
+    its sum). Both entrants get the amber ring, both ghosts are interactive, and
+    after the second enters the front is the only movable piece — measured on
+    both platforms. The tutorial keeps its own front-piece check.
+    **Because it only reorders, the legal end-of-turn positions are unchanged,
+    so existing champions are NOT playing a different game** — the move
+    enumeration gains alternative orderings, nothing else.
   - **Drag a just-entered piece off the home tile (done 2026-08-14, both
     platforms).** `onClick` returned a `justMovedHome` piece to the rack, and it
     runs on pointer DOWN — so the press itself put the piece back and a drag

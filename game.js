@@ -2639,7 +2639,20 @@ function stackPickerOpen() { return !!(_stackPicker && _stackPicker.style.displa
 // offering both is friendlier, and the engine only dedupes to keep its move
 // set small.
 function _entrantsOf(rack) {
-    return (rack && rack.type === 'unentered') ? rack.pieces.slice(0, 2) : [];
+    if (!rack || rack.type !== 'unentered') return [];
+    // Reordering is a FIRST-MOVE privilege: once a die has been spent this turn
+    // the rack hands out its front piece and nothing else, or the choice would
+    // cascade and a piece could be deferred past the turn (which would change
+    // the set of end-of-turn positions -- see game.py get_enterable_pieces).
+    const g = _currentGame();
+    const played = !!(g && g.dice && g.dice.some(d => d.used));
+    return rack.pieces.slice(0, played ? 1 : 2);
+}
+// The second rack piece, when it is currently offered as an alternative opener.
+function _secondEntrant(game) {
+    const rack = game && (game.turn === 'white' ? game.whiteUnenteredRack : game.blackUnenteredRack);
+    const ent = _entrantsOf(rack);
+    return ent.length === 2 ? ent[1] : null;
 }
 function _isEntrant(piece) {
     return !!piece && !!piece.rack && piece.rack.type === 'unentered'
@@ -4515,6 +4528,23 @@ class Game {
         // offering moves that would then be rejected.
         const must = this.mustMovePieces || [];
         if (must.length > 0 && !must.includes(piece)) reachableBySum = [];
+
+        // Taking the SECOND rack piece first is a reordering, not a deferral:
+        // the front piece must still enter this turn, so a die may only go to
+        // the second piece if the front can still enter with the OTHER one.
+        // (No simulation needed -- entering never blocks a later entry, since
+        // own pieces stack and a capture only removes an enemy.) Mirrors
+        // game.py's _filter_second_entries.
+        if (piece === _secondEntrant(this)) {
+            const front = (this.turn === 'white' ? this.whiteUnenteredRack : this.blackUnenteredRack).pieces[0];
+            const home = this.tiles.find(t => t.type === 'home');
+            const frontBy0 = !d0.used && this.getReachableTiles(home, d0.value).length > 0;
+            const frontBy1 = !d1.used && this.getReachableTiles(home, d1.value).length > 0;
+            if (!frontBy1) reachableByFirstDie = [];    // would strand the front piece
+            if (!frontBy0) reachableBySecondDie = [];
+            reachableBySum = [];                        // it may not spend both dice
+            void front;
+        }
 
         // Shortest-path enforcement for a piece moved with both dice one-by-one:
         // once it has advanced from its turn-start tile, the remaining die must
