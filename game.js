@@ -394,7 +394,7 @@ function _fur() {
              cols, rows,
              scoreAt: [wd.x + wd.w / 2, wd.y + 2040], scoreOrigin: [0.5, 0],
              impasseAt: [wd.x + wd.w / 2, wd.y + 2225], callDrawAt: [wd.x + wd.w / 2, wd.y + 2290],
-             hudX: [wd.x + 230, wd.x + 550, wd.x + 870], hudY: wd.y + 2395,
+             hudX: [wd.x + 230, wd.x + 550, wd.x + 870], hudY: wd.y + 2395 - _safeBottomWorld(),
              whiteUn: w.un, whiteSv: w.sv, blackUn: b.un, blackSv: b.sv };
 }
 
@@ -415,6 +415,44 @@ function _sizeGear(el) {
 // widths depend on their labels, so space them from what they actually measure
 // rather than from fixed centres -- at a bigger scale, fixed centres overlapped
 // and ran off both edges.
+// iPhone reserves the bottom strip for the home indicator (and the top/sides
+// for the notch). viewport-fit=cover is already set, so env(safe-area-inset-*)
+// is non-zero there; nothing read it, which would put the portrait button row
+// (22 CSS px off the bottom) under the indicator. Measured from a probe element
+// because env() is only available to CSS. ?safeinset=NN forces a value, which
+// is the only way to exercise this without an iPhone.
+let _safeProbe = null;
+function _safeBottomCss() {
+    try {
+        const q = new URLSearchParams(location.search).get('safeinset');
+        if (q !== null && q !== '' && !isNaN(+q)) return +q;
+    } catch (e) {}
+    if (!_safeProbe) {
+        _safeProbe = document.createElement('div');
+        _safeProbe.style.cssText = 'position:fixed; left:0; bottom:0; width:0; visibility:hidden;' +
+            'pointer-events:none; height:env(safe-area-inset-bottom, 0px);';
+        document.body.appendChild(_safeProbe);
+    }
+    return _safeProbe.getBoundingClientRect().height || 0;
+}
+
+// The same distance in world units, so a layout number can be shifted by it.
+function _safeBottomWorld() {
+    const css = _safeBottomCss();
+    if (!css) return 0;
+    // World units per CSS pixel -- NOT camera zoom, which is world units per
+    // BUFFER pixel and is ~3x off on a device-pixel-ratio 3 screen.
+    const cam = _mainCamera();
+    const cv = gameInstance && gameInstance.canvas;
+    const rect = cv && cv.getBoundingClientRect();
+    if (cam && rect && rect.height && cam.worldView.height) {
+        return css * (cam.worldView.height / rect.height);
+    }
+    // Before the first render: the frame fills the screen at base zoom.
+    const vh = window.innerHeight || 0;
+    return vh ? css * (_world().h / vh) : 0;
+}
+
 function _hudK()   { return _isPortrait() ? 2.6 : (_isPhone() ? 2 : 1); }
 function _scoreK() { return _isPortrait() ? 4.0 : (_isPhone() ? 2.2 : 1); }
 
