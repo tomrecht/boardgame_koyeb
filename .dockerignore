@@ -14,3 +14,7 @@ __pycache__/
 **/__pycache__/
 .git/
 .DS_Store
+
+# Locally generated compression artifact: the image makes its own (Dockerfile),
+# and shipping a stale one made gzip refuse to overwrite and broke the build.
+ort/*.gz

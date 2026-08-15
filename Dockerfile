@@ -13,7 +13,7 @@ COPY . .
 # Precompress the inference runtime: 10.5MB -> 2.8MB. Done once here rather
 # than per request, which would burn CPU on a small instance for every new
 # client. app.py serves the .gz when the client accepts it.
-RUN gzip -9 -k ort/ort-wasm-simd-threaded.wasm && ls -la ort/
+RUN gzip -9 -k -f ort/ort-wasm-simd-threaded.wasm && ls -la ort/
 
 # The agent runs off model.onnx (see _opponent_model_path in app.py), so the
 # image needs neither torch nor any .pt checkpoint.
