@@ -1558,10 +1558,33 @@ with it in mind.** Assessment and the concrete implications:
   - **The remaining ~2,400 commands are racks, dice and HUD buttons** -- also
     static, but 6x smaller than the board was, so not worth the same treatment
     yet.
-  - **NOT a demonstrated fps win.** Headless Chrome reports 60 fps before and
-    after (it is not the bottleneck there), so the structural number is what was
-    measured. **The Safari 7.8 fps figure that motivated this has NOT been
-    re-measured** -- that needs a real browser on the owner's machine.
+  - **MEASURED IN REAL BROWSERS (owner, 2026-08-16)**, same page, same game,
+    toggling the bake at runtime:
+
+        browser   bake OFF        bake ON          gain
+        Safari    17.0 fps        24.8 fps         +46%
+        Firefox   42.3 fps        58.5 fps         +38%
+        Chrome    60 fps          60 fps           0 (already at vsync)
+
+    Chrome was at the vsync ceiling in this state, so its 6.5x command cut shows
+    as headroom rather than fps -- which is what helps a weaker GPU, not this
+    one. Owner also ran the failure-mode checks (highlight/clear, theme switch,
+    board at rest, New Game / New Match / tutorial) on all three: **all fine.**
+  - **The baselines did NOT reproduce the numbers that motivated this work**
+    (Safari 7.8, Chrome 24.0 -- see the entry above). Same code, same machine,
+    but measured OFF at 17.0 and 60. So those figures came from a condition
+    nobody has reproduced -- most likely a later-stage game with many pieces on
+    the board, or sampling across AI turns. **The ratios above are the
+    trustworthy part**, being same-page and same-session. If Safari still feels
+    sluggish in a long game, finding that condition is the next thread to pull;
+    ~2,300 commands of racks, dice and HUD remain per frame.
+  - **`?fpstest=1` puts that A/B on screen** (`_installFpsTest`): a panel that
+    toggles the bake off and on around two 4-second samples and reports fps and
+    command count for each. Built because the console snippet is not pastable on
+    a phone. It forces both players human for the duration -- a piece moving or
+    a die rolling inside a sample window would corrupt it. Verified on an
+    emulated phone: absent without the flag, present with it, a tap produces
+    both samples, and the baked state is restored afterwards.
   - **`hideOuterNogoTiles` no longer pokes arcs straight into a tile's Graphics**
     (it sets `_innerArc` and lets `drawTile` draw them), so a redraw cannot erase
     them. Measured `innerArcs: 0` on the current board -- that branch never fires

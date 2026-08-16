@@ -2,6 +2,20 @@
 
 Parked, deliberately-not-now items. (Active work lives in CLAUDE.md / OVERNIGHT_NOTES.md.)
 
+## Settings are unreachable from the welcome / match-setup screen (owner, 2026-08-16)
+
+On launch the welcome card is up and the settings gear is not available, so the
+defaults cannot be changed **before** the first game starts — notably who plays
+which colour. Wanting human-vs-human (to watch a position, or to measure
+anything without the computer moving mid-sample) means starting a game under the
+wrong roles first, then changing them.
+
+Worth checking while fixing: `WHITE_IS_AI` / `BLACK_IS_AI` are module globals
+backed by localStorage and `applyPlayerRoles` runs in `create()`, so a change
+made before Play should survive the fresh-game restart that Play performs — but
+the welcome screen sits over a deliberately FROZEN game (`_gameFrozen`), so
+verify the change lands on the game that actually starts, not the held one.
+
 ## Deployment / hosting
 
 - [x] **ONNX export for cheap hosting.** DONE 2026-07-25. `encoder.py` (numpy,
@@ -22,14 +36,15 @@ commands a frame on desktop (83%), 0 of 70 tiles drawing at rest. See CLAUDE.md
 ("THE BOARD IS NOW BAKED INTO A RENDERTEXTURE") for the design, the 2x
 supersample decision, the texture budget and the pixel proof.
 
-**Still open, and the reason this is not fully closed: the Safari 7.8 fps figure
-has NOT been re-measured.** Headless Chrome reports 60 fps before and after, so
-the harness cannot see the win; the structural count is what was measured.
-Someone needs to open it in Safari on a Mac and read `gameInstance.loop.actualFps`.
+**Measured in real browsers (owner, 2026-08-16): Safari 17.0 -> 24.8 fps (+46%),
+Firefox 42.3 -> 58.5 (+38%), Chrome 60 -> 60 (already at vsync).** Failure-mode
+checks pass on all three. `?fpstest=1` runs that A/B on screen, for phones.
 
-Also still live per frame: ~2,400 commands of racks, dice and HUD buttons. Static
-too, but 6x smaller than the board was — bake them only if Safari is still slow
-after this.
+**Open:** the baselines did not reproduce the 7.8 / 24.0 fps that motivated this
+(measured 17.0 / 60 for the same OFF state), so that condition is unidentified —
+probably a late-game board or sampling across AI turns. Worth pinning down only
+if Safari still feels slow in a real long game; ~2,300 commands of racks, dice
+and HUD remain per frame and would be the next thing to bake.
 
 The original write-up follows, for the numbers it records.
 

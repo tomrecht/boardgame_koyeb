@@ -793,6 +793,66 @@ function _scheduleRebake(scene) {
     }, 250);
 }
 
+// ?fpstest=1 -- an on-screen A/B of the bake, because the console snippet that
+// measures this on a desktop is not pastable on a phone. Toggles the baked
+// board off and on around two timed samples and prints fps and per-frame draw
+// commands for each, so the comparison is same-page, same-game.
+function _installFpsTest(scene) {
+    let on = false;
+    try { on = new URLSearchParams(location.search).get('fpstest') === '1'; } catch (e) {}
+    if (!on || document.getElementById('fpsTestBtn')) return;
+
+    const panel = document.createElement('div');
+    panel.id = 'fpsTestBtn';
+    panel.style.cssText =
+        'position:fixed; left:8px; top:45%; z-index:60; max-width:46vw;' +
+        'background:rgba(0,0,0,.82); color:#fff; font:600 13px/1.45 system-ui, sans-serif;' +
+        'padding:10px 12px; border-radius:10px; cursor:pointer; white-space:pre;';
+    panel.textContent = 'Tap: FPS A/B';
+    document.body.appendChild(panel);
+
+    const sample = async (secs) => {
+        const g = gameInstance;
+        await new Promise(r => setTimeout(r, 400));
+        const f0 = g.loop.frame, t0 = performance.now();
+        await new Promise(r => setTimeout(r, secs * 1000));
+        const fps = (g.loop.frame - f0) / ((performance.now() - t0) / 1000);
+        const cmds = scene.children.list.filter(o => o.type === 'Graphics')
+            .reduce((n, o) => n + (o.commandBuffer || []).length, 0);
+        return { fps: Math.round(fps * 10) / 10, cmds };
+    };
+    const setBake = (want) => {
+        if (!scene._boardRT) return false;
+        scene._boardRT.setVisible(want);
+        scene.game._boardBaked = want;
+        scene.game.tiles.forEach(t => t.drawTile());
+        return true;
+    };
+
+    let running = false;
+    panel.addEventListener('click', async () => {
+        if (running) return;
+        running = true;
+        if (!scene._boardRT) { panel.textContent = 'no baked board\n(bake failed?)'; running = false; return; }
+        // A moving piece or a rolling die would land inside a sample window, so
+        // take both sides off the computer for the duration of the test.
+        WHITE_IS_AI = false; BLACK_IS_AI = false;
+        try { applyPlayerRoles(false); } catch (e) {}
+        panel.textContent = 'measuring OFF…';
+        setBake(false);
+        const off = await sample(4);
+        panel.textContent = 'measuring ON…';
+        setBake(true);
+        const onRes = await sample(4);
+        const gain = off.fps > 0 ? Math.round((onRes.fps / off.fps - 1) * 100) : 0;
+        panel.textContent =
+            `OFF  ${off.fps} fps  ${off.cmds} cmd\n` +
+            `ON   ${onRes.fps} fps  ${onRes.cmds} cmd\n` +
+            `${gain >= 0 ? '+' : ''}${gain}%   (tap to redo)`;
+        running = false;
+    });
+}
+
 function _mainCamera() {
     const sc = _setupScene();
     return (sc && sc.cameras && sc.cameras.main) || null;
@@ -6480,6 +6540,7 @@ class MainGameScene extends Phaser.Scene {
         // done on a tile's first full draw), and the camera has been framed, so
         // the scale the texture needs is known.
         _bakeBoard(this);
+        _installFpsTest(this);
         this.events.once('shutdown', () => {
             if (this._rebakeTimer) { clearTimeout(this._rebakeTimer); this._rebakeTimer = null; }
             this._boardRT = null;
