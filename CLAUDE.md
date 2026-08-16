@@ -1432,6 +1432,25 @@ with it in mind.** Assessment and the concrete implications:
     side-by-side only on a landscape phone; app.py takes `--model/-m/--model=`
     or a bare `*.pt`/`*.onnx`.
 
+- **RENDERING IS SLOW BUT NOT LEAKING (2026-08-15).** Owner reported Safari
+  feeling sluggish. Measured in-page (`gameInstance.loop.actualFps`,
+  `renderer.type`): **Safari 7.8 fps, Chrome 24.0 fps, BOTH on WebGL (type 2)**,
+  so it is not a Canvas2D fallback. Sampled over 37 AI moves in a driven game,
+  objects 210 -> 211, draw commands 15427 -> 15362, fps 25.7 -> 26.5: **flat on
+  all three**, so the old `Tile.highlight` command-list leak (55 -> 4 fps over 60
+  turns) is genuinely fixed and this is NOT degradation.
+  The steady-state cost is the finding: **~15,300 draw commands across 108
+  Graphics objects EVERY FRAME**, for a board that is static between moves.
+  Chrome absorbs it at ~25 fps; Safari's WebGL path does not, hence 8.
+  The fix direction is to stop re-tessellating a static board -- bake the tiles
+  into a RenderTexture once and redraw only the tiles that actually change --
+  which is real work and NOT yet done. Note the earlier "~44 fps at turn 150"
+  figure was after the leak fix but is not reproduced here; ~25 fps in Chrome is
+  the current steady state.
+  `?maxmp=N` caps the phone render buffer for A/B'ing fill rate, but it is
+  phone-only (`_sizeCanvasToScreen` returns early on desktop, which uses
+  Scale.FIT at 1800x1200) so it is irrelevant to the desktop-Safari case.
+
 - **ARENA / MEASUREMENT FINDINGS (2026-08-04).** `arena.py analyze` now rates
   every tag present in `arena.jsonl`, not just checkpoints still on disk (a
   deleted contender used to vanish along with its games), and `FOCUS=<tag>`
