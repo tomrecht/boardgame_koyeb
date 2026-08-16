@@ -174,6 +174,14 @@ const HUD_ACCENT = THEME.accentCss;
 const HUD_INK = '#28313b';
 const HUD_PANEL_BORDER = 0xdbe1ea;
 
+// Blend two 0xRRGGBB colours, t=0 -> a, t=1 -> b. Used to make the hover tint a
+// weaker version of the selection colour rather than the same colour.
+function _mixColor(a, b, t) {
+    const ch = (v, sh) => (v >> sh) & 0xff;
+    const m = (sh) => Math.round(ch(a, sh) + (ch(b, sh) - ch(a, sh)) * t) & 0xff;
+    return (m(16) << 16) | (m(8) << 8) | m(0);
+}
+
 // AI difficulty (1 = full strength / argmax; lower = weaker via top-p sampling).
 function getAIDifficulty() {
     let v = 1.0;
@@ -3524,9 +3532,21 @@ class Piece {
 
     updateColor() {
         if (!this.body) return;
-        // highlight (selected/hovered) recolors the body; the rim + sheen stay.
-        if (this.isSelected || this.isHovered) {
-            this.body.setFillStyle(this.color === 0xffffff ? 0x90ee90 : 0xee82ee);
+        // Highlight recolors the body; the rim + sheen stay.
+        //
+        // SELECTED and HOVERED are deliberately DIFFERENT strengths. They used
+        // to be the same colour, which made a piece under the cursor pixel-
+        // identical to a selected one -- and clicking a destination tile leaves
+        // the cursor exactly where the piece lands, so a completed move looked
+        // like it had "stayed selected" or "got reselected". The move path is
+        // clean (measured: isSelected, isHovered and selectedPiece all false
+        // afterwards); it was only ever the shared colour. Hover is now a weak
+        // tint toward the highlight, selection the full colour.
+        const hi = this.color === 0xffffff ? 0x90ee90 : 0xee82ee;
+        if (this.isSelected) {
+            this.body.setFillStyle(hi);
+        } else if (this.isHovered) {
+            this.body.setFillStyle(_mixColor(this.bodyColor, hi, 0.4));
         } else {
             this.body.setFillStyle(this.bodyColor);
         }
