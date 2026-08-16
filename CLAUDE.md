@@ -1432,6 +1432,75 @@ with it in mind.** Assessment and the concrete implications:
     side-by-side only on a landscape phone; app.py takes `--model/-m/--model=`
     or a bare `*.pt`/`*.onnx`.
 
+- **SESSION UPDATE (2026-08-15) — SERVERLESS, SHIPPED, AND PLAYED ON ALL THREE
+  ENGINES.** The app now runs the AI on the device and needs no application
+  server; owner confirmed play on airplane mode. Everything below is pushed to
+  main (= deployed).
+  - **Browser coverage: Chrome desktop + Android (Blink), Safari macOS (WebKit),
+    Firefox (Gecko) — all play fine, all on WebGL.** Local inference confirmed
+    working offline. iOS-the-device is still untested, but every iOS browser is
+    WebKit, so Safari covers the engine. **No untested engine remains.**
+  - **Server is down to four routes** (`/`, `/ort/<path>`, `/select_moves`,
+    `/evaluate_board`); the last two are fallbacks only. See the hosting-audit
+    entry above for what was deleted and why, and for the two remaining steps.
+  - **FRONTEND FIXES AND FEATURES, all both-platform unless noted:**
+    * **Save by clicking your saved rack** — select a piece, tap the rack panel
+      (or a piece already in it). Same outcome as dragging it there. Measured
+      11 saved -> 12, one die spent.
+    * **Sum-save FROM a goal** — a piece parked on a goal it cannot leave with
+      this roll now walks to another goal and banks in one gesture. `sumSave`
+      already did the two-dice logic and simply refused when the piece was
+      already on a goal. **Goal pairs are 4 apart — measured, not assumed: goal
+      1 -> goal 6 with a 4.** Two ordinary moves, so a frontend affordance, NOT
+      a rule change. Watch-out when testing: the endgame higher-die rule saves a
+      BLANK directly off a low goal and masks the new path; park another of your
+      pieces on a HIGHER goal to switch that rule off.
+    * **PHONE TAP THRESHOLDS WERE IN DEVICE PIXELS.** `pointer.getDistance()` is
+      in canvas BUFFER px, and on a phone the buffer is device px — measured, a
+      10 CSS px move reads back as 30 on DPR 3. So onTap's 16 meant **5.3 CSS
+      px** and dragDistanceThreshold's 34 meant **11.3**: between them a gesture
+      was NEITHER tap nor drag and did nothing ("double-tap often doesn't
+      register"), and past 11 it became a drag, which dropped on the piece's own
+      tile cancels the selection ("select and tiny drag"). Both reports, one
+      cause; it was also per-device (DPR 2 gave 8 CSS px, DPR 3 gave 5.3). Now
+      ONE slop in CSS px (14) converted through the live buffer/CSS ratio and
+      used for BOTH, so the dead zone is closed by construction. **`?tapslop=N`**
+      tunes it on a device without a deploy. Owner reports it feels fine at 14.
+    * **One gesture, one action (phone).** A tap landing on a PIECE was handled
+      twice — the piece acts on pointerdown and forwards to its tile's onClick
+      (the move), then the TILE acts on pointerup and runs onClick again, by
+      which time selectedPiece is null so the tile-tap-to-select branch grabs
+      whichever piece just landed there. The forwarding branch now claims the
+      gesture. **Owner's "moved piece stays selected" report stopped recurring
+      under `?tiletap=0`, which points at that branch, but the reselection was
+      never reproduced in a harness** — three attempts each stalled on a
+      different precondition (turn ended / both dice spent / destination
+      ambiguous). So the guard is right on its own terms but is NOT proven to be
+      the fix. Reopen if it recurs.
+    * **Hover is a weaker tint than selection.** They shared one fill colour, so
+      a piece under the cursor was pixel-identical to a selected one. Desktop
+      only (phones never set isHovered).
+    * **NORMAL PLAY IS SILENT.** All 80 `console.log` calls are suppressed unless
+      the session passes **`?dev=1`** — the same switch that unlocks debug / eval
+      / setup, now one flag rather than two that could drift. `warn`/`error` are
+      untouched. **Any test harness that reads console output must pass
+      `?dev=1`.**
+  - **TESTING A PHONE WITHOUT DEPLOYING:** `app.py` binds 0.0.0.0, so run it and
+    open `http://<mac-lan-ip>:10000/` on the phone. `IS_LOCAL` only matches
+    localhost/127.0.0.1, so from a LAN IP `SERVER_URL` correctly becomes the
+    origin. Two caveats: the **service worker will not register** (a LAN IP over
+    plain http is not a secure context) so offline cannot be tested that way,
+    and on-device inference DOES work there (no secure context needed, since
+    `numThreads=1` avoids SharedArrayBuffer).
+  - **METHOD NOTE, the session's recurring mistake:** a measured MECHANISM is not
+    a defect until the SYMPTOM is observed. "The UI freezes" was written up twice
+    from the mechanism alone and disproved both times by the owner simply
+    looking; a hover diagnosis was applied to a phone report where hover cannot
+    fire. The measurements that settled things checked the symptom, not the
+    theory. Related: a background job's launcher shell exiting is NOT the job
+    finishing — a stale trace fixture produced a convincing 108/110 before the
+    regenerated one gave 110/110.
+
 - **RENDERING IS SLOW BUT NOT LEAKING (2026-08-15).** Owner reported Safari
   feeling sluggish. Measured in-page (`gameInstance.loop.actualFps`,
   `renderer.type`): **Safari 7.8 fps, Chrome 24.0 fps, BOTH on WebGL (type 2)**,

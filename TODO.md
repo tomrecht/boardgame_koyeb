@@ -15,6 +15,43 @@ Parked, deliberately-not-now items. (Active work lives in CLAUDE.md / OVERNIGHT_
   replies, positions verified against `game.py`. See CLAUDE.md.
 
 
+## Rendering: the static board is redrawn every frame (2026-08-15)
+
+The one substantial piece of work left before the app is "done". Owner reported
+Safari feeling sluggish; measured in-page:
+
+    browser          renderer        actualFps
+    Safari (macOS)   WebGL (type 2)      7.8
+    Chrome           WebGL (type 2)     24.0
+
+So it is NOT a Canvas2D fallback, and it is NOT the old leak: sampled over 37 AI
+moves in a driven game, objects 210 -> 211, draw commands 15427 -> 15362, fps
+25.7 -> 26.5 -- flat on all three. The `Tile.highlight` command-list leak (55 ->
+4 fps over 60 turns) is genuinely fixed.
+
+**The steady state is the problem: ~15,300 draw commands across 108 Graphics
+objects EVERY FRAME**, for a board that does not change between moves. Chrome
+absorbs it at ~25 fps, Safari does not.
+
+**Fix direction:** stop re-tessellating a static board. Bake the tiles into a
+RenderTexture once and redraw only the tiles that actually change (highlight,
+theme switch, relayout). Should cut per-frame work by an order of magnitude and
+lifts every browser, not just Safari.
+
+Watch-outs already known from this codebase: `Tile` caches its points, hit area
+and goal-number text behind `_points`/`_built`, and `drawTile` is called on every
+colour change; the themes are switched LIVE (`applyThemeLive` recolours tiles in
+place), so a baked texture has to be invalidated on a theme change as well as on
+a relayout/rotation.
+
+Note the earlier "~44 fps at turn 150" figure in CLAUDE.md was after the leak fix
+but is not reproduced now; ~25 fps in Chrome is the current steady state.
+
+`?maxmp=N` caps the phone render buffer for A/B'ing fill rate, but it is
+phone-only (`_sizeCanvasToScreen` returns early on desktop, which uses Scale.FIT
+at 1800x1200), so it is irrelevant to the desktop case.
+
+
 ## Planned experiment: how far can the prefilter be cut? (2026-08-15)
 
 Motivation: in-browser move latency is median 1.25s / p90 2.97s at 4x CPU
