@@ -446,9 +446,10 @@ with it in mind.** Assessment and the concrete implications:
   start-up, and a `fullscreenchange` listener keeps the checkbox honest when the
   OS exits it. Measured: manifest + all three icons 200, row present on phone /
   absent on desktop, toggle calls requestFullscreen and persists the setting.
-  **The app name is a placeholder** ("Board Game" in manifest.json, `<title>`
-  and the apple title meta): owner has not chosen one (OVERNIGHT_NOTES §D2 has
-  candidates), and it is a three-line change.
+  **The app is named QUAHURU** and every shipped surface already carries it:
+  `manifest.json`'s `name` and `short_name`, `<title>`, and the
+  apple-mobile-web-app-title meta. (Confirmed 2026-08-15 — the earlier note here
+  called it an unchosen placeholder, which was stale.)
   **Not done: a service worker** for true offline. Deliberately deferred — with
   deploys this frequent, a cache-first worker would serve a stale game.js, the
   exact class of bug that costs an afternoon. Add it with the packaging work,
