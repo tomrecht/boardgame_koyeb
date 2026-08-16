@@ -929,7 +929,12 @@ with it in mind.** Assessment and the concrete implications:
     "nothing changed" guard, and a **settle pass 400ms after boot** re-applies
     layout, camera and turn pill (the pill measures the canvas rect, stale
     mid-rotation, and stretched into a wide bar when it was).
-    Still open: the end-game card's framing in the portrait frame.
+    ~~Still open: the end-game card's framing in the portrait frame.~~ **Fixed
+    and verified (2026-08-15)** — superseded by the EndGameScene camera entry
+    below (every scene needs its own camera framed). Measured with the card up:
+    horizontally centred EXACTLY in portrait, landscape and desktop, and inside
+    the view on both axes; the 3-12 world px of vertical offset is the card's own
+    asymmetry (buttons below the headline) and is the same in kind on desktop.
   - **TUTORIAL CHROME AND CARD (2026-08-15).** The tutorial is stripped to
     board, racks, dice and arrows on EVERY platform: no turn pill
     (`turnStatusText` returns '' — `_tutPlayBlack`'s "Black plays…" in the card
