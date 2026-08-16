@@ -467,15 +467,53 @@ with it in mind.** Assessment and the concrete implications:
 
 ## Current state
 
+- **SESSION UPDATE (2026-08-16) — THE APP NEEDS NO SERVER, AND THE BOARD NO
+  LONGER REDRAWS ITSELF EVERY FRAME.** All pushed to main (= deployed). Four
+  pieces of work, each with its own detailed entry further down:
+  1. **The board is baked into a RenderTexture** — 15,310 → 2,584 draw commands
+     a frame. Owner measured Safari 17.0 → 24.8 fps, Firefox 42.3 → 58.5, Chrome
+     and Android already at the vsync ceiling, and **confirms the Safari
+     sluggishness is gone**. Failure modes checked on all three desktop browsers.
+  2. **The server fallback is gone.** `getAgentMoves` calls no API route; the
+     device answers every move and the runtime starts loading when a computer
+     role is set. A full self-playing game against a files-only host makes **0
+     API requests**. Owner reports no perceptible first-move wait.
+  3. **`build_web.py`** assembles the shipped bundle (25 files, 13.9 MB) into
+     `dist/` — a static deploy must build this, NOT point at the repo root.
+  4. **Settings are reachable from the welcome / match-setup screens.**
+
+  **WHAT IS LEFT TO SHIP AN APP** (roadmap agreed with owner this session):
+  - **Move hosting to a static host.** The code is ready and proven; the
+    deployment is still Flask on Koyeb. Recommendation was **Cloudflare Pages**
+    (no bandwidth cap on the free tier, which matters because a cold visit pulls
+    ~5 MB), build command `python build_web.py --out dist`, output `dist`. Keep
+    Koyeb answering for a week or two after switching, so reverting is easy.
+    Note `?aicompare=1` will then only work against a LOCAL app.py.
+  - **Test on a real iPhone.** The last genuine unknown: safe-area insets (only
+    ever exercised via `?safeinset=NN`), no `document.fullscreenEnabled`, audio
+    unlock, home-indicator gesture, Add to Home Screen. Safari/macOS covers the
+    ENGINE but not the device, and this gates the iOS build.
+  - **Then packaging:** Capacitor for both platforms (no game-code changes; it
+    bundles what `build_web.py` produces), store assets, privacy policy URL,
+    screenshots.
+  - **Google Play's closed-testing requirement is the long pole and is
+    independent of all the code**: a personal developer account needs ~12
+    testers opted in continuously for 14 days, then a reviewed application.
+    Start the account and recruiting early; the web build is the recruiting
+    tool. Organisation accounts are exempt but need a D-U-N-S number. iOS has no
+    equivalent, so it could ship first.
+
 - **SESSION UPDATE (2026-08-15) — THE AI NOW RUNS ON THE DEVICE.** Port step 7 is
   done: `local_agent.js` loads the ported stack lazily and `getAgentMoves` uses
   it, with `/select_moves` as the fallback. PORTING.md §7 has the full account.
-  - **Design as shipped:** both platforms; the session starts on the server while
-    onnxruntime + the model (~4.5 MB) load in the background; it switches once
-    genuinely ready. Any local failure — missing file, no WASM, a bad answer —
-    retires the local path for the session and re-asks the server, so a
-    half-working port costs a moment rather than the game. `?localai=0` forces
-    the server, `?aicompare=1` checks every local answer against it.
+  - **Design as shipped — SUPERSEDED 2026-08-16, see "THE SERVER IS NO LONGER A
+    FALLBACK" below.** As first shipped: both platforms; the session started on
+    the server while onnxruntime + the model (~4.5 MB) loaded in the background,
+    switching once genuinely ready, and any local failure re-asked the server.
+    **None of that fallback behaviour exists now** — the runtime starts loading
+    when a computer role is set and the device answers every move. `?localai=0`
+    no longer "forces the server" (there isn't one); `?aicompare=1` still checks
+    local answers against a LOCAL `app.py`, which is now its only use.
   - **Proof.** The only new logic is `LocalAgent.engineState` (game.js's board →
     the engine's, a mirror of `update_state`). Against `update_state` over the
     181 states three real games posted, plus firstMove-carrying variants:

@@ -244,6 +244,13 @@ be reused without checking.
 device, with `/select_moves` as the fallback. Shipped as designed below: both
 platforms, lazy, server as fallback.
 
+> **SUPERSEDED 2026-08-16 — step 8 removed the fallback.** `getAgentMoves` no
+> longer calls `/select_moves` or `/evaluate_board` at all; it waits for the
+> on-device runtime instead. The rest of this section still describes how the
+> port was verified, which is unchanged and still the method to use — but
+> wherever it says "falls back to the server", that no longer happens. See
+> step 8 below and CLAUDE.md ("THE SERVER IS NO LONGER A FALLBACK").
+
 **What was actually new.** The port was already proven; the only fresh logic is
 `LocalAgent.engineState`, which turns game.js's board into the engine's. It is
 written as a direct mirror of `game.py`'s `Board.update_state` and takes the SAME
@@ -344,6 +351,43 @@ Measurement traps this hit, both of which reported a serene zero:
 `/start_game`, `/evaluate_board`, `/query_agent_move` and the `record_*` routes
 are untouched and are the subject of the hosting audit (see CLAUDE.md).
 
+## Step 8: removing the fallback — DONE (2026-08-16)
+
+The point of the port was to need no server; step 7 left one as a safety net,
+and this takes it away. `getAgentMoves` calls no API route: `_askServerForMoves`
+and `_localRescue` are deleted, and it waits for the runtime rather than asking
+anything else while it loads. The eval readout (E) is likewise local-only, having
+been verified bit-exact against `/evaluate_board` over 25 states first.
+
+**Proof: a full self-playing game against a host serving files only** (python
+http.server — every API route 404s): 37 on-device move-pairs, 6 pieces saved,
+**0 requests to any API route**, no page errors. Repeated against the assembled
+`dist/` bundle alone, same result.
+
+Three consequences the step-7 design did not have to handle:
+
+- **The runtime loads when a computer role is SET**, not at the first move
+  request. Laziness was free while the server covered the gap. Measured
+  `idle` → `loading` the instant a role is set, and a first computer move that
+  waited 722ms; owner reports no perceptible wait in play.
+- **A failed LOAD is retried** (3 attempts, then it gives up). `init` cached its
+  promise for ever, so one dropped fetch of the 11 MB wasm burnt the session —
+  survivable behind a server, not survivable now. A bad ANSWER still disables
+  permanently: a port bug will not fix itself, and re-asking would be wrong
+  twice.
+- **`?localai=0` now means "no computer opponent"** and says so, rather than
+  leaving the player on a board that never moves.
+
+`app.py` keeps `/select_moves` and `/evaluate_board` as DEVELOPER-ONLY tools —
+they are the differential test that proved this port and remain the way to
+re-check it. Note `?aicompare=1` therefore only works against a local `app.py`
+from now on, never against the deployed site.
+
+**`build_web.py`** assembles the shipped bundle (25 files, 13.9 MB) into `dist/`,
+and is what a static host should build. It refuses to run if the list disagrees
+with `sw.js`'s precache block — a file the worker precaches but the deploy omits
+is an app that installs and then cannot start offline.
+
 ### The design as it was settled (kept for the reasoning)
 
 Measured first, because it decides the shape. `latency_test.html` runs the real
@@ -365,11 +409,12 @@ made it look cheap is not there. Do NOT lower these blind -- they change which
 moves the net sees, and match_prefilter.py is the tool for showing that a change
 costs no strength.
 
-**The design, settled:**
+**The design, settled** (the fallback half of it was removed in step 8 above —
+kept here because the reasoning is why it existed at all):
 - **Both platforms**, not phone-only. Leaving desktop on `/select_moves` keeps
   the Koyeb instance, the cold starts and MOVE_BUDGET alive and maintains two AI
   paths forever, which is the whole cost the port was meant to remove.
-- **Lazy, with the server as fallback.** Start each session on `/select_moves`,
+- ~~**Lazy, with the server as fallback.**~~ Start each session on `/select_moves`,
   load onnxruntime in the background, switch to local once ready. A first-time
   browser visitor would otherwise pay ~4.5 MB (2.9 MB gzipped runtime + 1.66 MB
   model) before the AI can move; an installed app has already paid it. If local
