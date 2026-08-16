@@ -287,11 +287,51 @@ Before blaming the port, check the server you are actually talking to
 (`ps -o lstart=` on the listener) — and never leave a long-lived dev server
 running across a change to the agent.
 
-**Known cost, not yet paid down:** inference runs on the MAIN THREAD, so the UI
-is frozen for the length of a move (0.29s median desktop, 1.25s at 4x throttle).
-Only the computer's turn is affected, when there is nothing to interact with.
-Moving it to a Worker is the follow-up — every port file already falls back to
-`self`, so they are worker-ready by construction.
+**Main-thread cost — MEASURED (`latency_breakdown.html`), and the conclusion is
+"leave it alone for now".**
+
+Where a move's time goes, 40 recorded positions, mean ms/turn:
+
+| | heuristic | encode | **ort** | engine | median move |
+|---|---|---|---|---|---|
+| 1x | 49 (8.7%) | 11 (2.0%) | **498 (88.1%)** | 7 (1.2%) | 390ms |
+| 4x throttle | 205 (9.4%) | 52 (2.4%) | **1884 (86.7%)** | 32 (1.5%) | 1443ms |
+
+**This overturns the hypothesis recorded below and in TODO.md** that "the
+encoder's per-candidate BFS is the likely hot spot, not the forward pass". It is
+the forward pass: ~88%, stable across throttling. The encoder is 2%. Cutting
+candidates therefore buys far less than assumed, which is a second, independent
+reason not to touch `prefilter_top_k`.
+
+The thread really is held: a 10ms `setInterval` fired **0 times out of 2243
+expected** during moves at 1x (0 of 8673 at 4x). So the UI cannot paint for the
+length of a move.
+
+**But it is not visible, and owner confirms it in play.** The only thing
+animating during the computer's turn is the thinking icon's 1000ms yoyo fade
+(`showThinkingIcon`), and a ~0.4s stall in a slow fade reads as an icon sitting
+still, not as a freeze. The board is static and there is nothing to interact
+with. So on desktop the cost is real and inert.
+
+Where it would show is a phone: median 1.4s and p90 4.9s at 4x is a visibly
+stalled pulse and queued taps. **That has not been tested on a real device yet**,
+and that test — not a worker — is the next step.
+
+If it does show, the fix is graded, and the measurement says start small:
+`ort.env.wasm.proxy = true` moves inference alone into a worker for ONE LINE and
+removes ~88% of the hold. A full Web Worker around the whole agent buys the last
+12% and is a much bigger change (every port file already falls back to `self`,
+so it is buildable, but it is not obviously worth it).
+
+Measurement traps this hit, both of which reported a serene zero:
+- **A rAF ticker is useless headless** — no compositor, so no animation frames
+  fire whether or not the thread is held.
+- **A gap metric cannot see a full block.** Measuring the longest interval
+  between timer firings needs two firings INSIDE the window; when the thread is
+  held for the whole move there are none, and the metric reports 0 — identical
+  to "never blocked". Count firings against expected instead.
+- `PerformanceObserver` callbacks are delivered asynchronously, so clearing the
+  buffer synchronously after each turn races them and loses every entry.
 
 **Still on `/select_moves`:** nothing, for move selection. `/call_draw`,
 `/start_game`, `/evaluate_board`, `/query_agent_move` and the `record_*` routes
@@ -310,10 +350,13 @@ agent over 40 recorded positions:
 Playable on a phone but not free: the p90 is ~3s against the served agent's
 measured worst of 1.28s plus network. The tuning lever if it needs one is
 `first_move_prefilter` and `prefilter_top_k` (40 median candidates comes from
-top_k=40); the encoder's per-candidate BFS is the likely hot spot, not the
-forward pass, so cutting candidates cuts nearly all of it. Do NOT lower these
-blind -- they change which moves the net sees, and match_prefilter.py is the
-tool for showing that a change costs no strength.
+top_k=40). ~~the encoder's per-candidate BFS is the likely hot spot, not the
+forward pass, so cutting candidates cuts nearly all of it~~ **WRONG — measured
+above: the forward pass is 88% and the encoder 2%.** Cutting candidates still
+cuts the forward pass (it is scoring fewer of them), but the BFS saving that
+made it look cheap is not there. Do NOT lower these blind -- they change which
+moves the net sees, and match_prefilter.py is the tool for showing that a change
+costs no strength.
 
 **The design, settled:**
 - **Both platforms**, not phone-only. Leaving desktop on `/select_moves` keeps

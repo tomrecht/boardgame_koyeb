@@ -504,10 +504,26 @@ with it in mind.** Assessment and the concrete implications:
     `init()` re-applied it every turn. `?aiserver=` now pins the compare target.
     Check `ps -o lstart=` on the listener before blaming the port, and restart
     dev servers after touching the agent.
-  - **KNOWN COST, not yet paid down:** inference is on the MAIN THREAD, so the UI
-    freezes for a move (0.29s median desktop, 1.25s / p90 2.97s at 4x throttle).
-    Only the computer's turn, when there is nothing to interact with. A Worker is
-    the follow-up; every port file already falls back to `self`.
+  - **MAIN-THREAD COST — MEASURED, and the answer is leave it (2026-08-15).**
+    `latency_breakdown.html` splits a move over 40 positions: **ort 88%,
+    heuristic 8.7%, encode 2.0%, engine 1.2%** at 1x, essentially unchanged at 4x
+    throttle (86.7/9.4/2.4/1.5). **This overturns the standing hypothesis** in
+    PORTING.md and TODO.md that the encoder's per-candidate BFS was the hot spot
+    — it is the forward pass, and the encoder is 2%.
+    The thread genuinely is held: a 10ms `setInterval` fired **0 of 2243**
+    expected times during moves. But it is invisible and owner confirms no freeze
+    in play — the only animation during the computer's turn is the thinking
+    icon's 1000ms yoyo fade, and a 0.4s stall in a slow fade just looks like a
+    static icon. Real and inert on desktop.
+    A phone is where it would show (median 1.4s, p90 4.9s at 4x): **test on a
+    real device before building anything.** If it does show, `ort.env.wasm.proxy
+    = true` is ONE LINE and removes ~88%; a full agent Worker buys the last 12%
+    for far more work.
+    Two measurement traps, both of which reported a convincing zero: a rAF ticker
+    never fires headless (no compositor), and a GAP metric cannot see a full
+    block — it needs two firings inside the window, and a held thread produces
+    none, which is indistinguishable from "never blocked". Count firings against
+    expected instead.
   - **sw.js is at `quahuru-v8`**, precaching the six port files plus
     `encoder_static.json` and `heuristic_weights.json` — they stay ALWAYS_FRESH,
     so precaching cannot serve a stale copy, it only guarantees an offline

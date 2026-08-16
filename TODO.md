@@ -19,9 +19,13 @@ Parked, deliberately-not-now items. (Active work lives in CLAUDE.md / OVERNIGHT_
 
 Motivation: in-browser move latency is median 1.25s / p90 2.97s at 4x CPU
 throttle (a mid-range phone). Candidates scored per move is 40 median / 145 max,
-and 40 is exactly `prefilter_top_k`. The encoder's per-candidate BFS is the
-likely hot spot rather than the forward pass, so cutting candidates should cut
-nearly all of the time. The open question is what it costs in strength.
+and 40 is exactly `prefilter_top_k`. ~~The encoder's per-candidate BFS is the
+likely hot spot rather than the forward pass~~ — **measured 2026-08-15 and it is
+NOT: the forward pass is 88% of a move, the encoder 2%** (see
+`latency_breakdown.html` and PORTING.md §7). Cutting candidates does still cut
+the forward pass, since it scores fewer of them, but the cheap-BFS reasoning
+that motivated this was wrong. The open question is still what it costs in
+strength.
 
 NOT a blind tuning knob: these settings change which moves the value net ever
 sees. F=12 was adopted only after 120 paired games showed no measurable loss.

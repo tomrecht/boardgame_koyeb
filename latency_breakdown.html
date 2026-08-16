@@ -1,0 +1,154 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>Move latency breakdown — where the frozen time goes</title>
+<body style="font:13px ui-monospace,monospace; padding:16px">
+<pre id="out">running…</pre>
+<!-- latency_test.html says a move costs 0.29s desktop / 1.25s at 4x throttle.
+     This says WHERE, because that decides how to unfreeze the UI: onnxruntime
+     can be moved into a worker with one flag (ort.env.wasm.proxy), but that
+     helps only the inference. If the search dominates, only a full Web Worker
+     around the whole agent is worth building.
+
+     Four buckets, by wrapping the real entry points rather than editing them:
+       heuristic  window.evaluate  -- the prefilter, ~150 first moves a turn
+       encode     window.encode    -- per candidate, and it owns the route BFS
+       ort        the rest of score() = collate + session.run
+       engine     the remainder    -- apply/undo, sorting, bookkeeping
+     Both wrapped names are resolved at CALL time (agent.js and infer.js each
+     alias the global object), so wrapping them here is faithful.
+
+     Needs trace_fixture.json: PYTHONHASHSEED=0 python dump_trace_fixture.py 2 -->
+<script src="ort/ort.wasm.min.js"></script>
+<script src="route.js"></script>
+<script src="encoder.js"></script>
+<script src="infer.js"></script>
+<script src="engine.js"></script>
+<script src="heuristic.js"></script>
+<script src="agent.js"></script>
+<script>
+const out = document.getElementById('out');
+
+/* Wall time in a bucket is NOT the same as the main thread being HELD, and only
+   the second one freezes the UI. An awaited call can yield to the event loop
+   while it waits, in which case the browser goes on painting. So measure the
+   block directly, two independent ways:
+     longtask   -- PerformanceObserver, the browser's own account of tasks that
+                   held the thread >50ms.
+     tick gaps  -- a 10ms setInterval; a late firing means the thread was busy.
+   A rAF ticker is NOT usable here: headless produces no animation frames at
+   all, so it reports a serene zero whether or not the thread was held. A timer
+   ticker fires from the task queue regardless of rendering, so a late firing is
+   direct evidence the thread was busy. */
+const longtasks = [];
+let ltSupported = false;
+try {
+    new PerformanceObserver((l) => { for (const e of l.getEntries()) longtasks.push([e.startTime, e.duration]); })
+        .observe({ entryTypes: ['longtask'] });
+    ltSupported = true;
+} catch (e) { /* fall back to the ticker alone */ }
+
+const ticks = [];
+setInterval(() => ticks.push(performance.now()), 10);
+
+let tHeur = 0, tEnc = 0, nHeur = 0, nEnc = 0;
+const _evaluate = window.evaluate;
+window.evaluate = function (...a) {
+    const t = performance.now();
+    try { return _evaluate.apply(this, a); } finally { tHeur += performance.now() - t; nHeur++; }
+};
+const _encode = window.encode;
+window.encode = function (...a) {
+    const t = performance.now();
+    try { return _encode.apply(this, a); } finally { tEnc += performance.now() - t; nEnc++; }
+};
+
+(async () => {
+    const [staticData, W, fx] = await Promise.all([
+        fetch('encoder_static.json').then(r => r.json()),
+        fetch('heuristic_weights.json').then(r => r.json()),
+        fetch('trace_fixture.json').then(r => r.json()),
+    ]);
+    const t0 = performance.now();
+    await Infer.init({ ort, modelUrl: 'model.onnx', staticUrl: 'encoder_static.json', wasmPath: '/ort/' });
+    const initMs = performance.now() - t0;
+
+    const rows = [];
+    const cases = fx.cases.slice(0, 40);
+    for (const c of cases) {
+        const e = Engine.fromState(staticData, c.state);
+        const moves = e.getValidMoves();
+        tHeur = tEnc = 0; nHeur = nEnc = 0;
+        let tScore = 0, cand = 0;
+        const t = performance.now();
+        await selectMovePair(e, W, moves, c.player, {
+            snapshot: (eng) => eng.snapshot(),
+            score: async (snaps) => {
+                cand += snaps.length;
+                const s = performance.now();
+                try { return await Infer.score(ort, snaps, c.player); }
+                finally { tScore += performance.now() - s; }
+            },
+        });
+        const end = performance.now();
+        const total = end - t;
+        // encode runs INSIDE score(), so ort-proper is what is left of it.
+        // The blocking numbers are computed AFTER the loop: clearing the streams
+        // here would race the PerformanceObserver, whose callback is delivered
+        // asynchronously and had not run yet (which is why this reported a
+        // serene zero the first time).
+        rows.push({ total, heuristic: tHeur, encode: tEnc, ort: Math.max(0, tScore - tEnc),
+                    engine: Math.max(0, total - tHeur - tScore), cand, nHeur, nEnc,
+                    t, end });
+        out.textContent = `${rows.length}/${cases.length}`;
+    }
+
+    // Let any queued observer callbacks and timer firings land.
+    await new Promise(r => setTimeout(r, 200));
+    // Occupancy, not gaps: a 10ms ticker should fire total/10 times during a
+    // turn. If it fires ZERO times across a 350ms turn, the thread was held for
+    // essentially all of it -- and a gap metric cannot see that, because it
+    // needs two firings inside the window to measure anything between them.
+    for (const r of rows) {
+        const inWindow = ticks.filter(x => x >= r.t && x <= r.end).length;
+        r.expectedTicks = Math.max(1, Math.floor(r.total / 10));
+        r.ticks = inWindow;
+        r.freeShare = Math.min(1, inWindow / r.expectedTicks);
+        const lt = longtasks.filter(([s, d]) => s + d >= r.t && s <= r.end);
+        r.blocked = lt.reduce((a, [, d]) => a + d, 0);
+        r.longest = lt.reduce((a, [, d]) => Math.max(a, d), 0);
+    }
+
+    const q = (a, p) => a.slice().sort((x, y) => x - y)[Math.min(a.length - 1, Math.floor(a.length * p))];
+    const sum = (k) => rows.reduce((s, r) => s + r[k], 0);
+    const pct = (k) => Math.round(1000 * sum(k) / sum('total')) / 10;
+    const ms = (k) => Math.round(10 * sum(k) / rows.length) / 10;
+
+    window.__result = {
+        initMs: Math.round(initMs),
+        turns: rows.length,
+        medianMs: Math.round(q(rows.map(r => r.total), 0.5)),
+        p90Ms: Math.round(q(rows.map(r => r.total), 0.9)),
+        // Mean ms per turn, and share of total time, per bucket.
+        meanMs: { heuristic: ms('heuristic'), encode: ms('encode'), ort: ms('ort'), engine: ms('engine') },
+        share:  { heuristic: pct('heuristic'), encode: pct('encode'), ort: pct('ort'), engine: pct('engine') },
+        // What a worker for INFERENCE ONLY would take off the main thread,
+        // versus a worker around the whole agent.
+        ortOnlyShare: pct('ort'),
+        calls: { heuristic: q(rows.map(r => r.nHeur), 0.5), encode: q(rows.map(r => r.nEnc), 0.5),
+                 candidates: q(rows.map(r => r.cand), 0.5) },
+        // THE question: how much of a move actually holds the main thread?
+        blocking: {
+            // 0% free = the thread was held for the whole move; 100% = never held.
+            medianFreeSharePct: Math.round(100 * q(rows.map(r => r.freeShare), 0.5)),
+            ticksSeen: rows.reduce((a, r) => a + r.ticks, 0),
+            ticksExpected: rows.reduce((a, r) => a + r.expectedTicks, 0),
+            longtaskMs: Math.round(sum('blocked')),
+            longestSingleTaskMs: Math.round(Math.max(...rows.map(r => r.longest))),
+            longtaskShareOfMove: Math.round(1000 * sum('blocked') / sum('total')) / 10,
+            longtaskSupported: ltSupported,
+        },
+    };
+    out.textContent = JSON.stringify(window.__result, null, 1);
+})().catch(e => { window.__result = { error: String(e), stack: e.stack };
+                  out.textContent = 'ERROR ' + e + '\n' + e.stack; });
+</script>
