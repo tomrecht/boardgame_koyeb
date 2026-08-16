@@ -1055,11 +1055,45 @@ with it in mind.** Assessment and the concrete implications:
         to us and constant.
       * Static hosting is free, CDN-backed and scales past anything eMicro takes;
         a Capacitor build bundles the assets and needs no host at all.
-    **Implied work after step 7:** audit what is left server-side —
-    `/call_draw`, `/start_game`, `/evaluate_board`, `/query_agent_move`, the
-    `record_*` routes. Human-play recording is already off and draw handling is
-    client-side, so most are likely REMOVABLE rather than portable — but check,
-    do not assume.
+    **HOSTING AUDIT DONE (2026-08-15): the server is already vestigial.** A full
+    game was played against a DUMB STATIC HOST (`scratchpad/static_server.py`,
+    no Flask, every API route absent) — **55 AI moves, game completed.** Nothing
+    needs porting. Measured from the browser (a server log cannot see
+    connection-refused, and mistaking that for "never fired" got this wrong on
+    the first pass), a 12-move game contacts exactly two routes, both failing
+    harmlessly:
+      * `/start_game` — fires unconditionally per scene `create()`. Its response
+        only sets `currentGameId`, and that variable's only readers are the
+        recording paths. So when it fails, `currentGameId` stays null and that
+        **cascades to suppress every `/abort_game` call and `/record_game_result`
+        by itself** — which is why nothing else appears.
+      * `/select_moves` — once per session, the first AI move, by design (start
+        on the server, switch when the runtime has loaded).
+    Everything else never fires at all: `record_position` /
+    `record_contrastive_pair` / `query_agent_move` are behind
+    `RECORD_TRAINING_DATA` (false), `/evaluate_board` and the debug routes are
+    behind `window.showEvals` (false) or a right-click, and `/call_draw` is
+    fire-and-forget with the draw already ended client-side. `/update_impasse`
+    and `/training_data_stats` have NO frontend caller, and **`/debug_piece_info`
+    is called by game.js but has no route in app.py** — it has been 404ing all
+    along.
+    **Fixed as part of the audit:** that one failed `/select_moves` used to show
+    "The computer didn't answer — retrying" and sit through a 1.5s retry on
+    EVERY session of a static host. `_localRescue` now falls back to the device
+    silently when the server fails, awaiting the runtime if it is still loading.
+    Verified: static host, 12 moves, no failure notice; and 25/25 still
+    agreeing with a real server, so the served path is unchanged.
+    **What is left is deletion, not porting, and it is the owner's call**, since
+    the recording chain is deliberately retained for LOCAL collection runs
+    (`RECORD_TRAINING=1`) even though the deployment disk is ephemeral:
+      (a) drop the recording chain from game.js (`notifyStartGame`,
+          `notifyGameResult`, `recordTurnPosition`, `queryAndRecordContrastive`,
+          the `/abort_game` calls, `currentGameId`/`moveCounter`) — this alone
+          removes every remaining request except the first `/select_moves`;
+      (b) drop the dead `/debug_piece_info` call and the debug routes, or
+          re-point `/evaluate_board` at `LocalAgent` (it is a few lines now);
+      (c) delete the routes from app.py, leaving static serving;
+      (d) last, once confident, remove `/select_moves` as a fallback.
   - **THE ICON IS FINAL (2026-08-15)**, shipped: concentric, goals extended 25%
     on each side, the `tighter` curl at full size, the outer field ring dropped,
     three pieces. Board 69% of the canvas against 59% for the old fit.

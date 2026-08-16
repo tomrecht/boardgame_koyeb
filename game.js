@@ -6684,6 +6684,23 @@ function _askLocalForMoves(gameState) {
         });
 }
 
+// The server did not answer. Before troubling the player, see whether this
+// DEVICE can answer instead. This is what makes a static host work: with no
+// application server at all, every /select_moves fails, and without this the
+// first move of every session showed "the computer didn't answer" and sat
+// through a 1.5s retry before the local agent (which was loading all along)
+// took over. Calls the agent directly rather than _askLocalForMoves, whose own
+// failure path would bounce straight back to the server.
+function _localRescue(error, gameState) {
+    if (typeof LocalAgent === 'undefined' || !LocalAgent.enabled()) throw error;
+    return LocalAgent.init({ serverUrl: SERVER_URL }).then(ok => {
+        if (!ok) throw error;
+        return LocalAgent.selectMoves(gameState)
+            .then(move => ({ message: 'Success', move: move, local: true }))
+            .catch(err => { LocalAgent.disable(err); throw error; });
+    });
+}
+
 function getAgentMoves(gameState) {
     // difficulty 1 = full strength (argmax); lower = more top-p sampling (weaker)
     gameState = Object.assign({}, gameState, { difficulty: getAIDifficulty() });
@@ -6694,7 +6711,8 @@ function getAgentMoves(gameState) {
     console.log('Sending game state to agent:', gameState);
     _startLocalAI();
     const useLocal = typeof LocalAgent !== 'undefined' && LocalAgent.ready();
-    return (useLocal ? _askLocalForMoves(gameState) : _askServerForMoves(gameState))
+    return (useLocal ? _askLocalForMoves(gameState)
+                     : _askServerForMoves(gameState).catch(e => _localRescue(e, gameState)))
     .then(data => {
         const now = (_currentGame() || {}).instanceId;
         if (askedBy !== undefined && now !== askedBy) {
