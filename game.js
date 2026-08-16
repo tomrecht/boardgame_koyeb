@@ -685,6 +685,112 @@ function _fitCameraToWorld(scene) {
     const vw = cam.width / cam.zoom, vh = cam.height / cam.zoom;
     const wd = _world();
     _setCameraView(cam, wd.x + (wd.w - vw) / 2, wd.y + (wd.h - vh) / 2);
+    // A rotation or a resize changes the zoom, and the board texture is only as
+    // crisp as the zoom it was baked at.
+    _scheduleRebake(scene);
+}
+
+// ---------------------------------------------------------------------------
+// BAKED BOARD
+//
+// The board does not change between moves, but every tile is its own Graphics,
+// and a Graphics replays its ENTIRE command list every frame -- ~15,000 fill
+// and stroke commands across ~107 objects, re-tessellated 60 times a second to
+// produce an identical picture. Chrome absorbs it at ~25 fps; Safari's WebGL
+// path does not (measured 7.8).
+//
+// So the resting board is drawn once into a RenderTexture, and a tile puts
+// commands into its own Graphics only while it is actually a DIFFERENT colour
+// from the baked copy (hover / reachable highlight). Every Graphics object
+// stays exactly where it was -- they own the polygon hit areas, and an empty
+// one still hit-tests -- it simply holds no commands at rest.
+// ---------------------------------------------------------------------------
+
+// A RenderTexture is a bitmap, so it is only as crisp as the scale it was baked
+// at, and CLAUDE.md is emphatic that this board must never rasterise below 1:1
+// (sub-pixel tile outlines are what made it look "dusty"). Camera zoom is
+// exactly world-units -> buffer-pixels, so zoom IS the scale to match.
+// Measured: an emulated phone zoomed to 3x asked for a 3465x3465 texture. RGBA
+// makes that 48MB on a device that is also holding a 7MP canvas buffer, so the
+// budget is deliberately below what deep zoom would like. Past the cap the
+// texture is magnified rather than re-baked -- the outlines soften slightly at
+// extreme zoom, which is a far better trade than dropping the whole board back
+// to ~15,000 commands a frame for the duration.
+const BAKE_MAX_PIXELS = 8e6;     // ~32MB RGBA
+
+function _boardBounds(gm) {
+    let r = HOME_TILE_RADIUS;
+    for (const t of gm.tiles) if (t.outerRadius > r) r = t.outerRadius;
+    r = Math.ceil(r) + 4;        // 1.7px stroke, drawn centred, plus headroom
+    // INTEGER world bounds. The radii are fractional, and a texture whose
+    // top-left lands on a half world-pixel is resampled across two device
+    // pixels on every edge -- which shows up as every tile border differing
+    // from the live-drawn board. Same failure as a fractional camera scroll.
+    return { x: Math.round(CENTER_X - r), y: Math.round(CENTER_Y - r), w: 2 * r, h: 2 * r };
+}
+
+function _bakeScaleFor(scene, b) {
+    const cam = scene.cameras && scene.cameras.main;
+    let s = Math.ceil(((cam && cam.zoom) || 1) * 2) / 2;   // half steps -> fewer re-bakes
+    // Floor of 2, deliberately. The live board rasterises its strokes straight
+    // at the final device resolution; a texture baked at 1:1 rasterises them at
+    // world resolution and is then resampled by Scale.FIT, which came out
+    // measurably softer on the tile outlines. Baking at 2x makes that resample
+    // a SUPERSAMPLE instead, so the baked board is at least as crisp as the
+    // live one everywhere -- which is the bar, given how visible this board's
+    // 1.7px outlines are (CLAUDE.md: "borders broken up", "dusty").
+    s = Math.max(2, s);
+    const cap = Math.sqrt(BAKE_MAX_PIXELS / (b.w * b.h));
+    return Math.max(1, Math.min(s, cap));
+}
+
+// Draw the resting board into a texture and empty the tiles' command lists.
+// Safe to call repeatedly; it replaces any previous bake.
+function _bakeBoard(scene) {
+    const gm = scene && scene.game;
+    if (!gm || !gm.tiles || !gm.tiles.length || !scene.add) return;
+    const b = _boardBounds(gm);
+    const S = _bakeScaleFor(scene, b);
+
+    // Draw every tile at its RESTING colours. A highlight is drawn live on TOP
+    // of the texture, so baking one in would freeze it there for good.
+    gm._boardBaked = false;
+    for (const t of gm.tiles) t.drawTile('bake');
+
+    if (scene._boardRT) { scene._boardRT.destroy(); scene._boardRT = null; }
+    const rt = scene.add.renderTexture(b.x, b.y, Math.ceil(b.w * S), Math.ceil(b.h * S));
+    // Below the tiles (depth 0) so a highlighted tile still draws over its own
+    // baked copy, and below everything else that was already there.
+    rt.setOrigin(0, 0).setScale(1 / S).setDepth(-1);
+    for (const t of gm.tiles) {
+        if (t.type === 'nogo') continue;         // draws nothing by design
+        const g = t.graphics;
+        // Tile geometry is in absolute world coordinates on an object sitting at
+        // the origin, so scaling about that origin maps world (x,y) -> (x*S,y*S)
+        // and the offset puts the board's top-left corner at texel (0,0).
+        g.setScale(S); g.setPosition(-b.x * S, -b.y * S);
+        rt.draw(g);
+        g.setScale(1); g.setPosition(0, 0);
+    }
+    scene._boardRT = rt;
+    scene._bakeScale = S;
+
+    gm._boardBaked = true;
+    for (const t of gm.tiles) t.drawTile();      // resting tiles now clear themselves
+}
+
+// Re-bake only when the resolution the camera wants has actually changed.
+// Debounced, so a pinch does not re-bake every frame of the gesture.
+function _scheduleRebake(scene) {
+    if (!scene || !scene._boardRT || scene._rebakeTimer) return;
+    scene._rebakeTimer = setTimeout(() => {
+        scene._rebakeTimer = null;
+        try {
+            if (!scene._boardRT || !scene.game || scene.game.isDefunct) return;
+            const want = _bakeScaleFor(scene, _boardBounds(scene.game));
+            if (Math.abs(want - (scene._bakeScale || 0)) > 0.01) _bakeBoard(scene);
+        } catch (e) {}
+    }, 250);
 }
 
 function _mainCamera() {
@@ -1256,6 +1362,10 @@ function applyThemeLive(key) {
     if (scene && scene.cameras && scene.cameras.main) scene.cameras.main.setBackgroundColor(THEME.bg);
     if (game && game.tiles)  game.tiles.forEach(t => { if (t.applyThemeColors) t.applyThemeColors(); });
     if (game && game.pieces) game.pieces.forEach(p => { if (p.updateColor) p.updateColor(); });
+    // The board texture holds the OLD palette, and applyThemeColors above only
+    // repainted tiles that are drawing live -- so the bake has to be redone or
+    // the whole board keeps the previous theme's colours.
+    if (scene && scene._boardRT) { try { _bakeBoard(scene); } catch (e) {} }
     _themedRedraws.forEach(fn => { try { fn(); } catch (e) {} });
 }
 
@@ -4247,14 +4357,23 @@ class Tile {
     }
     
     
-    drawTile() {
-        
+    // mode === 'bake' draws the tile at its resting colours regardless of any
+    // highlight, for _bakeBoard to capture into the board texture.
+    drawTile(mode) {
+        const baking = mode === 'bake';
+
         this.graphics.clear();
         // nogo = "no board space": draw nothing so the background shows through
         // and no nogo fill covers an adjacent field tile's border.
         if (this.type === 'nogo') return;
+        // Once the board is baked, a tile at its resting colour is ALREADY in
+        // the texture underneath, so it contributes nothing to the per-frame
+        // command list. Only a highlighted tile draws over its baked copy.
+        // (The Graphics object itself stays -- it owns the hit area, and an
+        // empty one still hit-tests, which setVisible(false) would not.)
+        if (!baking && this.game && this.game._boardBaked && this._fillOverride == null) return;
         this.graphics.lineStyle(1.7, this.lineColor, 1);
-        this.graphics.fillStyle(this._fillOverride != null ? this._fillOverride : this.fillColor, 1);
+        this.graphics.fillStyle(!baking && this._fillOverride != null ? this._fillOverride : this.fillColor, 1);
 
         if (this.type === "home") {
             this.x = CENTER_X;
@@ -4279,6 +4398,22 @@ class Tile {
             this.graphics.closePath();
             this.graphics.fillPath();
             this.graphics.strokePath();
+
+            // A ring-7 tile whose ring-6 neighbour is hidden nogo needs its own
+            // inner edge closed off (see hideOuterNogoTiles). Part of the normal
+            // draw so it survives every redraw, and so the bake captures it.
+            if (this._innerArc) {
+                this.graphics.lineStyle(1, 0x000000, 1);
+                this.graphics.beginPath();
+                const step = Math.PI / 180;
+                for (let angle = this.startAngle; angle <= this.endAngle; angle += step) {
+                    const x = CENTER_X + this.innerRadius * Math.cos(angle);
+                    const y = CENTER_Y + this.innerRadius * Math.sin(angle);
+                    if (angle === this.startAngle) this.graphics.moveTo(x, y);
+                    else this.graphics.lineTo(x, y);
+                }
+                this.graphics.strokePath();
+            }
 
             // Hit area, handlers and the goal number are built ONCE. drawTile is
             // now called every time a tile changes colour, and re-running this
@@ -4733,20 +4868,18 @@ class Game {
                     tile.fillColor = BACKGROUND_COLOR;
                     tile.lineColor = BACKGROUND_COLOR;
 
+                    // Mark the ring-7 tiles that need a closing arc along their
+                    // inner edge, and let drawTile draw it. It used to be poked
+                    // straight into the Graphics here, which meant ANY later
+                    // redraw silently erased it -- hovering one of these tiles
+                    // already lost the arc for good, and baking the board (which
+                    // redraws every tile once) would have lost all of them.
                     this.tiles.forEach(t => {
                         if (t.ring === 7 && t.type !== 'nogo' &&
                             t.startAngle < tile.endAngle &&
                             t.endAngle > tile.startAngle) {
-                            t.graphics.lineStyle(1, 0x000000, 1);
-                            t.graphics.beginPath();
-                            const step = Math.PI / 180;
-                            for (let angle = t.startAngle; angle <= t.endAngle; angle += step) {
-                                const x = CENTER_X + t.innerRadius * Math.cos(angle);
-                                const y = CENTER_Y + t.innerRadius * Math.sin(angle);
-                                if (angle === t.startAngle) t.graphics.moveTo(x, y);
-                                else t.graphics.lineTo(x, y);
-                            }
-                            t.graphics.strokePath();
+                            t._innerArc = true;
+                            t.drawTile();
                         }
                     });
                 }
@@ -5852,6 +5985,10 @@ endGame(winner, score = null, impasse_caller = null) {
                                         pinch.world.y - mid.y / cam.zoom);
                     clamp();
                     _updateViewportHud();
+                    // Zooming in past the baked scale would magnify the texture;
+                    // debounced, so this re-bakes once the pinch settles rather
+                    // than on every frame of the gesture.
+                    _scheduleRebake(scene);
                 }
                 return;
             }
@@ -6338,6 +6475,15 @@ class MainGameScene extends Phaser.Scene {
             showWelcome(this.startingPlayer);
         }
         if (typeof updateTurnStatus === 'function') updateTurnStatus(this.game);
+
+        // Bake LAST: every tile has its hit-area chrome built by now (that is
+        // done on a tile's first full draw), and the camera has been framed, so
+        // the scale the texture needs is known.
+        _bakeBoard(this);
+        this.events.once('shutdown', () => {
+            if (this._rebakeTimer) { clearTimeout(this._rebakeTimer); this._rebakeTimer = null; }
+            this._boardRT = null;
+        });
     }
 
     // Keep the score row clear of goal 2's arc (x=630) whatever the numbers do.

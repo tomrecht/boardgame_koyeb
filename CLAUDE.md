@@ -1513,17 +1513,67 @@ with it in mind.** Assessment and the concrete implications:
   objects 210 -> 211, draw commands 15427 -> 15362, fps 25.7 -> 26.5: **flat on
   all three**, so the old `Tile.highlight` command-list leak (55 -> 4 fps over 60
   turns) is genuinely fixed and this is NOT degradation.
-  The steady-state cost is the finding: **~15,300 draw commands across 108
+  The steady-state cost was the finding: **~15,300 draw commands across 108
   Graphics objects EVERY FRAME**, for a board that is static between moves.
   Chrome absorbs it at ~25 fps; Safari's WebGL path does not, hence 8.
-  The fix direction is to stop re-tessellating a static board -- bake the tiles
-  into a RenderTexture once and redraw only the tiles that actually change --
-  which is real work and NOT yet done. Note the earlier "~44 fps at turn 150"
-  figure was after the leak fix but is not reproduced here; ~25 fps in Chrome is
-  the current steady state.
+  Note the earlier "~44 fps at turn 150" figure was after the leak fix but is
+  not reproduced; ~25 fps in Chrome was the steady state before the bake below.
   `?maxmp=N` caps the phone render buffer for A/B'ing fill rate, but it is
   phone-only (`_sizeCanvasToScreen` returns early on desktop, which uses
   Scale.FIT at 1800x1200) so it is irrelevant to the desktop-Safari case.
+
+- **THE BOARD IS NOW BAKED INTO A RENDERTEXTURE (2026-08-16).** The resting
+  board is drawn once into a texture (`_bakeBoard`, depth -1) and a tile puts
+  commands into its own Graphics only while it is a DIFFERENT colour from the
+  baked copy (hover / reachable highlight). **Measured, desktop, real started
+  game: 15,310 -> 2,584 commands a frame (83%), 82 -> 13 Graphics with any
+  commands, and 0 of 70 tiles drawing at rest.** With a piece selected and ~20
+  destinations lit it is 6,568, still 57% down, and that is a transient state.
+  - **The Graphics objects all STAY.** They own the polygon hit areas, and an
+    empty Graphics still hit-tests where `setVisible(false)` would silently stop
+    doing so. At rest they simply hold no commands.
+  - **Baked at 2x, deliberately.** The live board rasterises its strokes at the
+    final device resolution; a texture baked 1:1 rasterises at world resolution
+    and is then resampled by Scale.FIT, which measured visibly softer on the
+    1.7px tile outlines (worst channel 129 against the live board). At 2x that
+    resample becomes a SUPERSAMPLE: worst channel 58, and the magnified crops
+    show the baked edges very slightly CLEANER than live. `_bakeScaleFor` tracks
+    camera zoom above that, capped by `BAKE_MAX_PIXELS` (8e6 = ~32MB RGBA; an
+    emulated phone at 3x zoom asked for 3465² = 48MB before the cap). Past the
+    cap the texture is magnified rather than re-baked -- mild softening at
+    extreme zoom beats dropping the whole board back to 15k commands.
+  - **Re-bake on: theme change, camera zoom settling at a new scale, and scene
+    create.** The zoom hook is debounced 250ms so a pinch re-bakes once at the
+    end, not every frame. Verified across theme switch (both directions), scene
+    restart and tutorial start: exactly ONE RenderTexture live, 0 tiles drawing,
+    no page errors.
+  - **PROOF IS PIXELS, and getting a valid comparison took three tries.**
+    (1) Two page loads are NOT comparable -- rack order is random, so the diff
+    is dominated by different pieces. (2) Same page, toggling the bake, is still
+    not comparable while the COMPUTER is playing: it moves a piece and rolls the
+    dice between the two screenshots. Set both sides human first. (3) With the
+    game frozen the diff is confined to tile-outline antialiasing. Original vs
+    new build, pieces/racks/dice hidden so the image is deterministic: **worst
+    channel 51, 0.216% of pixels differing by more than 32, all on outlines.**
+  - **The remaining ~2,400 commands are racks, dice and HUD buttons** -- also
+    static, but 6x smaller than the board was, so not worth the same treatment
+    yet.
+  - **NOT a demonstrated fps win.** Headless Chrome reports 60 fps before and
+    after (it is not the bottleneck there), so the structural number is what was
+    measured. **The Safari 7.8 fps figure that motivated this has NOT been
+    re-measured** -- that needs a real browser on the owner's machine.
+  - **`hideOuterNogoTiles` no longer pokes arcs straight into a tile's Graphics**
+    (it sets `_innerArc` and lets `drawTile` draw them), so a redraw cannot erase
+    them. Measured `innerArcs: 0` on the current board -- that branch never fires
+    for this geometry, so this is defensive correctness, NOT a fix for anything
+    observable.
+  - **Harness watch-outs, both of which cost time here.** `gameInstance` is a
+    top-level `const` in a classic script: a global BINDING but **not** a
+    property of `window`, so `window.gameInstance` is undefined and CDP probes
+    must use the bare identifier. And a stale `game.js` reported `_bakeBoard is
+    not defined` from an already-fixed file -- the harness now disables the HTTP
+    cache (`Network.setCacheDisabled`) AND unregisters the service worker before
+    loading the page under test.
 
 - **ARENA / MEASUREMENT FINDINGS (2026-08-04).** `arena.py analyze` now rates
   every tag present in `arena.jsonl`, not just checkpoints still on disk (a

@@ -15,10 +15,25 @@ Parked, deliberately-not-now items. (Active work lives in CLAUDE.md / OVERNIGHT_
   replies, positions verified against `game.py`. See CLAUDE.md.
 
 
-## Rendering: the static board is redrawn every frame (2026-08-15)
+## Rendering: the static board is redrawn every frame — DONE (2026-08-16)
 
-The one substantial piece of work left before the app is "done". Owner reported
-Safari feeling sluggish; measured in-page:
+**Fixed: the board is baked into a RenderTexture.** 15,310 -> 2,584 draw
+commands a frame on desktop (83%), 0 of 70 tiles drawing at rest. See CLAUDE.md
+("THE BOARD IS NOW BAKED INTO A RENDERTEXTURE") for the design, the 2x
+supersample decision, the texture budget and the pixel proof.
+
+**Still open, and the reason this is not fully closed: the Safari 7.8 fps figure
+has NOT been re-measured.** Headless Chrome reports 60 fps before and after, so
+the harness cannot see the win; the structural count is what was measured.
+Someone needs to open it in Safari on a Mac and read `gameInstance.loop.actualFps`.
+
+Also still live per frame: ~2,400 commands of racks, dice and HUD buttons. Static
+too, but 6x smaller than the board was — bake them only if Safari is still slow
+after this.
+
+The original write-up follows, for the numbers it records.
+
+Owner reported Safari feeling sluggish; measured in-page:
 
     browser          renderer        actualFps
     Safari (macOS)   WebGL (type 2)      7.8
@@ -33,16 +48,16 @@ moves in a driven game, objects 210 -> 211, draw commands 15427 -> 15362, fps
 objects EVERY FRAME**, for a board that does not change between moves. Chrome
 absorbs it at ~25 fps, Safari does not.
 
-**Fix direction:** stop re-tessellating a static board. Bake the tiles into a
-RenderTexture once and redraw only the tiles that actually change (highlight,
-theme switch, relayout). Should cut per-frame work by an order of magnitude and
-lifts every browser, not just Safari.
+**Fix direction** (this is what was built): stop re-tessellating a static board.
+Bake the tiles into a RenderTexture once and redraw only the tiles that actually
+change (highlight, theme switch, relayout).
 
 Watch-outs already known from this codebase: `Tile` caches its points, hit area
 and goal-number text behind `_points`/`_built`, and `drawTile` is called on every
 colour change; the themes are switched LIVE (`applyThemeLive` recolours tiles in
 place), so a baked texture has to be invalidated on a theme change as well as on
-a relayout/rotation.
+a relayout/rotation. All three held up — the theme switch is the one that needed
+an explicit re-bake hook.
 
 Note the earlier "~44 fps at turn 150" figure in CLAUDE.md was after the leak fix
 but is not reproduced now; ~25 fps in Chrome is the current steady state.
