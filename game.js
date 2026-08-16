@@ -648,7 +648,19 @@ function _sizeCanvasToScreen() {
     const wd = _world();
     const grow = Math.max(wd.w / bw, wd.h / bh, 1);
     bw *= grow; bh *= grow;
-    const MAX_PX = 9e6;                                      // keep it sane on a phone
+    // ?maxmp=N caps the buffer in megapixels, so a device that feels sluggish can
+    // be A/B'd without a deploy. It matters more than it looks: in PORTRAIT the
+    // "grow" above enlarges a 1170x2532 (2.96 MP) iPhone buffer to 1800x3895 =
+    // 7.0 MP, and every frame pushes all of it. Lowering this trades the 1:1
+    // rasterisation -- outlines soften -- for fill rate, which is the thing a
+    // slower GPU/compositor runs out of first.
+    const MAX_PX = (function () {
+        try {
+            const q = parseFloat(new URLSearchParams(location.search).get('maxmp'));
+            if (isFinite(q) && q > 0) return q * 1e6;
+        } catch (e) {}
+        return 9e6;                                          // keep it sane on a phone
+    })();
     const over = Math.sqrt((bw * bh) / MAX_PX);
     if (over > 1) { bw /= over; bh /= over; }
     bw = Math.round(bw); bh = Math.round(bh);
