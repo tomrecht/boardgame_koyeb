@@ -8,6 +8,26 @@ const SERVER_URL = IS_LOCAL
 
 const DEBUG_MODE = false;
 
+// NORMAL PLAY IS SILENT. Every console.log in this file is developer
+// scaffolding -- move traces, agent state, save reasoning -- and on desktop it
+// buries anything that matters. Suppressed unless the session enables the dev
+// modes with ?dev=1, the same switch that unlocks debug / eval / setup, so one
+// flag turns the whole developer surface on together.
+// warn and error are deliberately LEFT ALONE: a real failure must still show,
+// and several recovery paths (a refused agent reply, a disabled local agent)
+// report through them.
+// Note for test harnesses that read console output: pass ?dev=1.
+const _DEV_CONSOLE = (function () {
+    try { return new URLSearchParams(location.search).get('dev') === '1'; }
+    catch (e) { return false; }
+})();
+if (!DEBUG_MODE && !_DEV_CONSOLE) {
+    const _quiet = function () {};
+    console.log = _quiet;
+    console.info = _quiet;
+    console.debug = _quiet;
+}
+
 // Who plays each colour. Defaults: you are White, the computer is Black. Both
 // sides can be either, so you can watch the agent play itself or play both
 // sides yourself. (playVsComputer is the old single-toggle key, still honoured
@@ -2544,7 +2564,7 @@ function pushHumanMove(pieceColorNumber, target, die) {
 // Master switch for the hidden developer modes (triple-press D = debug,
 // E = eval readout, S = setup/free-placement). Off by default so public/casual
 // builds can never toggle them on; enable for a session with ?dev=1 in the URL.
-const ALLOW_DEV_MODES = new URLSearchParams(location.search).get('dev') === '1';
+const ALLOW_DEV_MODES = _DEV_CONSOLE;   // same ?dev=1 switch as the console above
 
 window.debugMode = false;
 (function() {
@@ -3120,7 +3140,13 @@ class Piece {
         if (this.game.selectedPiece && this.game.selectedPiece !== this) return;
         if (this.game.dice[0].used && this.game.dice[1].used) return;
         if (this.player !== this.game.turn) return;
-        if (this.rack && this.rack.type === 'saved') return;
+        if (this.rack && this.rack.type === 'saved') {
+            // A saved piece is part of the rack as far as aiming goes, so with a
+            // piece selected this means "save it here" -- otherwise a filling
+            // rack would shrink the target the player is told to click.
+            if (this.game.selectedPiece && this.rack.onSaveTap) this.rack.onSaveTap();
+            return;
+        }
         if (this.rack && this.rack.type === 'unentered' && !_isEntrant(this)) return;
         if (!this.game.canSelectForMove(this)) return false;
         // A touch screen has no hover: a finger that leaves often sends no
@@ -3188,7 +3214,13 @@ class Piece {
         // Saved pieces are out of play: checked before the selection handover
         // below, which would otherwise make one the selected piece -- and with
         // that, draggable back onto the board.
-        if (this.rack && this.rack.type === 'saved') return;
+        if (this.rack && this.rack.type === 'saved') {
+            // A saved piece is part of the rack as far as aiming goes, so with a
+            // piece selected this means "save it here" -- otherwise a filling
+            // rack would shrink the target the player is told to click.
+            if (this.game.selectedPiece && this.rack.onSaveTap) this.rack.onSaveTap();
+            return;
+        }
 
         if (this.game.selectedPiece && this.game.selectedPiece !== this) {
 
@@ -3303,7 +3335,11 @@ class Piece {
         if (!this.currentTile) return;
 
         if (this.currentTile.type === 'save') {
-            this.save(); // Save the piece if it can be saved
+            const saved = this.save(); // Save the piece if it can be saved
+            // Not savable from THIS goal with this roll, but both dice can walk
+            // it to another goal and save it there -- do both at once, exactly as
+            // from a field tile.
+            if (!saved && this.player === this.game.turn && this.game.sumSave(this)) return;
             // Saving removes this piece, and the tile then re-lays out what is
             // left -- so another piece slides into the spot under the finger and
             // a following pointer event selects it. Owner saw exactly that after
@@ -4358,6 +4394,39 @@ class Rack {
         return this.y + this.verticalPadding + Math.floor(this.pieces.length / this.cols) * this.spacing;
     }
 
+    /* Select a piece, then click anywhere in your saved rack to save it -- the
+       same outcome as dragging it there, which is not a gesture everyone finds.
+       Wired from drawBackground so it survives a relayout, and the hit area is
+       RESHAPED in place rather than re-setInteractive'd: setInteractive replaces
+       the interactive object outright, which is how ghost dragging silently lost
+       its draggable flag. */
+    _wireSaveTap(bx, by, bw, bh) {
+        if (!this.background.input) {
+            this.background.setInteractive(new Phaser.Geom.Rectangle(bx, by, bw, bh),
+                                           Phaser.Geom.Rectangle.Contains);
+            onTap(this.background, () => this.onSaveTap());
+        } else if (this.background.input.hitArea && this.background.input.hitArea.setTo) {
+            this.background.input.hitArea.setTo(bx, by, bw, bh);
+        }
+    }
+
+    onSaveTap() {
+        const game = this.scene && this.scene.game;
+        if (!game || game.gameOver) return;
+        const piece = game.selectedPiece;
+        if (!piece) return;
+        const mySaved = piece.player === 'white' ? game.whiteSavedRack : game.blackSavedRack;
+        if (this !== mySaved) return;              // only ever your own rack
+        // Same order as dropping it here: save from where it stands, else the
+        // two-dice walk-to-a-goal-and-save.
+        if (piece.canBeSaved && piece.canBeSaved() && piece.save()) {
+            game._saveGuardUntil = Date.now() + 250;
+            _clearSelection(game);
+            return;
+        }
+        if (game.sumSave(piece)) _clearSelection(game);
+    }
+
     drawBackground() {
         // Clear first: this is redrawn on rotation now, and a Graphics replays
         // its entire command list every frame.
@@ -4373,6 +4442,7 @@ class Rack {
         this.background.fillRoundedRect(bx, by, bw, bh, 16);
         this.background.lineStyle(1.5, 0xdbe1ea, 1);
         this.background.strokeRoundedRect(bx, by, bw, bh, 16);
+        if (this.type === 'saved') this._wireSaveTap(bx, by, bw, bh);
         // faint slot circles show the rack's capacity (like the mockup)
         this.background.lineStyle(1.5, 0xdbe1ea, 0.85);
         for (let i = 0; i < this.cols * this.rows; i++) {
@@ -5019,8 +5089,14 @@ class Game {
     // with the other in the same turn, do both at once — so a single double-click
     // or a drag to the saved rack saves it without first parking it on the goal.
     // Returns true if it happened.
+    // Reach a goal with one die and be saved from it with the other, in one
+    // gesture. Also serves a piece that is ALREADY on a goal but cannot be saved
+    // from it with this roll: goal pairs are 4 tiles apart, so a 4 walks it to
+    // the other goal and the second die saves it there. That is two ordinary
+    // moves, so it is a frontend affordance, not a rule change -- the engine has
+    // always allowed the sequence and the agent already searches it.
     sumSave(piece) {
-        if (!piece.currentTile || piece.currentTile.type === 'save') return false;
+        if (!piece.currentTile) return false;
         if (piece.player !== this.turn) return false;
         if (this.dice[0].used || this.dice[1].used) return false;   // need both dice
         const player = piece.color === 0xffffff ? this.players[0] : this.players[1];
@@ -5047,6 +5123,7 @@ class Game {
                 dieVal > goal.number && !this.isHigherNumberedGoalOccupied(player, goal.number);
         };
         for (const goal of goals) {
+            if (goal === piece.currentTile) continue;   // already here: nothing to walk
             // movePiece consumes die[0] if the goal is reachable by it, else die[1];
             // the *other* die must then be able to save from the goal.
             const byFirst = r.reachableByFirstDie.includes(goal);
