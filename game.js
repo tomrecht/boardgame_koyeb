@@ -902,11 +902,41 @@ function _gestureConsumed(pointer) {
               && pointer.downTime === _consumedGesture.downTime);
 }
 
+// pointer.getDistance() is in CANVAS BUFFER pixels, and on a phone the buffer is
+// device pixels -- so a bare number here means something different on every
+// screen. Measured on a DPR-3 phone: a 10 CSS px touch move reads back as 30.
+// The old constants were therefore far tighter than they looked: a tap was
+// rejected past 16 buffer px = 5.3 CSS px (less than a fingertip wobbles) while
+// a drag only began past 34 = 11.3 CSS px. Anything in between was NEITHER, so
+// the gesture did nothing at all -- the "double-tap often doesn't register"
+// report -- and anything past 11.3 became a drag, which when dropped on the
+// piece's own tile cancels the selection ("taken as a select and tiny drag").
+// One slop value in CSS px, converted here, removes the dead zone by
+// construction: below it is a tap, at or above it is a drag, nothing is neither.
+// ?tapslop=N tunes it on a device without a deploy.
+const TAP_SLOP_CSS = 14;
+function _tapSlopCss() {
+    try {
+        const q = parseFloat(new URLSearchParams(location.search).get('tapslop'));
+        if (isFinite(q) && q > 0) return q;
+    } catch (e) {}
+    return TAP_SLOP_CSS;
+}
+function _bufferPerCss() {
+    try {
+        const cv = gameInstance && gameInstance.canvas;
+        const r = cv && cv.getBoundingClientRect();
+        if (cv && r && r.width) return cv.width / r.width;
+    } catch (e) {}
+    return 1;
+}
+function _tapSlop() { return _tapSlopCss() * _bufferPerCss(); }
+
 function onTap(obj, handler) {
     if (!_isPhone()) { obj.on('pointerdown', handler); return obj; }
     obj.on('pointerup', function (pointer, ...rest) {
         if (_multiTouchActive()) return;
-        if (pointer && pointer.getDistance && pointer.getDistance() > 16) return;   // a drag, not a tap
+        if (pointer && pointer.getDistance && pointer.getDistance() > _tapSlop()) return;  // a drag, not a tap
         if (_gestureConsumed(pointer)) return;      // a piece already acted on this tap
         return handler.call(this, pointer, ...rest);
     });
@@ -5786,10 +5816,10 @@ endGame(winner, score = null, impasse_caller = null) {
         // New Game (scene.restart) or end-game (scene.start) keeps pieces draggable.
         if (scene._dragWired) return;
         scene._dragWired = true;
-        // 6 world px is about 2 CSS px on a phone, less than a fingertip wobbles,
-        // so the second tap of a double-tap became a drag and the save it was
-        // meant to trigger never happened.
-        scene.input.dragDistanceThreshold = _isPhone() ? 34 : 6;
+        // The SAME slop onTap uses, so the two cannot disagree and leave a range
+        // that is neither tap nor drag (see _tapSlop). In buffer pixels, which
+        // is what Phaser compares against.
+        scene.input.dragDistanceThreshold = _isPhone() ? _tapSlop() : 6;
 
         const onDragStart = (pointer, obj) => {
             if (obj.__ghost) {
