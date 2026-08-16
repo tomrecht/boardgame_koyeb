@@ -882,11 +882,32 @@ function _multiTouchActive() { return _gestureWasMultiTouch || _touchesDown > 1;
     }, { capture: true, passive: true });
 });
 
+// ONE GESTURE, ONE ACTION. Pieces act on pointerdown (dragging depends on it)
+// while tiles act on pointerup, so a single tap that lands on a PIECE was
+// handled twice: the piece's handler forwards to its tile's onClick (making the
+// move), and then the tile's own tap handler ran onClick again -- by which time
+// selectedPiece was null, so the tile-tap-to-select branch picked up the piece
+// that had just landed there. That is the "after moving, the piece is selected
+// again" report: phone-only, and reproducible on retry because it depends on
+// the destination being occupied and unambiguous, not on finger accuracy.
+let _consumedGesture = null;
+function _consumeGesture(pointer) {
+    // downTime as well as id: Phaser REUSES pointer objects between gestures,
+    // so identity alone would suppress a later, legitimate tap.
+    _consumedGesture = (pointer && pointer.id !== undefined)
+        ? { id: pointer.id, downTime: pointer.downTime } : null;
+}
+function _gestureConsumed(pointer) {
+    return !!(pointer && _consumedGesture && pointer.id === _consumedGesture.id
+              && pointer.downTime === _consumedGesture.downTime);
+}
+
 function onTap(obj, handler) {
     if (!_isPhone()) { obj.on('pointerdown', handler); return obj; }
     obj.on('pointerup', function (pointer, ...rest) {
         if (_multiTouchActive()) return;
         if (pointer && pointer.getDistance && pointer.getDistance() > 16) return;   // a drag, not a tap
+        if (_gestureConsumed(pointer)) return;      // a piece already acted on this tap
         return handler.call(this, pointer, ...rest);
     });
     return obj;
@@ -3146,6 +3167,10 @@ class Piece {
             // by hitting the slivers of empty space between its pieces. Any tile
             // type, since goals get crowded too.
             if (this.currentTile) {
+                // Claim the gesture: this tap has now been acted on, and the
+                // tile's own pointerup handler must not run onClick a second
+                // time (see onTap / _consumeGesture).
+                _consumeGesture(pointer);
                 this.currentTile.onClick();
                 return;
             }
