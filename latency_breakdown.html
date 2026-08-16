@@ -68,6 +68,11 @@ window.encode = function (...a) {
         fetch('heuristic_weights.json').then(r => r.json()),
         fetch('trace_fixture.json').then(r => r.json()),
     ]);
+    // ?proxy=1 -- onnxruntime spawns its own Worker and runs the session there,
+    // so session.run() stops holding the main thread. Set BEFORE init, since it
+    // changes how the session is created. No source change needed to try it.
+    const useProxy = new URLSearchParams(location.search).get('proxy') === '1';
+    if (useProxy) ort.env.wasm.proxy = true;
     const t0 = performance.now();
     await Infer.init({ ort, modelUrl: 'model.onnx', staticUrl: 'encoder_static.json', wasmPath: '/ort/' });
     const initMs = performance.now() - t0;
@@ -124,6 +129,7 @@ window.encode = function (...a) {
     const ms = (k) => Math.round(10 * sum(k) / rows.length) / 10;
 
     window.__result = {
+        proxy: useProxy,
         initMs: Math.round(initMs),
         turns: rows.length,
         medianMs: Math.round(q(rows.map(r => r.total), 0.5)),
