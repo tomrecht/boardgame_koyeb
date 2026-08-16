@@ -1552,10 +1552,40 @@ function createSettingsPanel() {
         'width:100%; margin-top:12px; padding:8px 0; border-radius:8px; border:none; cursor:pointer;' +
         'font-family:' + HUD_FONT + '; font-weight:700; font-size:13px; background:' + THEME.accentCss + '; color:#fff;',
         'Interactive tutorial');
-    tut.onclick = () => { panel.style.display = 'none'; startTutorial(); };
+    tut.onclick = () => {
+        panel.style.display = 'none';
+        // Settings is reachable from the welcome card now, and the tutorial
+        // replaces the board underneath it -- so the card has to go, exactly as
+        // it does when the tutorial is launched from the card's own button.
+        const wel = document.getElementById('welcomeScreen'); if (wel) wel.remove();
+        startTutorial();
+    };
     panel.appendChild(tut);
 
     document.body.appendChild(gear); document.body.appendChild(panel);
+
+    // The welcome card (z 56) and match setup (z 60) sit OVER the gear's own
+    // z-index of 41, so on launch there was no way to reach settings before the
+    // first game began -- and who plays which colour is exactly the thing you
+    // want to set BEFORE playing. Raise the gear above those two while either
+    // is up. NOT above How to Play, which opens from the welcome card and would
+    // otherwise have a gear floating over it, and deliberately still below the
+    // coin flip (65) and confirm (70), which are transient and modal.
+    const SETTINGS_Z_BASE = '41', SETTINGS_Z_OVER = '61';
+    const syncSettingsZ = () => {
+        const over = !!(document.getElementById('welcomeScreen') || document.getElementById('matchSetup'))
+                     && !document.getElementById('howToPlay');
+        const z = over ? SETTINGS_Z_OVER : SETTINGS_Z_BASE;
+        gear.style.zIndex = z; panel.style.zIndex = z;
+    };
+    // Driven off the DOM rather than from each show/hide site: the welcome card
+    // is removed from four different places, and one missed restore would
+    // strand the gear above everything for the rest of the session.
+    try {
+        new MutationObserver(syncSettingsZ).observe(document.body, { childList: true });
+    } catch (e) { /* no MutationObserver: the gear just keeps its base z-index */ }
+    syncSettingsZ();
+
     gear.onclick = (e) => { e.stopPropagation();
         const show = panel.style.display === 'none';
         panel.style.display = show ? 'block' : 'none';

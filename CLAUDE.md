@@ -1603,6 +1603,33 @@ with it in mind.** Assessment and the concrete implications:
     cache (`Network.setCacheDisabled`) AND unregisters the service worker before
     loading the page under test.
 
+- **SETTINGS ARE REACHABLE FROM THE WELCOME / MATCH-SETUP SCREENS (2026-08-16).**
+  Owner: on launch the gear was unavailable, so the defaults could not be changed
+  BEFORE the first game — and who plays which colour is exactly what you want to
+  set then (human-vs-human, to study a position or to measure anything without
+  the computer moving mid-sample). The gear sits at z-index 41 and those cards
+  are at 56 and 60, so it was simply underneath them.
+  The gear and its panel now rise to **61 while either card is up**, and drop
+  back otherwise. Deliberately NOT above How to Play (60), which opens from the
+  welcome card and would otherwise have a gear floating over it, and still below
+  the coin flip (65) and confirm (70), which are transient and modal.
+  **The z-index is synced from the DOM by a MutationObserver on `document.body`,
+  not from each show/hide site** — the welcome card is removed from four
+  different places, and one missed restore would strand the gear above
+  everything for the rest of the session.
+  **The thing that actually needed proving is that a role set there survives.**
+  Play does not resume the held (frozen) game: it runs the coin flip and
+  RESTARTS the scene with a fresh one. Verified end to end — set Black to human
+  on the welcome card, hit Play, and after the flip and restart the globals AND
+  `game.players` both read `[false, false]`. Also verified: the gear is the
+  topmost element at its own centre on both cards (a raised z-index that still
+  sat under the overlay would look right and click through to nothing), it drops
+  to 41 under How to Play and returns to 61 when that closes, and the panel opens
+  over match setup — desktop and phone (where the gear is 48px, not 64px).
+  Settings' own "Interactive tutorial" button now removes the welcome card
+  first, as the card's own tutorial button already did; without that the tutorial
+  started underneath it.
+
 - **ARENA / MEASUREMENT FINDINGS (2026-08-04).** `arena.py analyze` now rates
   every tag present in `arena.jsonl`, not just checkpoints still on disk (a
   deleted contender used to vanish along with its games), and `FOCUS=<tag>`

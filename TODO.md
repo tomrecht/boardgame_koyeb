@@ -2,20 +2,6 @@
 
 Parked, deliberately-not-now items. (Active work lives in CLAUDE.md / OVERNIGHT_NOTES.md.)
 
-## Settings are unreachable from the welcome / match-setup screen (owner, 2026-08-16)
-
-On launch the welcome card is up and the settings gear is not available, so the
-defaults cannot be changed **before** the first game starts — notably who plays
-which colour. Wanting human-vs-human (to watch a position, or to measure
-anything without the computer moving mid-sample) means starting a game under the
-wrong roles first, then changing them.
-
-Worth checking while fixing: `WHITE_IS_AI` / `BLACK_IS_AI` are module globals
-backed by localStorage and `applyPlayerRoles` runs in `create()`, so a change
-made before Play should survive the fresh-game restart that Play performs — but
-the welcome screen sits over a deliberately FROZEN game (`_gameFrozen`), so
-verify the change lands on the game that actually starts, not the held one.
-
 ## Deployment / hosting
 
 - [x] **ONNX export for cheap hosting.** DONE 2026-07-25. `encoder.py` (numpy,
