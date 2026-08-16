@@ -511,14 +511,22 @@ with it in mind.** Assessment and the concrete implications:
     PORTING.md and TODO.md that the encoder's per-candidate BFS was the hot spot
     — it is the forward pass, and the encoder is 2%.
     The thread genuinely is held: a 10ms `setInterval` fired **0 of 2243**
-    expected times during moves. But it is invisible and owner confirms no freeze
-    in play — the only animation during the computer's turn is the thinking
-    icon's 1000ms yoyo fade, and a 0.4s stall in a slow fade just looks like a
-    static icon. Real and inert on desktop.
-    A phone is where it would show (median 1.4s, p90 4.9s at 4x): **test on a
-    real device before building anything.** If it does show, `ort.env.wasm.proxy
-    = true` is ONE LINE and removes ~88%; a full agent Worker buys the last 12%
-    for far more work.
+    expected times during moves. **But there is NO SYMPTOM — owner checked
+    desktop AND a real phone and neither hangs, so there is nothing to fix and
+    this should not be reopened.** The only animation during the computer's turn
+    is the thinking icon's 1000ms yoyo fade; a stall in a slow fade just looks
+    like a static icon, and the board is static anyway.
+    The 4x-throttle numbers overstated the phone case (4x was harsher than the
+    real device). **Lesson: a measured mechanism is not a defect until the
+    symptom is observed** — this was written up twice as "the UI freezes" from
+    the mechanism alone, and both times owner just looked and it did not.
+    Measured but NOT shipped, kept only in case something ever animates during
+    the computer's turn: `ort.env.wasm.proxy = true` before `Infer.init` runs the
+    session in onnxruntime's own Worker, taking the main thread 0% → **91% free**
+    with move time unchanged (`latency_breakdown.html?proxy=1`). Shipping it
+    would change the served inference path for no observable gain, and whether a
+    blob-URL worker's fetches stay service-worker controlled — i.e. whether
+    OFFLINE play survives — is unverified.
     Two measurement traps, both of which reported a convincing zero: a rAF ticker
     never fires headless (no compositor), and a GAP metric cannot see a full
     block — it needs two firings inside the window, and a held thread produces

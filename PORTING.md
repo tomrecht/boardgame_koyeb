@@ -307,21 +307,28 @@ The thread really is held: a 10ms `setInterval` fired **0 times out of 2243
 expected** during moves at 1x (0 of 8673 at 4x). So the UI cannot paint for the
 length of a move.
 
-**But it is not visible, and owner confirms it in play.** The only thing
+**BUT THERE IS NO SYMPTOM, ON EITHER PLATFORM — owner checked desktop AND a real
+phone, and neither hangs. NOTHING TO FIX; do not reopen this.** The only thing
 animating during the computer's turn is the thinking icon's 1000ms yoyo fade
-(`showThinkingIcon`), and a ~0.4s stall in a slow fade reads as an icon sitting
-still, not as a freeze. The board is static and there is nothing to interact
-with. So on desktop the cost is real and inert.
+(`showThinkingIcon`), and a stall in a slow fade reads as an icon sitting still.
+The board is static and there is nothing to interact with. The hold is real and
+entirely inert.
 
-Where it would show is a phone: median 1.4s and p90 4.9s at 4x is a visibly
-stalled pulse and queued taps. **That has not been tested on a real device yet**,
-and that test — not a worker — is the next step.
+Note the 4x-throttle numbers OVERSTATED the phone case: 4x is a crude stand-in
+and was harsher than the actual device. The lesson is the general one — a
+measured mechanism is not a defect until the symptom is observed. This was
+written up twice as "the UI freezes" on the strength of the mechanism alone,
+and both times the owner simply looked and it did not.
 
-If it does show, the fix is graded, and the measurement says start small:
-`ort.env.wasm.proxy = true` moves inference alone into a worker for ONE LINE and
-removes ~88% of the hold. A full Web Worker around the whole agent buys the last
-12% and is a much bigger change (every port file already falls back to `self`,
-so it is buildable, but it is not obviously worth it).
+Kept only because it is measured and might matter if something ever DOES animate
+during the computer's turn: `ort.env.wasm.proxy = true` (set before
+`Infer.init`) runs the session in onnxruntime's own Worker and takes the main
+thread from 0% free to **91% free**, with median move time unchanged
+(390 -> 391ms at 1x). `latency_breakdown.html?proxy=1` re-runs it. It is NOT
+shipped, and on this evidence should not be: it would be a change to the served
+inference path bought for no observable gain, and its interaction with the
+service worker (a blob-URL worker's fetches may not be SW-controlled, which
+would break OFFLINE play) is unverified.
 
 Measurement traps this hit, both of which reported a serene zero:
 - **A rAF ticker is useless headless** — no compositor, so no animation frames
