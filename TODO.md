@@ -40,11 +40,16 @@ supersample decision, the texture budget and the pixel proof.
 Firefox 42.3 -> 58.5 (+38%), Chrome 60 -> 60 (already at vsync).** Failure-mode
 checks pass on all three. `?fpstest=1` runs that A/B on screen, for phones.
 
-**Open:** the baselines did not reproduce the 7.8 / 24.0 fps that motivated this
-(measured 17.0 / 60 for the same OFF state), so that condition is unidentified —
-probably a late-game board or sampling across AI turns. Worth pinning down only
-if Safari still feels slow in a real long game; ~2,300 commands of racks, dice
-and HUD remain per frame and would be the next thing to bake.
+**CLOSED: owner confirms the Safari sluggishness is gone.** That is the test that
+matters — the original report was a felt symptom, not a number, so a felt
+recovery is what settles it.
+
+Not chased, deliberately: the OFF baselines never reproduced the 7.8 / 24.0 fps
+that motivated the work (the same OFF state measured 17.0 / 60), so that
+condition stays unidentified. With the symptom resolved there is nothing to
+diagnose — reopen only if it recurs. Likewise the ~2,300 commands of racks, dice
+and HUD still drawn every frame: static, bakeable the same way, and NOT worth
+doing on current evidence.
 
 The original write-up follows, for the numbers it records.
 

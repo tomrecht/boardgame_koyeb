@@ -1570,14 +1570,19 @@ with it in mind.** Assessment and the concrete implications:
     as headroom rather than fps -- which is what helps a weaker GPU, not this
     one. Owner also ran the failure-mode checks (highlight/clear, theme switch,
     board at rest, New Game / New Match / tutorial) on all three: **all fine.**
+  - **OWNER CONFIRMS THE SAFARI SLUGGISHNESS IS GONE (2026-08-16).** This is
+    what closes the item: the original report was a felt symptom, so a felt
+    recovery settles it, exactly as the method note elsewhere in this file
+    demands (a measured mechanism is not a defect until the symptom is observed
+    -- and, symmetrically, not fixed until the symptom is gone).
   - **The baselines did NOT reproduce the numbers that motivated this work**
     (Safari 7.8, Chrome 24.0 -- see the entry above). Same code, same machine,
-    but measured OFF at 17.0 and 60. So those figures came from a condition
-    nobody has reproduced -- most likely a later-stage game with many pieces on
-    the board, or sampling across AI turns. **The ratios above are the
-    trustworthy part**, being same-page and same-session. If Safari still feels
-    sluggish in a long game, finding that condition is the next thread to pull;
-    ~2,300 commands of racks, dice and HUD remain per frame.
+    but measured OFF at 17.0 and 60, so that condition was never identified;
+    most likely a later-stage board or sampling across AI turns. **The ratios
+    above are the trustworthy part**, being same-page and same-session. NOT
+    being chased, since the symptom is resolved -- reopen only if it recurs.
+    Same for the ~2,300 commands of racks, dice and HUD still drawn every frame:
+    static and bakeable the same way, but there is no longer a problem to solve.
   - **`?fpstest=1` puts that A/B on screen** (`_installFpsTest`): a panel that
     toggles the bake off and on around two 4-second samples and reports fps and
     command count for each. Built because the console snippet is not pastable on
