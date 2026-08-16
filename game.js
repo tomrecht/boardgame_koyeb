@@ -1401,6 +1401,10 @@ function applyPlayerRoles(triggerAI = true) {
     const b = g.players.find(p => p.name === 'black');
     if (w) w.isAI = WHITE_IS_AI;
     if (b) b.isAI = BLACK_IS_AI;
+    // Start pulling the runtime down as soon as we know a computer will need to
+    // move -- including when the roles are set on the welcome card, before the
+    // game begins. There is no server to cover the load any more.
+    if (typeof _startLocalAIIfNeeded === 'function') _startLocalAIIfNeeded();
     if (typeof updateTurnStatus === 'function') updateTurnStatus(g);
     const cur = g.players.find(p => p.name === g.turn);
     if (triggerAI && cur && cur.isAI && !g.gameOver && !_gameFrozen && !window._tutorialActive) {
@@ -6956,21 +6960,14 @@ function calculateAverageScore() {
 
 // Ensure these functions are defined outside of any class or method
 
-// The eval readout (E). Answered on the device when the local agent is up, so
-// the developer modes survive a static host; /evaluate_board is the fallback
-// while it is still loading, exactly as for move selection.
+// The eval readout (E). Answered on the device, always -- /evaluate_board was
+// the fallback while the runtime loaded and is gone with the rest of the server
+// path. Verified bit-exact against that route over 25 real states before it
+// went (gnn_raw, gnn_best_margin and heur_score all 25/25, worst diff 0.0).
 function evaluateBoard(gameState) {
-    const local = (typeof LocalAgent !== 'undefined' && LocalAgent.enabled())
-        ? LocalAgent.init({ serverUrl: SERVER_URL }).then(ok =>
-              ok ? LocalAgent.evaluate(gameState) : null)
-        : Promise.resolve(null);
-    return local
-        .catch(e => { console.warn('local evaluate failed:', e); return null; })
-        .then(data => data || fetch(`${SERVER_URL}/evaluate_board`, {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify(gameState)
-            }).then(r => r.json()))
+    if (typeof LocalAgent === 'undefined' || !LocalAgent.enabled()) return Promise.resolve(null);
+    return LocalAgent.init({ serverUrl: SERVER_URL })
+        .then(ok => (ok ? LocalAgent.evaluate(gameState) : null))
         .then(data => { console.log('Evaluation:', data); return data; })
         .catch(error => { console.error('Error:', error); return null; });
 }
@@ -6980,64 +6977,46 @@ function evaluateBoard(gameState) {
 let _gameInstanceSeq = 0;
 let _agentRetries = 0;
 
-// On-device inference (see local_agent.js and PORTING.md step 7). Kicked off the
-// first time the computer is asked to move, so a human-vs-human session never
-// pays for it; the session's first move goes to the server while it loads.
+// On-device inference (see local_agent.js and PORTING.md step 7). Kicked off as
+// soon as a game starts with a computer player -- NOT on the first move request,
+// which is when it used to load, because there is no server to answer while it
+// does. Starting here puts the ~4.5 MB in flight while the human takes their
+// first turn. A human-vs-human session still never pays for it.
 function _startLocalAI() {
     if (typeof LocalAgent === 'undefined' || !LocalAgent.enabled()) return;
     LocalAgent.init({ serverUrl: SERVER_URL });
 }
 
-function _askServerForMoves(gameState) {
-    return fetch(`${SERVER_URL}/select_moves`, {
-        method: 'POST',
-        headers: {
-            'Content-Type': 'application/json'
-        },
-        credentials: 'include',
-        body: JSON.stringify(gameState)
-    })
-    .then(response => {
-        console.log('Response status:', response.status);
-        // A gateway timeout (or any error page) answers with HTML, so parsing it
-        // as JSON throws and the turn used to hang on "Computer thinking…"
-        // forever. Treat a bad response as a failed move and recover.
-        if (!response.ok) throw new Error('server responded ' + response.status);
-        return response.json();
-    });
+// Kick the loader off if either side is the computer. Safe to call repeatedly;
+// LocalAgent.init is idempotent.
+function _startLocalAIIfNeeded() {
+    if (!WHITE_IS_AI && !BLACK_IS_AI) return;
+    _startLocalAI();
 }
 
-// Answer from this device, in the shape the server's reply has. Any failure
-// here retires the local path for the session and re-asks the server, so a
-// half-working port costs a moment rather than the game.
+// THE ONLY WAY THE COMPUTER MOVES. There is no server path any more (see
+// local_agent.js's header): the app is a folder of static files, so if this
+// cannot answer, nothing can. Waits for the runtime rather than asking
+// elsewhere while it loads.
 function _askLocalForMoves(gameState) {
-    return LocalAgent.selectMoves(gameState)
+    return LocalAgent.init({ serverUrl: SERVER_URL })
+        .then(ok => {
+            if (!ok) throw new Error('on-device AI unavailable: ' + (LocalAgent.state().error || 'load failed'));
+            return LocalAgent.selectMoves(gameState);
+        })
+        // ?aicompare=1 still checks each answer against a dev server, which is
+        // how the port was verified. It reaches the server itself; nothing on
+        // the normal path does.
         .then(move => (LocalAgent.comparing() && move
                             ? LocalAgent.compareWithServer(gameState, move)
                             : move))
         .then(move => ({ message: 'Success', move: move, local: true }))
         .catch(err => {
-            LocalAgent.disable(err);
-            flashNotice('Switching the computer back to the server', 2500);
-            return _askServerForMoves(gameState);
+            // A bad ANSWER is a port bug and is permanent; a failed LOAD is
+            // retryable and local_agent.js has already decided which this was.
+            if (LocalAgent.ready()) LocalAgent.disable(err);
+            throw err;
         });
-}
-
-// The server did not answer. Before troubling the player, see whether this
-// DEVICE can answer instead. This is what makes a static host work: with no
-// application server at all, every /select_moves fails, and without this the
-// first move of every session showed "the computer didn't answer" and sat
-// through a 1.5s retry before the local agent (which was loading all along)
-// took over. Calls the agent directly rather than _askLocalForMoves, whose own
-// failure path would bounce straight back to the server.
-function _localRescue(error, gameState) {
-    if (typeof LocalAgent === 'undefined' || !LocalAgent.enabled()) throw error;
-    return LocalAgent.init({ serverUrl: SERVER_URL }).then(ok => {
-        if (!ok) throw error;
-        return LocalAgent.selectMoves(gameState)
-            .then(move => ({ message: 'Success', move: move, local: true }))
-            .catch(err => { LocalAgent.disable(err); throw error; });
-    });
 }
 
 function getAgentMoves(gameState) {
@@ -7048,10 +7027,15 @@ function getAgentMoves(gameState) {
     // pieces that no longer exist.
     const askedBy = (_currentGame() || {}).instanceId;
     console.log('Sending game state to agent:', gameState);
-    _startLocalAI();
-    const useLocal = typeof LocalAgent !== 'undefined' && LocalAgent.ready();
-    return (useLocal ? _askLocalForMoves(gameState)
-                     : _askServerForMoves(gameState).catch(e => _localRescue(e, gameState)))
+    if (typeof LocalAgent === 'undefined' || !LocalAgent.enabled()) {
+        // ?localai=0, or the port files never parsed. There is no server to ask.
+        return Promise.resolve().then(() => {
+            const scene = _setupScene(); if (scene && scene.hideThinkingIcon) scene.hideThinkingIcon();
+            flashNotice('The on-device computer is switched off for this session.', 6000);
+            if (typeof updateTurnStatus === 'function') updateTurnStatus('Computer unavailable');
+        });
+    }
+    return _askLocalForMoves(gameState)
     .then(data => {
         const now = (_currentGame() || {}).instanceId;
         if (askedBy !== undefined && now !== askedBy) {
@@ -7075,16 +7059,18 @@ function getAgentMoves(gameState) {
         console.error('Error:', error);
         const scene = gameInstance.scene.scenes[0];
         scene.hideThinkingIcon();
-        // One quiet retry (a cold instance or a recycled worker usually answers
-        // the second time), then hand control back rather than leaving the
-        // player staring at a board that will never move.
+        // One quiet retry, then hand control back rather than leaving the player
+        // staring at a board that will never move. The retry is worth more now
+        // than it was against a server: the usual cause is a dropped fetch of
+        // the runtime, and local_agent.js resets a failed LOAD so the second
+        // attempt genuinely re-tries it.
         if (_agentRetries < 1) {
             _agentRetries += 1;
-            flashNotice('The computer didn’t answer — retrying', 3000);
+            flashNotice('Getting the computer ready — retrying', 3000);
             setTimeout(() => { scene.showThinkingIcon(); getAgentMoves(gameState); }, 1500);
         } else {
             _agentRetries = 0;
-            flashNotice('No answer from the computer. Tap ↷ to ask again.', 6000);
+            flashNotice('The computer couldn’t start on this device. Tap ↷ to try again.', 6000);
             if (typeof updateTurnStatus === 'function') updateTurnStatus('Computer unavailable');
         }
     });

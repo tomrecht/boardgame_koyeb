@@ -10,14 +10,20 @@
  *   - BOTH platforms, not phone-only. Leaving desktop on /select_moves keeps
  *     the Koyeb instance and MOVE_BUDGET alive and maintains two AI paths for
  *     ever, which is the whole cost the port was meant to remove.
- *   - LAZY, with the server as fallback. A first-time visitor would otherwise
- *     pay ~4.5 MB (2.9 MB gzipped runtime + 1.66 MB model) before the computer
- *     could move. So the session starts on /select_moves, this loads in the
- *     background, and the switch happens once it is genuinely ready.
- *   - FAIL CLOSED. Anything that goes wrong here -- a missing file, an old
- *     browser with no WASM, a bad answer -- disables the local path for the
- *     session and hands the turn back to the server. It must never be possible
- *     for a half-loaded local agent to leave the computer unable to move.
+ *
+ * **THE SERVER IS NO LONGER A FALLBACK (2026-08-16).** This used to start each
+ * session on /select_moves and switch over once loaded. It does not any more:
+ * the computer is answered HERE, always, and game.js waits for this to finish
+ * loading rather than asking anything else. That is what makes the app a folder
+ * of static files. Two consequences the old design did not have to handle:
+ *   - The load is kicked off as soon as a game starts with a computer player,
+ *     not on the first move request, so the ~4.5 MB (2.9 MB gzipped runtime +
+ *     1.66 MB model) is usually in flight while the human takes their turn.
+ *   - A failed LOAD is retried (see loadFailed). With a server behind it, one
+ *     dropped fetch cost a moment; with nothing behind it, burning the session
+ *     on a transient network error would leave the player with no opponent at
+ *     all. A bad ANSWER still disables permanently -- see disable() -- because
+ *     a port bug will not fix itself on the next try.
  *
  * The one genuinely new piece of logic is `engineState`: game.js's board model
  * is not the engine's, and the snapshot has to describe what the ENGINE would
@@ -25,8 +31,11 @@
  * the local agent takes the SAME payload the server does -- which is what makes
  * `?aicompare=1` below a real differential test rather than an approximation.
  *
- * `?localai=0` forces the server path, `?localai=1` is the default; a device can
- * be A/B'd without a deploy, as with ?phone= and ?cam=.
+ * `?localai=0` turns this off. It no longer falls back to a working server --
+ * with the routes gone from the deployment there is nothing behind it, so the
+ * flag now means "no computer opponent" unless a dev server is running. It is
+ * kept for exactly that case, alongside `?aicompare=1` and `?aiserver=`, which
+ * are how the port was verified and remain the tools for re-checking it.
  *
  * KNOWN COST: inference runs on the main thread, so the UI is frozen for the
  * duration of a move (measured median 0.29s desktop, 1.25s at 4x throttle).
@@ -74,12 +83,34 @@ const LocalAgent = (function () {
         return status !== 'failed' && status !== 'off';
     }
     function ready() { return status === 'ready'; }
-    function state() { return { status, error: lastError && String(lastError), moves: moveCount }; }
+    function state() { return { status, error: lastError && String(lastError), moves: moveCount,
+                                loadFailures: initFailures }; }
 
+    /* Permanent for the session. Used for a BAD ANSWER -- a port bug is not
+       going to fix itself, and re-asking would just be wrong twice. */
     function disable(err) {
         lastError = err || lastError;
         status = 'failed';
         console.warn('[local-ai] disabled for this session:', lastError);
+    }
+
+    /* A failed LOAD is different: there is no server to fall back to any more,
+       so one dropped fetch of the 11MB wasm must not cost the whole session's
+       computer opponent. Reset to idle and let the next call try again, up to a
+       few times, then treat it as burnt. */
+    const MAX_LOAD_FAILURES = 3;
+    let initFailures = 0;
+    function loadFailed(err) {
+        lastError = err || lastError;
+        initFailures += 1;
+        initPromise = null;
+        if (initFailures >= MAX_LOAD_FAILURES) {
+            status = 'failed';
+            console.warn('[local-ai] giving up after ' + initFailures + ' load attempts:', lastError);
+        } else {
+            status = 'idle';
+            console.warn('[local-ai] load attempt ' + initFailures + ' failed, will retry:', lastError);
+        }
     }
 
     function loadScript(src) {
@@ -147,7 +178,7 @@ const LocalAgent = (function () {
             console.log('[local-ai] ready in ' + Math.round((window.performance || Date).now() - t0) + 'ms'
                         + ' -- the computer now moves on this device');
             return true;
-        })().catch(err => { disable(err); return false; });
+        })().catch(err => { loadFailed(err); return false; });
         return initPromise;
     }
 

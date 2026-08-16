@@ -1114,8 +1114,11 @@ with it in mind.** Assessment and the concrete implications:
         posted to `/debug_piece_info`, **a route app.py has never defined**, so
         it had been 404ing to a fallback forever.
       Both keep `/evaluate_board` as a fallback while the runtime loads.
-    **Still to do:** (c) delete the now-unused routes from app.py, leaving static
-    serving; (d) last, once confident, drop `/select_moves` as a fallback.
+    **(c)/(d) DONE 2026-08-16** — see "THE SERVER IS NO LONGER A FALLBACK" below.
+    The frontend calls no API route in play; app.py keeps `/select_moves` and
+    `/evaluate_board` as developer-only tools (`?aicompare=1`), and nothing falls
+    back to them. **The one step left is the hosting itself:** the code is ready
+    for a static host, but the deployment is still Flask on Koyeb.
   - **THE ICON IS FINAL (2026-08-15)**, shipped: concentric, goals extended 25%
     on each side, the `tighter` curl at full size, the outer field ring dropped,
     three pieces. Board 69% of the canvas against 59% for the old fit.
@@ -1602,6 +1605,41 @@ with it in mind.** Assessment and the concrete implications:
     not defined` from an already-fixed file -- the harness now disables the HTTP
     cache (`Network.setCacheDisabled`) AND unregisters the service worker before
     loading the page under test.
+
+- **THE SERVER IS NO LONGER A FALLBACK — THE APP IS STATIC FILES (2026-08-16).**
+  Step (d) of the hosting plan. `game.js` no longer calls `/select_moves` or
+  `/evaluate_board` at all: `_askServerForMoves` and `_localRescue` are deleted,
+  and `getAgentMoves` waits for the on-device runtime instead of asking anything
+  else while it loads. **Measured: a full self-playing game against a host that
+  serves files only (python http.server, no API routes) made 0 requests to any
+  API route** — 37 on-device move-pairs, 6 pieces saved, no page errors.
+  - **The load now starts when a COMPUTER ROLE IS SET, not at the first move
+    request.** With the server covering the gap that laziness was free; without
+    it, the first move would have stalled on ~4.5 MB. `applyPlayerRoles` kicks it
+    off, which also covers roles chosen on the welcome card before the game
+    begins. Measured `idle` -> `loading` the moment a role is set, and a first
+    computer move that waited **722ms**. A human-vs-human session still never
+    loads it.
+  - **A failed LOAD is now retried; a bad ANSWER still is not.** `init` used to
+    cache its promise for ever, so one dropped fetch of the 11 MB wasm burnt the
+    session — survivable when the server was behind it, and not survivable now.
+    `loadFailed` resets to idle and lets the next attempt retry, up to 3, then
+    gives up. `disable()` keeps its old meaning for a wrong answer: a port bug
+    will not fix itself, and re-asking would just be wrong twice.
+  - **`?localai=0` now means "no computer opponent"**, since nothing is behind
+    it. It says so (a notice, thinking icon hidden) rather than leaving the
+    player on a board that never moves. Verified.
+  - **app.py keeps both routes, marked DEVELOPER-ONLY.** They are the
+    differential test that proved the port and the way to re-check it
+    (`?aicompare=1`, `?aiserver=`). Nothing calls them in play; do not restore a
+    fallback to them. **Still to do: point the hosting at a static host** — the
+    code no longer needs Flask at runtime, but the deployment has not moved.
+  - Test trap worth keeping: flipping a side to AI **mid-turn** starts a second
+    agent request alongside the one in flight, and the two move applications
+    race — it threw from `Piece.save` on an already-saved piece. That is a bug in
+    the test, not the game; set both roles BEFORE starting. And `hideThinkingIcon`
+    sets `visible=false` but leaves `alpha` untouched, so asserting on alpha
+    reports the icon as still showing when it is not.
 
 - **SETTINGS ARE REACHABLE FROM THE WELCOME / MATCH-SETUP SCREENS (2026-08-16).**
   Owner: on launch the gear was unavailable, so the defaults could not be changed

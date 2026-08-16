@@ -196,6 +196,22 @@ def _ort_mimetype(filename):
 def index():
     return app.send_static_file('index.html')
 
+# ---------------------------------------------------------------------------
+# DEVELOPER ROUTES ONLY (2026-08-16). The frontend does NOT call either of the
+# two routes below during normal play any more: the computer is answered on the
+# device by local_agent.js, and there is no fallback to here. A full game was
+# played against a host serving files only -- 0 requests to any API route.
+#
+# They are kept because they are the differential test that PROVED the port and
+# remain the way to re-check it: `?aicompare=1` scores every local answer
+# against /select_moves, and `?aiserver=` points that comparison at a chosen
+# instance. The eval readout was likewise verified bit-exact against
+# /evaluate_board over 25 states before it stopped calling it.
+#
+# So: do not build anything new on these, and do not restore a fallback to them.
+# The deployment target is a static host where neither exists.
+# ---------------------------------------------------------------------------
+
 @app.route('/select_moves', methods=['POST'])
 def select_moves():
     try:
