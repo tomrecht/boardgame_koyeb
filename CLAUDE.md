@@ -1083,17 +1083,33 @@ with it in mind.** Assessment and the concrete implications:
     silently when the server fails, awaiting the runtime if it is still loading.
     Verified: static host, 12 moves, no failure notice; and 25/25 still
     agreeing with a real server, so the served path is unchanged.
-    **What is left is deletion, not porting, and it is the owner's call**, since
-    the recording chain is deliberately retained for LOCAL collection runs
-    (`RECORD_TRAINING=1`) even though the deployment disk is ephemeral:
-      (a) drop the recording chain from game.js (`notifyStartGame`,
-          `notifyGameResult`, `recordTurnPosition`, `queryAndRecordContrastive`,
-          the `/abort_game` calls, `currentGameId`/`moveCounter`) — this alone
-          removes every remaining request except the first `/select_moves`;
-      (b) drop the dead `/debug_piece_info` call and the debug routes, or
-          re-point `/evaluate_board` at `LocalAgent` (it is a few lines now);
-      (c) delete the routes from app.py, leaving static serving;
-      (d) last, once confident, remove `/select_moves` as a fallback.
+    **(a) DONE — the recording chain is gone from game.js (owner's call,
+    2026-08-15).** Deleted: `notifyStartGame`, `notifyGameResult`,
+    `recordTurnPosition`, `queryAndRecordContrastive`, all five `/abort_game`
+    calls (including the `beforeunload` one), the `/call_draw` POST, and
+    `currentGameId` / `moveCounter` / `RECORD_TRAINING_DATA`. **Measured: with no
+    server at all, a whole game now makes exactly ONE request — the first
+    `/select_moves` — and it is silently rescued.** `/start_game` is gone
+    entirely. The local half-move bookkeeping (`_pendingMoves`, `pushHumanMove`,
+    `clearMoveRecording`) was deliberately KEPT: it is client-only, threaded
+    through the human move path, and removing it is cosmetic with real
+    regression risk and no hosting benefit. app.py's routes are untouched, so a
+    local collection run is still possible from the Python side.
+    **DEBUG, SETUP AND EVAL MODES ARE KEPT AND NOW WORK WITHOUT A SERVER**
+    (owner asked for all three).
+      * **Setup (S)** needed nothing — free placement was always client-side.
+      * **Eval (E)** goes through `LocalAgent.evaluate`, a port of
+        `/evaluate_board` including `best_play_value`'s units (raw × NUM_PIECES,
+        with the guaranteed-win branch reporting the real final margin).
+        **Verified bit-exact against the served route over 25 real states:
+        gnn_raw 25/25, gnn_best_margin 25/25, heur_score 25/25, worst diff 0.0.**
+      * **Debug (D)** goes through `LocalAgent.pieceDebug` (distance, blot count,
+        saveability). Note this REVIVES a broken feature: the hover tooltip
+        posted to `/debug_piece_info`, **a route app.py has never defined**, so
+        it had been 404ing to a fallback forever.
+      Both keep `/evaluate_board` as a fallback while the runtime loads.
+    **Still to do:** (c) delete the now-unused routes from app.py, leaving static
+    serving; (d) last, once confident, drop `/select_moves` as a fallback.
   - **THE ICON IS FINAL (2026-08-15)**, shipped: concentric, goals extended 25%
     on each side, the `tighter` curl at full size, the outer field ring dropped,
     three pieces. Board 69% of the canvas against 59% for the old fit.

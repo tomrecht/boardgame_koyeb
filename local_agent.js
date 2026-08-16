@@ -52,6 +52,7 @@ const LocalAgent = (function () {
                       'selectMovePair', 'moveCmp'];
 
     const NO_SAVE_TURNS_FOR_DRAW_FALLBACK = 10;
+    const TOTAL_PIECES = 12;          // margin units for the eval readout
 
     let status = 'idle';            // idle | loading | ready | failed | off
     let staticData = null;
@@ -236,6 +237,88 @@ const LocalAgent = (function () {
         return pair.map(toWire);
     }
 
+    /* --- the developer modes, answered on the device ---------------------- */
+
+    /* What /evaluate_board returned, computed here instead, so the eval readout
+       (E) survives a static host. Mirrors app.py's route field for field:
+       agent.evaluate's raw value, best_play_value's margin, and the heuristic
+       total with its per-side components. */
+    async function evaluate(gs) {
+        if (status !== 'ready') throw new Error('local agent not ready');
+        const engine = engineFor(gs);
+        const player = engine.currentPlayer;
+        const h = window.evaluate(engine, weights, player);
+        const [winner, margin] = engine.checkGameOver();
+        if (winner) {
+            // agent.evaluate short-circuits a finished game rather than asking
+            // the net, which never sees game_over and would be out of
+            // distribution. gnn_raw is left null, as it is server-side.
+            const signed = (winner === player ? 1 : -1) * margin;
+            return { message: 'Success', gnn_player: player, gnn_raw: null,
+                     gnn_best_margin: signed, heur_score: h.score,
+                     player: h.components.player, opponent: h.components.opponent };
+        }
+        const raw = (await window.Infer.score(window.ort, [engine.snapshot()], player))[0];
+        return {
+            message: 'Success',
+            gnn_player: player,
+            gnn_raw: raw,
+            gnn_score: raw * window.SCORE_SCALE,
+            eval: raw * window.SCORE_SCALE,
+            total_score: raw * window.SCORE_SCALE,
+            gnn_best_margin: await bestPlayMargin(engine, player),
+            heur_score: h.score,
+            player: h.components.player,
+            opponent: h.components.opponent,
+        };
+    }
+
+    /* agent_gnn.best_play_value: the margin after `player` plays its best pair,
+       in the same units as the readout's "current" figure (raw * NUM_PIECES). */
+    async function bestPlayMargin(engine, player) {
+        const moves = engine.getValidMoves();
+        if (!moves.length) return null;
+        const ranked = await window.selectMovePair(engine, weights, moves, player, {
+            returnScores: true,
+            snapshot: (e) => e.snapshot(),
+            score: async (snaps) => window.Infer.score(window.ort, snaps, player),
+        });
+        if (!ranked.length) return null;
+        const best = ranked[0];
+        if (!isFinite(best.score)) {
+            // A guaranteed winning pair: report the ACTUAL final margin of the
+            // won position, not a flat NUM_PIECES.
+            const base = engine.moves.length;
+            try {
+                for (const m of best.pair) if (!window.isPass(m)) engine.applyMove(m, false);
+                const [w, s] = engine.checkGameOver();
+                if (w) return (w === player ? 1 : -1) * s;
+            } finally {
+                while (engine.moves.length > base) engine.undoLastMove();
+            }
+            return TOTAL_PIECES;
+        }
+        return (best.score / window.SCORE_SCALE) * TOTAL_PIECES;
+    }
+
+    /* What /debug_piece_blots returned. Also answers the debug hover tooltip,
+       which called /debug_piece_info -- a route that never existed in app.py, so
+       that tooltip has been failing silently all along and works again now. */
+    function pieceDebug(gs, pieceInfo) {
+        if (!graph) throw new Error('local agent not ready');
+        const engine = engineFor(gs);
+        const p = engine.find(pieceInfo.player, Number(pieceInfo.number));
+        if (!p) return { error: 'Piece not found' };
+        const blocked = window.blockedTiles(engine.graph, engine.pieces, p.player);
+        const distance = window.shortestRouteToGoal(engine.graph,
+            { tile: p.tile, number: p.number, saved: p.rack === 'saved' }, blocked);
+        return {
+            distance: isFinite(distance) ? distance : null,
+            blot_count: window.countEnemyBlotsOnShortestPath(engine, p),
+            can_be_saved: engine.canBeSaved(p),
+        };
+    }
+
     /* --- differential check (?aicompare=1) -------------------------------- */
 
     /* Asks the server the same question and records any disagreement. This is
@@ -291,6 +374,7 @@ const LocalAgent = (function () {
     }
 
     return { init, enabled, ready, state, disable, selectMoves,
+             evaluate, pieceDebug,          // the developer modes (E / D)
              comparing, compareWithServer,
              // exposed for tests/debugging, not used by game.js
              engineState, engineFor, toWire, _seedStatic, _compare: compare };

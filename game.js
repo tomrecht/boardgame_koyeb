@@ -7,11 +7,6 @@ const SERVER_URL = IS_LOCAL
     : window.location.origin;
 
 const DEBUG_MODE = false;
-// Every human turn used to be posted to the backend and appended to
-// training_data/*.jsonl. The training data that mattered has been collected and
-// the agent is trained from self-play now, so this is off; the server side is
-// gated too (RECORD_TRAINING=1 there re-enables it for a local collection run).
-const RECORD_TRAINING_DATA = false;
 
 // Who plays each colour. Defaults: you are White, the computer is Black. Both
 // sides can be either, so you can watch the agent play itself or play both
@@ -2158,11 +2153,7 @@ function matchScoreLine() {
 // The coin flip runs first, then the fresh game is started — so nothing (incl.
 // a black/AI opener) moves until the flip resolves, mirroring the casual path.
 function _startMatchFirstGame(starter) {
-    if (currentGameId) {
-        fetch(`${SERVER_URL}/abort_game`, { method: 'POST',
-            headers: { 'Content-Type': 'application/json' }, credentials: 'include' }).catch(() => {});
-        currentGameId = null; moveCounter = 0; clearMoveRecording();
-    }
+    clearMoveRecording();
     showCoinFlip(starter, () => {   // reveal who goes first, then start the game
         if (typeof gameInstance !== 'undefined' && gameInstance && gameInstance.scene) {
             // SceneManager.start() does not stop whatever is currently showing
@@ -2212,11 +2203,7 @@ function showWelcome(starter) {
     mkBtn('Single game', true, () => {
         box.remove();
         showCoinFlip(starter, () => {
-            if (currentGameId) {
-                fetch(`${SERVER_URL}/abort_game`, { method: 'POST',
-                    headers: { 'Content-Type': 'application/json' }, credentials: 'include' }).catch(() => {});
-                currentGameId = null; moveCounter = 0; clearMoveRecording();
-            }
+            clearMoveRecording();
             const sc = _setupScene();
             if (sc && sc.scene) sc.scene.restart({ startingPlayer: starter });
         });
@@ -2461,10 +2448,12 @@ function showMatchSetup(onCancel) {
 
 let extraMoveRequested = false;
 
-// ── DATA COLLECTION GLOBALS ─────────────────────────────────────────────
-let currentGameId = null;
-let moveCounter = 0;
-let _pendingMoves = [];   // stores moves made this turn in agent format
+// ── HUMAN HALF-MOVE BOOKKEEPING ─────────────────────────────────────────
+// What is left of the data-collection globals. The server-facing recording
+// chain (game ids, /record_*, /start_game, /abort_game) is gone -- see the
+// hosting audit in CLAUDE.md -- but the human move path still fills these as it
+// goes, so they are kept and cleared as before.
+let _pendingMoves = [];   // moves made this turn, in agent format
 let _lastMovePair = null; // complete move pair for the turn
 
 function clearMoveRecording() {
@@ -2804,6 +2793,15 @@ function refreshEvalReadout() {
     });
 }
 
+// Piece distance / blot count / saveability, from the device. Returns null if
+// the local agent is unavailable, so callers fall back to their own reporting.
+function _pieceDebugInfo(gameState, player, number) {
+    if (typeof LocalAgent === 'undefined' || !LocalAgent.enabled()) return Promise.resolve(null);
+    return LocalAgent.init({ serverUrl: SERVER_URL })
+        .then(ok => (ok ? LocalAgent.pieceDebug(gameState, { player: player, number: number }) : null))
+        .catch(e => { console.warn('local pieceDebug failed:', e); return null; });
+}
+
 // ── DEBUG HOVER TOOLTIP (follows cursor) ────────────────────────────────
 let _dbgTip = null, _dbgMouseX = 0, _dbgMouseY = 0;
 document.addEventListener('mousemove', function(e) {
@@ -3110,27 +3108,14 @@ class Piece {
         // Get current game state
         const gameState = getGameState(this.game);
         
-        // Call the backend
-        fetch(`${SERVER_URL}/debug_piece_blots`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-                gameState: gameState,
-                piece: {
-                    player: this.player,
-                    number: this.number
-                }
-            })
-        })
-        .then(response => response.json())
-        .then(data => {
-            console.log(`📊 Piece ${this.player}(${this.number}):`);
-            console.log(`   Distance to goal: ${data.distance === Infinity ? 'No path' : data.distance}`);
-            console.log(`   Enemy blots on path: ${data.blot_count === Infinity ? 'No path' : data.blot_count}`);
+        // Answered on the device (LocalAgent.pieceDebug); this used to need
+        // /debug_piece_blots.
+        _pieceDebugInfo(gameState, this.player, this.number).then(data => {
+            if (!data || data.error) { console.log('   no debug info:', data && data.error); return; }
+            console.log(`\u{1F4CA} Piece ${this.player}(${this.number}):`);
+            console.log(`   Distance to goal: ${data.distance === null ? 'No path' : data.distance}`);
+            console.log(`   Enemy blots on path: ${data.blot_count === null ? 'No path' : data.blot_count}`);
             console.log(`   Can be saved: ${data.can_be_saved}`);
-        })
-        .catch(error => {
-            console.error('Error getting blot info:', error);
         });
         
         return; // Stop here, don't select the piece
@@ -3414,37 +3399,16 @@ class Piece {
         // Get the current game state
         const gameState = getGameState(this.game);
         
-        // Add a temporary endpoint to the server to get blot count
-        // Or we can calculate it locally (more complex)
-        
-        // For now, let's request the evaluation which includes distance info
+        // Answered on the device. This block used to POST /debug_piece_info --
+        // a route app.py has never defined, so it always 404'd and fell through
+        // to localDebugInfo(). It works now.
         try {
-            const response = await fetch(`${SERVER_URL}/debug_piece_info`, {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({
-                    gameState: gameState,
-                    piece: {
-                        player: this.player,
-                        number: this.number
-                    }
-                })
-            });
-            
-            if (response.ok) {
-                const data = await response.json();
-                console.log(`Distance to goal: ${data.distance === Infinity ? 'No path' : data.distance} steps`);
-                console.log(`Enemy blots on shortest path: ${data.blot_count === Infinity ? 'No path' : data.blot_count}`);
-                if (data.path && data.path.length > 0) {
-                    console.log(`Path length: ${data.path.length} tiles (including start and goal)`);
-                    console.log(`Path: ${data.path.map(t => `${t.ring},${t.sector}`).join(' → ')}`);
-                }
-                if (data.can_be_saved) {
-                    console.log(`✓ Piece can be saved immediately!`);
-                }
+            const data = await _pieceDebugInfo(gameState, this.player, this.number);
+            if (data && !data.error) {
+                console.log(`Distance to goal: ${data.distance === null ? 'No path' : data.distance} steps`);
+                console.log(`Enemy blots on shortest path: ${data.blot_count === null ? 'No path' : data.blot_count}`);
+                if (data.can_be_saved) console.log(`\u2713 Piece can be saved immediately!`);
             } else {
-                console.log(`Could not get debug info from server`);
-                // Fallback to local calculation
                 this.localDebugInfo();
             }
         } catch (error) {
@@ -5193,16 +5157,11 @@ switchTurn() {
         // the other player's rack is a different set of enterable pieces
         if (typeof _updateViewportHud === 'function') setTimeout(_updateViewportHud, 0);
 
-        // Record human turns here
-        if (!playerObj.isAI) {
-            const preState = this.turnStartState || getGameState(this);
-            const movePair = _pendingMoves.length > 0 ? _pendingMoves.slice() : null;
-            recordTurnPosition(this, justFinished, source, movePair);
-            if (movePair) {
-                queryAndRecordContrastive(preState, movePair, justFinished, moveCounter);
-            }
-            clearMoveRecording();
-        }
+        // Human turns used to be posted to the backend here. Removed with the
+        // rest of the recording chain (see the hosting audit in CLAUDE.md); the
+        // local half-move bookkeeping is still cleared, since the human move
+        // path fills it.
+        if (!playerObj.isAI) clearMoveRecording();
 
         this.turn = this.turn === 'white' ? 'black' : 'white';
 
@@ -5354,21 +5313,7 @@ endGame(winner, score = null, impasse_caller = null) {
             : TOTAL_PIECES - this.whiteSavedRack.pieces.length;
     }
 
-    // Flush any pending human move pair before the game result is recorded
-    if (_pendingMoves.length > 0) {
-        const playerObj = this.players.find(p => p.name === this.turn);
-        const source = playerObj.isAI ? 'heuristic' : 'human';
-        const preState = this.turnStartState || getGameState(this);
-        const movePair = _pendingMoves.slice();
-        recordTurnPosition(this, this.turn, source, movePair);
-        if (!playerObj.isAI) {
-            queryAndRecordContrastive(preState, movePair, this.turn, moveCounter);
-        }
-        clearMoveRecording();
-    }
-
-    // Notify backend of game result – this will flush all positions to disk
-    notifyGameResult(winner, score);
+    clearMoveRecording();
 
     this.gameOver = true;
     console.log(`${winner} wins with a score of ${score}!`);
@@ -6213,16 +6158,14 @@ class MainGameScene extends Phaser.Scene {
         this.callDrawButton.setHudVisible(false);
 
             onTap(this.callDrawButton, () => {
-                fetch(`${SERVER_URL}/call_draw`, { method: 'POST', credentials: 'include' })
-                    .catch(e => console.warn('call_draw failed:', e));
+                // The POST to /call_draw was fire-and-forget and the server did
+                // nothing the client needs; the draw is ended right here.
                 const g = gameInstance.scene.scenes[0].game;
                 g.endGame('draw', null, g.turn);
             });
 
         this.checkInitialAIReady();
 
-        // Call notifyStartGame when game is created
-        notifyStartGame();
 
         // First casual game of a session: greet with a start screen, then the
         // coin flip (on Play) reveals the random starter.
@@ -6423,16 +6366,7 @@ class MainGameScene extends Phaser.Scene {
     // Same shared dialog as every other confirmation in the app.
     showNewGameConfirmationModal() {
         showConfirm('Start a new game?', () => {
-            if (!this.game.gameOver && currentGameId) {
-                fetch(`${SERVER_URL}/abort_game`, {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    credentials: 'include'
-                }).catch(e => console.warn('abort_game failed:', e));
-                currentGameId = null;
-                moveCounter = 0;
-                clearMoveRecording();
-            }
+            clearMoveRecording();
             this.scene.restart({ startingPlayer: nextCasualStarter() });
         }, 'New game');
     }
@@ -6521,11 +6455,7 @@ class EndGameScene extends Phaser.Scene {
         }
 
         const abortAndClear = () => {
-            if (currentGameId) {
-                fetch(`${SERVER_URL}/abort_game`, { method: 'POST',
-                    headers: { 'Content-Type': 'application/json' }, credentials: 'include' }).catch(() => {});
-                currentGameId = null; moveCounter = 0; clearMoveRecording();
-            }
+            clearMoveRecording();
         };
         const startGame = (starter) => { abortAndClear(); this.scene.start('MainGameScene', { startingPlayer: starter }); };
         updateTurnStatus('');   // the game is over: drop the turn/thinking pill
@@ -6625,15 +6555,23 @@ function calculateAverageScore() {
 
 // Ensure these functions are defined outside of any class or method
 
+// The eval readout (E). Answered on the device when the local agent is up, so
+// the developer modes survive a static host; /evaluate_board is the fallback
+// while it is still loading, exactly as for move selection.
 function evaluateBoard(gameState) {
-    return fetch(`${SERVER_URL}/evaluate_board`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(gameState)
-    })
-    .then(r => r.json())
-    .then(data => { console.log('Evaluation:', data); return data; })
-    .catch(error => { console.error('Error:', error); return null; });
+    const local = (typeof LocalAgent !== 'undefined' && LocalAgent.enabled())
+        ? LocalAgent.init({ serverUrl: SERVER_URL }).then(ok =>
+              ok ? LocalAgent.evaluate(gameState) : null)
+        : Promise.resolve(null);
+    return local
+        .catch(e => { console.warn('local evaluate failed:', e); return null; })
+        .then(data => data || fetch(`${SERVER_URL}/evaluate_board`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(gameState)
+            }).then(r => r.json()))
+        .then(data => { console.log('Evaluation:', data); return data; })
+        .catch(error => { console.error('Error:', error); return null; });
 }
 
 
@@ -6751,119 +6689,9 @@ function getAgentMoves(gameState) {
     });
 }
 
-function recordTurnPosition(game, player, source, movePair) {
-    if (!RECORD_TRAINING_DATA) return;
-    if (!currentGameId) {
-        console.warn('No active game ID, skipping position recording');
-        return;
-    }
-    const gameState = getGameState(game);
-    moveCounter++;
-    const playerObj = game.players.find(p => p.name === player);
-    const gameStage = playerObj ? playerObj.getGamePhase() : 'unknown';
-    fetch(`${SERVER_URL}/record_position`, {
-        method: 'POST',
-        credentials: 'include',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-            state: gameState,
-            player: player,
-            source: source,
-            move_index: moveCounter,
-            game_stage: gameStage,
-            move_pair: movePair
-        })
-    })
-    .then(response => response.json())
-    .then(data => {
-        if (data.message !== 'Position recorded') {
-            console.warn('Failed to record position:', data);
-        } else {
-            console.log('Position recorded successfully');
-        }
-    })
-    .catch(e => console.warn('record_position failed:', e));
-}
 
-async function queryAndRecordContrastive(preState, humanPair, player, moveIndex) {
-    if (!RECORD_TRAINING_DATA) return;
-    if (!currentGameId) return;
-    try {
-        const game = gameInstance.scene.scenes[0].game;
-        const playerObj = game.players.find(p => p.name === player);
-        const gameStage = playerObj ? playerObj.getGamePhase() : 'unknown';
 
-        const response = await fetch(`${SERVER_URL}/query_agent_move`, {
-            method: 'POST',
-            credentials: 'include',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ state: preState, human_pair: humanPair }),
-        });
-        const data = await response.json();
 
-        if (!data.differs) return;  // agent agreed, nothing to record
-
-        await fetch(`${SERVER_URL}/record_contrastive_pair`, {
-            method: 'POST',
-            credentials: 'include',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-                state: preState,
-                player: player,
-                game_stage: gameStage,
-                move_index: moveIndex,
-                human_pair: humanPair,
-                agent_pair: data.agent_pair,
-                agent_score: data.agent_score,
-            }),
-        });
-        console.log('Contrastive pair recorded (agent disagreed)');
-    } catch(e) {
-        console.warn('queryAndRecordContrastive failed:', e);
-    }
-}
-
-function notifyStartGame() {
-    console.log('Starting new game, notifying backend...');
-    fetch(`${SERVER_URL}/start_game`, {
-        method: 'POST',
-        credentials: 'include',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({})
-    })
-    .then(response => response.json())
-    .then(data => {
-        currentGameId = data.game_id;
-        moveCounter = 0;
-        clearMoveRecording();
-        console.log('Game started with ID:', currentGameId);
-    })
-    .catch(e => console.warn('start_game failed:', e));
-}
-
-function notifyGameResult(winner, score) {
-    if (!currentGameId) {
-        console.warn('No active game ID, cannot record result');
-        return;
-    }
-    console.log(`Recording game result: ${winner} wins with score ${score}`);
-    fetch(`${SERVER_URL}/record_game_result`, {
-        method: 'POST',
-        credentials: 'include',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-            winner: winner,
-            score: score
-        })
-    })
-    .then(() => {
-        // Clear game ID after successful recording
-        currentGameId = null;
-        moveCounter = 0;
-        clearMoveRecording();
-    })
-    .catch(e => console.warn('record_game_result failed:', e));
-}
 
 
 function applyMove(move) { 
@@ -7211,17 +7039,8 @@ function getGameState(game) {
     return gameStateDetails;
 }
 
-// Page unload handler to abort game
-window.addEventListener('beforeunload', function() {
-    if (currentGameId) {
-        fetch(`${SERVER_URL}/abort_game`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            credentials: 'include',
-            keepalive: true
-        }).catch(e => console.warn('abort_game failed:', e));
-    }
-});
+// The page-unload /abort_game POST went with the recording chain: there is
+// no server-side game to abort (hosting audit, CLAUDE.md).
 
 
 // WORLD_W/H stay the coordinate system everything is laid out in (the board is
