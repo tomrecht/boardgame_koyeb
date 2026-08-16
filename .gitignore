@@ -26,3 +26,6 @@ trace_fixture.json
 # committed (238 KB) so the fixture is reproducible without a browser session.
 state_expected.json
 ort/*.gz    # generated at image build time (see Dockerfile)
+
+# Static web bundle assembled by build_web.py -- derived, never edited by hand.
+dist/

@@ -1634,6 +1634,23 @@ with it in mind.** Assessment and the concrete implications:
     (`?aicompare=1`, `?aiserver=`). Nothing calls them in play; do not restore a
     fallback to them. **Still to do: point the hosting at a static host** — the
     code no longer needs Flask at runtime, but the deployment has not moved.
+  - **`build_web.py` assembles the shipped bundle into `dist/` — 25 files,
+    13.9 MB.** A static deploy must NOT point at the repo root: **79 MB is
+    tracked, 45 MB of it training data** (`training_data/positions_with_moves.
+    jsonl` alone is 34 MB) plus ~10 MB of checkpoints and design PNGs, none of
+    which belongs on a public host. The script CHECKS rather than trusts: every
+    listed file must exist, and the list must agree with `sw.js`'s precache
+    block, because a file the worker precaches but the deploy omits is an app
+    that installs and then cannot start offline. `--check` verifies without
+    writing. It also emits a `_headers` file (Cloudflare Pages / Netlify) making
+    index.html and every one of our own .js no-cache — they change under fixed
+    names on every deploy, the same reason the worker is network-first for them
+    — and the runtime/model/phaser long-lived.
+    **Proven: a full self-playing game served from `dist/` alone**, 37 on-device
+    move-pairs, 0 API requests, no page errors.
+    The pre-made `ort/*.wasm.gz` is deliberately NOT shipped — any CDN worth
+    using compresses on the fly, and shipping both invites serving the wrong one.
+    The same list is what a Capacitor build will bundle.
   - Test trap worth keeping: flipping a side to AI **mid-turn** starts a second
     agent request alongside the one in flight, and the two move applications
     race — it threw from `Piece.save` on an already-saved piece. That is a bug in
