@@ -1701,6 +1701,18 @@ with it in mind.** Assessment and the concrete implications:
   goal" (`sumToGoal`, `Game.sendToGoal`). A numbered piece only ever targets its
   OWN goal; a blank targets any goal but only when exactly one is reachable,
   otherwise it does nothing rather than guess.
+  **NOT for a piece already on a goal it can use** (owner, 2026-08-17). A
+  double-click there means "save", and if it cannot save with this roll the answer
+  is nothing — not a wander off to another goal, which would give up a banking
+  square it was already standing on. `save()` and `sumSave()` run first in
+  `handleDoubleClick` and are unaffected; the second walks to another goal but
+  BANKS there, which is always progress. **A numbered piece on the WRONG goal is
+  not on a goal it can use, so the shortcut still applies** and can carry it to
+  its own — the case owner explicitly wanted kept. The guard lives in
+  `sendToGoal` rather than at the one call site, so any future caller inherits it.
+  Verified 5/5: numbered on its own goal → no shortcut; numbered on a wrong goal →
+  goes to its own; numbered on a field tile → unchanged; blank on any goal → no
+  shortcut; blank on a field tile → unchanged.
   **EVERY route counts toward ambiguity** (owner, confirmed after two revisions).
   Collect the eligible goals reachable by the sum AND by either die; act only if
   there is exactly ONE. So a blank with goal 4 a die away and goal 6 a sum away

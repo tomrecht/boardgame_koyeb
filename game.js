@@ -5554,6 +5554,20 @@ class Game {
         if (!piece || piece.player !== this.turn) return false;
         if (this.gameOver) return false;
 
+        // NOT for a piece already standing on a goal it can use (owner). A
+        // double-click there means "save", and if it cannot save with this roll
+        // the answer is nothing -- not a wander off to another goal, which would
+        // give up a banking square it was already on. `save()` and `sumSave()`
+        // run BEFORE this in handleDoubleClick and are unaffected: the second
+        // walks to another goal but BANKS there, which is always progress.
+        //
+        // A numbered piece on the WRONG goal is not on a goal it can use, so the
+        // shortcut still applies and can carry it to its own -- which is exactly
+        // the case owner wanted kept.
+        const here = piece.currentTile;
+        if (here && here.type === 'save' &&
+            (piece.number > 6 || here.number === piece.number)) return false;
+
         const r = this.getReachableTilesByDice(piece);
         if (!r) return false;
         piece.reachableTiles = r;
