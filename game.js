@@ -297,14 +297,27 @@ function fxBurst(scene, x, y, color) {
 // and not after a move-then-undo. Only runs on a move that is already refused,
 // so the extra BFS costs nothing in normal play.
 function _noticeIfRouteWithheld(game, piece, targetTile) {
-    if (getAutoEnRouteCapture()) return false;      // nothing is ever withheld
-    if (!game || !piece || !targetTile) return false;
+    // Traced, because this failed to appear in one real sequence (move a piece,
+    // undo, retry) that no harness has reproduced -- every branch says why.
+    // console.log is silent unless ?dev=1, so this costs nothing in play.
+    const no = (reason, extra) => { console.log('[route-notice] not shown:', reason, extra || ''); return false; };
+    if (getAutoEnRouteCapture()) return no('the "Automatic en-route capture" setting is ON');
+    if (!game || !piece || !targetTile) return no('missing game/piece/target');
     let r = null;
-    try { r = game.getReachableTilesByDice(piece); } catch (e) { return false; }
-    if (!r || !(r.ambiguousSum || []).includes(targetTile)) return false;
+    try { r = game.getReachableTilesByDice(piece); } catch (e) { return no('reachability threw', e); }
+    if (!r) return no('no reachable set (both dice used?)');
+    if (!(r.ambiguousSum || []).includes(targetTile)) {
+        return no('target is not a withheld route', {
+            ambiguous: (r.ambiguousSum || []).length,
+            sum: r.reachableBySum.length,
+            dice: game.dice.map(d => d.value + (d.used ? '(used)' : '')),
+            target: targetTile.type + ' ' + targetTile.ring + ',' + targetTile.sector,
+        });
+    }
     if (typeof flashNotice === 'function') {
         flashNotice('A capture is possible on the way — move one die at a time to choose the route.', 4500);
     }
+    console.log('[route-notice] shown');
     return true;
 }
 
@@ -1410,7 +1423,10 @@ function flashNotice(text, ms = 2400) {
             'z-index:31; font-family:' + HUD_FONT + '; font-size:17px; font-weight:700;' +
             'color:#28313b; background:rgba(255,255,255,.97); padding:11px 20px;' +
             'border-radius:14px; box-shadow:0 6px 22px rgba(0,0,0,.30); pointer-events:none;' +
+            // text-wrap:balance so a two-line notice splits evenly instead of
+            // stranding the last word or two on a line of their own.
             'max-width:min(560px, 92vw); text-align:center; line-height:1.35;' +
+            'text-wrap:balance;' +
             'border:1px solid rgba(0,0,0,.10);' +
             'opacity:0; transition:opacity .2s;';
         document.body.appendChild(el);
@@ -4398,6 +4414,11 @@ class Tile {
                     return;
                 }
                 const diceBefore = this.game.dice.map(d => ({ value: d.value, used: d.used }));
+                // Traced alongside _noticeIfRouteWithheld: if the notice never
+                // appears AND this line never logs, the tap is not reaching
+                // movePiece at all and the fault is upstream of the move logic.
+                console.log('[route-notice] tile tapped with a piece selected ->',
+                            this.type, this.ring + ',' + this.sector);
                 if (this.game.movePiece(piece, this)) {
                     // Determine which die(s) were consumed
                     let dieUsed = 0;
