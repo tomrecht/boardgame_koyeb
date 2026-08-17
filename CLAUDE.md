@@ -1830,6 +1830,34 @@ with it in mind.** Assessment and the concrete implications:
   depends on the rules being live, build the position by playing into it or check
   it by hand.
 
+- **"AUTOMATIC EN-ROUTE CAPTURE" IS NOW A SETTING, ON BY DEFAULT (2026-08-17).**
+  On = today's behaviour, a sum move captures a lone enemy it passes (choosing by
+  the numbered/higher-numbered rule). **Off = the player picks the route**: a sum
+  destination whose ROUTE decides what gets captured is not offered at all, and
+  they move one die at a time to say which way they meant.
+  - **The test collapses to "2+ routes, at least one passing a lone enemy".** A
+    two-die route has exactly ONE intermediate and the capture happens there, so
+    distinct routes have distinct intermediates and therefore distinct outcomes —
+    there is no need to compare what each route would take. With no capturable
+    piece on any route every route ends in the same position, so the single
+    gesture stays honest and is left alone.
+  - Routes are built ONCE per roll in `getReachableTilesByDice` (2 + |A| + |B|
+    BFS) rather than per destination, and the whole block is skipped when the
+    setting is on — which is the default, so the common path costs nothing.
+  - Withheld tiles ride back as `ambiguousSum` so `movePiece` can tell "withheld
+    on purpose" from "out of range" and say so: *"A capture is possible on the way
+    — move one die at a time to choose the route."* Fired only when the player
+    actually aims at the tile, never on selection.
+  - Verified 4 ways on a position built from the game's own reachability: auto ON
+    with an enemy en route → offered and moves (unchanged); auto OFF with an
+    enemy → withheld, and `movePiece` refuses; auto OFF with no enemy → still
+    offered; auto ON with no enemy → unchanged.
+  - **Test trap:** route composition can BACKTRACK (out 2, back 3 lands 1 away),
+    so a composed destination is not necessarily at BFS distance a+b — and
+    `reachableBySum` holds exactly the tiles that are. The first version of the
+    test picked a single-die destination, found it absent from `reachableBySum`
+    in all four cases, and proved nothing.
+
 - **A CAPTURED PIECE IS AN ABSOLUTE BLOCK, AND THE FRONTEND WAS NOT ENFORCING IT
   (2026-08-17).** Owner: with a captured piece on the home tile he could still
   select either of the first two unentered rack pieces. Real bug, and the window

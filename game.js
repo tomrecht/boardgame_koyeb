@@ -222,6 +222,11 @@ function getConfirmRiskyEnd()   { return !_tut.active && _boolSetting('confirmRi
 // goal it can reach on the DICE SUM. Never during the tutorial, which scripts
 // every move and would be walked off its rails by a shortcut.
 function getSumToGoal()         { return !_tut.active && _boolSetting('sumToGoal', false); }
+// ON by default = today's behaviour: a sum move captures a lone enemy it passes,
+// picking one by the numbered/higher-numbered rule. Turned OFF, a sum move whose
+// ROUTE is ambiguous (see getReachableTilesByDice) is not offered at all, and the
+// player moves one die at a time to say which way they meant to go.
+function getAutoEnRouteCapture() { return _boolSetting('autoEnRoute', true); }
 
 // A pre-game card is up: the welcome screen or match setup. Whatever board sits
 // behind one is not being played, so its dice are not in play either.
@@ -1619,6 +1624,7 @@ function createSettingsPanel() {
     toggle('End turn automatically when both dice used', getAutoEndTurn, 'autoEndTurn', true);
     toggle('Confirm ending a turn with a move left', getConfirmRiskyEnd, 'confirmRiskyEnd', false);
     toggle('Double-click sends a piece to its goal', getSumToGoal, 'sumToGoal', false);
+    toggle('Automatic en-route capture', getAutoEnRouteCapture, 'autoEnRoute', true);
 
     // Interactive tutorial launcher
     const tut = mk('button',
@@ -5363,10 +5369,50 @@ class Game {
                 // reachableBySum is already [] here (both dice were needed to reach it)
             }
         }
+        // AUTOMATIC EN-ROUTE CAPTURE, turned off: a sum move whose ROUTE decides
+        // what gets captured is withheld, and the player moves one die at a time
+        // to say which way they meant.
+        //
+        // The test is simply "two or more routes, at least one passing a lone
+        // enemy". A two-die route has exactly ONE intermediate tile and the
+        // capture happens there, so distinct routes have distinct intermediates
+        // and therefore distinct outcomes -- there is no need to compare what
+        // each route would take. With no capturable piece on any route every
+        // route ends in the same position, so the single gesture stays honest.
+        let ambiguousSum = [];
+        if (!getAutoEnRouteCapture() && reachableBySum.length && !d0.used && !d1.used) {
+            const from = piece.currentTile || this.tiles.find(t => t.type === 'home');
+            const capturable = (t) => t && t.type !== 'save' && t.pieces.length === 1 &&
+                                      t.pieces[0].color !== piece.color;
+            // destination -> the set of intermediates that reach it. Built once
+            // for the whole roll rather than per destination: 2 + |A| + |B| BFS
+            // instead of a fresh pair for every sum target.
+            const routes = new Map();
+            const addRoutes = (mids, otherVal) => mids.forEach(m => {
+                this.getReachableTiles(m, otherVal).forEach(dest => {
+                    if (!routes.has(dest)) routes.set(dest, new Set());
+                    routes.get(dest).add(m);
+                });
+            });
+            addRoutes(this.getReachableTiles(from, d0.value), d1.value);
+            addRoutes(this.getReachableTiles(from, d1.value), d0.value);   // doubles: same set, Set dedupes
+
+            ambiguousSum = reachableBySum.filter(t => {
+                const mids = routes.get(t);
+                return mids && mids.size >= 2 && [...mids].some(capturable);
+            });
+            if (ambiguousSum.length) {
+                const amb = new Set(ambiguousSum);
+                reachableBySum = reachableBySum.filter(t => !amb.has(t));
+            }
+        }
+
         // The tutorial hard-blocks: off-script destinations are dropped here, so
         // they are neither highlighted nor accepted by movePiece.
         if (_tut.active) return _tutFilterReach(this, piece, { reachableByFirstDie, reachableBySecondDie, reachableBySum });
-        return { reachableByFirstDie, reachableBySecondDie, reachableBySum };
+        // ambiguousSum rides along so movePiece can tell "withheld on purpose"
+        // apart from "simply not reachable", and say so.
+        return { reachableByFirstDie, reachableBySecondDie, reachableBySum, ambiguousSum };
     }
 
     // Shortest (BFS) distance from startTile to every reachable tile, respecting
@@ -5403,7 +5449,18 @@ class Game {
         const { reachableByFirstDie, reachableBySecondDie, reachableBySum } = reachableTiles;
 
         const allReachableTiles = new Set([...reachableByFirstDie, ...reachableBySecondDie, ...reachableBySum]);
-    
+
+        // Withheld on purpose (automatic en-route capture is off and the route
+        // would decide the capture), as opposed to simply out of range. Say so,
+        // or the destination just silently refuses and reads as a broken board.
+        if (!allReachableTiles.has(targetTile) &&
+            (reachableTiles.ambiguousSum || []).includes(targetTile)) {
+            if (typeof flashNotice === 'function') {
+                flashNotice('A capture is possible on the way — move one die at a time to choose the route.', 4000);
+            }
+            return false;
+        }
+
         if (allReachableTiles.has(targetTile)) {
 
             if (this.isBlocked(targetTile)) {
