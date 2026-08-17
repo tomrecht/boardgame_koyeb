@@ -5321,6 +5321,13 @@ class Game {
         // offering moves that would then be rejected.
         const must = this.mustMovePieces || [];
         if (must.length > 0 && !must.includes(piece)) reachableBySum = [];
+        // While a CAPTURED piece is on home nothing else may move at all, so no
+        // other piece gets any destinations -- otherwise they light up and the
+        // move is then refused, the same complaint that motivated the sum line
+        // above.
+        if (this.mustMoveIsCaptured && !must.includes(piece)) {
+            return { reachableByFirstDie: [], reachableBySecondDie: [], reachableBySum: [] };
+        }
 
         // Taking the SECOND rack piece first is a reordering, not a deferral:
         // the front piece must still enter this turn, so a die may only go to
@@ -5404,6 +5411,12 @@ class Game {
             // Obligatory-move ordering: a non-obligatory move must leave a die for
             // every still-pending obligatory piece.
             if (this.mustMovePieces.length > 0 && !this.mustMovePieces.includes(piece)) {
+                // Absolute while a captured piece is on home -- see canSelectForMove.
+                if (this.mustMoveIsCaptured) {
+                    console.log('A captured piece must move first');
+                    _flashMustMove(this);
+                    return false;
+                }
                 const unused = this.dice.filter(d => !d.used).length;
                 const willUse = (reachableByFirstDie.includes(targetTile) ||
                                  reachableBySecondDie.includes(targetTile)) ? 1 : 2;
@@ -5700,6 +5713,10 @@ class Game {
     
     updateMovablePieces() {
         this.mustMovePieces = [];
+        // Is the obligation ABSOLUTE (a captured piece) or merely an ordering
+        // constraint (the entry from the rack)? The two are not the same rule and
+        // canSelectForMove used to apply the weaker one to both.
+        this.mustMoveIsCaptured = false;
 
         const currentPlayerColor = this.turn === 'white' ? 0xffffff : 0x000000;
         const homeTile = this.tiles.find(tile => tile.type === 'home');
@@ -5709,6 +5726,15 @@ class Game {
         const homePieces = homeTile.pieces.filter(piece => piece.color === currentPlayerColor);
         if (homePieces.length > 0) {
             this.mustMovePieces = homePieces;
+            // A piece sitting on home because it was CAPTURED blocks everything.
+            // One that is there because it was just picked off the rack does not:
+            // that is a tentative entry, and switching to another rack piece is
+            // the reordering privilege. justMovedHome is what tells them apart.
+            this.mustMoveIsCaptured = homePieces.some(p => !p.justMovedHome);
+            // These used to be skipped by the early return, so the amber "must
+            // move" rings were never refreshed for a capture.
+            if (typeof updateMustMoveHighlights === 'function') updateMustMoveHighlights(this);
+            if (typeof _updateViewportHud === 'function') _updateViewportHud();
             return; // If there are captured pieces, no other pieces may move
         }
 
@@ -5730,6 +5756,14 @@ class Game {
     // free piece first, but are then locked to the obligatory one(s).
     canSelectForMove(piece) {
         if (this.mustMovePieces.length === 0 || this.mustMovePieces.includes(piece)) return true;
+        // A CAPTURED piece is an absolute block: while one of yours sits on the
+        // home tile nothing else may move at all, whatever the dice would allow.
+        // game.py's get_valid_moves returns only captured-piece moves in that
+        // state. The die-counting rule below belongs to the ENTRY obligation,
+        // where moving another piece first IS legal as long as a die is left --
+        // and applying it to captures let a single captured piece be ignored
+        // whenever both dice were free, since (2 - 1) >= 1.
+        if (this.mustMoveIsCaptured) return false;
         const unused = this.dice.filter(d => !d.used).length;
         return (unused - 1) >= this.mustMovePieces.length;
     }

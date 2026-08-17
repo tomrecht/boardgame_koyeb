@@ -1830,6 +1830,37 @@ with it in mind.** Assessment and the concrete implications:
   depends on the rules being live, build the position by playing into it or check
   it by hand.
 
+- **A CAPTURED PIECE IS AN ABSOLUTE BLOCK, AND THE FRONTEND WAS NOT ENFORCING IT
+  (2026-08-17).** Owner: with a captured piece on the home tile he could still
+  select either of the first two unentered rack pieces. Real bug, and the window
+  was exactly **one captured piece with both dice free**: `canSelectForMove` let a
+  non-obligatory piece move whenever `(unused - 1) >= mustMovePieces.length`, and
+  1 >= 1. With TWO captured pieces it was 1 >= 2 and already refused, which is why
+  it looked inconsistent — owner's guess that it might not generalise was right.
+  **The die-counting rule belongs to the ENTRY obligation only**, where moving
+  another piece first is legal as long as a die is kept back. A capture is
+  categorically different: `game.py`'s `get_valid_moves` returns ONLY
+  captured-piece moves while any of yours sit on home, and
+  `updateMovablePieces`'s own comment ("no other pieces may move") already said
+  so — nothing downstream honoured it.
+  `updateMovablePieces` now sets **`mustMoveIsCaptured`**, and three places
+  consult it: `canSelectForMove` (refuse outright), `movePiece`'s obligation check
+  (refuse outright, with the pulse), and `getReachableTilesByDice` (a non-obligatory
+  piece gets NO destinations, so nothing lights up that would then be refused).
+  - **`justMovedHome` is what separates a capture from a tentative entry.** Both
+    put a piece on the home tile, but a piece picked off the rack is mid-entry and
+    the reordering privilege must survive — flagging that as "captured" would have
+    made the second rack piece unselectable and broken a feature. Verified: after
+    a tentative entry `mustMoveIsCaptured` is false and the second piece is still
+    selectable.
+  - Also fixed in passing: the captured branch **returned before
+    `updateMustMoveHighlights`**, so the amber must-move rings were never
+    refreshed for a capture.
+  - Verified 4 scenarios: 1 captured + 2 dice → only the captured piece is
+    selectable, rack front/second and a board piece all refused, and the rack
+    front has 0 destinations; 2 captured → same; entry obligation only → moving
+    another piece first still allowed; tentative entry → reordering still works.
+
 - **THE OBLIGATORY PIECE PULSES WHEN YOU TRY TO MOVE ANOTHER ONE (2026-08-17).**
   Owner: a refused move because a DIFFERENT piece must move (a captured piece on
   home, or the entry from the rack) did nothing visible, so it read as the board
