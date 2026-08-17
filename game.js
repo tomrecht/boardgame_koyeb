@@ -1584,7 +1584,7 @@ function createSettingsPanel() {
     toggle('Move & capture effects', getFeedbackEnabled, 'fxEnabled', true);
     toggle('End turn automatically when both dice used', getAutoEndTurn, 'autoEndTurn', true);
     toggle('Confirm ending a turn with a move left', getConfirmRiskyEnd, 'confirmRiskyEnd', false);
-    toggle('Double-click sends a piece to its goal (dice sum)', getSumToGoal, 'sumToGoal', false);
+    toggle('Double-click sends a piece to its goal', getSumToGoal, 'sumToGoal', false);
 
     // Interactive tutorial launcher
     const tut = mk('button',
@@ -3497,7 +3497,7 @@ class Piece {
                 // that just left, so it must not enter THIS one as a side effect
                 // of the shortcut turning out not to apply.
                 this.lastClickTime = null;
-                if (this.game.sumToGoal(mark.piece)) _clearSelection(this.game);
+                if (this.game.sendToGoal(mark.piece)) _clearSelection(this.game);
                 return;
             }
         }
@@ -3658,7 +3658,7 @@ class Piece {
             // Still on a goal it cannot bank from, and cannot reach-and-bank
             // another either -- but the sum may reach a goal it CAN eventually
             // use (a numbered piece parked on the wrong goal, most usefully).
-            if (!saved && this.player === this.game.turn && this.game.sumToGoal(this)) {
+            if (!saved && this.player === this.game.turn && this.game.sendToGoal(this)) {
                 _clearSelection(this.game); return;
             }
             // Saving removes this piece, and the tile then re-lays out what is
@@ -3672,7 +3672,7 @@ class Piece {
             // not on a goal yet, but one die reaches the goal and the other saves
             // it this turn -> do both at once.
             return;
-        } else if (this.player === this.game.turn && this.game.sumToGoal(this)) {
+        } else if (this.player === this.game.turn && this.game.sendToGoal(this)) {
             // Optional gesture, and deliberately AFTER sumSave: both spend the
             // whole roll, and reaching a goal *and* banking beats parking on it,
             // since a banked piece is scored and out of play.
@@ -5507,21 +5507,34 @@ class Game {
     // tutorial's hard block. And because the destination is in reachableBySum,
     // movePiece runs checkEnRouteCapture for us -- so en-route capture is
     // preserved by construction rather than by a second implementation.
-    sumToGoal(piece) {
+    sendToGoal(piece) {
         if (!getSumToGoal()) return false;
         if (!piece || piece.player !== this.turn) return false;
         if (this.gameOver) return false;
-        if (this.dice[0].used || this.dice[1].used) return false;   // the sum needs both
 
         const r = this.getReachableTilesByDice(piece);
-        if (!r || !r.reachableBySum.length) return false;
+        if (!r) return false;
         piece.reachableTiles = r;
 
-        const goals = r.reachableBySum.filter(t => t.type === 'save' &&
+        // Which goals may this piece target at all. Numbered pieces can only ever
+        // match one, so the "exactly one" rule below bites for blanks.
+        const eligible = (list) => [...new Set(list)].filter(t => t.type === 'save' &&
             (piece.number > 6 ? true : t.number === piece.number));
-        // Numbered pieces can only ever match one goal, so this bites for blanks.
-        if (goals.length !== 1) return false;
-        return this.movePiece(piece, goals[0]);
+
+        // The SUM first: it is the whole roll, and it is the only route that can
+        // capture en route (movePiece runs checkEnRouteCapture for a sum target).
+        const bySum = eligible(r.reachableBySum);
+        if (bySum.length === 1) return this.movePiece(piece, bySum[0]);
+
+        // Then a single die, when the sum offers nothing usable -- owner's rule.
+        // Note there is never a choice of WHICH die to spend: movement is
+        // exact-distance, so a tile sits in one die's list only (its BFS depth),
+        // and a goal reachable by a single die is reachable by one die value
+        // unless the roll is doubles, where the two are interchangeable.
+        const bySingle = eligible([...r.reachableByFirstDie, ...r.reachableBySecondDie]);
+        if (bySingle.length === 1) return this.movePiece(piece, bySingle[0]);
+
+        return false;
     }
 
     // Does the current player have any legal move left with the unused dice?

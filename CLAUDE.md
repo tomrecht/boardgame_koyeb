@@ -1698,11 +1698,20 @@ with it in mind.** Assessment and the concrete implications:
 
 - **OPTIONAL GESTURE: DOUBLE-CLICK SENDS A PIECE TO A GOAL ON THE DICE SUM
   (2026-08-17).** Off by default; settings row "Double-click sends a piece to its
-  goal (dice sum)" (`sumToGoal`). Owner's rule: **sum only** — a single-die route
-  is one ordinary move the player can already make by tapping the destination,
-  and shortcutting it would spend a die they may want elsewhere. A numbered piece
-  only ever targets its OWN goal; a blank targets any goal but only when exactly
-  one is reachable, otherwise it does nothing rather than guess.
+  goal" (`sumToGoal`, `Game.sendToGoal`). A numbered piece only ever targets its
+  OWN goal; a blank targets any goal but only when exactly one is reachable,
+  otherwise it does nothing rather than guess.
+  **Sum first, then a single die** (owner, revised twice). Sum is tried first
+  because it is the whole roll and the only route that can capture en route; a
+  single die is the fallback when the sum offers nothing usable.
+  ~~Sum only~~ — the first cut refused single-die routes on the grounds that they
+  are ordinary moves the player can already make by tapping the destination, and
+  that shortcutting one spends a die they may want elsewhere. **The second half
+  was wrong**: it spends ONE die and leaves the other. And there is no
+  which-die-to-spend problem either, which was the other worry: movement is
+  exact-distance, so a tile sits in exactly one die's reachable list (its BFS
+  depth), and a goal reachable by a single die is reachable by one die value
+  unless the roll is doubles, where the two are interchangeable.
   - **Ordered AFTER `sumSave`, deliberately.** Both spend the whole roll, and
     reaching a goal *and* banking beats parking on it, since a banked piece is
     scored and out of play. So double-click still tries: save → sumSave →
@@ -1739,15 +1748,19 @@ with it in mind.** Assessment and the concrete implications:
     twice on the same piece OBJECT, which is not the gesture — a real second tap
     hits whatever is under the pointer. Any test of a double-tap on a rack must
     tap "the piece currently in slot N", not a piece captured beforehand.
-  - **ALL SIX GOALS ARE EXACTLY 7 FROM THE HOME TILE** (measured). Consequences
-    for the rack case, which is the only reason this matters: a NUMBERED piece
-    enters and reaches its goal only on a sum of exactly 7 (verified: dice 1+6,
-    landed on goal 5, both dice used), and **a BLANK piece can never use the
-    gesture from the rack at all** — at sum 7 all six goals are reachable at once,
-    so the "exactly one goal" rule always sees six. That is the stated rule
-    working as specified, not a bug, but it means the gesture is dead for blanks
-    entering. Left as-is pending owner's call; the alternative would be a
-    which-goal picker, which is a bigger change.
+  - **ALL SIX GOALS ARE EXACTLY 7 FROM THE HOME TILE** (measured), and everything
+    that starts on home follows from that — the rack and CAPTURED pieces both.
+      * A NUMBERED piece reaches its goal only on a **sum of exactly 7**, i.e. 6
+        of 36 rolls (1+6, 2+5, 3+4 and reverses). A single die can never do it,
+        7 > 6. Verified from the rack (1+6 → goal 5) and for a captured piece via
+        the real two-tap path (3+4 → its goal, both dice used, and unchanged by
+        whether the rack is empty).
+      * **A BLANK can never use the gesture from home at all** — at sum 7 all six
+        goals are reachable at once, so the "exactly one goal" rule always sees
+        six. That is the stated rule working as specified.
+    **Owner reported the gesture "doesn't work for captured pieces"; it does, but
+    only on a sum of 7**, so most rolls correctly do nothing and it reads as
+    broken. Worth remembering before treating a report like that as a defect.
   - **En-route capture now picks deliberately (unconditional, toggle-independent).**
     It used to capture the first eligible intermediate tile the two die orders
     happened to yield — an arbitrary choice dressed as a rule. Owner's rule:
