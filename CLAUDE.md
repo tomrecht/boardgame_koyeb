@@ -1720,12 +1720,15 @@ with it in mind.** Assessment and the concrete implications:
   handover, which previously could leave an unselectable piece as
   `game.selectedPiece` (it fell through to guards that returned without undoing
   the assignment).
-  **NOT fully verified: the reachable-tile path.** In a hand-built position the
-  forward fired but `movePiece` refused and the tile's own select-branch then
-  picked up the tapped piece — a sane end state, but the board was synthetic
-  (pieces placed by mutating state), so this says little. Worth an eyeball in a
-  real game: clicking your own piece on a HIGHLIGHTED tile should still move onto
-  it.
+  **The reachable-tile path is confirmed by owner in a real game** — clicking
+  your own piece on a highlighted tile still moves onto it. Worth recording why
+  it needed a human: in a hand-built position (pieces placed by mutating state)
+  the forward fired but `movePiece` refused and the tile's own select-branch
+  picked up the tapped piece instead. A sane end state, but the synthetic board
+  made the result meaningless either way — the dice and stage state were not what
+  a real turn would have. Same lesson as the trace-diff work: for anything that
+  depends on the rules being live, build the position by playing into it or check
+  it by hand.
 
 - **THE "MATCH EXTENDED" LINE IS NO LONGER THE SMALLEST TEXT ON THE CARD
   (2026-08-16).** It was 20px against the score line's 21 and in a lighter accent
