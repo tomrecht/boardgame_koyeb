@@ -223,6 +223,36 @@ function getConfirmRiskyEnd()   { return !_tut.active && _boolSetting('confirmRi
 // every move and would be walked off its rails by a shortcut.
 function getSumToGoal()         { return !_tut.active && _boolSetting('sumToGoal', false); }
 
+// A pre-game card is up: the welcome screen or match setup. Whatever board sits
+// behind one is not being played, so its dice are not in play either.
+function _preGameCardUp() {
+    try {
+        return !!(document.getElementById('welcomeScreen') || document.getElementById('matchSetup'));
+    } catch (e) { return false; }
+}
+
+// Repaint the dice, so the rule above takes effect the moment a card appears or
+// is dismissed rather than waiting for whatever would next have redrawn them.
+function _redrawDice() {
+    const g = _currentGame();
+    if (!g || !g.dice) return;
+    g.dice.forEach(d => { if (d.updateColor) d.updateColor(g.turn); else if (d.drawDie) d.drawDie(); });
+}
+// Driven off the DOM for the same reason the settings gear's z-index is: these
+// cards are shown and removed from several places, and one missed call would
+// leave the dice in the wrong state for the rest of the session.
+try {
+    let _wasUp = null;
+    const _obs = new MutationObserver(() => {
+        const up = _preGameCardUp();
+        if (up === _wasUp) return;      // ignore unrelated body changes
+        _wasUp = up;
+        _redrawDice();
+    });
+    if (document.body) _obs.observe(document.body, { childList: true });
+    else document.addEventListener('DOMContentLoaded', () => _obs.observe(document.body, { childList: true }));
+} catch (e) { /* no MutationObserver: dice simply repaint on the next redraw */ }
+
 // The live Game instance (for settings that act on the running game).
 function _currentGame() {
     try { const sc = gameInstance.scene.getScene('MainGameScene'); return sc && sc.game; }
@@ -3443,6 +3473,35 @@ class Piece {
             return;
         }
 
+        // DOUBLE-TAP ON A RACK SLOT, for the send-to-goal gesture. The first tap
+        // tentatively enters the piece onto the home tile and the rack then closes
+        // the gap -- so the second tap of the gesture physically lands on the NEXT
+        // piece, never on the one that moved, and per-piece lastClickTime never
+        // sees a double-click at all. Owner saw it read as two single taps,
+        // oscillating between the first two unentered pieces. Keyed to the rack
+        // SLOT instead, which is what the player actually tapped twice.
+        //
+        // MUST come before the selection handover below: after the first tap the
+        // entered piece IS game.selectedPiece, so the handover runs first and its
+        // `justMovedHome` branch returns that piece to the rack -- which is the
+        // oscillation itself, and it happens before any later check could see it.
+        if (this.rack && this.rack.type === 'unentered' && getSumToGoal()) {
+            const slot = this.rack.pieces.indexOf(this);
+            const mark = this.game._rackSlotTap;
+            this.game._rackSlotTap = null;
+            if (mark && mark.rack === this.rack && mark.slot === slot &&
+                Date.now() - mark.time < 400 && mark.piece !== this &&
+                mark.piece.justMovedHome && mark.piece.currentTile &&
+                mark.piece.currentTile.type === 'home') {
+                // Consume the gesture either way: this tap belongs to the piece
+                // that just left, so it must not enter THIS one as a side effect
+                // of the shortcut turning out not to apply.
+                this.lastClickTime = null;
+                if (this.game.sumToGoal(mark.piece)) _clearSelection(this.game);
+                return;
+            }
+        }
+
         if (this.game.selectedPiece && this.game.selectedPiece !== this) {
 
             // Could this piece take the selection instead? An opponent's never
@@ -3533,6 +3592,12 @@ class Piece {
             // from an ordinary one -- which let the second piece keep its sum
             // destinations and come out on a dice sum.
             this.game._reorderEntry = (this.rack.pieces[0] !== this) ? this : null;
+            // Which slot this came out of, so a second tap in the same place can
+            // be recognised as the other half of a double-tap (see handleClick).
+            this.game._rackSlotTap = getSumToGoal()
+                ? { rack: this.rack, slot: this.rack.pieces.indexOf(this),
+                    time: Date.now(), piece: this }
+                : null;
             this.moveFromRack();
             this.justMovedHome = true;
             this.game.selectedPiece = this;
@@ -4786,7 +4851,13 @@ class Die {
         // that roll is discarded -- Play starts a fresh game -- so displaying it
         // just shows two values that are never used. The real game runs through
         // a new create(), which builds new dice with the flag already cleared.
-        if (_gameFrozen) return;
+        //
+        // _gameFrozen only covers the FIRST load. Cancelling out of a game or a
+        // match mid-session puts the same cards over a board whose dice are
+        // equally moot, and there the flag is already false -- so ask what is on
+        // screen as well (owner: "when cancelling game/match, dice should
+        // disappear"). _redrawDice below repaints them when a card comes or goes.
+        if (_gameFrozen || _preGameCardUp()) return;
         paintDie(this.graphics, this.x, this.y, this.size, this.value, {
             dieColor, dotColor,
             borderColor: this.isFirstDie ? colorFirstDie : colorSecondDie,

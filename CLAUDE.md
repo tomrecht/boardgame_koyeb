@@ -1715,6 +1715,30 @@ with it in mind.** Assessment and the concrete implications:
     preserved by construction**, not by a second implementation. Verified end to
     end: piece 4, dice 5+1 over distance 6, lands on goal 4 with both dice spent,
     and with two lone enemies en route it captures the right one.
+  - **FROM THE RACK IT NEEDED ITS OWN DETECTION, KEYED TO THE SLOT.** The first
+    tap tentatively enters the piece onto the home tile and the rack then closes
+    the gap, so the second tap of the gesture lands on the piece that slid into
+    that slot — never on the one that moved. Per-piece `lastClickTime` therefore
+    never sees a double-click at all: owner saw it read as two single taps,
+    "swaps between the first two unentered pieces". `_rackSlotTap` records
+    (rack, slot, time, piece) on a tentative entry and the next tap on the same
+    slot within 400ms is treated as the second half of the gesture.
+    **It must be checked BEFORE the selection-handover block**, and the first
+    attempt was placed after it and failed exactly as before: after the first tap
+    the entered piece IS `game.selectedPiece`, so the handover runs first and its
+    `justMovedHome` branch calls `returnToRack()` on it — that IS the oscillation,
+    and it happens before any later check can see the piece on home.
+    Verified through the real click path: numbered piece, toggle ON → lands on its
+    goal, the second tap does NOT enter the next piece, both dice used; toggle OFF
+    → old behaviour byte-for-byte (p2 enters, as before).
+    **Cost, accepted:** with the toggle ON the tap is consumed whether or not the
+    shortcut applies, so a deliberate *reordering* tap on the second rack piece
+    within 400ms of entering the first is swallowed. Falling through instead would
+    reinstate the oscillation. After 400ms reordering works normally.
+    **MY FIRST TEST OF THIS PASSED AND WAS WORTHLESS**: it called `handleClick`
+    twice on the same piece OBJECT, which is not the gesture — a real second tap
+    hits whatever is under the pointer. Any test of a double-tap on a rack must
+    tap "the piece currently in slot N", not a piece captured beforehand.
   - **ALL SIX GOALS ARE EXACTLY 7 FROM THE HOME TILE** (measured). Consequences
     for the rack case, which is the only reason this matters: a NUMBERED piece
     enters and reaches its goal only on a sum of exactly 7 (verified: dice 1+6,
@@ -1774,6 +1798,19 @@ with it in mind.** Assessment and the concrete implications:
   a real turn would have. Same lesson as the trace-diff work: for anything that
   depends on the rules being live, build the position by playing into it or check
   it by hand.
+
+- **NO DICE WHILE A PRE-GAME CARD IS UP (2026-08-17).** Owner: cancelling out of
+  a game or match should make the dice disappear. `_gameFrozen` already did this,
+  but it is only set in `create()` and so only covers the FIRST load — cancelling
+  mid-session puts the same welcome / match-setup card over a board whose dice are
+  equally moot, with the flag already false. `drawDieWithColor` now also asks
+  `_preGameCardUp()` (is `#welcomeScreen` or `#matchSetup` in the DOM), and
+  `_redrawDice()` repaints them the moment a card appears or goes, driven off a
+  MutationObserver on `document.body` — same reasoning as the settings gear's
+  z-index sync: these cards are shown and removed from several places and one
+  missed call would strand the dice in the wrong state for the session.
+  Measured mid-game: dice 195/182 draw commands → **0 with either card up** → back
+  to 195/182 when it is dismissed.
 
 - **THE "MATCH EXTENDED" LINE IS NO LONGER THE SMALLEST TEXT ON THE CARD
   (2026-08-16).** It was 20px against the score line's 21 and in a lighter accent
