@@ -286,6 +286,28 @@ function fxBurst(scene, x, y, color) {
         onComplete: () => ring.destroy() });
 }
 
+// A refused move might have been refused ON PURPOSE: automatic en-route capture
+// is off and this destination's ROUTE would decide the capture. Say so, or it
+// reads as a dead board.
+//
+// Computed FRESH rather than read off `piece.reachableTiles`. That cache is
+// cleared by undo (restoreState nulls it on every piece) and by a turn change,
+// and movePiece bails out before ever reaching the message when it is empty --
+// which is the likeliest reason owner saw the notice appear on a first attempt
+// and not after a move-then-undo. Only runs on a move that is already refused,
+// so the extra BFS costs nothing in normal play.
+function _noticeIfRouteWithheld(game, piece, targetTile) {
+    if (getAutoEnRouteCapture()) return false;      // nothing is ever withheld
+    if (!game || !piece || !targetTile) return false;
+    let r = null;
+    try { r = game.getReachableTilesByDice(piece); } catch (e) { return false; }
+    if (!r || !(r.ambiguousSum || []).includes(targetTile)) return false;
+    if (typeof flashNotice === 'function') {
+        flashNotice('A capture is possible on the way — move one die at a time to choose the route.', 4500);
+    }
+    return true;
+}
+
 // You tried to move a piece while a DIFFERENT one is obliged to move (a captured
 // piece on the home tile, or the entry from the rack). Nothing happened, and
 // without a cue that reads as the board ignoring you -- so pulse the piece that
@@ -1379,10 +1401,17 @@ function flashNotice(text, ms = 2400) {
     let el = document.getElementById('flashNotice');
     if (!el) {
         el = document.createElement('div'); el.id = 'flashNotice';
+        // Was 13px of grey on translucent white, which owner could barely see --
+        // and these are the messages that explain why something did NOT happen,
+        // so being missable defeats the point. Bigger, darker, opaque, with a
+        // wrap width: the route-choice notice is a full sentence and used to run
+        // off the edge as one line.
         el.style.cssText = 'position:fixed; top:44px; left:50%; transform:translateX(-50%);' +
-            'z-index:31; font-family:' + HUD_FONT + '; font-size:13px; font-weight:600;' +
-            'color:#5a6473; background:rgba(255,255,255,.82); padding:4px 12px;' +
-            'border-radius:20px; box-shadow:0 2px 8px rgba(0,0,0,.12); pointer-events:none;' +
+            'z-index:31; font-family:' + HUD_FONT + '; font-size:17px; font-weight:700;' +
+            'color:#28313b; background:rgba(255,255,255,.97); padding:11px 20px;' +
+            'border-radius:14px; box-shadow:0 6px 22px rgba(0,0,0,.30); pointer-events:none;' +
+            'max-width:min(560px, 92vw); text-align:center; line-height:1.35;' +
+            'border:1px solid rgba(0,0,0,.10);' +
             'opacity:0; transition:opacity .2s;';
         document.body.appendChild(el);
     }
@@ -5438,7 +5467,12 @@ class Game {
 
         let reachableTiles = piece.reachableTiles;
 
-        if (!reachableTiles && !getReachableTiles) return false;
+        // The cache is empty (undo cleared it, or nothing selected this piece).
+        // Still explain a deliberately withheld route before giving up.
+        if (!reachableTiles && !getReachableTiles) {
+            _noticeIfRouteWithheld(this, piece, targetTile);
+            return false;
+        }
 
         if (!reachableTiles) {  // this is called from AI agent's applyMove
             reachableTiles = this.getReachableTilesByDice(piece);
@@ -5450,14 +5484,9 @@ class Game {
 
         const allReachableTiles = new Set([...reachableByFirstDie, ...reachableBySecondDie, ...reachableBySum]);
 
-        // Withheld on purpose (automatic en-route capture is off and the route
-        // would decide the capture), as opposed to simply out of range. Say so,
-        // or the destination just silently refuses and reads as a broken board.
-        if (!allReachableTiles.has(targetTile) &&
-            (reachableTiles.ambiguousSum || []).includes(targetTile)) {
-            if (typeof flashNotice === 'function') {
-                flashNotice('A capture is possible on the way — move one die at a time to choose the route.', 4000);
-            }
+        // Withheld on purpose, as opposed to simply out of range.
+        if (!allReachableTiles.has(targetTile)) {
+            _noticeIfRouteWithheld(this, piece, targetTile);
             return false;
         }
 

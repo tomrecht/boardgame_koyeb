@@ -1844,10 +1844,27 @@ with it in mind.** Assessment and the concrete implications:
   - Routes are built ONCE per roll in `getReachableTilesByDice` (2 + |A| + |B|
     BFS) rather than per destination, and the whole block is skipped when the
     setting is on — which is the default, so the common path costs nothing.
-  - Withheld tiles ride back as `ambiguousSum` so `movePiece` can tell "withheld
-    on purpose" from "out of range" and say so: *"A capture is possible on the way
-    — move one die at a time to choose the route."* Fired only when the player
+  - Withheld tiles ride back as `ambiguousSum` so a refused move can be told
+    apart from "out of range" and say so: *"A capture is possible on the way —
+    move one die at a time to choose the route."* Fired only when the player
     actually aims at the tile, never on selection.
+  - **`_noticeIfRouteWithheld` recomputes rather than reading `piece.reachable
+    Tiles`.** Owner: the notice appeared, but not after moving the piece once and
+    undoing. NOT REPRODUCED in a harness (it fires in that exact sequence, driven
+    through `Tile.onClick`), so this is a fix by removing the likeliest cause
+    rather than by diagnosis: `restoreState` nulls `reachableTiles` on every
+    piece, and `movePiece` bails at `if (!reachableTiles && !getReachableTiles)`
+    BEFORE any message could be produced. The check now runs off a fresh
+    computation and is called from both refusal points, so no cached state can
+    suppress it. It only runs on an already-refused move, so the extra BFS is
+    free in normal play. **If it recurs, the cache is not the cause and the next
+    suspect is the call path never reaching `movePiece` at all.**
+  - **`flashNotice` was too small to read** (owner) — 13px grey on translucent
+    white. Now 17px bold near-black on an opaque card with a real shadow, wrapped
+    at `min(560px, 92vw)` and centred: these messages explain why something did
+    NOT happen, so being missable defeats the point. The route notice is a full
+    sentence and used to run off as one line; it now wraps to two (602x70).
+    Applies to every notice, not just this one.
   - Verified 4 ways on a position built from the game's own reachability: auto ON
     with an enemy en route → offered and moves (unchanged); auto OFF with an
     enemy → withheld, and `movePiece` refuses; auto OFF with no enemy → still
