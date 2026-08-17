@@ -1696,6 +1696,42 @@ with it in mind.** Assessment and the concrete implications:
     sets `visible=false` but leaves `alpha` untouched, so asserting on alpha
     reports the icon as still showing when it is not.
 
+- **CLICKING A SECOND PIECE NOW MOVES THE SELECTION TO IT (2026-08-16).** Owner:
+  with a piece selected, clicking a different selectable piece should select that
+  one instead, and did not always. Cause: the "tap a piece = move onto the tile
+  it stands on" forwarding (added so a crowded tile need not be hit in the
+  slivers between its pieces) was **unconditional** for any piece standing on a
+  tile, so the selection-handover code below it was unreachable. Tapping your own
+  piece somewhere the selected piece cannot reach therefore refused the move AND
+  left the tapped piece unselected — nothing happened at all.
+  Now it forwards only when that tile is genuinely a destination on offer, and
+  otherwise hands the selection over. An opponent's piece still always forwards
+  (that is how you capture, and how you aim at a crowded enemy tile), because
+  `selectable` is false for it. Measured: 3/3 not-reachable cases move the
+  selection with the first piece staying put.
+  **The reachability test must NOT read the tiles' `reachableColor`.** That was
+  the first cut, and the destination highlight is DEFERRED (`_hlTimer` in
+  `onClick` holds it back so a double-click save shows no flash) — so a fast
+  second click lands while every `reachableColor` is still null and a real
+  destination reads as unreachable. It asks the selected piece's own
+  `reachableTiles` instead, which is set at selection time and already accounts
+  for the obligation rules that clear the sum set.
+  Also fixed in the same branch: selectability is now checked BEFORE the
+  handover, which previously could leave an unselectable piece as
+  `game.selectedPiece` (it fell through to guards that returned without undoing
+  the assignment).
+  **NOT fully verified: the reachable-tile path.** In a hand-built position the
+  forward fired but `movePiece` refused and the tile's own select-branch then
+  picked up the tapped piece — a sane end state, but the board was synthetic
+  (pieces placed by mutating state), so this says little. Worth an eyeball in a
+  real game: clicking your own piece on a HIGHLIGHTED tile should still move onto
+  it.
+
+- **THE "MATCH EXTENDED" LINE IS NO LONGER THE SMALLEST TEXT ON THE CARD
+  (2026-08-16).** It was 20px against the score line's 21 and in a lighter accent
+  colour, which owner read as noticeably smaller than everything else. Now 21 to
+  match, and bold, since it is a one-off announcement rather than running text.
+
 - **SETTINGS ARE REACHABLE FROM THE WELCOME / MATCH-SETUP SCREENS (2026-08-16).**
   Owner: on launch the gear was unavailable, so the defaults could not be changed
   BEFORE the first game — and who plays which colour is exactly what you want to

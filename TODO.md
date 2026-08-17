@@ -2,6 +2,26 @@
 
 Parked, deliberately-not-now items. (Active work lives in CLAUDE.md / OVERNIGHT_NOTES.md.)
 
+## UNREPRODUCED: score row invisible during a match on Safari (2026-08-16)
+
+Owner played a match on Safari and could not see the score row; minutes later it
+was present on all browsers and **neither of us could reproduce it**. Recorded
+only so a recurrence does not start from zero.
+
+Ruled out by direct probe (`scoreText.visible`, text, position, and whether it
+is inside `camera.worldView`): desktop, phone landscape, phone portrait, on the
+welcome screen and in a running game, inside a 6-game match, and before/during/
+after the tutorial — **present, visible and in view in every one**. `_tutHudVisible`
+is the only thing that hides it, every tutorial exit routes through `_tutEnd`
+which restores it before restarting the scene, and `matchScoreLine()` has no
+branch that returns an empty string.
+
+If it happens again, capture before touching anything: `s = gameInstance.scene
+.getScene('MainGameScene')`, then `s.scoreText.visible`, `s.scoreText.text`,
+`s.scoreText.x/y`, `s.cameras.main.worldView`, and `window._tutorialActive`.
+That distinguishes hidden / empty / off-camera / never-built, which need
+different fixes.
+
 ## Deployment / hosting
 
 - [x] **ONNX export for cheap hosting.** DONE 2026-07-25. `encoder.py` (numpy,

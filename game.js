@@ -3440,11 +3440,39 @@ class Piece {
 
         if (this.game.selectedPiece && this.game.selectedPiece !== this) {
 
+            // Could this piece take the selection instead? An opponent's never
+            // can, and nor can one the obligation rules forbid moving. Checked
+            // BEFORE the handover below, which used to run first and could leave
+            // an unselectable piece as game.selectedPiece.
+            const selectable = this.player === this.game.turn
+                && !(this.rack && this.rack.type === 'unentered' && !_isEntrant(this))
+                && this.game.canSelectForMove(this);
+
             // With another piece selected, a tap on a piece means "move onto the
             // tile it stands on" -- otherwise a crowded tile can only be reached
             // by hitting the slivers of empty space between its pieces. Any tile
             // type, since goals get crowded too.
-            if (this.currentTile) {
+            //
+            // BUT only when that tile is actually a destination on offer. It used
+            // to forward unconditionally, so tapping one of your own pieces
+            // somewhere the selected piece cannot reach refused the move AND left
+            // the tapped piece unselected -- the selection never moved, which is
+            // what a player means by that tap.
+            //
+            // Asked of the selected piece's own reachable sets, NOT of the tiles'
+            // `reachableColor`: the destination highlight is DEFERRED (see the
+            // _hlTimer in onClick, which holds it back so a double-click save
+            // shows no flash), so a fast second click lands while every
+            // reachableColor is still null and a real destination would read as
+            // unreachable. reachableTiles is set at selection time and already
+            // accounts for the obligation rules that clear the sum set.
+            const _sel = this.game.selectedPiece;
+            const _r = _sel.reachableTiles || this.game.getReachableTilesByDice(_sel);
+            const isDestination = !!(_r && this.currentTile &&
+                [_r.reachableByFirstDie, _r.reachableBySecondDie, _r.reachableBySum]
+                    .some(list => list && list.indexOf(this.currentTile) !== -1));
+
+            if (this.currentTile && (!selectable || isDestination)) {
                 // Claim the gesture: this tap has now been acted on, and the
                 // tile's own pointerup handler must not run onClick a second
                 // time (see onTap / _consumeGesture).
@@ -3452,6 +3480,7 @@ class Piece {
                 this.currentTile.onClick();
                 return;
             }
+            if (!selectable) return;   // nothing to hand the selection over to
 
             // Hold the outgoing piece in a local: returnToRack() clears
             // game.selectedPiece, so reading it again below threw (entering a
@@ -6930,9 +6959,13 @@ class EndGameScene extends Phaser.Scene {
                 subline(top + P(142),
                     `White ${m.whiteScore} (${m.whiteWins}W)   ·   Black ${m.blackScore} (${m.blackWins}W)   ·   ${status}`, 21);
                 if (extended) {
+                    // Was 20 against the score line's 21, and in a lighter accent
+                    // colour, which read as noticeably smaller than everything
+                    // else on the card. Matched to the score line and given the
+                    // weight to go with being a one-off announcement.
                     subline(top + P(186),
-                        `Level after ${m.extendedAt} games — match extended by 2`, 20)
-                        .setColor(THEME.accentCss);
+                        `Level after ${m.extendedAt} games — match extended by 2`, 21)
+                        .setColor(THEME.accentCss).setFontStyle('bold');
                 }
                 button(CENTER_X, top + P(extended ? 258 : 218), 'Next Game', false,
                     () => startGame(matchStarterForGame(m.gamesPlayed)));
