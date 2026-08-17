@@ -281,6 +281,40 @@ function fxBurst(scene, x, y, color) {
         onComplete: () => ring.destroy() });
 }
 
+// You tried to move a piece while a DIFFERENT one is obliged to move (a captured
+// piece on the home tile, or the entry from the rack). Nothing happened, and
+// without a cue that reads as the board ignoring you -- so pulse the piece that
+// actually has to move, twice.
+//
+// Deliberately NOT gated on the move/capture effects toggle: this is not
+// decoration, it is the answer to "why did my move do nothing". And deliberately
+// an overlay ring rather than a tween on the piece itself -- a Piece owns three
+// display objects (body, sheen, circle), and a tween interrupted by a move or a
+// scene restart could strand one of them half-faded.
+const MUST_FLASH_COLOR = 0xffb300;        // the amber that already means "must move"
+function _flashMustMove(game) {
+    const scene = _setupScene();
+    if (!scene || !scene.add || !game) return;
+    const must = (game.mustMovePieces || []).filter(p => p && p.x != null);
+    if (!must.length) return;
+    // One pulse per burst of refused taps, not one per tap.
+    const now = Date.now();
+    if (game._mustFlashUntil && now < game._mustFlashUntil) return;
+    game._mustFlashUntil = now + 950;
+    must.forEach(p => {
+        const r = (p.radius || PIECE_RADIUS_BASE) * 1.45;
+        const ring = scene.add.circle(p.x, p.y, r, 0, 0)
+            .setStrokeStyle(5, MUST_FLASH_COLOR, 1).setDepth(75);
+        scene.tweens.add({
+            targets: ring,
+            alpha: { from: 1, to: 0.15 },
+            scale: { from: 0.82, to: 1.18 },
+            duration: 210, yoyo: true, repeat: 1, ease: 'Sine.easeInOut',
+            onComplete: () => ring.destroy(),
+        });
+    });
+}
+
 // The canvas keeps a fixed 3:2 shape, so on a phone it is letterboxed: bands of
 // empty page above/below it in portrait, left/right of it in landscape. Put the
 // pill in a band whenever one is big enough, so it never covers the board (it
@@ -3544,7 +3578,10 @@ class Piece {
                 this.currentTile.onClick();
                 return;
             }
-            if (!selectable) return;   // nothing to hand the selection over to
+            if (!selectable) {         // nothing to hand the selection over to
+                if (this.player === this.game.turn) _flashMustMove(this.game);
+                return;
+            }
 
             // Hold the outgoing piece in a local: returnToRack() clears
             // game.selectedPiece, so reading it again below threw (entering a
@@ -3559,9 +3596,13 @@ class Piece {
             this.isSelected = false;
         }
         // if (this.player !== this.game.turn) return; 
-        if (this.rack && this.rack.type === 'unentered' && !_isEntrant(this)) return;
+        if (this.rack && this.rack.type === 'unentered' && !_isEntrant(this)) {
+            _flashMustMove(this.game);   // the piece that IS enterable, instead
+            return;
+        }
         if (this.player === this.game.turn && !this.game.canSelectForMove(this)) {
             console.log("Must keep a die for the obligatory piece(s)");
+            _flashMustMove(this.game);
             return false;
         }
 
@@ -5368,6 +5409,7 @@ class Game {
                                  reachableBySecondDie.includes(targetTile)) ? 1 : 2;
                 if (unused - willUse < this.mustMovePieces.length) {
                     console.log('Must keep a die for the obligatory piece(s)');
+                    _flashMustMove(this);
                     return false;
                 }
             }
@@ -5521,20 +5563,21 @@ class Game {
         const eligible = (list) => [...new Set(list)].filter(t => t.type === 'save' &&
             (piece.number > 6 ? true : t.number === piece.number));
 
-        // The SUM first: it is the whole roll, and it is the only route that can
-        // capture en route (movePiece runs checkEnRouteCapture for a sum target).
-        const bySum = eligible(r.reachableBySum);
-        if (bySum.length === 1) return this.movePiece(piece, bySum[0]);
+        // EVERY route counts toward ambiguity, not just the cheapest tier (owner
+        // confirmed): one goal reachable by a single die and a DIFFERENT one by
+        // the sum is exactly the case where there is no way to know which was
+        // meant, so it does nothing. Only for blanks in practice -- a numbered
+        // piece has one eligible goal, and the same goal can never appear in two
+        // tiers, since movement is exact-distance and a tile sits at one BFS
+        // depth.
+        const goals = eligible([...r.reachableBySum,
+                                ...r.reachableByFirstDie, ...r.reachableBySecondDie]);
+        if (goals.length !== 1) return false;
 
-        // Then a single die, when the sum offers nothing usable -- owner's rule.
-        // Note there is never a choice of WHICH die to spend: movement is
-        // exact-distance, so a tile sits in one die's list only (its BFS depth),
-        // and a goal reachable by a single die is reachable by one die value
-        // unless the roll is doubles, where the two are interchangeable.
-        const bySingle = eligible([...r.reachableByFirstDie, ...r.reachableBySecondDie]);
-        if (bySingle.length === 1) return this.movePiece(piece, bySingle[0]);
-
-        return false;
+        // movePiece picks the die(s) itself: die[0] if the target is in its list,
+        // else die[1], else both for a sum target -- which is also what makes
+        // en-route capture fire on the sum route without asking for it.
+        return this.movePiece(piece, goals[0]);
     }
 
     // Does the current player have any legal move left with the unused dice?

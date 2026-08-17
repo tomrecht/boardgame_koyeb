@@ -1701,9 +1701,15 @@ with it in mind.** Assessment and the concrete implications:
   goal" (`sumToGoal`, `Game.sendToGoal`). A numbered piece only ever targets its
   OWN goal; a blank targets any goal but only when exactly one is reachable,
   otherwise it does nothing rather than guess.
-  **Sum first, then a single die** (owner, revised twice). Sum is tried first
-  because it is the whole roll and the only route that can capture en route; a
-  single die is the fallback when the sum offers nothing usable.
+  **EVERY route counts toward ambiguity** (owner, confirmed after two revisions).
+  Collect the eligible goals reachable by the sum AND by either die; act only if
+  there is exactly ONE. So a blank with goal 4 a die away and goal 6 a sum away
+  does nothing — two different goals, no way to know which was meant. An earlier
+  cut tried the sum first and acted on it without looking at the single-die
+  routes, which would have moved to goal 6 there. Only blanks are affected: a
+  numbered piece has one eligible goal, and the same goal can never appear in two
+  tiers, since movement is exact-distance and a tile sits at one BFS depth.
+  Verified 5/5 including both ambiguous shapes (die-vs-sum, die1-vs-die2).
   ~~Sum only~~ — the first cut refused single-die routes on the grounds that they
   are ordinary moves the player can already make by tapping the destination, and
   that shortcutting one spends a die they may want elsewhere. **The second half
@@ -1811,6 +1817,33 @@ with it in mind.** Assessment and the concrete implications:
   a real turn would have. Same lesson as the trace-diff work: for anything that
   depends on the rules being live, build the position by playing into it or check
   it by hand.
+
+- **THE OBLIGATORY PIECE PULSES WHEN YOU TRY TO MOVE ANOTHER ONE (2026-08-17).**
+  Owner: a refused move because a DIFFERENT piece must move (a captured piece on
+  home, or the entry from the rack) did nothing visible, so it read as the board
+  ignoring you. `_flashMustMove(game)` pulses an amber ring twice around every
+  piece in `mustMovePieces`. Called from the three places that refuse for this
+  reason: `handleClick`'s non-entrant guard and its `canSelectForMove` guard, the
+  `!selectable` branch of the selection handover, and `movePiece`'s
+  keep-a-die-back check.
+  - **NOT gated on the move/capture effects toggle** — this is the answer to "why
+    did my move do nothing", not decoration.
+  - **An overlay ring, not a tween on the piece.** A Piece owns three display
+    objects (body, sheen, circle) and a tween interrupted by a move or a scene
+    restart could strand one half-faded. The ring destroys itself.
+  - Throttled to one pulse per ~950ms, so a burst of refused taps does not stack
+    tweens.
+  - **The obvious test scenario proves nothing.** With both dice free and ONE
+    obligatory piece there is no refusal at all: `canSelectForMove` permits a
+    non-obligatory move while enough dice remain to cover the obligation
+    (`unused - 1 >= mustMovePieces.length`). The first version of this test
+    therefore tapped the "wrong" piece, saw it selected happily, and measured
+    zero rings. Mark a die used (or use two captured pieces) to reach the refusal.
+    Verified then: 1 ring on tapping the wrong piece, the wrong piece NOT
+    selected, no extra ring on an immediate second tap, and no ring at all when
+    tapping the obligatory piece itself (which selects normally).
+  - Harness note: count the rings by DEPTH, not by `type`/`strokeColor` — a wrong
+    property name silently reads 0, which is indistinguishable from "no pulse".
 
 - **NO DICE WHILE A PRE-GAME CARD IS UP (2026-08-17).** Owner: cancelling out of
   a game or match should make the dice disappear. `_gameFrozen` already did this,
