@@ -5325,7 +5325,9 @@ class Game {
         // other piece gets any destinations -- otherwise they light up and the
         // move is then refused, the same complaint that motivated the sum line
         // above.
-        if (this.mustMoveIsCaptured && !must.includes(piece)) {
+        // `must.length > 0` as well as the derived check: belt and braces, so an
+        // empty obligation list can never blank out every piece's destinations.
+        if (must.length > 0 && !must.includes(piece) && this.hasCapturedOnHome()) {
             return { reachableByFirstDie: [], reachableBySecondDie: [], reachableBySum: [] };
         }
 
@@ -5412,7 +5414,7 @@ class Game {
             // every still-pending obligatory piece.
             if (this.mustMovePieces.length > 0 && !this.mustMovePieces.includes(piece)) {
                 // Absolute while a captured piece is on home -- see canSelectForMove.
-                if (this.mustMoveIsCaptured) {
+                if (this.hasCapturedOnHome()) {
                     console.log('A captured piece must move first');
                     _flashMustMove(this);
                     return false;
@@ -5711,12 +5713,29 @@ class Game {
     
     
     
+    // Is the obligation ABSOLUTE (a captured piece of the current player's is
+    // sitting on the home tile) or merely an ordering constraint (the entry from
+    // the rack)? The two are not the same rule, and canSelectForMove used to
+    // apply the weaker one to both.
+    //
+    // DERIVED, never stored. It was a field set by updateMovablePieces, and
+    // movePiece edits `mustMovePieces` directly when an obligatory piece moves --
+    // so the flag stayed true after the captured piece had left home, and the
+    // guard in getReachableTilesByDice (whose `must` list was by then empty) gave
+    // EVERY piece zero destinations. That is the "can't use my second die to do
+    // anything at all" bug, and the AI hit the same thing one move earlier.
+    hasCapturedOnHome() {
+        const home = this.tiles && this.tiles.find(t => t.type === 'home');
+        if (!home) return false;
+        const color = this.turn === 'white' ? 0xffffff : 0x000000;
+        // justMovedHome distinguishes a capture from a tentative entry: both put
+        // a piece on home, but the latter is mid-entry and must not block the
+        // rack-reordering privilege.
+        return home.pieces.some(p => p.color === color && !p.justMovedHome);
+    }
+
     updateMovablePieces() {
         this.mustMovePieces = [];
-        // Is the obligation ABSOLUTE (a captured piece) or merely an ordering
-        // constraint (the entry from the rack)? The two are not the same rule and
-        // canSelectForMove used to apply the weaker one to both.
-        this.mustMoveIsCaptured = false;
 
         const currentPlayerColor = this.turn === 'white' ? 0xffffff : 0x000000;
         const homeTile = this.tiles.find(tile => tile.type === 'home');
@@ -5726,11 +5745,6 @@ class Game {
         const homePieces = homeTile.pieces.filter(piece => piece.color === currentPlayerColor);
         if (homePieces.length > 0) {
             this.mustMovePieces = homePieces;
-            // A piece sitting on home because it was CAPTURED blocks everything.
-            // One that is there because it was just picked off the rack does not:
-            // that is a tentative entry, and switching to another rack piece is
-            // the reordering privilege. justMovedHome is what tells them apart.
-            this.mustMoveIsCaptured = homePieces.some(p => !p.justMovedHome);
             // These used to be skipped by the early return, so the amber "must
             // move" rings were never refreshed for a capture.
             if (typeof updateMustMoveHighlights === 'function') updateMustMoveHighlights(this);
@@ -5763,7 +5777,7 @@ class Game {
         // where moving another piece first IS legal as long as a die is left --
         // and applying it to captures let a single captured piece be ignored
         // whenever both dice were free, since (2 - 1) >= 1.
-        if (this.mustMoveIsCaptured) return false;
+        if (this.hasCapturedOnHome()) return false;
         const unused = this.dice.filter(d => !d.used).length;
         return (unused - 1) >= this.mustMovePieces.length;
     }

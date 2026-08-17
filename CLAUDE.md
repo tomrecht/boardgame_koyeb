@@ -1843,10 +1843,27 @@ with it in mind.** Assessment and the concrete implications:
   captured-piece moves while any of yours sit on home, and
   `updateMovablePieces`'s own comment ("no other pieces may move") already said
   so — nothing downstream honoured it.
-  `updateMovablePieces` now sets **`mustMoveIsCaptured`**, and three places
-  consult it: `canSelectForMove` (refuse outright), `movePiece`'s obligation check
-  (refuse outright, with the pulse), and `getReachableTilesByDice` (a non-obligatory
-  piece gets NO destinations, so nothing lights up that would then be refused).
+  Three places now consult **`Game.hasCapturedOnHome()`**: `canSelectForMove`
+  (refuse outright), `movePiece`'s obligation check (refuse outright, with the
+  pulse), and `getReachableTilesByDice` (a non-obligatory piece gets NO
+  destinations, so nothing lights up that would then be refused).
+  - **DERIVED, NEVER STORED — and the first cut got this wrong, badly.** It was a
+    field set by `updateMovablePieces`, but `movePiece` edits `mustMovePieces`
+    directly when an obligatory piece moves and does not recompute anything. So
+    the flag stayed true after the captured piece had LEFT home, and the
+    `getReachableTilesByDice` guard — whose `must` list was empty by then, so
+    `!must.includes(piece)` was true for everyone — handed **every piece zero
+    destinations**. Owner hit it twice within a minute: the AI's captured piece
+    re-entered and captured on the way with the 2, then its second move with the 6
+    was refused and the turn switched; then on his own turn he moved the captured
+    5 out and "can't use my second die to do anything at all". Computing it from
+    the home tile on demand makes the staleness impossible. The guard also now
+    requires `must.length > 0`, so an empty obligation list can never blank the
+    board again.
+    **Lesson: derived state beats a flag whenever some other code path already
+    mutates the thing it summarises.** `mustMovePieces` had two writers
+    (`updateMovablePieces` and `movePiece`) and only one of them knew about the
+    flag.
   - **`justMovedHome` is what separates a capture from a tentative entry.** Both
     put a piece on the home tile, but a piece picked off the rack is mid-entry and
     the reordering privilege must survive — flagging that as "captured" would have
