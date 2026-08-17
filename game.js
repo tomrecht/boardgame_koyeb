@@ -218,6 +218,10 @@ function getAutoEndTurn()       { return _boolSetting('autoEndTurn', false); }  
 // confirm ending with a move left (never during the tutorial, which scripts a
 // deliberate pass with a live-but-useless die)
 function getConfirmRiskyEnd()   { return !_tut.active && _boolSetting('confirmRiskyEnd', true); }
+// Optional gesture, OFF by default: double-click/double-tap sends a piece to a
+// goal it can reach on the DICE SUM. Never during the tutorial, which scripts
+// every move and would be walked off its rails by a shortcut.
+function getSumToGoal()         { return !_tut.active && _boolSetting('sumToGoal', false); }
 
 // The live Game instance (for settings that act on the running game).
 function _currentGame() {
@@ -1550,6 +1554,7 @@ function createSettingsPanel() {
     toggle('Move & capture effects', getFeedbackEnabled, 'fxEnabled', true);
     toggle('End turn automatically when both dice used', getAutoEndTurn, 'autoEndTurn', true);
     toggle('Confirm ending a turn with a move left', getConfirmRiskyEnd, 'confirmRiskyEnd', false);
+    toggle('Double-click sends a piece to its goal (dice sum)', getSumToGoal, 'sumToGoal', false);
 
     // Interactive tutorial launcher
     const tut = mk('button',
@@ -3585,6 +3590,12 @@ class Piece {
             // it to another goal and save it there -- do both at once, exactly as
             // from a field tile.
             if (!saved && this.player === this.game.turn && this.game.sumSave(this)) return;
+            // Still on a goal it cannot bank from, and cannot reach-and-bank
+            // another either -- but the sum may reach a goal it CAN eventually
+            // use (a numbered piece parked on the wrong goal, most usefully).
+            if (!saved && this.player === this.game.turn && this.game.sumToGoal(this)) {
+                _clearSelection(this.game); return;
+            }
             // Saving removes this piece, and the tile then re-lays out what is
             // left -- so another piece slides into the spot under the finger and
             // a following pointer event selects it. Owner saw exactly that after
@@ -3595,6 +3606,12 @@ class Piece {
         } else if (this.player === this.game.turn && this.game.sumSave(this)) {
             // not on a goal yet, but one die reaches the goal and the other saves
             // it this turn -> do both at once.
+            return;
+        } else if (this.player === this.game.turn && this.game.sumToGoal(this)) {
+            // Optional gesture, and deliberately AFTER sumSave: both spend the
+            // whole roll, and reaching a goal *and* banking beats parking on it,
+            // since a banked piece is scored and out of play.
+            _clearSelection(this.game);
             return;
         }
 
@@ -5404,6 +5421,38 @@ class Game {
         return false;
     }
 
+    // Optional gesture (settings, off by default): send a piece to a goal it can
+    // reach on the DICE SUM. Deliberately sum-only -- a single-die route is one
+    // ordinary move that the player can already make by tapping the destination,
+    // and shortcutting it would take a die they might want elsewhere.
+    //
+    // A numbered piece only ever targets its OWN goal. A blank targets any goal,
+    // but only when exactly one is reachable: with two there is no way to know
+    // which one the player meant, so it does nothing rather than guess.
+    //
+    // Everything legality-related is delegated to getReachableTilesByDice, which
+    // already encodes the entry obligations, the second-entrant reordering rule,
+    // the ">1 captured piece" ban on sum moves, shortest-path enforcement and the
+    // tutorial's hard block. And because the destination is in reachableBySum,
+    // movePiece runs checkEnRouteCapture for us -- so en-route capture is
+    // preserved by construction rather than by a second implementation.
+    sumToGoal(piece) {
+        if (!getSumToGoal()) return false;
+        if (!piece || piece.player !== this.turn) return false;
+        if (this.gameOver) return false;
+        if (this.dice[0].used || this.dice[1].used) return false;   // the sum needs both
+
+        const r = this.getReachableTilesByDice(piece);
+        if (!r || !r.reachableBySum.length) return false;
+        piece.reachableTiles = r;
+
+        const goals = r.reachableBySum.filter(t => t.type === 'save' &&
+            (piece.number > 6 ? true : t.number === piece.number));
+        // Numbered pieces can only ever match one goal, so this bites for blanks.
+        if (goals.length !== 1) return false;
+        return this.movePiece(piece, goals[0]);
+    }
+
     // Does the current player have any legal move left with the unused dice?
     // (Used to decide whether ending the turn is "risky".)
     hasAnyLegalMove() {
@@ -5482,13 +5531,26 @@ class Game {
     
         // Check if there's an opponent piece on any of the intermediate tiles and capture only one piece
         const captureConditionsMet = (tile) => tile && tile.pieces.some(p => p.player !== piece.player) && tile.pieces.length === 1  && tile.type !== 'save';
-    
+
+        // WHICH one, when the route passes more than one lone enemy. This used to
+        // take the first tile the two die orders happened to yield, i.e. whatever
+        // getReachableTiles returned first -- an arbitrary choice dressed up as a
+        // rule. Owner's rule: prefer a NUMBERED piece (1-6, which is tied to one
+        // matching goal and so costs its owner more), and among equals the higher
+        // number. Scoring numbered pieces above every blank makes that one
+        // comparison: blanks are 7-12 internally, so +1000 keeps 1-6 on top while
+        // "higher number wins" still holds inside each class.
+        const priority = (p) => (p.number <= 6 ? 1000 : 0) + p.number;
+        let best = null, bestScore = -Infinity;
         for (const tile of allIntermediateTiles) {
-            if (captureConditionsMet(tile)) {
-                console.log('Capturing piece at intermediate tile:', tile);
-                this.capturePiece(tile.pieces[0]);
-                break; // Capture only one piece and break out of the loop
-            }
+            if (!captureConditionsMet(tile)) continue;
+            const score = priority(tile.pieces[0]);
+            if (score > bestScore) { bestScore = score; best = tile; }
+        }
+        if (best) {
+            console.log('Capturing piece at intermediate tile:', best,
+                        'number', best.pieces[0].number);
+            this.capturePiece(best.pieces[0]);   // only ever one
         }
     }
     

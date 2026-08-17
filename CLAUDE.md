@@ -1696,6 +1696,51 @@ with it in mind.** Assessment and the concrete implications:
     sets `visible=false` but leaves `alpha` untouched, so asserting on alpha
     reports the icon as still showing when it is not.
 
+- **OPTIONAL GESTURE: DOUBLE-CLICK SENDS A PIECE TO A GOAL ON THE DICE SUM
+  (2026-08-17).** Off by default; settings row "Double-click sends a piece to its
+  goal (dice sum)" (`sumToGoal`). Owner's rule: **sum only** — a single-die route
+  is one ordinary move the player can already make by tapping the destination,
+  and shortcutting it would spend a die they may want elsewhere. A numbered piece
+  only ever targets its OWN goal; a blank targets any goal but only when exactly
+  one is reachable, otherwise it does nothing rather than guess.
+  - **Ordered AFTER `sumSave`, deliberately.** Both spend the whole roll, and
+    reaching a goal *and* banking beats parking on it, since a banked piece is
+    scored and out of play. So double-click still tries: save → sumSave →
+    sumToGoal.
+  - **Everything legality-related is delegated to `getReachableTilesByDice`**,
+    which already encodes the entry obligations, the second-entrant reordering
+    rule, the ">1 captured piece" ban on sum moves, shortest-path enforcement and
+    the tutorial's hard block. And because the destination is in `reachableBySum`,
+    `movePiece` runs `checkEnRouteCapture` itself — so **en-route capture is
+    preserved by construction**, not by a second implementation. Verified end to
+    end: piece 4, dice 5+1 over distance 6, lands on goal 4 with both dice spent,
+    and with two lone enemies en route it captures the right one.
+  - **ALL SIX GOALS ARE EXACTLY 7 FROM THE HOME TILE** (measured). Consequences
+    for the rack case, which is the only reason this matters: a NUMBERED piece
+    enters and reaches its goal only on a sum of exactly 7 (verified: dice 1+6,
+    landed on goal 5, both dice used), and **a BLANK piece can never use the
+    gesture from the rack at all** — at sum 7 all six goals are reachable at once,
+    so the "exactly one goal" rule always sees six. That is the stated rule
+    working as specified, not a bug, but it means the gesture is dead for blanks
+    entering. Left as-is pending owner's call; the alternative would be a
+    which-goal picker, which is a bigger change.
+  - **En-route capture now picks deliberately (unconditional, toggle-independent).**
+    It used to capture the first eligible intermediate tile the two die orders
+    happened to yield — an arbitrary choice dressed as a rule. Owner's rule:
+    prefer a NUMBERED piece (1-6, tied to one matching goal, so it costs its owner
+    more), and among equals the higher number. Implemented as one score,
+    `(number <= 6 ? 1000 : 0) + number`, which keeps 1-6 above every blank (7-12)
+    while "higher wins" still holds inside each class. Verified order-independent:
+    numbered 2 beats blank 9 both orders, numbered 5 beats numbered 2 both orders,
+    blank 11 beats blank 8.
+  - Test note: a first attempt found NO candidate position at all because six
+    pieces were still racked — while any piece is unentered the entry obligation
+    sets `mustMovePieces` and `getReachableTilesByDice` bans sum moves for every
+    non-obligatory piece. Empty the rack before testing sum moves. Positions were
+    then built from the game's OWN `_bfsDistances` and confirmed against
+    `getReachableTilesByDice` before acting, rather than hand-placed — the lesson
+    from the selection fix, where a synthetic board made the result meaningless.
+
 - **CLICKING A SECOND PIECE NOW MOVES THE SELECTION TO IT (2026-08-16).** Owner:
   with a piece selected, clicking a different selectable piece should select that
   one instead, and did not always. Cause: the "tap a piece = move onto the tile
