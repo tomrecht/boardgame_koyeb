@@ -3574,6 +3574,11 @@ class Piece {
             const slot = this.rack.pieces.indexOf(this);
             const mark = this.game._rackSlotTap;
             this.game._rackSlotTap = null;
+            console.log('[send-to-goal] rack tap, slot', slot, 'mark',
+                        mark ? { slot: mark.slot, piece: mark.piece.number,
+                                 age: Date.now() - mark.time,
+                                 onHome: !!(mark.piece.currentTile && mark.piece.currentTile.type === 'home'),
+                                 justMovedHome: mark.piece.justMovedHome } : null);
             if (mark && mark.rack === this.rack && mark.slot === slot &&
                 Date.now() - mark.time < 400 && mark.piece !== this &&
                 mark.piece.justMovedHome && mark.piece.currentTile &&
@@ -3582,7 +3587,11 @@ class Piece {
                 // that just left, so it must not enter THIS one as a side effect
                 // of the shortcut turning out not to apply.
                 this.lastClickTime = null;
+                // Kill the pending destination highlight, or it fires after the
+                // piece has already gone and re-lights the board.
+                clearTimeout(mark.piece._hlTimer);
                 if (this.game.sendToGoal(mark.piece)) _clearSelection(this.game);
+                else if (this.game.selectedPiece === mark.piece) mark.piece.highlightReachableTiles();
                 return;
             }
         }
@@ -3694,7 +3703,21 @@ class Piece {
             this.justMovedHome = true;
             this.game.selectedPiece = this;
             this.reachableTiles = this.game.getReachableTilesByDice(this);
-            this.highlightReachableTiles();
+            // With the send-to-goal gesture on, a double-tap on a rack slot is a
+            // real gesture, so hold the destinations back between the two taps --
+            // exactly as a save double-click already does. Otherwise every goal
+            // flashes lit in between: from the home tile all six are exactly 7
+            // away, so a roll summing 7 legitimately lights all of them, which
+            // reads as "it thinks this is ambiguous" (owner) even though a
+            // numbered piece only ever targets its own goal.
+            clearTimeout(this._hlTimer);
+            if (getSumToGoal()) {
+                this._hlTimer = setTimeout(() => {
+                    if (this.game.selectedPiece === this) this.highlightReachableTiles();
+                }, 270);
+            } else {
+                this.highlightReachableTiles();
+            }
         }
         else if (this.currentTile && this.currentTile.type === 'home' && this.justMovedHome) {
                 // Don't send it back yet: this fires on pointer DOWN, so
@@ -5672,9 +5695,12 @@ class Game {
     // movePiece runs checkEnRouteCapture for us -- so en-route capture is
     // preserved by construction rather than by a second implementation.
     sendToGoal(piece) {
-        if (!getSumToGoal()) return false;
-        if (!piece || piece.player !== this.turn) return false;
-        if (this.gameOver) return false;
+        // Traced: this declines for several legitimate reasons and they are
+        // indistinguishable on screen. console.log is silent without ?dev=1.
+        const no = (why, extra) => { console.log('[send-to-goal] not applied:', why, extra || ''); return false; };
+        if (!getSumToGoal()) return no('the "Double-click sends a piece to its goal" setting is OFF');
+        if (!piece || piece.player !== this.turn) return no('not this player\'s piece');
+        if (this.gameOver) return no('game over');
 
         // NOT for a piece already standing on a goal it can use (owner). A
         // double-click there means "save", and if it cannot save with this roll
@@ -5688,10 +5714,12 @@ class Game {
         // the case owner wanted kept.
         const here = piece.currentTile;
         if (here && here.type === 'save' &&
-            (piece.number > 6 || here.number === piece.number)) return false;
+            (piece.number > 6 || here.number === piece.number)) {
+            return no('already on a goal it can use');
+        }
 
         const r = this.getReachableTilesByDice(piece);
-        if (!r) return false;
+        if (!r) return no('no reachable set (both dice used?)');
         piece.reachableTiles = r;
 
         // Which goals may this piece target at all. Numbered pieces can only ever
@@ -5708,7 +5736,13 @@ class Game {
         // depth.
         const goals = eligible([...r.reachableBySum,
                                 ...r.reachableByFirstDie, ...r.reachableBySecondDie]);
-        if (goals.length !== 1) return false;
+        if (goals.length !== 1) {
+            return no(goals.length === 0 ? 'no eligible goal in reach' : 'ambiguous: more than one eligible goal',
+                      { piece: piece.number, eligibleGoals: goals.map(t => t.number),
+                        dice: this.dice.map(d => d.value + (d.used ? '(used)' : '')),
+                        sumTiles: r.reachableBySum.length });
+        }
+        console.log('[send-to-goal] moving piece', piece.number, '-> goal', goals[0].number);
 
         // movePiece picks the die(s) itself: die[0] if the target is in its list,
         // else die[1], else both for a sum target -- which is also what makes

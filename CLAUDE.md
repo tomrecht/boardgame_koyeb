@@ -1742,6 +1742,15 @@ with it in mind.** Assessment and the concrete implications:
     preserved by construction**, not by a second implementation. Verified end to
     end: piece 4, dice 5+1 over distance 6, lands on goal 4 with both dice spent,
     and with two lone enemies en route it captures the right one.
+  - **NO DESTINATION FLASH BETWEEN THE TWO TAPS (2026-08-17).** Owner: double-
+    tapping the 2 on the rack lit ALL SIX goals "as if it's ambiguous". Real, but
+    it was the ordinary reachable-destination highlight, not the ambiguity rule:
+    from the home tile every goal is exactly 7 away, so a roll summing 7
+    legitimately makes all six legal destinations. The rack branch of `onClick`
+    highlighted immediately, while a board piece on its goal already DEFERS the
+    highlight 270ms so a double-click save shows no flash. The rack now defers the
+    same way whenever the gesture is enabled. Measured: goals lit after the first
+    tap 6 -> 0, and the piece still lands on its goal with both dice spent.
   - **FROM THE RACK IT NEEDED ITS OWN DETECTION, KEYED TO THE SLOT.** The first
     tap tentatively enters the piece onto the home tile and the rack then closes
     the gap, so the second tap of the gesture lands on the piece that slid into
