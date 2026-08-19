@@ -258,6 +258,45 @@ try {
     else document.addEventListener('DOMContentLoaded', () => _obs.observe(document.body, { childList: true }));
 } catch (e) { /* no MutationObserver: dice simply repaint on the next redraw */ }
 
+// --- GAME LOG (evaluation aid, 2026-08-19) --------------------------------
+// Every finished game appended to localStorage, so a win rate can be counted
+// instead of remembered. Deliberately small and self-contained: one append in
+// endGame and one export button, nothing else reads it, so it lifts out cleanly
+// if it stops being wanted.
+//
+// MODEL_ID has to be updated by hand when model.onnx is re-exported -- nothing
+// at runtime knows which checkpoint the graph came from, and a log that cannot
+// say which opponent was played is missing the one column the whole exercise is
+// about. See CLAUDE.md's re-export note.
+const MODEL_ID = 'symaug_champ_July27_iter6';
+const GAME_LOG_KEY = 'gameLog';
+const GAME_LOG_MAX = 2000;             // ~200 bytes each; well inside the quota
+
+function _readGameLog() {
+    try { const s = localStorage.getItem(GAME_LOG_KEY); return s ? JSON.parse(s) : []; }
+    catch (e) { return []; }
+}
+function _logGameResult(rec) {
+    try {
+        const log = _readGameLog();
+        log.push(rec);
+        if (log.length > GAME_LOG_MAX) log.splice(0, log.length - GAME_LOG_MAX);
+        localStorage.setItem(GAME_LOG_KEY, JSON.stringify(log));
+    } catch (e) { /* private mode / quota: the game itself must not care */ }
+}
+function copyGameLog() {
+    const log = _readGameLog();
+    const json = JSON.stringify(log, null, 2);
+    console.log('[game log] ' + log.length + ' records\n' + json);
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+        navigator.clipboard.writeText(json)
+            .then(() => flashNotice('Game log copied — ' + log.length + ' games', 3000))
+            .catch(() => flashNotice('Game log is in the console (' + log.length + ' games)', 4000));
+    } else {
+        flashNotice('Game log is in the console (' + log.length + ' games)', 4000);
+    }
+}
+
 // The live Game instance (for settings that act on the running game).
 function _currentGame() {
     try { const sc = gameInstance.scene.getScene('MainGameScene'); return sc && sc.game; }
@@ -1671,6 +1710,16 @@ function createSettingsPanel() {
     toggle('Double-click sends a piece to its goal', getSumToGoal, 'sumToGoal', false);
     toggle('Automatic en-route capture', getAutoEnRouteCapture, 'autoEnRoute', true);
 
+    // Game log export. No on-screen summary by design -- this is an evaluation
+    // aid, so the useful form is the raw rows somewhere they can be counted.
+    const logBtn = mk('button',
+        'width:100%; margin-top:10px; padding:7px 0; border-radius:8px; cursor:pointer;' +
+        'font-family:' + HUD_FONT + '; font-weight:600; font-size:12px;' +
+        'border:1px solid #cfd6e0; background:#fff; color:#5a6473;',
+        'Copy game log');
+    logBtn.onclick = () => { panel.style.display = 'none'; copyGameLog(); };
+    panel.appendChild(logBtn);
+
     // Interactive tutorial launcher
     const tut = mk('button',
         'width:100%; margin-top:12px; padding:8px 0; border-radius:8px; border:none; cursor:pointer;' +
@@ -2538,6 +2587,20 @@ function recordMatchGame(winner, score) {
                 m.justExtended = true;
             }
         }
+    }
+    if (m.over) {
+        // The match itself, once. The per-game rows already carry match context.
+        _logGameResult({
+            t: new Date().toISOString(),
+            type: 'match',
+            white: WHITE_IS_AI ? 'computer' : 'human',
+            black: BLACK_IS_AI ? 'computer' : 'human',
+            winner: m.winner,
+            whiteScore: m.whiteScore, blackScore: m.blackScore,
+            whiteWins: m.whiteWins, blackWins: m.blackWins, draws: m.draws,
+            games: m.gamesPlayed, mode: m.mode, target: m.target,
+            model: (WHITE_IS_AI || BLACK_IS_AI) ? MODEL_ID : null,
+        });
     }
     return m.over;
 }
@@ -6166,6 +6229,23 @@ endGame(winner, score = null, impasse_caller = null) {
         scoreTracker.black_wins += 1;
     }
     scoreTracker.games_played += 1;
+
+    // One row per finished game. Roles are recorded per COLOUR -- there are no
+    // player identities in this app, and one device is one person in practice.
+    _logGameResult({
+        t: new Date().toISOString(),
+        white: WHITE_IS_AI ? 'computer' : 'human',
+        black: BLACK_IS_AI ? 'computer' : 'human',
+        winner: winner,
+        // endGame only zeroes the score for 'tie', so a 'draw' arrives carrying
+        // the margin it would have had. Harmless in play (a draw adds nothing to
+        // scoreTracker) but it would be a bogus number in the log.
+        score: winner === 'draw' ? 0 : score,
+        model: (WHITE_IS_AI || BLACK_IS_AI) ? MODEL_ID : null,
+        difficulty: (WHITE_IS_AI || BLACK_IS_AI) ? getAIDifficulty() : null,
+        match: (matchTracker ? { game: matchTracker.gamesPlayed + 1, of: matchTracker.target,
+                                 mode: matchTracker.mode } : null),
+    });
     if (typeof updateTurnStatus === 'function') updateTurnStatus('');   // hide during end screen
     // Fold this game into the active match (if any) before showing the result.
     const matchOver = matchTracker ? recordMatchGame(winner, score) : false;

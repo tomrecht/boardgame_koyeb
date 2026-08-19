@@ -1696,6 +1696,24 @@ with it in mind.** Assessment and the concrete implications:
     sets `visible=false` but leaves `alpha` untouched, so asserting on alpha
     reports the icon as still showing when it is not.
 
+- **GAME LOG (evaluation aid, 2026-08-19).** Owner's record against the deployed
+  champion was **125/250 before the port** and feels better than 50% since, but
+  uncounted — so every finished game and every finished match is now appended to
+  `localStorage.gameLog`, and Settings has a **Copy game log** button. Deliberately
+  export-only, no on-screen summary: this is an instrument, not a feature, and
+  owner may not keep it.
+  Rows are tagged by COLOUR and human/computer — the app has no player identity,
+  and one device is one person in practice. Each row carries the date, winner,
+  score, difficulty, match context, and **`MODEL_ID`**, which is a hand-maintained
+  constant in game.js: nothing at runtime knows which checkpoint `model.onnx` was
+  exported from, and a log that cannot say which opponent was played is missing
+  the one column the exercise is about. **Update `MODEL_ID` whenever `model.onnx`
+  is re-exported** (see the deployed-model note above).
+  Verified: three finished games recorded through the real `endGame` path,
+  surviving a reload, and the export button firing. A draw is logged with score 0
+  — `endGame` only zeroes the score for `'tie'`, so `'draw'` arrives carrying the
+  margin it would have had (harmless in play, bogus in a log).
+
 - **"IS THE AI WEAKER SINCE THE PORT?" — MEASURED, AND NO (2026-08-19).** Owner
   suspected the on-device agent plays worse than the served one did. Re-ran the
   differential test (`?aicompare=1` against a local `app.py`, both sides computer,
