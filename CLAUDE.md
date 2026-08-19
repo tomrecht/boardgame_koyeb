@@ -1696,6 +1696,30 @@ with it in mind.** Assessment and the concrete implications:
     sets `visible=false` but leaves `alpha` untouched, so asserting on alpha
     reports the icon as still showing when it is not.
 
+- **"IS THE AI WEAKER SINCE THE PORT?" — MEASURED, AND NO (2026-08-19).** Owner
+  suspected the on-device agent plays worse than the served one did. Re-ran the
+  differential test (`?aicompare=1` against a local `app.py`, both sides computer,
+  difficulty at max so both are pure argmax): **200/200 identical chosen pairs
+  over two runs (60 + 140), 0 disagreements, 0 failed comparisons.** Rule of
+  three bounds any disagreement rate at ~1.5%.
+  Everything else in the chain checked too: the JS agent's knobs are the served
+  values, not coincidental defaults (`firstMovePrefilter 12`, `prefilterTopK 40`,
+  `prefilterMinK 5`); `pickMoveIndex` is a faithful port of `_pick_move_index`
+  (same temp/top_p curves, argmax at d>=0.999) and `getAIDifficulty` defaults to
+  1.0; `model.onnx` is unchanged since the symaug iter6 deploy, which PREDATES the
+  port; and `agent.js`/`agent_gnn.py` have only ever been changed together.
+  **The one thing the comparison cannot see** is the posted state itself — both
+  sides get the same `getGameState(game)`, so a wrong state yields the same wrong
+  move from both. That cannot explain a change since the port, though: the server
+  received that identical payload before the port too.
+  **A FALSE ALARM ON THE WAY, worth remembering.** A first pass measured "the AI
+  forfeits ~50% of its turns with dice unused" — entirely an artifact of the
+  harness calling `applyPlayerRoles(true)` MID-GAME, which starts a second agent
+  request alongside one in flight (the race this file already documents). Owner
+  said he saw no such behaviour; a clean run measured **0 of 35 turns ending with
+  unused dice**. Set both roles BEFORE the game starts, and believe the owner's
+  observation over the instrument.
+
 - **OPTIONAL GESTURE: DOUBLE-CLICK SENDS A PIECE TO A GOAL ON THE DICE SUM
   (2026-08-17).** Off by default; settings row "Double-click sends a piece to its
   goal" (`sumToGoal`, `Game.sendToGoal`). A numbered piece only ever targets its
