@@ -1884,6 +1884,23 @@ with it in mind.** Assessment and the concrete implications:
     test picked a single-die destination, found it absent from `reachableBySum`
     in all four cases, and proved nothing.
 
+- **SETUP MODE LEFT DERIVED STATE STALE (2026-08-17).** Owner, while building a
+  position to reproduce something else: send a piece to the BACK of the rack and
+  the next piece cannot move on a dice sum. Cause: none of the setup helpers
+  recomputed `mustMovePieces`, so it still named the OLD front rack piece — and
+  `getReachableTilesByDice` clears `reachableBySum` for any piece not on that
+  list, so the new front piece silently lost its sum moves. Switching the turn
+  with **T** was worse, leaving the other player's obligation in force.
+  `_setupSyncDerived()` now runs `updateMovablePieces()` and clears each piece's
+  cached `reachableTiles` / `_turnStartTile` (the position IS the turn start in
+  setup mode). Called from `_setupPlaceOnTile`, `_setupPlaceInRack`,
+  `setupReorderInRack`, and the die-value and turn keys. The **G** handler had
+  been doing exactly this on its own since before, for the same reason — that
+  was the clue.
+  Measured: rack [6,8,9] with obligation [6]; send 6 to the back and the
+  obligation becomes [8] (was stuck at [6]) and the new front keeps its 6 sum
+  destinations (was 0).
+
 - **A CAPTURED PIECE IS AN ABSOLUTE BLOCK, AND THE FRONTEND WAS NOT ENFORCING IT
   (2026-08-17).** Owner: with a captured piece on the home tile he could still
   select either of the first two unentered rack pieces. Real bug, and the window

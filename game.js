@@ -2998,6 +2998,23 @@ function _setupRemoveFromCurrent(piece) {
         piece.currentTile = null;
     }
 }
+// Setup mode edits the position directly, so every value DERIVED from it has to
+// be recomputed -- mustMovePieces above all. Leaving it stale meant that after
+// sending the front rack piece to the back, the NEW front piece was not the
+// obligatory one, and getReachableTilesByDice clears reachableBySum for a
+// non-obligatory piece: it silently could not move on a sum (owner). Switching
+// the turn with T was worse still, leaving the other player's obligation in
+// place. The G handler already did this before sending a position to the agent,
+// for exactly the same reason.
+function _setupSyncDerived(game) {
+    game = game || _setupGame();
+    if (!game) return;
+    game.updateMovablePieces();
+    // The position IS the turn start in setup mode, so clear both the cached
+    // destinations and the shortest-path anchor.
+    game.pieces.forEach(p => { p.reachableTiles = null; p._turnStartTile = p.currentTile || null; });
+}
+
 function _setupPlaceOnTile(piece, tile) {
     _setupRemoveFromCurrent(piece);
     piece.currentTile = tile;
@@ -3005,6 +3022,7 @@ function _setupPlaceOnTile(piece, tile) {
     piece.justMovedHome = false;
     if (piece.game && piece.game._reorderEntry === piece) piece.game._reorderEntry = null;
     tile.addPiece(piece);            // pushes + updatePositions() => positions & sizes the piece
+    _setupSyncDerived(piece.game);
 }
 function _setupPlaceInRack(piece, rack, atFront) {
     _setupRemoveFromCurrent(piece);
@@ -3017,6 +3035,7 @@ function _setupPlaceInRack(piece, rack, atFront) {
     piece.currentTile = null;
     piece.justMovedHome = false;
     if (piece.game && piece.game._reorderEntry === piece) piece.game._reorderEntry = null;
+    _setupSyncDerived(piece.game);
 }
 
 // Double-click a piece: cycle board -> saved rack -> unentered rack -> board(home).
@@ -3045,6 +3064,7 @@ function setupReorderInRack(piece, toFront) {
     else rack.pieces.push(piece);
     piece.rack = rack;
     rack.shiftPiecesUp();             // relayout in new order
+    _setupSyncDerived(piece.game);    // the FRONT piece changed -> so did the obligation
 }
 
 // --- instructions box ---
@@ -3128,11 +3148,13 @@ document.addEventListener('keydown', function (e) {
         if (e.shiftKey) die.used = !die.used;
         else die.value = (die.value % 6) + 1;
         die.updateColor(game.turn);
+        _setupSyncDerived(game);      // reachable sets depend on the dice
         console.log(`[SETUP] die ${e.code === 'Digit1' ? 1 : 2}: value ${die.value}, used ${die.used}`);
     } else if (e.key === 't' || e.key === 'T') {
         e.preventDefault();
         game.turn = game.turn === 'white' ? 'black' : 'white';
         game.dice.forEach(d => d.updateColor(game.turn));
+        _setupSyncDerived(game);      // the obligation belongs to whoever is to move
         console.log('[SETUP] turn ->', game.turn);
     } else if (e.key === 'f' || e.key === 'F') {
         e.preventDefault();
