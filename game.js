@@ -222,6 +222,16 @@ function getConfirmRiskyEnd()   { return !_tut.active && _boolSetting('confirmRi
 // goal it can reach on the DICE SUM. Never during the tutorial, which scripts
 // every move and would be walked off its rails by a shortcut.
 function getSumToGoal()         { return !_tut.active && _boolSetting('sumToGoal', false); }
+// How long after tentatively entering a rack piece a tap on the SAME slot still
+// counts as the second half of that double-click. The mark is only live while
+// the piece sits tentatively on home, so this is a backstop rather than the real
+// test -- 400ms was too tight for a deliberate double-click, especially since
+// the entry highlight is itself deferred 270ms.
+// Lives HERE, beside the setting it serves. It previously sat next to a
+// game-log constant and was deleted along with it when that log was removed,
+// which threw a ReferenceError out of handleClick on every rack click and broke
+// selection and dragging from the rack.
+const RACK_TAP_WINDOW_MS = 1200;
 // ON by default = today's behaviour: a sum move captures a lone enemy it passes,
 // picking one by the numbered/higher-numbered rule. Turned OFF, a sum move whose
 // ROUTE is ambiguous (see getReachableTilesByDice) is not offered at all, and the

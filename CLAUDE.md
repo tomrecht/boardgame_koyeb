@@ -1760,6 +1760,24 @@ with it in mind.** Assessment and the concrete implications:
   the explanation. A notice was added for it anyway — it is a real decline that
   was previously silent.
 
+- **REMOVING THE LOG BROKE RACK CLICKS FOR ONE COMMIT (2026-08-20).**
+  `RACK_TAP_WINDOW_MS` had been added on the line after `MODEL_ID`, so deleting
+  the game-log block took it too. `handleClick` then threw a ReferenceError on
+  any rack click, which killed rack SELECTION and DRAGGING as well as the
+  gesture — owner hit all three within minutes of the push.
+  **The verification passed anyway, and the reason is worth keeping.** The
+  reference sits behind `mark && ... && Date.now() - mark.time < RACK_TAP_WINDOW_MS`,
+  and JS short-circuits: the FIRST tap has no mark, so the constant is never
+  evaluated. My post-removal test tapped once and then went through
+  `onEntryPanelTap`, so it never took the one branch that reads it. **A
+  short-circuited reference is invisible to any test that does not enter the
+  branch — check the branch, not the function.**
+  Fixed by moving the constant beside `getSumToGoal()`, the setting it actually
+  serves; the accidental adjacency to a log constant is what made it deletable.
+  Regression test now covers all three: second tap on a PIECE (the branch that
+  reads it), the last-piece panel route, and a plain click still selecting and
+  leaving the piece draggable.
+
 - **GAME LOG: BUILT, USED, REMOVED (2026-08-19/20). Its answer: no strength
   change since the port.** Owner's record was 125/250 before the port and felt
   better than 50% after, uncounted — so every finished game and match was logged
