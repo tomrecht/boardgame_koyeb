@@ -3691,11 +3691,19 @@ class Piece {
                                   justMovedHome: mark.piece.justMovedHome }
                                : { tappedSlot: slot, thisPiece: this.number, markPiece: null };
             console.log('[send-to-goal] rack tap', info);
-            // Recorded, not just logged: this is the branch that decides whether
-            // the gesture is even attempted, and it was invisible in the log --
-            // a failure here produced no decline row at all, which is exactly the
-            // shape owner kept reporting.
-            _noteDecline('rack-tap', mark ? 'second tap seen' : 'first tap (no mark yet)', info);
+            // Recorded, not just logged: this branch decides whether the gesture
+            // is even attempted, and it was invisible -- a failure here produced
+            // no decline row at all, which is the shape owner kept reporting.
+            //
+            // But ONLY for taps that are actually candidates. Logging every rack
+            // click buried the useful rows: a session produced ~50 entries of
+            // ordinary single clicks carrying a stale mark (ages of 5s, 23s, once
+            // 70s, all with onHome false), against two genuine double-clicks at
+            // ~100ms. At a 60-row cap that noise evicts the evidence.
+            if (mark && mark.piece.justMovedHome && mark.piece.currentTile &&
+                mark.piece.currentTile.type === 'home') {
+                _noteDecline('rack-tap', 'second tap on a live mark', info);
+            }
             if (mark && mark.rack === this.rack && mark.slot === slot &&
                 Date.now() - mark.time < RACK_TAP_WINDOW_MS && mark.piece !== this &&
                 mark.piece.justMovedHome && mark.piece.currentTile &&
