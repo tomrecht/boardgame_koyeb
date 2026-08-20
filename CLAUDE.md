@@ -1696,6 +1696,31 @@ with it in mind.** Assessment and the concrete implications:
     sets `visible=false` but leaves `alpha` untouched, so asserting on alpha
     reports the icon as still showing when it is not.
 
+- **THE RACK DOUBLE-CLICK REALLY WAS BROKEN — FOR THE LAST UNENTERED PIECE
+  (2026-08-20).** Found only once the decline log existed, and only because owner
+  volunteered the detail that mattered: *"it's the last unentered piece"*.
+  The first tap tentatively enters the piece, which **empties the rack**, so the
+  second tap lands on bare panel — no piece, no `handleClick`, no hook, and
+  therefore **no decline row either**. That absence was the tell: the log he sent
+  was taken AFTER a failed attempt (numbered 5, dice 3+4, goal 5 lit as a sum
+  destination — a case that must work) and contained nothing for it.
+  Explains the whole pattern: the 2, the 6 and the 5 all failed as the last
+  piece; the 1 worked because others slid up behind it. Repeating the
+  double-click could never help, which is why "I've double clicked several times"
+  was consistent with it.
+  Fixed by wiring the UNENTERED rack panel for taps (`_wireEntryTap` /
+  `onEntryPanelTap`, mirroring the saved rack's `_wireSaveTap`), so the second
+  tap is caught by the panel whether or not a piece slid into the slot. It needs
+  no time window: it fires only while the marked piece is still sitting
+  tentatively on the home tile, which a moved, returned or spent piece fails on
+  its own. Measured: rack of ONE numbered 5, dice 3+4 → tap, tap → lands on
+  goal 5, both dice spent.
+  **Three wrong hypotheses preceded this** (stale cache, the setting, the
+  second-entrant rule), plus a fourth (the 400ms window, since widened to 1200ms
+  on its own merits). Every one was reasoning about the mechanism without data.
+  The decline log — recording rack TAPS as well as declines, so a missing row is
+  itself evidence — is what actually found it.
+
 - **THE SEND-TO-GOAL "BUG" WAS SILENCE, NOT A DEFECT (2026-08-20).** The decline
   log answered it. Across **27 recorded declines there is not one** where a
   numbered piece with both dice free summing to 7 was refused — every single

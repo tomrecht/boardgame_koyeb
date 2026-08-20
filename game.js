@@ -269,6 +269,13 @@ try {
 // say which opponent was played is missing the one column the whole exercise is
 // about. See CLAUDE.md's re-export note.
 const MODEL_ID = 'symaug_champ_July27_iter6';
+// How long after tentatively entering a rack piece a tap on the SAME slot still
+// counts as the second half of a double-click. Was 400ms, which is tight: a
+// deliberate double-click after any pause missed it entirely, and the entry
+// highlight is itself deferred 270ms, so anyone who waits to see the goals light
+// up has already spent most of the budget. The mark is only live while the piece
+// sits tentatively on home anyway, so this is a backstop, not the real test.
+const RACK_TAP_WINDOW_MS = 1200;
 const GAME_LOG_KEY = 'gameLog';
 const GAME_LOG_MAX = 2000;             // ~200 bytes each; well inside the quota
 
@@ -3678,13 +3685,19 @@ class Piece {
             const slot = this.rack.pieces.indexOf(this);
             const mark = this.game._rackSlotTap;
             this.game._rackSlotTap = null;
-            console.log('[send-to-goal] rack tap, slot', slot, 'mark',
-                        mark ? { slot: mark.slot, piece: mark.piece.number,
-                                 age: Date.now() - mark.time,
-                                 onHome: !!(mark.piece.currentTile && mark.piece.currentTile.type === 'home'),
-                                 justMovedHome: mark.piece.justMovedHome } : null);
+            const info = mark ? { slot: mark.slot, tappedSlot: slot, markPiece: mark.piece.number,
+                                  thisPiece: this.number, age: Date.now() - mark.time,
+                                  onHome: !!(mark.piece.currentTile && mark.piece.currentTile.type === 'home'),
+                                  justMovedHome: mark.piece.justMovedHome }
+                               : { tappedSlot: slot, thisPiece: this.number, markPiece: null };
+            console.log('[send-to-goal] rack tap', info);
+            // Recorded, not just logged: this is the branch that decides whether
+            // the gesture is even attempted, and it was invisible in the log --
+            // a failure here produced no decline row at all, which is exactly the
+            // shape owner kept reporting.
+            _noteDecline('rack-tap', mark ? 'second tap seen' : 'first tap (no mark yet)', info);
             if (mark && mark.rack === this.rack && mark.slot === slot &&
-                Date.now() - mark.time < 400 && mark.piece !== this &&
+                Date.now() - mark.time < RACK_TAP_WINDOW_MS && mark.piece !== this &&
                 mark.piece.justMovedHome && mark.piece.currentTile &&
                 mark.piece.currentTile.type === 'home') {
                 // Consume the gesture either way: this tap belongs to the piece
@@ -4976,6 +4989,37 @@ class Rack {
        RESHAPED in place rather than re-setInteractive'd: setInteractive replaces
        the interactive object outright, which is how ghost dragging silently lost
        its draggable flag. */
+    // Second half of a rack double-click, caught by the PANEL rather than by a
+    // piece -- so it works whether or not another piece slid into the slot.
+    _wireEntryTap(bx, by, bw, bh) {
+        if (!this.background.input) {
+            this.background.setInteractive(new Phaser.Geom.Rectangle(bx, by, bw, bh),
+                                           Phaser.Geom.Rectangle.Contains);
+            onTap(this.background, () => this.onEntryPanelTap());
+        } else if (this.background.input.hitArea && this.background.input.hitArea.setTo) {
+            this.background.input.hitArea.setTo(bx, by, bw, bh);
+        }
+    }
+
+    onEntryPanelTap() {
+        const game = this.scene && this.scene.game;
+        if (!game || game.gameOver || !getSumToGoal()) return;
+        const mark = game._rackSlotTap;
+        if (!mark || mark.rack !== this) return;
+        // Only while that piece is still sitting tentatively on the home tile --
+        // the state the gesture is about. No time window needed here: a piece
+        // that has since moved, been returned, or had a die spent on it fails
+        // this test on its own.
+        const p = mark.piece;
+        if (!p || !p.justMovedHome || !p.currentTile || p.currentTile.type !== 'home') return;
+        game._rackSlotTap = null;
+        clearTimeout(p._hlTimer);
+        _noteDecline('rack-panel-tap', 'second tap caught by the panel',
+                     { piece: p.number, rack: this.type });
+        if (game.sendToGoal(p)) _clearSelection(game);
+        else if (game.selectedPiece === p && p.highlightReachableTiles) p.highlightReachableTiles();
+    }
+
     _wireSaveTap(bx, by, bw, bh) {
         if (!this.background.input) {
             this.background.setInteractive(new Phaser.Geom.Rectangle(bx, by, bw, bh),
@@ -5019,6 +5063,13 @@ class Rack {
         this.background.lineStyle(1.5, 0xdbe1ea, 1);
         this.background.strokeRoundedRect(bx, by, bw, bh, 16);
         if (this.type === 'saved') this._wireSaveTap(bx, by, bw, bh);
+        // The unentered panel takes taps as well, for the send-to-goal gesture.
+        // The first tap of that double-click moves the piece OFF the rack, so
+        // when it was the LAST piece the slot is left empty and the second tap
+        // lands on bare panel: no piece, no handler, no gesture. That is the
+        // whole bug owner kept reporting (the 5, the 6, the 2 -- each the last
+        // piece; the 1 worked because others slid up behind it).
+        if (this.type === 'unentered') this._wireEntryTap(bx, by, bw, bh);
         // faint slot circles show the rack's capacity (like the mockup)
         this.background.lineStyle(1.5, 0xdbe1ea, 0.85);
         for (let i = 0; i < this.cols * this.rows; i++) {
