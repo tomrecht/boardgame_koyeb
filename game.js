@@ -5801,9 +5801,15 @@ class Game {
     sendToGoal(piece) {
         // Traced: this declines for several legitimate reasons and they are
         // indistinguishable on screen. console.log is silent without ?dev=1.
-        const no = (why, extra) => {
+        // SAY WHY. Every decline used to be silent -- the piece just sat there --
+        // so "my dice cannot reach a goal" was indistinguishable from "the
+        // feature is broken", and owner reported the latter three times when the
+        // log shows it was always the former. Only for the declines a player can
+        // act on; the internal ones (wrong turn, game over) stay quiet.
+        const no = (why, extra, tell) => {
             console.log('[send-to-goal] not applied:', why, extra || '');
             _noteDecline('send-to-goal', why, extra);
+            if (tell && typeof flashNotice === 'function') flashNotice(tell, 3500);
             return false;
         };
         if (!getSumToGoal()) return no('the "Double-click sends a piece to its goal" setting is OFF');
@@ -5859,10 +5865,17 @@ class Game {
             return no('second entrant: may not spend both dice');
         }
         if (goals.length !== 1) {
+            const onHome = piece.currentTile && piece.currentTile.type === 'home';
             return no(goals.length === 0 ? 'no eligible goal in reach' : 'ambiguous: more than one eligible goal',
                       { piece: piece.number, eligibleGoals: goals.map(t => t.number),
                         dice: this.dice.map(d => d.value + (d.used ? '(used)' : '')),
-                        sumTiles: r.reachableBySum.length });
+                        sumTiles: r.reachableBySum.length },
+                      goals.length === 0
+                          // From the home tile every goal is exactly 7 away, so
+                          // say the number -- that is the whole rule there.
+                          ? (onHome ? 'No goal is 7 away on this roll — entering pieces need a total of exactly 7.'
+                                    : 'No goal is within reach of this roll.')
+                          : 'More than one goal is in reach, so move it by hand to choose.');
         }
         console.log('[send-to-goal] moving piece', piece.number, '-> goal', goals[0].number);
 

@@ -1696,6 +1696,26 @@ with it in mind.** Assessment and the concrete implications:
     sets `visible=false` but leaves `alpha` untouched, so asserting on alpha
     reports the icon as still showing when it is not.
 
+- **THE SEND-TO-GOAL "BUG" WAS SILENCE, NOT A DEFECT (2026-08-20).** The decline
+  log answered it. Across **27 recorded declines there is not one** where a
+  numbered piece with both dice free summing to 7 was refused — every single
+  refusal was legitimate. The two owner reported as failures read, in the log:
+  `piece 5, dice 3+6 (sum 9), eligibleGoals []` and `piece 1, dice 4(used)+4`.
+  Every goal is exactly 7 from the home tile, so an entering piece needs a total
+  of **exactly 7 — 6 rolls in 36** — and a spent die removes the sum entirely.
+  Both correctly did nothing.
+  **The defect was that "your dice cannot reach a goal" and "the feature is
+  broken" looked identical**, because the gesture declined in silence. It now
+  says which: *"No goal is 7 away on this roll — entering pieces need a total of
+  exactly 7"* from the home tile, *"No goal is within reach of this roll"*
+  elsewhere, and *"More than one goal is in reach, so move it by hand to choose"*
+  for the ambiguous case. Internal declines (wrong turn, game over) stay quiet.
+  Verified 3/3: sum 9 → the exactly-7 notice and no move; blank at sum 7 → the
+  ambiguity notice; numbered at sum 7 → moves, no notice.
+  **Cost of the silence, for the record: three sessions of hypotheses (a stale
+  cache, the toggle, the second-entrant rule), all wrong, before anyone had data.
+  Instrument the decline before theorising about the mechanism.**
+
 - **SEND-TO-GOAL DECLINES ARE NOW RECORDED WITHOUT `?dev=1` (2026-08-19).** The
   gesture has failed for owner three times (a 2, a 6, and one earlier), each time
   unreproducible here and reported after the fact without the dev flag set.
