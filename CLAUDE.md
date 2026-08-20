@@ -1865,17 +1865,24 @@ with it in mind.** Assessment and the concrete implications:
   the whole roll. Owner's call: that is a lot to happen off one gesture and easy
   to trigger by accident, so it is now a setting, **off by default**
   (`sumSaveGesture`, `getSumSaveGesture()`).
-  **Only that branch is gated.** A piece already standing ON a goal still walks
-  to another goal and banks there without the toggle — it is already committed to
-  a goal, so the gesture cannot surprise anyone — and dragging a piece to the
-  saved rack, or tapping the saved rack with one selected, are untouched: both
-  name the destination explicitly.
+  **BOTH double-click sum-save branches are gated** (owner, revised): from a field
+  tile AND from a goal the piece cannot bank from. It spends the whole roll off
+  one gesture wherever the piece stands, so the setting covers both or neither.
+  Untouched, because all three name the destination explicitly: `Piece.save()`
+  (bank from the goal I am on with a matching die), dragging a piece to the saved
+  rack, and tapping the saved rack with one selected.
   Verified by stubbing `sumSave` and asking whether the BRANCH is reached, rather
-  than whether a save is legal: toggle off → field no / on-goal yes; toggle on →
-  both yes. **The first version of that test built a "savable" position by hand
-  and produced no save in either state, so it said nothing about the toggle** —
-  the same trap as every other hand-built position in this file. Test the gate,
-  not the legality.
+  than whether a save is legal: toggle off → neither branch tried; toggle on →
+  both. Plus a separate check that the core save still banks with the toggle off.
+  **The first version of that test built a "savable" position by hand and
+  produced no save in either state, so it said nothing about the toggle** — the
+  same trap as every other hand-built position in this file. Test the gate, not
+  the legality. **And `Player.getGamePhase()` returns a CACHED field**
+  (`gamePhase`, maintained by `setGamePhase` during real play), so a position
+  built by mutating the board directly is still in the `'opening'` phase and
+  `save()` correctly refuses — which looks exactly like a gating bug. Set the
+  phase, or the check proves nothing. Same family as the stale `mustMovePieces`
+  that setup mode had to fix.
 
 - **SETTINGS SAY "DOUBLE-TAP" ON A PHONE (2026-08-20).** `_dblWord()` returns
   "Double-tap" or "Double-click" from `_isPhone()`, mirroring the `dbl` const How
