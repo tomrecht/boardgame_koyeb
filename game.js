@@ -284,10 +284,29 @@ function _logGameResult(rec) {
         localStorage.setItem(GAME_LOG_KEY, JSON.stringify(log));
     } catch (e) { /* private mode / quota: the game itself must not care */ }
 }
+// Gesture declines, recorded whether or not ?dev=1 was set. The send-to-goal
+// failures have all been unreproducible and reported hours later, and asking the
+// owner to remember a query parameter BEFORE a bug he cannot predict has not
+// worked twice running. Capped, and only while the gesture is switched on.
+const DECLINE_KEY = 'gestureDeclines';
+const DECLINE_MAX = 60;
+function _noteDecline(what, why, extra) {
+    if (!getSumToGoal()) return;
+    try {
+        const s = localStorage.getItem(DECLINE_KEY);
+        const log = s ? JSON.parse(s) : [];
+        log.push({ t: new Date().toISOString(), what, why, extra: extra || null });
+        if (log.length > DECLINE_MAX) log.splice(0, log.length - DECLINE_MAX);
+        localStorage.setItem(DECLINE_KEY, JSON.stringify(log));
+    } catch (e) {}
+}
+
 function copyGameLog() {
     const log = _readGameLog();
-    const json = JSON.stringify(log, null, 2);
-    console.log('[game log] ' + log.length + ' records\n' + json);
+    let declines = [];
+    try { const d = localStorage.getItem(DECLINE_KEY); declines = d ? JSON.parse(d) : []; } catch (e) {}
+    const json = JSON.stringify({ games: log, gestureDeclines: declines }, null, 2);
+    console.log('[game log] ' + log.length + ' games, ' + declines.length + ' declines\n' + json);
     if (navigator.clipboard && navigator.clipboard.writeText) {
         navigator.clipboard.writeText(json)
             .then(() => flashNotice('Game log copied — ' + log.length + ' games', 3000))
@@ -5782,7 +5801,11 @@ class Game {
     sendToGoal(piece) {
         // Traced: this declines for several legitimate reasons and they are
         // indistinguishable on screen. console.log is silent without ?dev=1.
-        const no = (why, extra) => { console.log('[send-to-goal] not applied:', why, extra || ''); return false; };
+        const no = (why, extra) => {
+            console.log('[send-to-goal] not applied:', why, extra || '');
+            _noteDecline('send-to-goal', why, extra);
+            return false;
+        };
         if (!getSumToGoal()) return no('the "Double-click sends a piece to its goal" setting is OFF');
         if (!piece || piece.player !== this.turn) return no('not this player\'s piece');
         if (this.gameOver) return no('game over');
@@ -5821,6 +5844,20 @@ class Game {
         // depth.
         const goals = eligible([...r.reachableBySum,
                                 ...r.reachableByFirstDie, ...r.reachableBySecondDie]);
+        // The one decline worth explaining. Taking the SECOND rack piece first is
+        // a reordering, so the front piece must still enter this turn and the
+        // second may never spend both dice -- and every goal is exactly 7 from
+        // the home tile, which always needs both. So the gesture simply cannot
+        // apply to a second entrant, and without a word it looks broken: owner
+        // hit it twice (a 2 and a 6, both not at the front) and read it as the
+        // feature failing intermittently.
+        if (goals.length === 0 && !this.dice[0].used && !this.dice[1].used &&
+            (piece === this._reorderEntry || piece === _secondEntrant(this))) {
+            if (typeof flashNotice === 'function') {
+                flashNotice('The first piece on the rack must still enter this turn, so this one can’t use both dice.', 5000);
+            }
+            return no('second entrant: may not spend both dice');
+        }
         if (goals.length !== 1) {
             return no(goals.length === 0 ? 'no eligible goal in reach' : 'ambiguous: more than one eligible goal',
                       { piece: piece.number, eligibleGoals: goals.map(t => t.number),
