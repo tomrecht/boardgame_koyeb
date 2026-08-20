@@ -1860,6 +1860,30 @@ with it in mind.** Assessment and the concrete implications:
   unused dice**. Set both roles BEFORE the game starts, and believe the owner's
   observation over the instrument.
 
+- **SUM-SAVE FROM A FIELD TILE IS NOW OPT-IN (2026-08-20).** Double-clicking a
+  piece out on the FIELD walked it to a goal and banked it in one gesture, using
+  the whole roll. Owner's call: that is a lot to happen off one gesture and easy
+  to trigger by accident, so it is now a setting, **off by default**
+  (`sumSaveGesture`, `getSumSaveGesture()`).
+  **Only that branch is gated.** A piece already standing ON a goal still walks
+  to another goal and banks there without the toggle — it is already committed to
+  a goal, so the gesture cannot surprise anyone — and dragging a piece to the
+  saved rack, or tapping the saved rack with one selected, are untouched: both
+  name the destination explicitly.
+  Verified by stubbing `sumSave` and asking whether the BRANCH is reached, rather
+  than whether a save is legal: toggle off → field no / on-goal yes; toggle on →
+  both yes. **The first version of that test built a "savable" position by hand
+  and produced no save in either state, so it said nothing about the toggle** —
+  the same trap as every other hand-built position in this file. Test the gate,
+  not the legality.
+
+- **SETTINGS SAY "DOUBLE-TAP" ON A PHONE (2026-08-20).** `_dblWord()` returns
+  "Double-tap" or "Double-click" from `_isPhone()`, mirroring the `dbl` const How
+  to Play already used. Labels are built once at start-up and `_isPhone()` is
+  stable for the session, so it can be read at build time. Measured: desktop gets
+  "Double-click sends a piece to its goal" / "Double-click saves a piece in one
+  move", an emulated phone gets the double-tap wording for both.
+
 - **OPTIONAL GESTURE: DOUBLE-CLICK SENDS A PIECE TO A GOAL ON THE DICE SUM
   (2026-08-17).** Off by default; settings row "Double-click sends a piece to its
   goal" (`sumToGoal`, `Game.sendToGoal`). A numbered piece only ever targets its

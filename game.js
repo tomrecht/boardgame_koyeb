@@ -222,6 +222,19 @@ function getConfirmRiskyEnd()   { return !_tut.active && _boolSetting('confirmRi
 // goal it can reach on the DICE SUM. Never during the tutorial, which scripts
 // every move and would be walked off its rails by a shortcut.
 function getSumToGoal()         { return !_tut.active && _boolSetting('sumToGoal', false); }
+// Optional, OFF by default: a double-click on a piece OUT ON THE FIELD spends the
+// whole roll to walk it to a goal and bank it in one gesture. The same move is
+// always available by hand (step onto the goal, then save), so this is a
+// shortcut, not a rule -- and an easy one to trigger by accident, which is why it
+// is opt-in. Dragging a piece to the saved rack, and double-clicking one already
+// standing ON a goal, are unaffected: both name the destination explicitly.
+function getSumSaveGesture()    { return !_tut.active && _boolSetting('sumSaveGesture', false); }
+// A phone has no mouse. Settings labels are built once at start-up, and
+// _isPhone() is stable for the session, so this can be read at build time.
+function _dblWord(capitalised) {
+    const w = _isPhone() ? 'ouble-tap' : 'ouble-click';
+    return (capitalised ? 'D' : 'd') + w;
+}
 // How long after tentatively entering a rack piece a tap on the SAME slot still
 // counts as the second half of that double-click. The mark is only live while
 // the piece sits tentatively on home, so this is a backstop rather than the real
@@ -1678,7 +1691,8 @@ function createSettingsPanel() {
     toggle('Move & capture effects', getFeedbackEnabled, 'fxEnabled', true);
     toggle('End turn automatically when both dice used', getAutoEndTurn, 'autoEndTurn', true);
     toggle('Confirm ending a turn with a move left', getConfirmRiskyEnd, 'confirmRiskyEnd', false);
-    toggle('Double-click sends a piece to its goal', getSumToGoal, 'sumToGoal', false);
+    toggle(_dblWord(true) + ' sends a piece to its goal', getSumToGoal, 'sumToGoal', true);
+    toggle(_dblWord(true) + ' saves a piece in one move', getSumSaveGesture, 'sumSaveGesture', false);
     toggle('Automatic en-route capture', getAutoEnRouteCapture, 'autoEnRoute', true);
 
     // Interactive tutorial launcher
@@ -3816,9 +3830,14 @@ class Piece {
             // for a moment; 250ms is well under a deliberate re-tap.
             this.game._saveGuardUntil = Date.now() + 250;
             _clearSelection(this.game);
-        } else if (this.player === this.game.turn && this.game.sumSave(this)) {
-            // not on a goal yet, but one die reaches the goal and the other saves
-            // it this turn -> do both at once.
+        } else if (this.player === this.game.turn && getSumSaveGesture() &&
+                   this.game.sumSave(this)) {
+            // Not on a goal yet, but one die reaches a goal and the other saves it
+            // this turn -> do both at once. Opt-in (see getSumSaveGesture): it
+            // spends the entire roll off a single gesture, which is a lot to do by
+            // accident. The branch above -- a piece already ON a goal walking to
+            // another and banking -- is deliberately NOT gated: that piece is
+            // already committed to a goal, so the gesture cannot surprise anyone.
             return;
         } else if (this.player === this.game.turn && this.game.sendToGoal(this)) {
             // Optional gesture, and deliberately AFTER sumSave: both spend the
