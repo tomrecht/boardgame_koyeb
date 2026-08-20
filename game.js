@@ -227,7 +227,10 @@ function getSumToGoal()         { return !_tut.active && _boolSetting('sumToGoal
 // always available by hand (step onto the goal, then save), so this is a
 // shortcut, not a rule -- and an easy one to trigger by accident, which is why it
 // is opt-in. Dragging a piece to the saved rack, and double-clicking one already
-// standing ON a goal, are unaffected: both name the destination explicitly.
+// standing ON a goal, is covered by the same toggle -- it spends the whole roll
+// wherever the piece stands. Dragging a piece to the saved rack, and tapping the
+// saved rack with one selected, are unaffected: both name the destination
+// explicitly. `Piece.save()` is never gated -- that is the core save gesture.
 function getSumSaveGesture()    { return !_tut.active && _boolSetting('sumSaveGesture', false); }
 // A phone has no mouse. Settings labels are built once at start-up, and
 // _isPhone() is stable for the session, so this can be read at build time.
@@ -3815,8 +3818,12 @@ class Piece {
             const saved = this.save(); // Save the piece if it can be saved
             // Not savable from THIS goal with this roll, but both dice can walk
             // it to another goal and save it there -- do both at once, exactly as
-            // from a field tile.
-            if (!saved && this.player === this.game.turn && this.game.sumSave(this)) return;
+            // from a field tile. Behind the same toggle (owner): it spends the
+            // whole roll off one gesture wherever the piece is standing, so the
+            // setting covers both or neither. `save()` above is NOT gated -- that
+            // is the core save gesture, not a shortcut.
+            if (!saved && this.player === this.game.turn && getSumSaveGesture() &&
+                this.game.sumSave(this)) return;
             // Still on a goal it cannot bank from, and cannot reach-and-bank
             // another either -- but the sum may reach a goal it CAN eventually
             // use (a numbered piece parked on the wrong goal, most usefully).
@@ -3834,10 +3841,8 @@ class Piece {
                    this.game.sumSave(this)) {
             // Not on a goal yet, but one die reaches a goal and the other saves it
             // this turn -> do both at once. Opt-in (see getSumSaveGesture): it
-            // spends the entire roll off a single gesture, which is a lot to do by
-            // accident. The branch above -- a piece already ON a goal walking to
-            // another and banking -- is deliberately NOT gated: that piece is
-            // already committed to a goal, so the gesture cannot surprise anyone.
+            // spends the entire roll off a single gesture, which is a lot to do
+            // by accident.
             return;
         } else if (this.player === this.game.turn && this.game.sendToGoal(this)) {
             // Optional gesture, and deliberately AFTER sumSave: both spend the
