@@ -1760,6 +1760,46 @@ with it in mind.** Assessment and the concrete implications:
   the explanation. A notice was added for it anyway — it is a real decline that
   was previously silent.
 
+- **GAME LOG: BUILT, USED, REMOVED (2026-08-19/20). Its answer: no strength
+  change since the port.** Owner's record was 125/250 before the port and felt
+  better than 50% after, uncounted — so every finished game and match was logged
+  to localStorage with a Copy-game-log export. **Final tally: 34W-31L, 52.3% over
+  65 games, net margin exactly 0, matches 6-9.** The interesting part is the
+  shape: it read **28-18 (60.9%, +25)** at 46 games and then went **6-13 (31.6%,
+  -25)** over the next 19, landing on a coin flip. That is the amount of swing
+  this game produces from variance alone in ONE evening, and it is why no amount
+  of attentive play could ever have settled the question. It agrees with
+  everything else measured — 200/200 identical agent choices, unchanged model
+  file, unchanged knobs.
+  **Removed once it had done its job** (owner's call): the log, the decline
+  buffer, the export button and `MODEL_ID` are all gone. `MODEL_ID` in particular
+  was a hand-maintained constant that would have rotted the first time anyone
+  re-exported the model without remembering it. Stale `gameLog` /
+  `gestureDeclines` keys may linger in a browser; they are inert.
+  **If the question ever comes back, rebuild it rather than reasoning** — it took
+  one evening to build and settled in one night what three sessions of argument
+  could not. Kept from that work: the decline NOTICES, which are a real feature
+  (see below).
+
+- **SEND-TO-GOAL DECLINES ARE NOW RECORDED WITHOUT `?dev=1` (2026-08-19).** The
+  gesture has failed for owner three times (a 2, a 6, and one earlier), each time
+  unreproducible here and reported after the fact without the dev flag set.
+  Asking him to remember a query parameter BEFORE a bug he cannot predict has not
+  worked, so every decline now appends to `localStorage.gestureDeclines` (capped
+  at 60, only while the gesture is switched on) with the reason, the piece, the
+  dice, the eligible goals and the sum-tile count. It comes out with **Settings →
+  Copy game log**, which now exports `{ games, gestureDeclines }`.
+  Verified recording with **no** `?dev=1` on the URL.
+  **Ruled out as the cause of his reports: the second-entrant rule.** Taking the
+  SECOND rack piece first is a reordering, so the front piece must still enter and
+  the second may never spend both dice — and every goal is exactly 7 from home,
+  which always needs both. Measured: front rack piece → goes to its goal; second
+  rack piece → sits on home; a piece already on home from a single click → goes to
+  its goal (so that case, which owner asked for, already worked). It fits the
+  symptom exactly, but **owner says his pieces were at the front**, so it is not
+  the explanation. A notice was added for it anyway — it is a real decline that
+  was previously silent.
+
 - **GAME LOG (evaluation aid, 2026-08-19).** Owner's record against the deployed
   champion was **125/250 before the port** and feels better than 50% since, but
   uncounted — so every finished game and every finished match is now appended to
