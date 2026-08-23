@@ -5853,16 +5853,12 @@ class Game {
             return no('second entrant: may not spend both dice');
         }
         if (goals.length !== 1) {
-            const onHome = piece.currentTile && piece.currentTile.type === 'home';
             return no(goals.length === 0 ? 'no eligible goal in reach' : 'ambiguous: more than one eligible goal',
                       { piece: piece.number, eligibleGoals: goals.map(t => t.number),
                         dice: this.dice.map(d => d.value + (d.used ? '(used)' : '')),
                         sumTiles: r.reachableBySum.length },
                       goals.length === 0
-                          // From the home tile every goal is exactly 7 away, so
-                          // say the number -- that is the whole rule there.
-                          ? (onHome ? 'No goal is 7 away on this roll — entering pieces need a total of exactly 7.'
-                                    : 'No goal is within reach of this roll.')
+                          ? 'No goal is within reach of this roll.'
                           : 'More than one goal is in reach, so move it by hand to choose.');
         }
         console.log('[send-to-goal] moving piece', piece.number, '-> goal', goals[0].number);
@@ -6514,7 +6510,12 @@ endGame(winner, score = null, impasse_caller = null) {
         try {
             if (new URLSearchParams(location.search).get('cam') === '0') return;
         } catch (e) {}
-        if (scene._camWired) return;
+        // A scene RESTART reuses the same Scene object, so _camUserZoom survives
+        // from the previous game and a new game opened still pinched in. Reset it
+        // every time, before the wiring guard -- and re-frame on the already-wired
+        // path, or the reset would not reach the camera.
+        scene._camUserZoom = 1;
+        if (scene._camWired) { _fitCameraToWorld(scene); return; }
         scene._camWired = true;
         _sizeCanvasToScreen();
         _sizeGear();
