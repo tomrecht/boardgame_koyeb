@@ -1888,6 +1888,29 @@ with it in mind.** Assessment and the concrete implications:
   phase, or the check proves nothing. Same family as the stale `mustMovePieces`
   that setup mode had to fix.
 
+- **A SINGLE TAP COULD FIRE AS A DOUBLE TAP — COMPATIBILITY MOUSE EVENTS
+  (2026-08-20).** Owner: "on phone, a single tap is often mistaken for a double
+  tap". A real finger fires touchstart/touchend and then, unless EVERY touchend is
+  cancelled, the browser synthesises mousedown/mouseup a few hundred ms later.
+  Phaser delivers that as a second `pointerdown`, which lands right on the 300ms
+  double-click threshold — so whether one tap read as two came down to a race,
+  which is why it was intermittent.
+  **Reproduced and A/B'd**, with a touch tap followed by a mouse press at the same
+  point (the emulator does NOT generate the ghost itself, which is why three
+  earlier single-tap tests all came back clean):
+
+        ghost at 150ms      double-click fired   piece banked by ONE tap
+        without the fix     yes                  YES
+        with the fix        no                   no
+
+  `_isGhostPointer()` ignores a non-touch pointer once any touch has been seen,
+  guarding `Piece.handleClick` (pieces act on pointerdown) and the phone branch of
+  `onTap` (everything else acts on pointerup). Keyed on **having seen touch**, not
+  on `_isPhone()`, so `?phone=1` on a desktop still answers a real mouse.
+  **Measure the ACTION, not the delivery.** The first check wrapped `handleClick`
+  and still counted 2 after the fix — the guard returns from inside it. Counting
+  `onClick` / `handleDoubleClick` showed 2 delivered, 1 acted.
+
 - **A NEW GAME ON A PHONE ALWAYS OPENS UN-ZOOMED (2026-08-20).** `scene.restart()`
   reuses the SAME Scene object, so `_camUserZoom` survived from the previous game
   and a new one opened still pinched in. `setupCameraControls` now resets it to 1

@@ -1200,10 +1200,27 @@ if (window.visualViewport) {
 // and that the pointer barely moved (a drag or pan is not a tap).
 // Pieces deliberately keep pointerdown: dragging one relies on the selection
 // being made there, and a stray selection is harmless anyway.
-let _touchesDown = 0, _gestureWasMultiTouch = false;
+let _touchesDown = 0, _gestureWasMultiTouch = false, _sawTouch = false;
 function _multiTouchActive() { return _gestureWasMultiTouch || _touchesDown > 1; }
+
+// A COMPATIBILITY (ghost) mouse event. A real finger fires touchstart/touchend
+// and then, unless every single touchend is cancelled, the browser synthesises
+// mousedown/mouseup a few hundred ms later -- which Phaser delivers as a SECOND
+// pointerdown. That lands right on the 300ms double-click threshold, so one tap
+// intermittently read as two: owner's "a single tap is often mistaken for a
+// double tap". Reproduced directly (one touch tap + a mouse press 280ms later
+// = 2 handleClick calls, kinds ['touch','mouse']).
+//
+// A touch device has no mouse, so once ANY touch has been seen a non-touch
+// pointer can only be that ghost. Keyed on having seen touch rather than on
+// _isPhone(), so `?phone=1` on a desktop still responds to a real mouse.
+function _isGhostPointer(pointer) {
+    return !!(_sawTouch && pointer && pointer.wasTouch === false);
+}
+
 ['touchstart', 'touchend', 'touchcancel'].forEach(type => {
     window.addEventListener(type, (e) => {
+        if (type === 'touchstart') _sawTouch = true;
         _touchesDown = e.touches ? e.touches.length : 0;
         if (_touchesDown > 1) _gestureWasMultiTouch = true;
         // clear a little after the last finger lifts, so the second finger's own
@@ -1267,6 +1284,7 @@ function _tapSlop() { return _tapSlopCss() * _bufferPerCss(); }
 function onTap(obj, handler) {
     if (!_isPhone()) { obj.on('pointerdown', handler); return obj; }
     obj.on('pointerup', function (pointer, ...rest) {
+        if (_isGhostPointer(pointer)) return;       // compatibility mouse event
         if (_multiTouchActive()) return;
         if (pointer && pointer.getDistance && pointer.getDistance() > _tapSlop()) return;  // a drag, not a tap
         if (_gestureConsumed(pointer)) return;      // a piece already acted on this tap
@@ -3554,6 +3572,9 @@ class Piece {
     }
 
     handleClick(pointer) {
+        // The synthesised mouse event that follows a real finger -- never a
+        // second tap. See _isGhostPointer.
+        if (_isGhostPointer(pointer)) return;
         // see handleDoubleClick: a just-saved piece leaves its neighbours
         // shuffling under the finger
         if (this.game._saveGuardUntil && Date.now() < this.game._saveGuardUntil) return;
