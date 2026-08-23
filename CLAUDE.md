@@ -1731,12 +1731,14 @@ with it in mind.** Assessment and the concrete implications:
   Both correctly did nothing.
   **The defect was that "your dice cannot reach a goal" and "the feature is
   broken" looked identical**, because the gesture declined in silence. It now
-  says which: *"No goal is 7 away on this roll — entering pieces need a total of
-  exactly 7"* from the home tile, *"No goal is within reach of this roll"*
-  elsewhere, and *"More than one goal is in reach, so move it by hand to choose"*
-  for the ambiguous case. Internal declines (wrong turn, game over) stay quiet.
-  Verified 3/3: sum 9 → the exactly-7 notice and no move; blank at sum 7 → the
-  ambiguity notice; numbered at sum 7 → moves, no notice.
+  says which: *"No goal is within reach of this roll"* and *"More than one goal is
+  in reach, so move it by hand to choose"*. Internal declines (wrong turn, game
+  over) stay quiet. **A third message spelling out the exactly-7 rule from the
+  home tile was removed at owner's request (2026-08-20)** — the generic one covers
+  it, and teaching the geometry in a transient toast was more than the moment
+  needed. Verified by stubbing reachability so the decline reason is forced,
+  rather than hand-building a position: no goal in reach → the generic notice;
+  two goals → the ambiguity notice.
   **Cost of the silence, for the record: three sessions of hypotheses (a stale
   cache, the toggle, the second-entrant rule), all wrong, before anyone had data.
   Instrument the decline before theorising about the mechanism.**
@@ -1883,6 +1885,14 @@ with it in mind.** Assessment and the concrete implications:
   `save()` correctly refuses — which looks exactly like a gating bug. Set the
   phase, or the check proves nothing. Same family as the stale `mustMovePieces`
   that setup mode had to fix.
+
+- **A NEW GAME ON A PHONE ALWAYS OPENS UN-ZOOMED (2026-08-20).** `scene.restart()`
+  reuses the SAME Scene object, so `_camUserZoom` survived from the previous game
+  and a new one opened still pinched in. `setupCameraControls` now resets it to 1
+  on every call — before the `_camWired` guard, and re-framing on the
+  already-wired path, or the reset would never reach the camera. Measured on an
+  emulated phone: fresh game ratio 1.0, pinched to 2.8, New Game back to 1.0 with
+  `cam.zoom` returned to the base.
 
 - **SETTINGS SAY "DOUBLE-TAP" ON A PHONE (2026-08-20).** `_dblWord()` returns
   "Double-tap" or "Double-click" from `_isPhone()`, mirroring the `dbl` const How
