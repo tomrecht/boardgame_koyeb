@@ -5857,8 +5857,12 @@ class Game {
                       { piece: piece.number, eligibleGoals: goals.map(t => t.number),
                         dice: this.dice.map(d => d.value + (d.used ? '(used)' : '')),
                         sumTiles: r.reachableBySum.length },
+                      // Nothing to say when no goal is in reach (owner): that is
+                      // the ordinary "this roll cannot do it" case and a toast for
+                      // it is noise. The ambiguous case still speaks, because
+                      // there the gesture is declining something it COULD do.
                       goals.length === 0
-                          ? 'No goal is within reach of this roll.'
+                          ? null
                           : 'More than one goal is in reach, so move it by hand to choose.');
         }
         console.log('[send-to-goal] moving piece', piece.number, '-> goal', goals[0].number);

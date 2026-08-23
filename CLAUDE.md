@@ -1731,14 +1731,16 @@ with it in mind.** Assessment and the concrete implications:
   Both correctly did nothing.
   **The defect was that "your dice cannot reach a goal" and "the feature is
   broken" looked identical**, because the gesture declined in silence. It now
-  says which: *"No goal is within reach of this roll"* and *"More than one goal is
-  in reach, so move it by hand to choose"*. Internal declines (wrong turn, game
-  over) stay quiet. **A third message spelling out the exactly-7 rule from the
-  home tile was removed at owner's request (2026-08-20)** — the generic one covers
-  it, and teaching the geometry in a transient toast was more than the moment
-  needed. Verified by stubbing reachability so the decline reason is forced,
-  rather than hand-building a position: no goal in reach → the generic notice;
-  two goals → the ambiguity notice.
+  says which — but **only for the ambiguous case**: *"More than one goal is in
+  reach, so move it by hand to choose"*. Everything else is silent.
+  Two messages were removed at owner's request (2026-08-20): one spelling out the
+  exactly-7 rule from the home tile, then the generic *"no goal is within reach"*.
+  His reasoning is worth keeping: **no goal in reach is the ordinary "this roll
+  cannot do it" case, and a toast for it is noise.** The ambiguous case still
+  speaks because there the gesture is declining something it COULD do — the only
+  situation where the silence is genuinely puzzling.
+  Verified by stubbing reachability so the decline reason is forced rather than
+  hand-building a position: no goal in reach → nothing; two goals → the notice.
   **Cost of the silence, for the record: three sessions of hypotheses (a stale
   cache, the toggle, the second-entrant rule), all wrong, before anyone had data.
   Instrument the decline before theorising about the mechanism.**
@@ -1893,6 +1895,12 @@ with it in mind.** Assessment and the concrete implications:
   already-wired path, or the reset would never reach the camera. Measured on an
   emulated phone: fresh game ratio 1.0, pinched to 2.8, New Game back to 1.0 with
   `cam.zoom` returned to the base.
+  **It covers games started INSIDE a match too**, which is a different call — the
+  end-game card's Next Game uses `scene.start('MainGameScene', …)`, not
+  `scene.restart()`. Both reuse the same Scene instance, and the reset sits in
+  `setupCameraControls`, which the `Game` constructor calls either way. Measured
+  mid-match: game 1 at ratio 1.0, pinched to 3.0, next game back to 1.0 with the
+  match still running.
 
 - **SETTINGS SAY "DOUBLE-TAP" ON A PHONE (2026-08-20).** `_dblWord()` returns
   "Double-tap" or "Double-click" from `_isPhone()`, mirroring the `dbl` const How
