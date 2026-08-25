@@ -70,6 +70,10 @@ const PIECE_RADIUS_BASE = 20;
 // per-tile radius shrinks (Tile.tilePieceRadius) so >=2 pieces fit un-stacked.
 const STACK_PR = 20;       // default board-piece radius (used when it fits)
 const STACK_MIN_R = 10;    // pieces shrink no smaller than this before stacking
+// Phone-only ceiling for a piece on the HOME tile: ~2x the area of the default
+// (28^2 / 20^2 = 1.96). Bounded by the ring it sits on -- 60 + 28 is inside the
+// tile's 90 radius -- and by the neighbour spacing, which is what shrinks it.
+const HOME_PR_PHONE = 28;
 const TILE_RADIUS_STEP = 60;
 const CENTER_X = 900;
 // Board vertical centre. 600 (canvas midpoint) keeps goal 2's number, at
@@ -4002,7 +4006,12 @@ class Piece {
         // captured piece). Give THOSE a bigger target and lift them above their
         // neighbours, so where the targets now overlap the tap resolves toward
         // the piece you are allowed to move rather than by display order.
-        const packedEntry = (this.rack && this.rack.type === 'unentered' && _isEntrant(this))
+        // The FRONT rack piece only, never the second entrant: taking the second
+        // one first is a permission, not the usual move, and an enlarged target
+        // on it (lifted above its neighbour, so it wins every overlap) stole taps
+        // aimed at the front piece -- owner hit this repeatedly.
+        const packedEntry = (this.rack && this.rack.type === 'unentered'
+                && this.rack.pieces && this.rack.pieces[0] === this && _isEntrant(this))
             || (this.currentTile && this.currentTile.type === 'home'
                 && this.game && this.player === this.game.turn);
         if (packedEntry) {
@@ -4638,13 +4647,23 @@ class Tile {
         if (this.type === "home") {
             const homeTileRadius = HOME_TILE_RADIUS - 30; // Adjust radius to fit pieces comfortably within the home tile
             const angularStep = Phaser.Math.DegToRad(360 / this.pieces.length); // Angular step between pieces
-    
+            // PHONES: home is by far the biggest tile on the board, so a piece
+            // sitting there is drawn much larger while the ring is uncrowded --
+            // it is also a piece you often have to tap (an entry, or a captured
+            // piece that must move). It shrinks back toward the default as
+            // pieces accumulate and never below it, so a busy home tile keeps
+            // exactly the packed ring it has always had.
+            const pr = _isPhone()
+                ? Math.max(PIECE_RADIUS_BASE, Math.min(HOME_PR_PHONE, Math.floor(
+                      (2 * Math.PI * homeTileRadius) / Math.max(this.pieces.length, 2) / 2 - 1)))
+                : PIECE_RADIUS_BASE;
+
             this.pieces.forEach((piece, index) => {
                 const angle = angularStep * index; // Calculate angle for each piece
                 const x = CENTER_X + homeTileRadius * Math.cos(angle); // Calculate x position
                 const y = CENTER_Y + homeTileRadius * Math.sin(angle); // Calculate y position
 
-                piece.setSize(PIECE_RADIUS_BASE); // Set piece size
+                piece.setSize(pr); // Set piece size
                 piece.setPosition(x, y); // Set piece position
                 piece.setVisible(true);
             });
@@ -4696,7 +4715,12 @@ class Tile {
         // The ceiling keeps it inside the tile's own radial band, since the
         // capacity test below only counts slots and would happily overflow it.
         const ext = this.outerRadius - this.innerRadius;
-        let r = _isPhone() ? Math.max(STACK_PR, Math.floor(Math.min(STACK_PR * 1.5, (ext - 10) / 2)))
+        // A GOAL is far roomier than a field tile (arc 259 against 63, radial
+        // extent 90 against 60), so it takes a higher ceiling -- owner wants a
+        // piece there drawn a bit bigger. The capacity loop below still shrinks
+        // it back when several pieces have to share the tile.
+        const ceiling = STACK_PR * (this.type === 'save' ? 1.8 : 1.5);
+        let r = _isPhone() ? Math.max(STACK_PR, Math.floor(Math.min(ceiling, (ext - 10) / 2)))
                            : STACK_PR;
         while (r > STACK_MIN_R && this._capacityAtSlot(r * 2 + 4) < n) r -= 1;
         return r;
@@ -4752,12 +4776,6 @@ class Tile {
         const positions = [];
         for (let k = 0; k < rows; k++) {
             const m = sizes[k], r = info[k].r;
-            // PHONES: spread the row across whatever arc the tile actually has,
-            // rather than packing the pieces shoulder to shoulder (owner: it
-            // causes misclicks). The pitch grows to fill the tile and never
-            // shrinks below `slot`, so a full row still looks exactly as before.
-            // Half a slot of margin at each end keeps the outermost pieces
-            // inside the tile.
             let pitch = slot / r;
             if (_isPhone() && m > 1) {
                 // Spread across the tile, but keep the outermost pieces a clear

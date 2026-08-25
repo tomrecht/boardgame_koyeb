@@ -1896,11 +1896,34 @@ with it in mind.** Assessment and the concrete implications:
     instead, which is the actual equivalent.
   - **Bigger targets for the pieces you may actually tap.** The unentered rack
     and the home tile pack their pieces, so `nearest/2` left a target barely
-    bigger than the piece. A rack ENTRANT, and your own piece on home, now get
+    bigger than the piece. The FRONT rack piece, and your own piece on home, get
     up to 3.4x their radius (floor 2.6x) and are lifted above their neighbours,
     so where targets overlap the tap resolves toward the piece you are allowed to
-    move. Measured on a phone: entrant and on-home **2.6xR**, other rack pieces
-    and board pieces **1.18xR**.
+    move. Measured on a phone: front entrant and on-home **2.6xR**, everything
+    else **1.18xR**.
+    **The SECOND entrant is deliberately NOT boosted** (owner, 2026-08-24): it
+    was, and being both larger and lifted above its neighbour it won every
+    overlap — so taps aimed at the FRONT piece kept selecting it. Taking the
+    second piece first is a permission, not the usual move, so it gets an
+    ordinary target. Same distinction as the amber ring, which the front piece
+    alone wears.
+  - **HOME AND GOAL PIECES ARE DRAWN BIGGER ON PHONES (owner, 2026-08-24)** —
+    both tiles are far roomier than a field tile and the space was going unused.
+    * **Home** has its own ring layout (not `tilePieceRadius`), which drew a flat
+      `PIECE_RADIUS_BASE` at any count. It now starts at **`HOME_PR_PHONE` = 28**
+      — about **twice the area** of 20 — and shrinks from the neighbour spacing
+      on its 60-radius ring, never below 20. Measured: **28 up to 6 pieces, then
+      25 / 22 / 20 at 7 / 8 / 9+**, always inside the tile's 90 radius, and no
+      overlap until 12, where the old packed ring already overlapped.
+    * **Goal (`save`) tiles** take a higher ceiling than a field tile in
+      `tilePieceRadius` — `STACK_PR * 1.8` against 1.5 — since their arc is 259
+      against 63 and their radial extent 90 against 60. Measured **36 for 1-3
+      pieces (was 30, 1.44x the area), then 30 at four and 23 at five, exactly as
+      before at those counts**: the capacity loop shrinks it back the moment
+      several pieces have to share.
+    * **Field tiles and DESKTOP are untouched** — verified in the same run: phone
+      field 25/13/13/11 as before, desktop 20 everywhere for home, goal and field
+      at every count.
   - **A tile's pieces spread across it on phones** instead of sitting shoulder to
     shoulder (owner: it causes misclicks) — **but never flush to the side
     borders**, which was the first cut and looked wrong. The outermost pieces
