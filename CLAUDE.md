@@ -1006,6 +1006,24 @@ with it in mind.** Assessment and the concrete implications:
     unmoved by a nudge.
     `_relayoutFurniture` now calls `_fitCameraToWorld` — the FRAME can change,
     not just what sits in it, and nothing else re-framed on a tutorial start.
+  - **THE PORTRAIT BOTTOM STACK RIDES UP WITH THE SAFE-AREA INSET (owner,
+    2026-08-25)** — not just the button row, which is what it did. Lifting the
+    buttons alone walked them into the counter above: owner, on an iPhone, saw
+    "turns with no save" underneath New Game / New Match / How to Play. Measured
+    at a 34px inset (`?safeinset=34`, = **101 world units** in portrait): the row
+    moved 1765-1865 -> 1664-1764 while the counter stayed at 1645-1735,
+    overlapping all three buttons. `scoreAt`, `impasseAt` and `callDrawAt` now
+    subtract `_safeBottomWorld()` too.
+    **Call draw moved BESIDE the counter rather than below it.** Stacked, its
+    centre sat 65 below the counter's top and the counter is 90 tall, so the
+    button was drawn on the text — pre-existing since the portrait layout, and
+    unfixable by re-spacing: rack-bottom to frame-bottom is 584 world units
+    against 455 of content. Counter now centres at `wd.x + 420`, button at
+    `wd.x + 1000`. Measured: **no overlap among score / counter / Call draw /
+    all three HUD buttons, at both 0 and 34px inset**; clearances rack->score
+    114 (13 with the inset) and hud->frame-bottom 65 (166 with it). Landscape and
+    desktop are untouched — they never read these fields — and re-measured clash
+    free, desktop score still at y1154-1176.
   - **iPHONE SAFE AREA (2026-08-15).** `viewport-fit=cover` was already set, so
     `env(safe-area-inset-*)` is non-zero on an iPhone, but nothing read it — the
     portrait button row sits 22 CSS px off the bottom, inside the ~34px
@@ -1901,6 +1919,22 @@ with it in mind.** Assessment and the concrete implications:
     so where targets overlap the tap resolves toward the piece you are allowed to
     move. Measured on a phone: front entrant and on-home **2.6xR**, everything
     else **1.18xR**.
+    **A TARGET MAY NOT LEAVE ITS OWN TILE (owner, 2026-08-25).** The enlarged
+    circle is lifted ABOVE the board, so any part of it lying over a NEIGHBOURING
+    tile makes that tile untappable — and the home tile has six neighbours a
+    piece must be able to move to. Two owner reports, one cause: **the ring-1
+    tile leading to goal 1 could not be reached at all**, and **a tap aimed there
+    returned the just-entered piece to the rack** (that tap lands on the piece,
+    and a piece on home with `justMovedHome` returns to the rack on click).
+    Measured: home piece at radius 60 from the board centre with a **72.8** hit
+    radius against a tile centre **63.96** away — swallowed. Now clamped to the
+    distance to the home tile's edge, giving **30** (drawn radius 28), and the
+    destination tap lands (`field 1/12`). The pre-change 48 did not reach that
+    centre, which is why this arrived with the bigger home pieces; but 60+48 also
+    crossed the tile boundary, so the clamp fixes a milder pre-existing case too.
+    Note this makes a home piece's target barely larger than the piece — that is
+    the price of the tile being tappable, and the piece itself is now 28 against
+    the old 20, so it is still an easier target than before.
     **The SECOND entrant is deliberately NOT boosted** (owner, 2026-08-24): it
     was, and being both larger and lifted above its neighbour it won every
     overlap — so taps aimed at the FRONT piece kept selecting it. Taking the

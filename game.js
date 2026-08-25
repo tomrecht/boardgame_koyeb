@@ -585,9 +585,21 @@ function _fur() {
     return { diceX: [wd.x + 60, wd.x + 60 + ds + 20], diceY: wd.y + 455 - lift, dieSize: ds,
              undoX: wd.x + 855, endX: wd.x + 1045, arrowY: wd.y + 530 - lift,
              cols, rows,
-             scoreAt: [wd.x + wd.w / 2, wd.y + 2040 - lift], scoreOrigin: [0.5, 0],
-             impasseAt: [wd.x + wd.w / 2, wd.y + 2225 - lift],
-             callDrawAt: [wd.x + wd.w / 2, wd.y + 2290 - lift],
+             // THE WHOLE BOTTOM STACK RIDES UP WITH THE SAFE-AREA INSET, not just
+             // the button row. Lifting the buttons alone walked them straight
+             // into the counter above: owner, on an iPhone, saw "turns with no
+             // save" underneath New Game / New Match / How to Play. Measured at
+             // a 34px inset: the row moved from 1765-1865 to 1664-1764 while the
+             // counter stayed at 1645-1735, overlapping all three buttons.
+             scoreAt: [wd.x + wd.w / 2, wd.y + 2040 - lift - _safeBottomWorld()],
+             scoreOrigin: [0.5, 0],
+             // Call draw sits BESIDE the counter, not below it. Stacked, its
+             // centre was 65 below the counter's top and the counter is 90 tall,
+             // so the button sat on the text (pre-existing, and there is no room
+             // in the band to separate them vertically: rack to frame-bottom is
+             // 584 world units against 455 of content).
+             impasseAt: [wd.x + 420, wd.y + 2225 - lift - _safeBottomWorld()],
+             callDrawAt: [wd.x + 1000, wd.y + 2270 - lift - _safeBottomWorld()],
              hudX: [wd.x + 230, wd.x + 550, wd.x + 870],
              hudY: wd.y + 2395 - lift - _safeBottomWorld(),
              whiteUn: w.un, whiteSv: w.sv, blackUn: b.un, blackSv: b.sv };
@@ -4017,6 +4029,19 @@ class Piece {
         if (packedEntry) {
             cap = 3.4;
             room = Math.max(room, r * 2.6);
+            // A TARGET MAY NOT LEAVE ITS OWN TILE. The enlarged circle is lifted
+            // ABOVE the board, so any part of it lying over a neighbouring tile
+            // makes that tile untappable -- and the home tile has six neighbours
+            // a piece must be able to move to. Owner hit both halves of this:
+            // the ring-1 tile leading to goal 1 could not be reached at all
+            // (its centre was 64 away against a 72.8 radius), and a tap aimed
+            // there landed on the just-entered piece instead, which returns it
+            // to the rack. Clamp to the distance to the home tile's edge.
+            if (this.currentTile && this.currentTile.type === 'home') {
+                const toEdge = HOME_TILE_RADIUS -
+                               Math.hypot((this.x || 0) - CENTER_X, (this.y || 0) - CENTER_Y);
+                room = Math.min(room, Math.max(r, toEdge));
+            }
             if (this.scene && this.scene.children) this.scene.children.bringToTop(c);
         }
         c.input.hitArea = new Phaser.Geom.Circle(r, r, Math.max(r, Math.min(r * cap, room)));
