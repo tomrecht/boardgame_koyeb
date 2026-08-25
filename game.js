@@ -2753,7 +2753,13 @@ function showInstructions() {
         ['Controls', phone
             ? 'Tap a piece, then tap where it should go — or just drag it there. Drag onto its goal, or double-tap, to save. The ↶ arrow undoes one die at a time; ↷ ends your turn. On a crowded tile the <b>+N</b> badge opens a picker (drag a piece straight out of it). Theme, difficulty and options live under the ⚙ settings, and <b>New Match</b> starts a multi-game match.'
               + '<br>Pinch to zoom, and drag the board to move around it. While you are zoomed in, a piece you still have to enter hovers at the bottom left and the dice appear at the top right — the hovering piece can be tapped, or dragged straight onto the board.'
-              + '<br>Settings › <b>Fullscreen</b> hides the browser bars, and stops a swipe from the edge of the screen going back a page.'
+              // The Fullscreen row is phone-only AND only where
+              // document.fullscreenEnabled exists -- absent on iPhone Safari,
+              // where installing to the home screen is the equivalent. Do not
+              // describe a setting that is not there (owner, on an iPhone).
+              + (_fullscreenSupported()
+                    ? '<br>Settings › <b>Fullscreen</b> hides the browser bars, and stops a swipe from the edge of the screen going back a page.'
+                    : '<br>Add the game to your home screen to play without the browser bars.')
             : 'Click a piece, then click where it should go — or just drag it there. Drag onto its goal, or double-click, to save. The ↶ arrow undoes one die at a time; ↷ ends your turn. On a crowded tile the <b>+N</b> badge opens a picker (drag a piece straight out of it). Theme, difficulty and options live under the ⚙ settings, and <b>New Match</b> starts a multi-game match.'
               + '<br>Keyboard: <b>Z</b> undoes one die · <b>Enter</b> or <b>Space</b> ends your turn · <b>Esc</b> deselects the piece you’re holding.'],
     ];
@@ -3988,8 +3994,23 @@ class Piece {
             const d = Math.hypot((q.x || 0) - this.x, (q.y || 0) - this.y);
             if (d < nearest) nearest = d;
         }
-        const room = Number.isFinite(nearest) ? nearest / 2 : r * 2.4;
-        c.input.hitArea = new Phaser.Geom.Circle(r, r, Math.max(r, Math.min(r * 2.4, room)));
+        let room = Number.isFinite(nearest) ? nearest / 2 : r * 2.4;
+        let cap = 2.4;
+        // The unentered rack and the home tile pack their pieces tightly, so
+        // nearest/2 leaves a target barely bigger than the piece -- and on both,
+        // only one or two pieces are tappable at all (the rack entrant(s), your
+        // captured piece). Give THOSE a bigger target and lift them above their
+        // neighbours, so where the targets now overlap the tap resolves toward
+        // the piece you are allowed to move rather than by display order.
+        const packedEntry = (this.rack && this.rack.type === 'unentered' && _isEntrant(this))
+            || (this.currentTile && this.currentTile.type === 'home'
+                && this.game && this.player === this.game.turn);
+        if (packedEntry) {
+            cap = 3.4;
+            room = Math.max(room, r * 2.6);
+            if (this.scene && this.scene.children) this.scene.children.bringToTop(c);
+        }
+        c.input.hitArea = new Phaser.Geom.Circle(r, r, Math.max(r, Math.min(r * cap, room)));
         c.input.hitAreaCallback = Phaser.Geom.Circle.Contains;
     }
 
@@ -4635,7 +4656,12 @@ class Tile {
             const n = this.pieces.length;
             const pr = this.tilePieceRadius(n);   // size just enough to fit n (down to the min)
             const cap = this._capacityAtSlot(pr * 2 + 4);
-            const ord = [...this.pieces].sort((a, b) => (a.number > 6 ? 1 : 0) - (b.number > 6 ? 1 : 0));
+            // On a GOAL both colours can sit together, and mixing them makes a tap
+            // land among unlike pieces (owner). Keep each colour contiguous;
+            // numbered-first precedence still decides visibility WITHIN a colour.
+            const ord = [...this.pieces].sort((a, b) =>
+                (this.type === 'save' ? String(a.player).localeCompare(String(b.player)) : 0)
+                || ((a.number > 6 ? 1 : 0) - (b.number > 6 ? 1 : 0)));
             const over = ord.length > cap;
             const show = over ? cap - 1 : ord.length;
             const pos = this.stackPositions(over ? cap : ord.length, pr);
@@ -4725,7 +4751,18 @@ class Tile {
         }
         const positions = [];
         for (let k = 0; k < rows; k++) {
-            const m = sizes[k], r = info[k].r, pitch = slot / r;
+            const m = sizes[k], r = info[k].r;
+            // PHONES: spread the row across whatever arc the tile actually has,
+            // rather than packing the pieces shoulder to shoulder (owner: it
+            // causes misclicks). The pitch grows to fill the tile and never
+            // shrinks below `slot`, so a full row still looks exactly as before.
+            // Half a slot of margin at each end keeps the outermost pieces
+            // inside the tile.
+            let pitch = slot / r;
+            if (_isPhone() && m > 1) {
+                const span = r * dth - slot;               // usable arc, centres only
+                pitch = Math.max(pitch, (span / (m - 1)) / r);
+            }
             for (let i = 0; i < m; i++) positions.push({ r, a: midA + (i - (m - 1) / 2) * pitch });
         }
         return positions;
@@ -7746,6 +7783,44 @@ function applyMove(move) {
     }
 }
 
+// DISPLAY ORDER of the agent's two moves (owner): a capture goes first, then a
+// save -- the interesting half of the turn should be the half you see first.
+//
+// A BRING-OUT is never demoted, and if EITHER move is one the pair is left
+// exactly as it came. game.py's must_move_unentered requires the entry to be the
+// first move while any piece is unentered, so promoting the companion above it
+// would make the pair illegal -- and when that entry is the LAST piece it is
+// also what ends the opening, without which a save on the other half is not yet
+// legal (owner). Two bring-outs likewise keep their order.
+//
+// Pure, so it can be tested without applying anything. applyMovePair's
+// numbered-save reorder still runs afterwards and may override this, which is
+// correct: that one stops a save losing its die, and correctness outranks
+// presentation.
+function _orderMovePairForDisplay(movePair) {
+    if (!Array.isArray(movePair) || movePair.length !== 2) return movePair;
+    const isBringOutMove = (mv) => {
+        if (!Array.isArray(mv) || !Array.isArray(mv[0]) || mv[0].length !== 2) return false;
+        const p = findPieceByColorAndNumber(mv[0][0], mv[0][1]);
+        if (!p) return false;
+        if (p.currentTile && p.currentTile.type === 'home') return true;
+        if (p.rack && p.rack.type === 'unentered') return true;
+        return false;
+    };
+    const isSaveMove = (mv) => Array.isArray(mv) && mv[1] === 'save';
+    const isCaptureMove = (mv) => {
+        if (!Array.isArray(mv) || !Array.isArray(mv[1]) || mv[1].length !== 2) return false;
+        const t = findTileByRingAndSector(mv[1][0], mv[1][1]);
+        if (!t || t.type !== 'field' || t.pieces.length !== 1) return false;
+        const mover = Array.isArray(mv[0]) ? String(mv[0][0]) : null;
+        return !!mover && String(t.pieces[0].player) !== mover;
+    };
+    const [a, b] = movePair;
+    if (isBringOutMove(a) || isBringOutMove(b)) return movePair;   // entry stays put
+    const rank = (mv) => (isCaptureMove(mv) ? 0 : isSaveMove(mv) ? 1 : 2);
+    return rank(b) < rank(a) ? [b, a] : movePair;
+}
+
 function applyMovePair(movePair) {
     const game = gameInstance.scene.scenes[0].game;
 
@@ -7769,6 +7844,20 @@ if (movePair.some(m => Array.isArray(m) && m[0] === 1 && m[1] === 1 && m[2] === 
     if (movePair.every(isPass)) {
         flashNotice(_cap(game.turn) + ' passed');
     }
+
+    // DISPLAY ORDER of the pair (owner): a capture goes first, then a save --
+    // the interesting half of the turn should be the half you see first.
+    //
+    // A BRING-OUT is never demoted. game.py's must_move_unentered requires the
+    // entry to be the first move while any piece is unentered, so promoting the
+    // companion above it would make the pair illegal -- and if that entry is the
+    // LAST piece it is also what ends the opening, without which a save on the
+    // other half is not yet legal (owner). Either way: leave it in front.
+    //
+    // The numbered-save reorder below still runs afterwards and may override
+    // this, which is correct: that one exists so a save does not lose its die,
+    // and correctness outranks presentation.
+    movePair = _orderMovePairForDisplay(movePair);
 
     let [move1, move2] = movePair;
 

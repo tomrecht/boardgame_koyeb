@@ -1888,6 +1888,45 @@ with it in mind.** Assessment and the concrete implications:
   phase, or the check proves nothing. Same family as the stale `mustMovePieces`
   that setup mode had to fix.
 
+- **PHONE TOUCH AND DISPLAY POLISH (2026-08-20, owner's batch).**
+  - **The Fullscreen line in How to Play is gated on `_fullscreenSupported()`.**
+    The setting is phone-only AND only where `document.fullscreenEnabled` exists,
+    which iPhone Safari does not have — so the text described a row that was not
+    there (owner, testing on an iPhone). iOS now gets "add to your home screen"
+    instead, which is the actual equivalent.
+  - **Bigger targets for the pieces you may actually tap.** The unentered rack
+    and the home tile pack their pieces, so `nearest/2` left a target barely
+    bigger than the piece. A rack ENTRANT, and your own piece on home, now get
+    up to 3.4x their radius (floor 2.6x) and are lifted above their neighbours,
+    so where targets overlap the tap resolves toward the piece you are allowed to
+    move. Measured on a phone: entrant and on-home **2.6xR**, other rack pieces
+    and board pieces **1.18xR**.
+  - **A tile's pieces spread across it on phones** instead of sitting shoulder to
+    shoulder (owner: it causes misclicks). The pitch grows to fill the tile's arc
+    and never shrinks below the packed `slot`, so a full row looks exactly as
+    before. The gain is bounded by geometry — measured 30 -> 32.8 of a 62.8 arc
+    for two pieces, i.e. it is now using the whole tile; phones also draw pieces
+    up to 1.5x larger, which is what eats the room.
+  - **Same-colour pieces sit together on a goal.** Both colours can share a goal
+    tile, and interleaving them made a tap land among unlike pieces. The stack
+    order groups by colour on `save` tiles; numbered-first precedence still
+    decides visibility WITHIN a colour. Measured: an interleaved wbwb draws as
+    **bbww**.
+  - **The agent's two moves are ordered for display**: a capture first, then a
+    save. `_orderMovePairForDisplay` is pure, so it is testable without applying
+    anything. **A bring-out is never demoted, and if EITHER move is one the pair
+    is left alone** — `must_move_unentered` requires the entry to be first while
+    any piece is unentered, and when it is the LAST piece it is also what ends the
+    opening, without which a save on the other half is not yet legal (owner).
+    applyMovePair's existing numbered-save reorder still runs afterwards and may
+    override this: that one stops a save losing its die, and correctness outranks
+    presentation. Verified 6/6, including both-bring-outs.
+  - **NOT a bug: tutorial step 9's "end your turn".** Owner reported the click not
+    registering. Driven through the real button at step 9 (saved 10, dice 4+5):
+    the save banks the 11th piece, the arrow sets `_tut.turnEnded`, `done`
+    evaluates true and `_tutPoll` fires — it just holds `busy` for 850ms showing
+    "✓ Nice!" before advancing. Owner withdrew the report.
+
 - **A SINGLE TAP COULD FIRE AS A DOUBLE TAP — COMPATIBILITY MOUSE EVENTS
   (2026-08-20).** Owner: "on phone, a single tap is often mistaken for a double
   tap". A real finger fires touchstart/touchend and then, unless EVERY touchend is
