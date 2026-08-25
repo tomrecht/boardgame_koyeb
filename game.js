@@ -4384,6 +4384,31 @@ class Piece {
     }
 }
 
+// Rearrange one tile's pieces so numbered ones of the same colour are not
+// neighbours, by dealing a blank of that colour between each pair. Colour runs
+// are treated separately and their order is preserved, which is what keeps both
+// colours contiguous on a goal tile. Returns the list unchanged when there is
+// nothing to gain (fewer than two numbered pieces, or no blank to put between).
+function _spaceNumberedApart(list) {
+    const runs = [];
+    for (const p of list) {
+        if (!runs.length || runs[runs.length - 1][0].player !== p.player) runs.push([]);
+        runs[runs.length - 1].push(p);
+    }
+    const spread = (run) => {
+        const numbered = run.filter(p => p.number <= 6);
+        const blanks   = run.filter(p => p.number > 6);
+        if (numbered.length < 2 || !blanks.length) return run;
+        const out = [];
+        while (numbered.length) {
+            out.push(numbered.shift());
+            if (numbered.length && blanks.length) out.push(blanks.shift());
+        }
+        return out.concat(blanks);
+    };
+    return [].concat(...runs.map(spread));
+}
+
 class Tile {
 
         constructor(scene, game, type, ring, sector, startAngle, endAngle, innerRadius, outerRadius, number) {
@@ -4684,7 +4709,15 @@ class Tile {
             const over = ord.length > cap;
             const show = over ? cap - 1 : ord.length;
             const pos = this.stackPositions(over ? cap : ord.length, pr);
-            ord.forEach((piece, i) => {
+            // PHONES: two NUMBERED pieces of the same colour side by side are the
+            // easiest pair on the board to mis-tap for each other, so put a blank
+            // of that colour between them where there is one to spare (owner).
+            // Only the pieces that are actually SHOWN are rearranged, and only
+            // within a colour run -- so numbered-first visibility precedence and
+            // the colour grouping on goals both still hold exactly as before.
+            const laid = _isPhone() ? _spaceNumberedApart(ord.slice(0, show)).concat(ord.slice(show))
+                                    : ord;
+            laid.forEach((piece, i) => {
                 if (i < show) {
                     const sl = pos[i] || pos[pos.length - 1];
                     piece.setSize(pr);

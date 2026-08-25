@@ -1939,6 +1939,25 @@ with it in mind.** Assessment and the concrete implications:
     order groups by colour on `save` tiles; numbered-first precedence still
     decides visibility WITHIN a colour. Measured: an interleaved wbwb draws as
     **bbww**.
+  - **NUMBERED PIECES OF ONE COLOUR ARE KEPT APART ON PHONES (owner,
+    2026-08-24)** — two of them side by side is the easiest pair on the board to
+    mis-tap for each other, so `_spaceNumberedApart` deals a BLANK of the same
+    colour between them where one is to spare. Colour runs are spread
+    independently and their order preserved, so goals stay grouped by colour.
+    **Only the pieces actually SHOWN are rearranged** (`ord.slice(0, show)`):
+    `ord` also decides which pieces the "+K" badge swallows when a tile
+    overflows, and interleaving before that split would let a blank take a
+    visible slot from a numbered piece. Measured, phone against desktop, by
+    reading the DRAWN order back off the board: 2 numbered + 1 blank -> `2 9 5`;
+    + 2 blanks -> `2 9 5 10`; **3 numbered + 1 blank -> `2 9 4 5`, two still
+    adjacent because there is only one blank to give**; no blank -> unchanged;
+    a shared goal -> `b3 b11 b4 | w2 w9 w5`, each colour contiguous AND spread;
+    and an OVERFLOWING field tile shows the same three numbered pieces and hides
+    the same five on both platforms. Desktop is unchanged in every case.
+    Test trap: the drawn order cannot be recovered by sorting on `atan2` alone --
+    rows sit at different radii and a tile's arc can straddle the wrap, which
+    scrambled the reconstruction badly enough that DESKTOP appeared ungrouped.
+    Sort by (row, angle measured from the tile's own mid-angle).
   - **THE DISPLAY REORDER LOST A SAVE — fixed 2026-08-24, one day after it
     shipped.** Owner: black's last piece, a blank on goal 5, rolled 4+4, walked
     to goal 3 and then passed instead of banking. **The pair the agent chose was
