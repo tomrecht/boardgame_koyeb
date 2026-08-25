@@ -669,6 +669,9 @@ function _safeBottomWorld() {
 
 function _hudK()   { return _isPortrait() ? 2.6 : (_isPhone() ? 2 : 1); }
 function _scoreK() { return _isPortrait() ? 4.0 : (_isPhone() ? 2.2 : 1); }
+// The no-save counter, against the score row's 20. Owner wants it slightly
+// smaller than the score everywhere; it was 21, i.e. slightly bigger.
+const IMPASSE_FS = 18;
 
 // PORTRAIT: the no-save counter is CENTRED, and the Call draw button sits to its
 // right ONLY while it is showing -- which is rarely, so the centred reading is
@@ -761,10 +764,9 @@ function _relayoutFurniture() {
         // from _scoreK() at create time, so rotating out of portrait left this
         // line at portrait scale (84 world px against landscape's 46) and it
         // ran over the board.
-        // Portrait draws this a little SMALLER than the score row (owner) --
-        // 18 against the score's 20, so 72px against 80. Landscape and desktop
-        // keep 21, i.e. they are byte-identical to before.
-        sc.impasseText.setFontSize(Math.round((p ? 18 : 21) * _scoreK()));
+        // A little SMALLER than the score row (owner), on every platform: 18
+        // against the score's 20. It used to be 21, i.e. slightly BIGGER.
+        sc.impasseText.setFontSize(Math.round(IMPASSE_FS * _scoreK()));
         sc.impasseText.setOrigin(p ? 0.5 : 0, p ? 0 : 1)
                       .setPosition(p ? f.impasseAt[0] : 24,
                                    p ? f.impasseAt[1] : (phone ? H - 148 : H - 58));
@@ -7268,7 +7270,7 @@ class MainGameScene extends Phaser.Scene {
         this.impasseText = this.add.text(
             _isPortrait() ? _pf.impasseAt[0] : 24,
             _isPortrait() ? _pf.impasseAt[1] : (phone ? H - 148 : H - 58), '', {
-            fontSize: Math.round(21 * k) + 'px', fontFamily: HUD_FONT, color: THEME.bgInk
+            fontSize: Math.round(IMPASSE_FS * k) + 'px', fontFamily: HUD_FONT, color: THEME.bgInk
         }).setOrigin(_isPortrait() ? 0.5 : 0, _isPortrait() ? 0 : 1).setVisible(false).setAlpha(0.75);
         _themedRedraws.push(() => this.impasseText.setColor(THEME.bgInk));
 

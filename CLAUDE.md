@@ -1024,11 +1024,11 @@ with it in mind.** Assessment and the concrete implications:
     Landscape and desktop are untouched — they never read these fields — and
     re-measured clash free, desktop score still at y1154-1176.
     **THE COUNTER IS CENTRED, AND SMALLER THAN THE SCORE (owner, 2026-08-25).**
-    It was `21 * _scoreK()` = 84 against the score's `20 * _scoreK()` = 80, i.e.
-    slightly BIGGER; portrait now uses 18, so **72 against 80**. Landscape and
-    desktop keep 21 (46 and 21px, verified byte-identical) — the request was
-    about the portrait band, and the standing rule is that phone work leaves the
-    desktop alone.
+    It was `21 * _scoreK()` against the score row's `20 * _scoreK()`, i.e.
+    slightly BIGGER. `IMPASSE_FS` is now **18, on every platform** (owner asked
+    for it everywhere after a portrait-only first cut): measured **portrait 72
+    against the score's 80, landscape phone 40 against 44, desktop 18 against
+    20**, all three still clash free.
     `_placeImpasseRow` places the counter and the button TOGETHER, from the
     text's MEASURED width, because that width depends on the number in it — a
     fixed pair of centres either overlaps at two digits or leaves a hole at one.
