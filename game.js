@@ -7841,9 +7841,33 @@ function _orderMovePairForDisplay(movePair) {
         const mover = Array.isArray(mv[0]) ? String(mv[0][0]) : null;
         return !!mover && String(t.pieces[0].player) !== mover;
     };
+    // The pair is a SEQUENCE, and the second half can DEPEND on the first --
+    // reordering is only presentation when the two halves are independent.
+    const samePiece = (x, y) =>
+        Array.isArray(x[0]) && Array.isArray(y[0]) &&
+        String(x[0][0]) === String(y[0][0]) && Number(x[0][1]) === Number(y[0][1]);
+
+    // A save that relies on the ENDGAME HIGHER-DIE rule (a blank banking off the
+    // highest goal it still occupies with any larger die) is legal only while
+    // that goal IS the highest -- which the companion move can change by taking
+    // another piece off a higher one. Only an EXACT-die save (die == the goal's
+    // number) is order-independent, so only that one may be promoted.
+    const isPromotableSave = (mv) => {
+        if (!isSaveMove(mv)) return false;
+        const p = findPieceByColorAndNumber(mv[0][0], mv[0][1]);
+        return !!(p && p.currentTile && p.currentTile.type === 'save'
+                  && Number(mv[2]) === Number(p.currentTile.number));
+    };
+
     const [a, b] = movePair;
     if (isBringOutMove(a) || isBringOutMove(b)) return movePair;   // entry stays put
-    const rank = (mv) => (isCaptureMove(mv) ? 0 : isSaveMove(mv) ? 1 : 2);
+    // ONE PIECE MOVING TWICE is inherently ordered: "step onto a goal, then bank
+    // there" is the common shape, and promoting the save attempts it from the
+    // tile the piece has not left yet. Owner hit exactly that -- a blank on goal
+    // 5 with 4+4 walked to goal 3 and then passed, because the save was tried
+    // first from goal 5, where a 4 does not bank, and silently failed.
+    if (samePiece(a, b)) return movePair;
+    const rank = (mv) => (isCaptureMove(mv) ? 0 : isPromotableSave(mv) ? 1 : 2);
     return rank(b) < rank(a) ? [b, a] : movePair;
 }
 

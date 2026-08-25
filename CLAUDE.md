@@ -1939,6 +1939,33 @@ with it in mind.** Assessment and the concrete implications:
     order groups by colour on `save` tiles; numbered-first precedence still
     decides visibility WITHIN a colour. Measured: an interleaved wbwb draws as
     **bbww**.
+  - **THE DISPLAY REORDER LOST A SAVE — fixed 2026-08-24, one day after it
+    shipped.** Owner: black's last piece, a blank on goal 5, rolled 4+4, walked
+    to goal 3 and then passed instead of banking. **The pair the agent chose was
+    right** — reproduced in Python, `select_move_pair` returns
+    `(goal5 -> goal3, save)` and scores it `inf`, a detected win. The reorder
+    swapped it: both halves are ONE PIECE MOVING TWICE, `save` outranks a plain
+    move, so the save was attempted first from goal 5 — where a 4 does not bank —
+    failed silently, and only the walk to goal 3 landed. Reproduced exactly in
+    the browser by applying the swapped order: piece on goal 3, unsaved, one die
+    spent, the other free.
+    **A pair is a SEQUENCE and the second half can DEPEND on the first**, so two
+    guards now stand beside the bring-out one:
+    * **Same piece in both halves -> never reorder.** "Step onto a goal, then bank
+      there" is inherently ordered. (The older numbered-save reorder below
+      already had this guard, which is why it only ever bit a BLANK.)
+    * **Only an EXACT-die save may be promoted** (die == the goal's number). A
+      blank banking under the endgame HIGHER-die rule is legal only while its
+      goal is the highest one it occupies — and the companion move can change
+      that by taking another piece off a higher goal.
+    Verified 9/9 on the pure ranking function (both same-piece orders held,
+    capture still promoted, exact-die save promoted, higher-die save not,
+    capture outranks a save, bring-outs never demoted) and end to end: the agent
+    plays the pair and the piece is **banked, black saved 12**.
+    Two test traps, both of which reported a convincing FAIL: JS tiles key on
+    `sector`, NOT `pos` like the Python ones, so a fixture built from `t.pos`
+    silently looks up nothing; and a piece listed in BOTH `board` and `saved` in
+    a `_tutApply` spec ends up saved, because `_tutApply` places the board first.
   - **The agent's two moves are ordered for display**: a capture first, then a
     save. `_orderMovePairForDisplay` is pure, so it is testable without applying
     anything. **A bring-out is never demoted, and if EITHER move is one the pair
