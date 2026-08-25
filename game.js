@@ -598,8 +598,10 @@ function _fur() {
              // so the button sat on the text (pre-existing, and there is no room
              // in the band to separate them vertically: rack to frame-bottom is
              // 584 world units against 455 of content).
-             impasseAt: [wd.x + 420, wd.y + 2225 - lift - _safeBottomWorld()],
-             callDrawAt: [wd.x + 1000, wd.y + 2270 - lift - _safeBottomWorld()],
+             // These are the CENTRED defaults; _placeImpasseRow overrides both
+             // whenever the button is actually showing.
+             impasseAt: [wd.x + wd.w / 2, wd.y + 2225 - lift - _safeBottomWorld()],
+             callDrawAt: [wd.x + wd.w / 2, wd.y + 2270 - lift - _safeBottomWorld()],
              hudX: [wd.x + 230, wd.x + 550, wd.x + 870],
              hudY: wd.y + 2395 - lift - _safeBottomWorld(),
              whiteUn: w.un, whiteSv: w.sv, blackUn: b.un, blackSv: b.sv };
@@ -668,6 +670,32 @@ function _safeBottomWorld() {
 function _hudK()   { return _isPortrait() ? 2.6 : (_isPhone() ? 2 : 1); }
 function _scoreK() { return _isPortrait() ? 4.0 : (_isPhone() ? 2.2 : 1); }
 
+// PORTRAIT: the no-save counter is CENTRED, and the Call draw button sits to its
+// right ONLY while it is showing -- which is rarely, so the centred reading is
+// what is on screen almost all the time. The two are placed together, from the
+// text's MEASURED width, because that width depends on the number in it: a fixed
+// pair of centres either overlaps at two digits or leaves a hole at one. The
+// text slides left only as far as it must, so it stays centred until the button
+// actually needs the room.
+function _placeImpasseRow(sc) {
+    sc = sc || _setupScene();
+    if (!sc || !sc.impasseText || !_isPortrait()) return;
+    const wd = _world(), f = _fur();
+    const btn = sc.callDrawButton;
+    const showing = !!(btn && btn.visible !== false && btn.getBounds);
+    const margin = 24;
+    let cx = wd.x + wd.w / 2;
+    if (showing) {
+        const bw = btn.getBounds().width;
+        const bx = wd.x + wd.w - margin - bw / 2;          // against the right margin
+        const maxRight = bx - bw / 2 - margin;             // where the text must stop
+        const half = sc.impasseText.width / 2;
+        if (cx + half > maxRight) cx = Math.max(wd.x + margin + half, maxRight - half);
+        btn.setHudPosition(bx, f.callDrawAt[1]);
+    }
+    sc.impasseText.setPosition(cx, f.impasseAt[1]);
+}
+
 function _layoutHudRow(sc) {
     sc = sc || _setupScene();
     if (!sc || !sc._hudRow || !_isPortrait()) return;
@@ -733,7 +761,10 @@ function _relayoutFurniture() {
         // from _scoreK() at create time, so rotating out of portrait left this
         // line at portrait scale (84 world px against landscape's 46) and it
         // ran over the board.
-        sc.impasseText.setFontSize(Math.round(21 * _scoreK()));
+        // Portrait draws this a little SMALLER than the score row (owner) --
+        // 18 against the score's 20, so 72px against 80. Landscape and desktop
+        // keep 21, i.e. they are byte-identical to before.
+        sc.impasseText.setFontSize(Math.round((p ? 18 : 21) * _scoreK()));
         sc.impasseText.setOrigin(p ? 0.5 : 0, p ? 0 : 1)
                       .setPosition(p ? f.impasseAt[0] : 24,
                                    p ? f.impasseAt[1] : (phone ? H - 148 : H - 58));
@@ -749,6 +780,7 @@ function _relayoutFurniture() {
         b.setHudPosition(p ? f.hudX[n] : 150, p ? f.hudY : (phone ? 48 + n * 84 : 52 + n * 52));
     });
     _layoutHudRow(sc);
+    _placeImpasseRow(sc);
     if (_replaceTurnStatus) _replaceTurnStatus();
     if (sc.scoreText) {                      // the base size is per-orientation too
         sc._scoreBaseFs = Math.round(20 * _scoreK());
@@ -3535,6 +3567,9 @@ function updateNoSaveDisplay() {
     // Offer the button on a human player's turn when callable.
     const humanCanCall = game.drawCallable && game.currentPlayerIsHuman() && !game.gameOver;
     scene.callDrawButton.setHudVisible(!!humanCanCall);
+    // Both the counter's width and the button's visibility just changed, and in
+    // portrait they share a row -- so re-place the pair.
+    _placeImpasseRow(scene);
 }
 
 class Piece {

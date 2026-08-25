@@ -1018,12 +1018,28 @@ with it in mind.** Assessment and the concrete implications:
     centre sat 65 below the counter's top and the counter is 90 tall, so the
     button was drawn on the text — pre-existing since the portrait layout, and
     unfixable by re-spacing: rack-bottom to frame-bottom is 584 world units
-    against 455 of content. Counter now centres at `wd.x + 420`, button at
-    `wd.x + 1000`. Measured: **no overlap among score / counter / Call draw /
-    all three HUD buttons, at both 0 and 34px inset**; clearances rack->score
-    114 (13 with the inset) and hud->frame-bottom 65 (166 with it). Landscape and
-    desktop are untouched — they never read these fields — and re-measured clash
-    free, desktop score still at y1154-1176.
+    against 455 of content. Measured: **no overlap among score / counter / Call
+    draw / all three HUD buttons, at both 0 and 34px inset**; clearances
+    rack->score 114 (13 with the inset) and hud->frame-bottom 65 (166 with it).
+    Landscape and desktop are untouched — they never read these fields — and
+    re-measured clash free, desktop score still at y1154-1176.
+    **THE COUNTER IS CENTRED, AND SMALLER THAN THE SCORE (owner, 2026-08-25).**
+    It was `21 * _scoreK()` = 84 against the score's `20 * _scoreK()` = 80, i.e.
+    slightly BIGGER; portrait now uses 18, so **72 against 80**. Landscape and
+    desktop keep 21 (46 and 21px, verified byte-identical) — the request was
+    about the portrait band, and the standing rule is that phone work leaves the
+    desktop alone.
+    `_placeImpasseRow` places the counter and the button TOGETHER, from the
+    text's MEASURED width, because that width depends on the number in it — a
+    fixed pair of centres either overlaps at two digits or leaves a hole at one.
+    The counter is centred whenever the button is hidden, which is nearly always
+    (it shows only when a draw is callable on a human's turn), and slides left
+    only as far as it must when the button appears. Measured, off-centre by:
+    **1 with no button, 55 at one digit, 72 at two, 102 at three**, always with a
+    24 gap to the button, a 24 right margin, inside the frame and clear of the
+    score row — and identical with a 34px inset. Called from
+    `_relayoutFurniture` AND `updateNoSaveDisplay`, since both the width and the
+    button's visibility change there.
   - **iPHONE SAFE AREA (2026-08-15).** `viewport-fit=cover` was already set, so
     `env(safe-area-inset-*)` is non-zero on an iPhone, but nothing read it — the
     portrait button row sits 22 CSS px off the bottom, inside the ~34px
