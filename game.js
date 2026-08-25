@@ -4760,8 +4760,16 @@ class Tile {
             // inside the tile.
             let pitch = slot / r;
             if (_isPhone() && m > 1) {
-                const span = r * dth - slot;               // usable arc, centres only
-                pitch = Math.max(pitch, (span / (m - 1)) / r);
+                // Spread across the tile, but keep the outermost pieces a clear
+                // RADIUS off the side borders -- filling the tile edge to edge
+                // looked wrong (owner). So the arc available to the outer centres
+                // is the tile's own arc less 2*(pr margin + pr half-piece).
+                // If the row cannot fit inside that margin the pieces would have
+                // to overlap, so fall back to the packed pitch -- which is
+                // exactly what this did before, and what a crowded tile shows.
+                const span = r * dth - 4 * pr;
+                const wanted = span / (m - 1);             // arc between centres
+                if (wanted >= slot) pitch = wanted / r;
             }
             for (let i = 0; i < m; i++) positions.push({ r, a: midA + (i - (m - 1) / 2) * pitch });
         }

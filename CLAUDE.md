@@ -1902,11 +1902,15 @@ with it in mind.** Assessment and the concrete implications:
     move. Measured on a phone: entrant and on-home **2.6xR**, other rack pieces
     and board pieces **1.18xR**.
   - **A tile's pieces spread across it on phones** instead of sitting shoulder to
-    shoulder (owner: it causes misclicks). The pitch grows to fill the tile's arc
-    and never shrinks below the packed `slot`, so a full row looks exactly as
-    before. The gain is bounded by geometry — measured 30 -> 32.8 of a 62.8 arc
-    for two pieces, i.e. it is now using the whole tile; phones also draw pieces
-    up to 1.5x larger, which is what eats the room.
+    shoulder (owner: it causes misclicks) — **but never flush to the side
+    borders**, which was the first cut and looked wrong. The outermost pieces
+    keep a clear RADIUS off the border, so the arc offered to the outer centres
+    is the tile's arc less `4 * pr` (a margin plus a half-piece at each end).
+    Where a row cannot fit inside that margin the pieces would have to overlap,
+    so it falls back to the packed `slot` pitch — exactly what a crowded tile has
+    always looked like. Measured over every field and goal tile at 1-4 pieces:
+    **225 layouts, 36 of them spread, 0 margin violations, and every spread
+    layout sits at exactly 1.00 radius off the border**; the rest fall back.
   - **Same-colour pieces sit together on a goal.** Both colours can share a goal
     tile, and interleaving them made a tap land among unlike pieces. The stack
     order groups by colour on `save` tiles; numbered-first precedence still
