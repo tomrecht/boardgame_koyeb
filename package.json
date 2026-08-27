@@ -1,0 +1,16 @@
+{
+  "name": "quahuru",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Quahuru - a hub-and-spoke dice strategy game",
+  "scripts": {
+    "build": "python3 build_web.py --out dist",
+    "sync": "python3 build_web.py --out dist && npx cap sync",
+    "android": "npm run sync && npx cap open android"
+  },
+  "dependencies": {
+    "@capacitor/android": "^8.5.0",
+    "@capacitor/cli": "^8.5.0",
+    "@capacitor/core": "^8.5.0"
+  }
+}

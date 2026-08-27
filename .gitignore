@@ -29,3 +29,12 @@ ort/*.gz    # generated at image build time (see Dockerfile)
 
 # Static web bundle assembled by build_web.py -- derived, never edited by hand.
 dist/
+
+# Capacitor / Android wrapper
+node_modules/
+.npm-cache/
+android/app/build/
+android/build/
+android/.gradle/
+android/local.properties
+android/app/src/main/assets/public/

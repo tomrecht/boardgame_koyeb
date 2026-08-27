@@ -1,0 +1,11 @@
+{
+  "appId": "com.tomrecht.quahuru",
+  "appName": "Quahuru",
+  "webDir": "dist",
+  "android": {
+    "backgroundColor": "#ece3d3"
+  },
+  "server": {
+    "androidScheme": "https"
+  }
+}

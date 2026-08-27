@@ -467,6 +467,64 @@ with it in mind.** Assessment and the concrete implications:
 
 ## Current state
 
+- **SESSION UPDATE (2026-08-27) — LIVE ON CLOUDFLARE, AND THE STORE PREP HAS
+  STARTED.** The static hosting step of the roadmap is DONE and verified.
+  - **Deployed at `https://quahuru.rechttom.workers.dev`.** Note it is a
+    **Worker with static assets, NOT Cloudflare Pages** — the dashboard now
+    steers new projects to the Workers flow, whose form has a *deploy command*
+    (`npx wrangler deploy`) and NO "build output directory" field. The output
+    directory comes from `wrangler.jsonc` in the repo instead:
+    `{ name, compatibility_date, assets: { directory: "./dist" } }`, with no
+    Worker script at all (assets-only Workers are supported). Build command is
+    `python3 build_web.py --out dist`; `build_web.py` imports only the stdlib, so
+    the build needs no pip install.
+  - **VERIFIED AGAINST THE LIVE SITE, not assumed:** `_headers` **is** honoured
+    by Workers static assets (game.js and sw.js come back `no-cache`, ort/ and
+    phaser long-lived) — this was the open question when choosing Workers over
+    Pages. The wasm serves as `application/wasm` with **`content-encoding: br`**,
+    so a cold visit pulls ~2.8 MB rather than 11 MB. Driven under CDP: service
+    worker registered at scope `/` and **controlling**, on-device runtime
+    `ready`, **0 API calls** during self-play, and an **offline reload boots the
+    board** (94 tiles, 24 pieces). `/index.html` 307-redirects to `/`, which is
+    normal canonicalisation.
+  - **Koyeb is still up deliberately**, so reverting is just handing out the old
+    URL. Anyone who home-screened the Koyeb URL is still pointed at it — a
+    different origin with its own service worker — and must re-add from the new
+    URL. **Settle the final URL BEFORE recruiting the 12 Play testers**, or they
+    all have to re-add mid-clock.
+  - **`privacy.html` shipped** (in `build_web.py`'s list, `no-cache`, and
+    deliberately NOT in `sw.js`'s precache — it is not needed to play offline,
+    and the build script only enforces that the worker's list is a SUBSET of the
+    bundle). Required by both stores even though the app collects nothing.
+    **It carries a `CONTACT_EMAIL` placeholder** — publishing an address is the
+    owner's call, so it was not filled in.
+  - **Capacitor scaffold in place**: `package.json`, `capacitor.config.json`
+    (appId **`com.tomrecht.quahuru`**, which can NEVER change once published;
+    `webDir: dist`), and `android/` from `npx cap add android` (Capacitor 8.5.0).
+    Only **280 KB / 53 files** of it is tracked — `android/app/src/main/assets/
+    public` is the 15 MB copy of `dist` and is gitignored, since `cap sync`
+    regenerates it. `npm run sync` rebuilds `dist` and syncs in one step.
+    **Gotcha:** `npm install` failed with EACCES on `~/.npm`; worked with
+    `--cache ./.npm-cache` (also gitignored). The real fix is
+    `sudo chown -R 501:20 ~/.npm`.
+  - **`feature-graphic.png` (1024x500)** from `make_feature_graphic.py`, the
+    Play listing's required banner. It composites the SHIPPED `icon-512.png`
+    rather than re-rendering from `make_icons.py` — that cannot drift, and it
+    asserts the icon's ground still equals the banner's (#ece3d3) so the square
+    icon has no visible seam. The lockup is centred and auto-shrinks to a 900px
+    safe width (Play crops this asset differently per placement); measured
+    margins 77/72/80/80.
+  - **Licence position, checked this session:** there is **no LICENSE file and
+    that is correct** — no licence means all rights reserved, so nothing is
+    foreclosed. Do NOT add MIT/Apache to this repo; it would let anyone ship
+    Quahuru. The repo is PUBLIC, which grants no use rights but does make the
+    code and model readable. **Open compliance item: `phaser.min.js` ships with
+    NO MIT notice** (onnxruntime's is intact) — MIT requires the notice in
+    copies, and both stores expect an attributions screen. Fix with a NOTICE
+    file plus an Acknowledgements line in How to Play. Board-game specific:
+    rules and mechanics are not copyrightable, only their expression — the
+    NAME is the protectable asset, via trademark.
+
 - **SESSION UPDATE (2026-08-16) — THE APP NEEDS NO SERVER, AND THE BOARD NO
   LONGER REDRAWS ITSELF EVERY FRAME.** All pushed to main (= deployed). Four
   pieces of work, each with its own detailed entry further down:

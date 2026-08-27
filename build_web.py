@@ -30,6 +30,10 @@ SHELL = [
     'game.js',
     'local_agent.js',
     'phaser.min.js',
+    # Required by both app stores, at a public URL, even for an app that
+    # collects nothing. Deliberately NOT precached by sw.js: it is not needed to
+    # play offline, and the worker's list is what the check below enforces.
+    'privacy.html',
 ]
 
 # Phaser preloads these; the service worker precaches them for the same reason.
@@ -130,6 +134,8 @@ def build(out):
             "  X-Content-Type-Options: nosniff\n"
             "\n"
             "/index.html\n"
+            "  Cache-Control: no-cache\n"
+            "/privacy.html\n"
             "  Cache-Control: no-cache\n"
             "/sw.js\n"
             "  Cache-Control: no-cache\n"
