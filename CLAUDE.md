@@ -469,6 +469,22 @@ with it in mind.** Assessment and the concrete implications:
 
 - **SESSION UPDATE (2026-08-27) — LIVE ON CLOUDFLARE, AND THE STORE PREP HAS
   STARTED.** The static hosting step of the roadmap is DONE and verified.
+  - **LIVE AT `https://quahuru.com`** (owner registered it through Cloudflare
+    Registrar, so the domain was already in the account on Cloudflare
+    nameservers — attaching it was Worker › Settings › Domains & Routes › Add
+    custom domain, apex and www, with DNS and certificate automatic). The
+    `quahuru.rechttom.workers.dev` URL still answers the same Worker.
+    **NOTHING IN THE REPO NEEDED CHANGING** — no shipped file bakes in an
+    origin, and the manifest's `start_url`/`scope` are relative (`./`), so the
+    app works on any hostname. Verified on the custom domain exactly as below:
+    headers, Brotli, service worker controlling at the new scope, 0 API calls,
+    offline reload boots the board. **The Play privacy-policy URL is
+    `https://quahuru.com/privacy`.**
+    **This is the THIRD origin (Koyeb → workers.dev → quahuru.com) and must be
+    the last before testers are recruited**: each move means a fresh service
+    worker and cache, and orphans any home-screen install pointing at the old
+    one. **Koyeb still tracks main and still deploys on push, but is now
+    vestigial** and can be retired once the domain has been stable a few days.
   - **Deployed at `https://quahuru.rechttom.workers.dev`.** Note it is a
     **Worker with static assets, NOT Cloudflare Pages** — the dashboard now
     steers new projects to the Workers flow, whose form has a *deploy command*
