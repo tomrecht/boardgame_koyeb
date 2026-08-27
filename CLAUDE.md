@@ -523,6 +523,34 @@ with it in mind.** Assessment and the concrete implications:
     **Gotcha:** `npm install` failed with EACCES on `~/.npm`; worked with
     `--cache ./.npm-cache` (also gitignored). The real fix is
     `sudo chown -R 501:20 ~/.npm`.
+  - **THE ANDROID WRAPPER NO LONGER SHIPS CAPACITOR'S BRANDING (2026-08-27).**
+    `npx cap add android` generates the Capacitor logo as BOTH the launcher icon
+    and the splash screen; uploading that would have put someone else's mark on
+    the store. `make_android_assets.py` rewrites all 26 of them from the SHIPPED
+    web icons, so launcher, listing and PWA cannot drift: `ic_launcher` /
+    `ic_launcher_round` from `icon-512.png` (the board is concentric precisely so
+    a round mask cannot clip it, so round reuses the same art), the adaptive
+    `ic_launcher_foreground` from `icon-512-maskable.png` (already drawn with the
+    padding the 72-of-108dp safe zone needs), `ic_launcher_background` set to the
+    parchment #ECE3D3 so bleed at the mask edge is invisible rather than white,
+    and every `splash.png` as the board centred on that ground at 42% of the
+    short edge. Re-run it after changing the web icons, then `npx cap sync`.
+    **The launcher icon is baked at install time — seeing a change on a device
+    needs a remove-and-re-add, not a reinstall.**
+  - **RELEASE SIGNING is wired to `android/keystore.properties`**, which is
+    GITIGNORED along with `*.jks` / `*.keystore`; `keystore.properties.example`
+    shows the four keys. `app/build.gradle` applies the signing config ONLY when
+    that file exists, so a fresh clone still builds debug and `bundleRelease`
+    fails safely rather than producing an unsigned upload. Create the key with
+    `keytool -genkey -v -keystore ~/quahuru-upload.jks -keyalg RSA -keysize 2048
+    -validity 10000 -alias quahuru`. **Use Play App Signing and back the .jks and
+    its passwords up** — the upload key is how Google knows an update is from
+    the same developer.
+  - **Toolchain state on the iMac:** Java 17 present, **Android Studio and the
+    Android SDK are NOT installed** — that is the one remaining blocker to an
+    `.aab`. Generated project is targetSdk/compileSdk **36**, minSdk 24,
+    versionCode 1, versionName 1.0, applicationId `com.tomrecht.quahuru`, app
+    label "Quahuru".
   - **`feature-graphic.png` (1024x500)** from `make_feature_graphic.py`, the
     Play listing's required banner. It composites the SHIPPED `icon-512.png`
     rather than re-rendering from `make_icons.py` — that cannot drift, and it

@@ -1,5 +1,21 @@
 apply plugin: 'com.android.application'
 
+// Release signing, read from android/keystore.properties -- which is GITIGNORED
+// and must never be committed. Absent (e.g. a fresh clone, or a debug build),
+// the release type simply has no signing config and `bundleRelease` will refuse,
+// which is the safe failure. Create the keystore with:
+//
+//   keytool -genkey -v -keystore ~/quahuru-upload.jks -keyalg RSA -keysize 2048 \
+//           -validity 10000 -alias quahuru
+//
+// then write android/keystore.properties with storeFile/storePassword/
+// keyAlias/keyPassword. BACK THE .jks AND ITS PASSWORDS UP SOMEWHERE SAFE.
+def keystorePropsFile = rootProject.file("keystore.properties")
+def keystoreProps = new Properties()
+if (keystorePropsFile.exists()) {
+    keystoreProps.load(new FileInputStream(keystorePropsFile))
+}
+
 android {
     namespace = "com.tomrecht.quahuru"
     compileSdk = rootProject.ext.compileSdkVersion
@@ -16,8 +32,21 @@ android {
             ignoreAssetsPattern = '!.svn:!.git:!.ds_store:!*.scc:.*:!CVS:!thumbs.db:!picasa.ini:!*~'
         }
     }
+    signingConfigs {
+        release {
+            if (keystorePropsFile.exists()) {
+                storeFile file(keystoreProps['storeFile'])
+                storePassword keystoreProps['storePassword']
+                keyAlias keystoreProps['keyAlias']
+                keyPassword keystoreProps['keyPassword']
+            }
+        }
+    }
     buildTypes {
         release {
+            if (keystorePropsFile.exists()) {
+                signingConfig signingConfigs.release
+            }
             minifyEnabled false
             proguardFiles getDefaultProguardFile('proguard-android.txt'), 'proguard-rules.pro'
         }
