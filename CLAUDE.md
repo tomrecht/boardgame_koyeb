@@ -524,6 +524,13 @@ with it in mind.** Assessment and the concrete implications:
     file plus an Acknowledgements line in How to Play. Board-game specific:
     rules and mechanics are not copyrightable, only their expression — the
     NAME is the protectable asset, via trademark.
+    **DONE (2026-08-27): `licenses.html`** carries the full MIT text for both,
+    with the exact upstream copyright lines fetched rather than remembered —
+    Phaser "Copyright (c) 2020 Richard Davey, Photon Storm Ltd." (from
+    `unpkg.com/phaser@3.55.2/LICENSE.md`) and ONNX Runtime "Copyright (c)
+    Microsoft Corporation" (from the runtime we actually ship). Reachable from
+    **How to Play › Credits**, which also links the privacy policy — verified on
+    both platforms, and the phone text still contains no "click".
 
 - **SESSION UPDATE (2026-08-16) — THE APP NEEDS NO SERVER, AND THE BOARD NO
   LONGER REDRAWS ITSELF EVERY FRAME.** All pushed to main (= deployed). Four

@@ -34,6 +34,9 @@ SHELL = [
     # collects nothing. Deliberately NOT precached by sw.js: it is not needed to
     # play offline, and the worker's list is what the check below enforces.
     'privacy.html',
+    # MIT requires the notice to travel with the software, and phaser.min.js
+    # ships with its banner stripped. Linked from How to Play > Credits.
+    'licenses.html',
 ]
 
 # Phaser preloads these; the service worker precaches them for the same reason.
@@ -136,6 +139,8 @@ def build(out):
             "/index.html\n"
             "  Cache-Control: no-cache\n"
             "/privacy.html\n"
+            "  Cache-Control: no-cache\n"
+            "/licenses.html\n"
             "  Cache-Control: no-cache\n"
             "/sw.js\n"
             "  Cache-Control: no-cache\n"

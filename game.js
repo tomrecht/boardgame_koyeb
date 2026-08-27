@@ -2812,6 +2812,12 @@ function showInstructions() {
                     : '<br>Add the game to your home screen to play without the browser bars.')
             : 'Click a piece, then click where it should go — or just drag it there. Drag onto its goal, or double-click, to save. The ↶ arrow undoes one die at a time; ↷ ends your turn. On a crowded tile the <b>+N</b> badge opens a picker (drag a piece straight out of it). Theme, difficulty and options live under the ⚙ settings, and <b>New Match</b> starts a multi-game match.'
               + '<br>Keyboard: <b>Z</b> undoes one die · <b>Enter</b> or <b>Space</b> ends your turn · <b>Esc</b> deselects the piece you’re holding.'],
+        // MIT requires its notice to travel with copies of the software, and
+        // phaser.min.js ships with its banner stripped -- so the notices live on
+        // their own page and this is the link that makes them reachable from the
+        // app. Both stores expect an attributions screen too.
+        ['Credits', 'Quahuru is built with <a href="licenses.html" target="_blank" rel="noopener">Phaser and ONNX Runtime Web</a>, both open source. '
+            + 'The game collects no data — see the <a href="privacy.html" target="_blank" rel="noopener">privacy policy</a>.'],
     ];
     // Wide two-column card so the whole thing is readable at a glance instead of
     // scrolled through; collapses to one scrolling column on a narrow screen.
