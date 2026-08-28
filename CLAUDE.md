@@ -458,7 +458,28 @@ all its weight on inner tiles nobody blocks). Baseline: a blank on home needs
     entire army, so it is impossible in practice. **Engine-verified**: walls on
     ring5/2 + ring5/4 leave white able to reach only goals 1, 3, 5, 6, with
     `is_blocked('white')` true on both wall tiles.
-  * **What this metric does NOT measure:** one lone blank, no captures, no other
+  * **AGAINST A NUMBERED PIECE — the case that actually matters (owner,
+    2026-08-27), since in real play you are mostly blocking numbered pieces, and
+    if only blanks remain you are past the opening so they are not leaving home
+    anyway.** A numbered piece leaving home needs **5.807 turns** against a
+    blank's 2.482 (it must reach ONE specific goal and roll an exact N).
+    Consequences, all measured:
+      - **best single wall +0.398 turns** (ring5/2, ring6/2 for a numbered 4)
+        against +0.128 for a blank — **3x more valuable**;
+      - **NO tile is counterproductive: 0 of 63**, against 28 of 63 for a blank.
+        The wall-helps-them effect is a blank-only curiosity;
+      - **all the value is in the single radial spoke to that piece's goal**,
+        rising outward: +0.12, +0.12, +0.22, +0.22, +0.40, +0.40, and **exactly
+        +0.00 everywhere else on the board**. So: wall the OUTER end of the spoke
+        to their goal, and nothing else is worth doing.
+      By symmetry the map is the same shape for every numbered piece, rotated.
+  * **A small unexplained residual:** expected turns from home are 5.8068 for
+    numbered pieces 1-5 but **5.9091 for a numbered 6** (1.8% worse). Geometry is
+    ruled out — the distance profile from each of the six goals to every tile is
+    IDENTICAL, so the board is symmetric across goals. Best guess, unproven: for
+    N=6 the die needed to BANK is also the most valuable die for TRAVEL, so the
+    two uses compete in a way they do not for a numbered 1.
+  * **What this metric does NOT measure:** one lone piece, no captures, no other
     walls, and it never counts the tempo the BUILDER spends — 4 pieces for a
     2-wall seal, and a numbered piece needs 3.27 turns to bank once parked.
     Against a NUMBERED piece, sealing its goal is absolute denial rather than
