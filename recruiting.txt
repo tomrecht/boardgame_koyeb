@@ -1,13 +1,36 @@
 QUAHURU — POSTS FOR RECRUITING TESTERS AND PLAYERS
 Written 2026-08-27. Everything below is copy-paste ready; edit freely.
 
-WHAT THIS IS FOR
-  The immediate need is Google Play's closed-testing rule: 12 testers opted in
-  continuously for 14 days before you can apply for production. The secondary
-  need is actual players and feedback, which is the more valuable of the two.
-  Post A is for the first, B-E for the second. Try to serve both at once where
-  you can -- a tester who plays because they like the game is worth ten who
-  installed it as a favour.
+WHEN TO USE WHICH — READ THIS FIRST
+  These posts are NOT all for now. In most communities you get ONE good post
+  before you are self-promoting, and the strongest moment to spend it is when
+  the game is fully available: on Play, with a listing and screenshots, ratings
+  possible, and nothing for the reader to opt into. Spending that one post on
+  "please test my app for 14 days" wastes it, and you cannot credibly come back
+  three weeks later with "now it's launched".
+
+  NOW — cheap channels only, nothing burned:
+    Post A, to the Android closed-testing subreddits. Those communities exist
+    for exactly this trade and expect the ask. Plus anyone you already know.
+    Aim for 15-16 so a single opt-out cannot drop you below 12.
+
+  ALSO FINE NOW — a different audience:
+    Post D. The ML crowd does not overlap with board gamers, is tolerant of
+    something still in testing, and does not compete with the launch posts.
+
+  AT LAUNCH, once the Play listing is live:
+    Posts B, C and E, to the board game communities. These are the ones worth
+    saving.
+
+  NOTE that quahuru.com is ALREADY public and needs no install, so nothing
+  stops you sending it to individuals at any time. What is worth holding back
+  is the one public post per community — not the game.
+
+  DURING THE 14 DAYS, get real feedback from people you can ask personally.
+  The mutual-testing subs will get you to twelve and that is legitimate, but
+  those testers almost never report anything. The closed test is the last cheap
+  moment to change the game — after launch, first impressions and ratings are
+  permanent.
 
 A NOTE ON THE HOOK
   The strongest thing about the game, and the thing to lead with, is the
@@ -206,12 +229,6 @@ PRACTICAL NOTES
 * Lead with the browser link, not the Play link. Someone can try it in ten
   seconds with no install, and the ones who then agree to test are worth far
   more than the ones who install out of politeness.
-
-* The mutual-testing subreddits will get you to twelve, and that is a real and
-  legitimate use of them. Be aware that those testers usually generate no
-  feedback at all — they install and forget. Try to get at least a handful of
-  people who actually want to play, or the 14 days will pass and you will have
-  learned nothing about the game.
 
 * Recruit 15-16, not 12. If someone opts out you drop below the threshold and
   have a problem.
