@@ -1,0 +1,221 @@
+QUAHURU — POSTS FOR RECRUITING TESTERS AND PLAYERS
+Written 2026-08-27. Everything below is copy-paste ready; edit freely.
+
+WHAT THIS IS FOR
+  The immediate need is Google Play's closed-testing rule: 12 testers opted in
+  continuously for 14 days before you can apply for production. The secondary
+  need is actual players and feedback, which is the more valuable of the two.
+  Post A is for the first, B-E for the second. Try to serve both at once where
+  you can -- a tester who plays because they like the game is worth ten who
+  installed it as a favour.
+
+A NOTE ON THE HOOK
+  The strongest thing about the game, and the thing to lead with, is the
+  tension at its centre: YOU BLOCK WITH THE SAME PIECES YOU HAVE TO BANK TO
+  WIN. A wall is two of your pieces standing still. Every piece committed to
+  shutting a road is a piece not being scored, and every piece you bank is one
+  fewer to hold the board with. Blocking is not a side mechanic; it is the
+  thing you must keep paying for.
+  Everything else grows out of that -- tempo, the geometry of six goals on a
+  wheel, judging what the dice can and cannot reach, and long matches because
+  a single game swings hard.
+  Do NOT claim the game is like nothing else. Backgammon players will see
+  overlap immediately -- entering, blots, blocking, banking -- and saying so up
+  front buys credibility rather than costing it.
+
+
+======================================================================
+A. ANDROID CLOSED-TESTING SUBREDDITS  (r/AndroidClosedTesting,
+   r/googleplaytesters, r/TestMyApp and similar)
+   Direct, functional, no salesmanship. These communities expect the ask.
+======================================================================
+
+Title: [Closed test] Quahuru — an original dice strategy board game, free, no ads
+
+Looking for testers for the 14-day closed test. I'll join yours in return.
+
+Quahuru is a board game I designed and built from scratch — a dice game played
+on a six-spoked wheel, where you race twelve pieces to six numbered goals while
+walling off your opponent's routes.
+
+  • Free, no ads, no in-app purchases, no accounts
+  • Collects no data at all — no analytics, no crash reporting
+  • Works fully offline: the computer opponent is a neural network that runs on
+    your device, not on a server
+  • ~14 MB
+
+You can try it in a browser before committing, which I'd rather you did:
+https://quahuru.com
+
+Opt-in link: [PASTE YOUR CLOSED-TEST LINK]
+Google group / email: [PASTE]
+
+Happy to test yours — drop a link and I'll opt in today.
+
+
+======================================================================
+B. r/AbstractGames, r/boardgames (check their self-promo rules first --
+   r/boardgames usually requires a designated thread), r/tabletopgamedesign
+   Design-forward. This audience cares about the mechanism, not the app.
+======================================================================
+
+Title: I designed a dice game where your blockades are made of the pieces you
+need to score
+
+I've spent a long time on an original board game and finally have it playable,
+so I'd like to hear what people who think about mechanisms make of it.
+
+The board is a wheel: a home tile at the centre, six numbered goals around the
+rim, rings of tiles between. Each player has twelve pieces — six numbered 1-6,
+six blank. Pieces enter at the centre and travel outward. A piece is banked by
+standing on a goal and rolling that goal's number; numbered pieces may only use
+their own goal, blanks any goal. Bank all twelve to win, and your score is how
+many pieces your opponent had left.
+
+The part I find interesting: two of your pieces on a tile form a wall your
+opponent cannot enter or pass. But those are the same pieces you need to bank
+to win. A blockade is capital you have tied up, and the game keeps asking
+whether to keep paying for it. There's a release valve — you can break an
+enemy wall by peeling one piece off it, which costs you both dice and hands
+your opponent a free banked piece — so a wall is strong but never permanent.
+
+Capture works on lone pieces, which go back to the centre and must re-enter,
+so exposure matters the way a blot does in backgammon. The family resemblance
+is real and I'm not going to pretend otherwise; the wheel geometry and the
+numbered-goal matching are where it goes somewhere else.
+
+Variance is high per game, so it's built to be played as a match over several
+games scored on total margin rather than games won.
+
+Free, no ads, nothing to sign up for, plays in a browser:
+https://quahuru.com
+
+There's an interactive tutorial that walks through a full game. I'd genuinely
+like to know whether the blocking-versus-banking tension lands, or whether one
+side of it dominates in practice.
+
+
+======================================================================
+C. BOARDGAMEGEEK  (Abstract Games forum, or Unpublished Prototypes)
+   Longer, more formal, and this audience will read a rulebook.
+======================================================================
+
+Subject: Quahuru — an original dice-and-blockade game on a six-spoked wheel
+
+I've designed a two-player dice game and would value the opinion of people
+here, since abstracts and race games are what this forum knows best.
+
+Board: a central home tile, six numbered goal wedges on the rim, and rings of
+tiles between them, arranged as a six-spoked wheel.
+
+Pieces: twelve per player — numbered 1 through 6, and six blanks.
+
+Turn: roll two dice. Move one piece with each, or one piece with both. Movement
+is exact-distance along the shortest route to the tile you name.
+
+Entering: pieces come onto the board at the home tile and you must keep
+entering until your rack is empty.
+
+Capture: landing on a lone enemy piece sends it back to the home tile, and its
+owner must re-enter it before doing anything else.
+
+Blocking: two or more pieces on a tile cannot be entered or passed by the
+opponent. A blockade can be broken by peeling a single piece off it, at the
+cost of both dice and gifting that piece to the opponent's saved rack.
+
+Banking: a piece on a goal is banked by rolling that goal's number. Numbered
+pieces only from their matching goal, blanks from any. Once everything you have
+left is on a goal it can use, blanks may bank on a higher roll as well.
+
+Winning: bank all twelve. Your score is the number of pieces your opponent had
+left, so margin matters and matches are scored on cumulative margin.
+
+The design question I keep coming back to is the one at the centre: a wall is
+made of pieces you need to score, so holding ground and making progress draw on
+the same resource. I'd be interested in whether that reads as a real tension in
+play or resolves into one dominant approach.
+
+Free and playable in a browser, with a tutorial:
+https://quahuru.com
+
+
+======================================================================
+D. r/reinforcementlearning, r/MachineLearning (Project post)
+   A different audience entirely, and an honest one -- the engineering here is
+   genuinely unusual. Be careful to claim only what was measured.
+======================================================================
+
+Title: [P] I trained a GNN value network by self-play for a board game I
+designed, then ported the whole agent to run in the browser
+
+I designed a two-player dice board game and wanted an opponent for it, so I
+trained one. Writing it up because a few pieces were more interesting than I
+expected.
+
+The agent is a graph neural network over the board, used as a value function
+with a two-ply search and a heuristic prefilter for speed. Training went from
+an evolutionary heuristic, through self-play, to TD(lambda) with bootstrapped
+targets and a gated promotion loop — each candidate has to beat the current
+champion over a couple of hundred paired-seed games before it is promoted.
+
+Two findings I did not expect:
+
+The promotion gate does not survive open play. Of five recorded promotions,
+three reverse in a round-robin arena. Some of that is winner's curse — simulate
+the loop and promoted models measure about three points better than they are —
+but the larger part is that several champions are simply at statistically
+indistinguishable strength, and which one wins depends on the matchup. Not a
+neat rock-paper-scissors cycle, just a cluster too close to separate: I'd need
+roughly a hundred paired games per matchup to resolve a half-point edge, and
+had a dozen.
+
+Aggregate win rate is nearly blind to rare tactical faults. A counterfactual
+probe — take a piece off its goal and re-score the position — surfaced a
+regression in a champion that was winning more head-to-head games than its
+predecessor.
+
+The finished agent runs entirely in the browser via ONNX Runtime Web. The port
+was verified by trace-diff against the Python original: 110 of 110 identical
+move choices over full games with real inference, which required first making
+the Python agent deterministic, because ties were being broken by set iteration
+order.
+
+The game is free, has no ads and collects nothing:
+https://quahuru.com
+
+
+======================================================================
+E. SHORT VERSION  (Discord, group chats, anywhere with a character limit)
+======================================================================
+
+I made a board game — an original dice game on a six-spoked wheel, where the
+walls you build are made of the same pieces you need to score. Free, no ads,
+nothing to sign up for, works offline, and there's a computer opponent that
+runs on your phone rather than a server. Plays in a browser:
+https://quahuru.com
+
+
+======================================================================
+PRACTICAL NOTES
+======================================================================
+
+* Read each subreddit's self-promotion rules before posting. r/boardgames in
+  particular routes almost all self-promotion into a designated thread, and
+  ignoring that gets you removed and remembered.
+
+* Lead with the browser link, not the Play link. Someone can try it in ten
+  seconds with no install, and the ones who then agree to test are worth far
+  more than the ones who install out of politeness.
+
+* The mutual-testing subreddits will get you to twelve, and that is a real and
+  legitimate use of them. Be aware that those testers usually generate no
+  feedback at all — they install and forget. Try to get at least a handful of
+  people who actually want to play, or the 14 days will pass and you will have
+  learned nothing about the game.
+
+* Recruit 15-16, not 12. If someone opts out you drop below the threshold and
+  have a problem.
+
+* Ask testers for one specific thing rather than "any feedback": whether they
+  played a second time, and what made them stop. That is the question the whole
+  exercise exists to answer.
