@@ -1,4 +1,4 @@
-package com.tomrecht.quahuru;
+package com.quahuru.game;
 
 import com.getcapacitor.BridgeActivity;
 

@@ -551,18 +551,38 @@ with it in mind.** Assessment and the concrete implications:
     app-release.aab`. Confirmed to contain the whole app — game.js, model.onnx,
     the 11 MB ort wasm and phaser under `base/assets/public/`. Project is
     targetSdk/compileSdk **36**, minSdk 24, **versionCode 1**, versionName 1.0,
-    applicationId `com.tomrecht.quahuru`, label "Quahuru". **Every later upload
+    applicationId **`com.quahuru.game`**, label "Quahuru". **Every later upload
     needs a HIGHER versionCode** — Play rejects a repeat.
-  - **THE BUILD NEEDS ANDROID STUDIO'S BUNDLED JDK, NOT THE SYSTEM ONE.** The
-    system JDK is 17 and the Capacitor 8 project wants 21+: `./gradlew` failed
-    with **`invalid source release: 21`**. Fixed by committing
-    `org.gradle.java.home=/Applications/Android Studio.app/Contents/jbr/Contents/
-    Home` in `android/gradle.properties` (JBR is Java 25) — that path is the same
-    on both of owner's Macs, so it is portable, and it beats a per-shell
-    JAVA_HOME that is easy to forget. `android/local.properties` (gitignored)
-    carries `sdk.dir`; writing it by hand means the project never has to be
-    opened in Android Studio at all — the SDK it installs is the only thing
-    needed from it.
+    **The package name was changed from `com.tomrecht.quahuru` to
+    `com.quahuru.game` (owner, before any upload)** — it matches the domain he
+    now owns, and it is PERMANENT once anything is uploaded to any track, so this
+    was the last moment. It lives in seven places: `capacitor.config.json`,
+    `android/app/build.gradle` (namespace AND applicationId), `strings.xml`
+    (`package_name` and `custom_url_scheme`), the copied
+    `android/app/src/main/assets/capacitor.config.json`, and the Java package
+    line — plus the source DIRECTORY has to move to `java/com/quahuru/game/`.
+    Verified by reading the string pool out of the built bundle's compiled
+    manifest, not by grepping the source.
+  - **THE BUILD NEEDS A JDK 21 EXACTLY — BOTH JDKs ON THE MACHINE ARE WRONG.**
+    A narrow window, and it cost two failed builds:
+    * system **JDK 17** is too OLD — Capacitor 8 wants 21+, giving
+      **`invalid source release: 21`**;
+    * Android Studio's bundled **JBR is Java 25**, too NEW — Gradle 8.14 cannot
+      run on it and dies with **`Unsupported class file major version 69`**.
+    **The JBR appeared to work twice and did not.** Those builds only succeeded
+    because the compiled BUILD SCRIPTS were still cached; the moment
+    `app/build.gradle` was edited (the package rename) and had to be recompiled,
+    it failed. A cached artefact can hide a broken toolchain — re-verify after
+    touching a build script, not just after touching code.
+    So `./.jdk` holds a self-contained **Temurin 21** (gitignored, no sudo, no
+    system install), pointed at by `org.gradle.java.home` in
+    `android/gradle.properties`. **That path is ABSOLUTE and iMac-specific** —
+    on the MacBook either re-download into `./.jdk` or, for a path that is the
+    same on both machines, `brew install --cask temurin@21` and point at
+    `/Library/Java/JavaVirtualMachines/temurin-21.jdk/Contents/Home`.
+    `android/local.properties` (gitignored) carries `sdk.dir`; writing it by hand
+    means the project never has to be opened in Android Studio at all — the SDK
+    it installs is the only thing needed from it.
   - **METHOD NOTE: `./gradlew ... | tail` REPORTS EXIT 0 ON A FAILED BUILD.**
     The pipeline's status is `tail`'s, so the first failure was recorded as a
     success and only the log text gave it away. Redirect to a file and check

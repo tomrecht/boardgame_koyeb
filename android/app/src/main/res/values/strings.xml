@@ -2,6 +2,6 @@
 <resources>
     <string name="app_name">Quahuru</string>
     <string name="title_activity_main">Quahuru</string>
-    <string name="package_name">com.tomrecht.quahuru</string>
-    <string name="custom_url_scheme">com.tomrecht.quahuru</string>
+    <string name="package_name">com.quahuru.game</string>
+    <string name="custom_url_scheme">com.quahuru.game</string>
 </resources>

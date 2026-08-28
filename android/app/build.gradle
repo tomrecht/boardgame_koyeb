@@ -17,10 +17,10 @@ if (keystorePropsFile.exists()) {
 }
 
 android {
-    namespace = "com.tomrecht.quahuru"
+    namespace = "com.quahuru.game"
     compileSdk = rootProject.ext.compileSdkVersion
     defaultConfig {
-        applicationId "com.tomrecht.quahuru"
+        applicationId "com.quahuru.game"
         minSdkVersion rootProject.ext.minSdkVersion
         targetSdkVersion rootProject.ext.targetSdkVersion
         versionCode 1
