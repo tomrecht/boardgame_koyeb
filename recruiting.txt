@@ -67,11 +67,18 @@ walling off your opponent's routes.
     your device, not on a server
   • ~14 MB
 
-You can try it in a browser before committing, which I'd rather you did:
+You can try it in a browser first, which I'd rather you did — no install, and
+it's the whole game:
 https://quahuru.com
 
-Opt-in link: [PASTE YOUR CLOSED-TEST LINK]
-Google group / email: [PASTE]
+TO TEST, TWO STEPS IN THIS ORDER:
+
+  1. Join the group:  https://groups.google.com/g/quahuru-testers
+  2. Then opt in:     [PASTE YOUR CLOSED-TEST OPT-IN LINK]
+
+Step 1 first, please — the opt-in link only works for group members, and if you
+hit it before joining you'll just get "not available". Give it a minute between
+the two.
 
 Happy to test yours — drop a link and I'll opt in today.
 
@@ -229,6 +236,12 @@ PRACTICAL NOTES
 * Lead with the browser link, not the Play link. Someone can try it in ten
   seconds with no install, and the ones who then agree to test are worth far
   more than the ones who install out of politeness.
+
+* Do not post until Google has APPROVED the closed-testing release and you have
+  installed it yourself from the test. Until then, anyone who opts in finds
+  nothing to download and gets "item not found" — and someone who hits a dead
+  link on their first attempt usually does not come back. You get one shot at a
+  stranger's attention.
 
 * Recruit 15-16, not 12. If someone opts out you drop below the threshold and
   have a problem.
