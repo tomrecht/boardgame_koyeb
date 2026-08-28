@@ -546,11 +546,27 @@ with it in mind.** Assessment and the concrete implications:
     -validity 10000 -alias quahuru`. **Use Play App Signing and back the .jks and
     its passwords up** — the upload key is how Google knows an update is from
     the same developer.
-  - **Toolchain state on the iMac:** Java 17 present, **Android Studio and the
-    Android SDK are NOT installed** — that is the one remaining blocker to an
-    `.aab`. Generated project is targetSdk/compileSdk **36**, minSdk 24,
-    versionCode 1, versionName 1.0, applicationId `com.tomrecht.quahuru`, app
-    label "Quahuru".
+  - **A SIGNED `.aab` HAS BEEN BUILT (2026-08-27): 8.3 MB, `jarsigner` says
+    "jar verified"**, at `android/app/build/outputs/bundle/release/
+    app-release.aab`. Confirmed to contain the whole app — game.js, model.onnx,
+    the 11 MB ort wasm and phaser under `base/assets/public/`. Project is
+    targetSdk/compileSdk **36**, minSdk 24, **versionCode 1**, versionName 1.0,
+    applicationId `com.tomrecht.quahuru`, label "Quahuru". **Every later upload
+    needs a HIGHER versionCode** — Play rejects a repeat.
+  - **THE BUILD NEEDS ANDROID STUDIO'S BUNDLED JDK, NOT THE SYSTEM ONE.** The
+    system JDK is 17 and the Capacitor 8 project wants 21+: `./gradlew` failed
+    with **`invalid source release: 21`**. Fixed by committing
+    `org.gradle.java.home=/Applications/Android Studio.app/Contents/jbr/Contents/
+    Home` in `android/gradle.properties` (JBR is Java 25) — that path is the same
+    on both of owner's Macs, so it is portable, and it beats a per-shell
+    JAVA_HOME that is easy to forget. `android/local.properties` (gitignored)
+    carries `sdk.dir`; writing it by hand means the project never has to be
+    opened in Android Studio at all — the SDK it installs is the only thing
+    needed from it.
+  - **METHOD NOTE: `./gradlew ... | tail` REPORTS EXIT 0 ON A FAILED BUILD.**
+    The pipeline's status is `tail`'s, so the first failure was recorded as a
+    success and only the log text gave it away. Redirect to a file and check
+    `$?`, never pipe a build into `tail` and trust the code.
   - **`feature-graphic.png` (1024x500)** from `make_feature_graphic.py`, the
     Play listing's required banner. It composites the SHIPPED `icon-512.png`
     rather than re-rendering from `make_icons.py` — that cannot drift, and it
