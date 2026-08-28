@@ -277,3 +277,26 @@ is what `match_topk.py match` would answer, and it never has been for F itself
 (the original F=12 validation compared win rates, not pair coverage). The fix
 above closes the save-coverage gap only; it does not make served F=12 equal to
 the F=0 configuration training and the arena use.
+
+## PARKED DESIGN IDEA: randomize the goal numbering at start (owner, 2026-08-27)
+
+Shuffle which NUMBER sits at which rim position, so a player cannot memorise the
+map and has to re-derive it each game.
+
+Worth recording alongside it, from the endgame maths done the same day: the
+useful structure is a property of the GEOMETRY, not of the labels. Three pairs of
+goal positions are always exactly 4 apart (currently 6&1, 5&3, 4&2), and the
+tiles one ring inside a goal always reach three goals with a single die. Shuffle
+the numbering and those facts survive unchanged -- only which NUMBERS they apply
+to moves. So the variant would reward understanding the structure over
+memorising one arrangement, which is a point in its favour.
+
+Two consequences to check before building it:
+  * the trained model is fed per-piece goal DISTANCES and a `save_number/6` tile
+    feature, so the information it needs is present and it might generalise --
+    but it has only ever seen one arrangement, so expect it to be weaker until
+    retrained across arrangements (which would also be a free data-augmentation
+    scheme, in the same family as the D3 symmetry work);
+  * the validated D3 automorphism is tied to the current numbering, so the
+    symmetry-augmentation code would need generalising too.
+Only ~120 of the 6! = 720 numberings are distinct up to the board's own symmetry.
