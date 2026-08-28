@@ -1381,6 +1381,18 @@ with it in mind.** Assessment and the concrete implications:
     SNAPSHOT rather than a ported `Board`, since game.js already has its own
     different board model — Python emits the same snapshot in the test fixture
     so every step can be asserted array-equal.
+  - **NO FIRST-RUN NUDGE ON PHONES (owner, 2026-08-27).** The "New here? How to
+    Play" toast flashed at the bottom of the screen on every cold start and was
+    then buried by the welcome card. Its guard against stacking
+    (`document.getElementById('welcomeScreen')`) **loses a race**: `_initChrome`
+    runs before the welcome card is in the DOM, so the guard sees nothing and the
+    toast is created anyway. Phones now skip it outright — the screen is small,
+    the welcome card offers the same two buttons a moment later, and a toast that
+    appears only to be covered is worse than none. Measured by watching from the
+    first paint with a 30ms poll (a single check at the end misses a flash
+    entirely): **never appears on a phone**. Desktop is untouched by construction
+    — the change is a phone-only early return — and the same race presumably
+    still flashes there; not addressed because it was not reported.
   - **HOW TO PLAY IS WRITTEN TWICE (2026-08-15)**, phone and desktop: a phone
     has no mouse or keyboard and has gestures a desktop lacks. Phone gets
     tap/drag, double-tap, pinch-and-pan, the must-enter ghosts, the floating

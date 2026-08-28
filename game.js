@@ -1859,7 +1859,13 @@ function maybeShowFirstRunNudge() {
     let seen = false;
     try { seen = localStorage.getItem('seenNudge') === '1'; } catch (e) {}
     // The welcome screen already offers How to Play / Tutorial, so don't stack a
-    // nudge on top of it.
+    // nudge on top of it. That guard LOSES A RACE on load, though -- _initChrome
+    // runs before the welcome card is in the DOM, so the nudge appears and is
+    // then covered a moment later. Owner saw it flash at the bottom of a phone
+    // screen on every cold start. Phones skip it outright: the screen is small,
+    // the welcome card is about to offer the same thing, and a toast that
+    // appears only to be buried is worse than no toast.
+    if (_isPhone()) return;
     if (seen || document.getElementById('firstRunNudge') || document.getElementById('welcomeScreen')) return;
     try { localStorage.setItem('seenNudge', '1'); } catch (e) {}
 
