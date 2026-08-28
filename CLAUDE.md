@@ -537,6 +537,17 @@ with it in mind.** Assessment and the concrete implications:
     short edge. Re-run it after changing the web icons, then `npx cap sync`.
     **The launcher icon is baked at install time — seeing a change on a device
     needs a remove-and-re-add, not a reinstall.**
+    **THE FOREGROUND MUST BE SCALED DOWN — THE WEB MASKABLE ICON IS FAR TOO BIG
+    FOR ANDROID (owner, on the device, 2026-08-27).** An adaptive icon is 108dp
+    but only the central **72dp — 66.7%** — survives the launcher's mask, much
+    tighter than the web maskable spec. Measured: `icon-512-maskable.png` draws to
+    **85.2%** of its canvas (and `icon-512.png` to 95.2%), so pasting it unscaled
+    put the board's rim outside the visible circle on a real phone. The script now
+    MEASURES the art's extent — as a radius about the centre, since the board is
+    circular and a bounding box would overstate the corners — and scales it to
+    **64%**, pasted onto the ground rather than resized to fill, so the mask can
+    only ever cut parchment. Verified on the rebuilt asset: art spans **64.7%**,
+    and simulating a 66.7% circular mask cuts **0** non-parchment pixels.
   - **RELEASE SIGNING is wired to `android/keystore.properties`**, which is
     GITIGNORED along with `*.jks` / `*.keystore`; `keystore.properties.example`
     shows the four keys. `app/build.gradle` applies the signing config ONLY when
