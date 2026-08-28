@@ -426,52 +426,43 @@ the encoder, so ordering already encodes identity implicitly; making the feature
 constant would not remove the distinction unless blanks were pooled or shuffled
 too.
 
-**BLOCKING VALUE, COMPUTED (2026-08-27).** Delete a tile from the graph (a 2+
-stack cannot be entered or passed) and re-solve the opponent's expected-turns DP;
-the increase is that tile's blocking value. Measured against a lone enemy BLANK,
-averaged over its start tile:
-  * **single tiles rank strictly by goal number** — goal 1 **+0.232** turns,
-    then 2 +0.181, 3 +0.148, 4 +0.126, 5 +0.061, goal 6 **+0.034**. A factor of
-    7, because the low goals are the cheap banking squares (any die >= G) and
-    denying one forces the opponent onto a worse goal. The best non-goal blocks
-    are the ring-5/6 tiles beside goal 1 (+0.13 each, as much as blocking goal 4
-    itself).
-  * **THE INNER BOARD IS WORTHLESS TO WALL.** Every tile inside ring 4 scores
-    ~0.00 — near the hub a piece has many routes, so removing one tile removes
-    nothing. Blocking value is concentrated entirely on the rim: the goals and
-    their approach corridors. No SINGLE tile strands anything (0 of 69); it takes
-    a 4-apart PAIR to do that.
-  * **PAIRS WORK BY TWO SEPARATE MECHANISMS, and conflating them is a trap I fell
-    into.** A first pass reported the 4-apart pairs at +4.6 against +0.5 for the
-    rest, but that was **dominated by the sentinel value used for unreachable
-    tiles** — it measured the sentinel, not the game. Separated properly:
+**BLOCKING VALUE, COMPUTED (2026-08-27) — AND GOALS CANNOT BE WALLED.** Owner
+caught a rule error that invalidated a first pass: `is_blocked` requires
+`type == 'field'` (game.py, mirrored in game.js), so **a goal tile can never be
+blocked** — only the routes to it. The first map was led by goal wedges and is
+gone; so is a pair analysis that blocked goal tiles outright.
 
-        pair    tiles cut off entirely   mean +turns among tiles STILL reachable
-        2 & 4            3                        +0.280
-        1 & 6            3                        +0.204
-        3 & 5            3                        +0.156
-        1 & 2            0                        +0.598
-        1 & 3            0                        +0.516
-        2 & 3            0                        +0.420
-
-    So the 4-apart pairs alone create **absolute dead-ends — 3 tiles from which
-    no goal is reachable ever** — which is owner's long-standing claim,
-    confirmed. But they are otherwise MEDIOCRE at slowing: blocking **1&2 is
-    twice as slowing (+0.60)** because it denies the two cheapest banking goals,
-    while 2&4 leaves goal 1 open. Which wall is better depends entirely on
-    whether a piece can actually be trapped in the dead-end; if the opponent is
-    elsewhere, 1&2 is strictly better. **The model's old 2&4 preference is
-    therefore neither vindicated nor condemned by this** — it picks the best of
-    the three dead-end pairs, which is worth a lot only in the trapping case.
-  * **What this metric does NOT measure:** it is a LONE blank, started uniformly
-    over tiles (not where enemy pieces really sit), with no captures and no
-    opposing blocks, and it never counts the tempo the BUILDER spends tying up
-    two pieces — expensive, given a numbered piece needs 3.27 turns to bank once
-    parked.
-  * **Caveat: all of this measures a lone BLANK.** Against a NUMBERED piece,
-    blocking goal N is absolute denial rather than delay, since that piece has no
-    other banking square — so goal-blocking in a real game is worth strictly more
-    than these numbers.
+Redone properly — **field tiles only, against a blank sitting on the HOME TILE**
+(the case that matters, rather than an average over all start tiles, which put
+all its weight on inner tiles nobody blocks). Baseline: a blank on home needs
+**2.482 turns** to enter and bank (Monte Carlo 2.478 over 60k games).
+  * **Best single walls +0.128 turns** (ring5/13, ring5/14), then +0.120
+    (ring7/19-21, ring5/2, ring6/2) and +0.106 (ring5/12, ring6/12). **All the
+    value is on the outer two rings, in the approach corridors to goals 1, 2 and
+    4.** The inner board is worth nothing to wall — near the hub a piece has too
+    many routes.
+  * **28 of the 63 field tiles have NEGATIVE value — a wall there SPEEDS THE
+    OPPONENT UP**, by up to 0.055 turns. This is a real consequence of
+    exact-distance movement: a wall lengthens a route, and the longer route can
+    land in die range where the short one did not. Measured **14,430
+    (piece, wall, roll) combinations where a wall ADDS a destination**; e.g. a
+    wall on ring1/2 moves ring3/2 from distance 3 to 5, so a piece on ring1/3
+    rolling 1+4 can now land there. **A badly placed wall is worse than none**,
+    before even counting the pieces it ties up.
+  * **MIN VERTEX CUT (Menger) — how many walls it takes to SEAL a goal from
+    home: 2 walls (4 pieces) for every goal, by symmetry. But 2 walls also seal
+    a whole 4-APART PAIR (2&4, 1&6, 3&5), because the pair shares its approach
+    corridors** — so a wall denying a pair costs no more than one denying a
+    single goal, which is the structural fact behind owner's long-standing
+    "absolute block" claim. Sealing all six needs 6 walls = 12 pieces, your
+    entire army, so it is impossible in practice. **Engine-verified**: walls on
+    ring5/2 + ring5/4 leave white able to reach only goals 1, 3, 5, 6, with
+    `is_blocked('white')` true on both wall tiles.
+  * **What this metric does NOT measure:** one lone blank, no captures, no other
+    walls, and it never counts the tempo the BUILDER spends — 4 pieces for a
+    2-wall seal, and a numbered piece needs 3.27 turns to bank once parked.
+    Against a NUMBERED piece, sealing its goal is absolute denial rather than
+    delay, so goal-route blocking is worth strictly more than these numbers.
 
 Goal-pair blocking bias (exploration gap, NOT expected to be fixed by TD).
 Owner (Tom) clarified the domain reasoning: blocking certain goal *pairs*
