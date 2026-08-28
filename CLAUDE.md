@@ -343,6 +343,40 @@ a goal is genuinely optimal on **2/21 rolls from goal 4, 4/21 from goal 5 and
 (goal 6 -> goal 1 gains 0.644 turns). Never optimal from goals 1-3, which is
 exactly where the agent never goes.
 
+**VERIFIED BEFORE BEING TRUSTED.** The DP is only as good as its encoding of the
+rules, so `banks()`/`reach()` were cross-checked against the ENGINE for every
+tile x every roll: **0 disagreements out of 1449** on both. Monte Carlo over
+40,000 games per tile then matched the DP within **0.006 turns** everywhere
+(goal 1 1.000/1.000, goal 6 1.644/1.643, worst tile 2.510/2.513). Note the rule
+check is the one that matters — simulating with the same wrong rules would agree
+with a wrong DP.
+
+**THE VALUE GRADIENT AT EACH GOAL EXPLAINS THE AGENT EXACTLY.** Cost of stepping
+to the best neighbouring tile:
+
+    goal        1       2       3       4       5       6
+    gradient  +0.785  +0.724  +0.841  +0.184  +0.198  +0.039
+    agent
+    leaves     0/21    0/21    0/21    3/21    4/21    5/21
+
+**Standing on goal 6 is worth 0.039 turns more than standing beside it** — four
+hundredths of a turn. So there is arguably NO learning failure here: the agent is
+indifferent exactly where the board is flat and immovable exactly where it is
+steep. The narrower residual is that when it does step off it sometimes picks a
+poor off-goal tile (2.07 when 1.68 was adjacent), i.e. it discriminates poorly
+AMONG off-goal tiles, at a cost under half a turn.
+
+**THE GOAL-4 NEIGHBOURHOOD IS THE BEST OFF-GOAL REAL ESTATE ON THE BOARD, which
+reframes an old worry (owner, 2026-08-27).** Owner had read the model's liking
+for parking blanks near goal 4 as a residue of the 2&4 blocking obsession. It is
+better explained as sound judgement: **ring6/2 (1.487) and ring5/2 (1.554) are
+the two best non-goal tiles anywhere**, ahead of the third by 0.11, and goal 4's
+neighbourhood mean (1.731) beats every other goal's (2 is 1.847, 6 1.858, 1
+1.869, 5 1.887, 3 2.020). The reason is optionality: from ring6/2 a blank reaches
+THREE goals with one die (g4@1, g2@5, g1@6) and two of those are the cheapest to
+bank from. Counterintuitively **goal 4 ITSELF is only middling (1.303, worse than
+goals 1-3)** — sitting near it and sitting on it are different propositions.
+
 **The agent measured against that optimum** (`compare.py`; every goal x roll
 where no bank is possible, n=28): optimal play moves in 10, **the agent moves in
 15**, and it **agrees with optimal on 21/28**. Its 7 errors are all the same
