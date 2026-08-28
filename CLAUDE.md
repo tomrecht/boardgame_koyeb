@@ -426,6 +426,33 @@ the encoder, so ordering already encodes identity implicitly; making the feature
 constant would not remove the distinction unless blanks were pooled or shuffled
 too.
 
+**BLOCKING VALUE, COMPUTED (2026-08-27).** Delete a tile from the graph (a 2+
+stack cannot be entered or passed) and re-solve the opponent's expected-turns DP;
+the increase is that tile's blocking value. Measured against a lone enemy BLANK,
+averaged over its start tile:
+  * **single tiles rank strictly by goal number** — goal 1 **+0.232** turns,
+    then 2 +0.181, 3 +0.148, 4 +0.126, 5 +0.061, goal 6 **+0.034**. A factor of
+    7, because the low goals are the cheap banking squares (any die >= G) and
+    denying one forces the opponent onto a worse goal. The best non-goal blocks
+    are the ring-5/6 tiles beside goal 1.
+  * **PAIRS ARE A DIFFERENT ORDER OF MAGNITUDE, and only the 4-apart ones:**
+    **2&4 +4.62, 1&6 +4.54, 3&5 +4.49**, against **+0.42 to +0.60** for any
+    other pair (1&2, 1&3, 2&3). The reason is structural: each 4-apart pair
+    leaves **3 tiles with NO path to any goal at all** — a piece there can never
+    bank — while non-paired blocks cut off none. This is the quantified version
+    of owner's long-standing claim that those three pairs afford an ABSOLUTE
+    block.
+  * **The three pairs agree within 3%**, so they really are equivalent, as owner
+    said. Nearly all of the +4.6 is the dead-end tiles; the ordering among them
+    is second-order. **So the model's old 2&4 preference costs essentially
+    nothing in value** — it favours the best pair by a hair and the alternatives
+    are as good, which supports reading that bias as a COVERAGE problem rather
+    than a value error, exactly as the entry below concluded.
+  * **Caveat: all of this measures a lone BLANK.** Against a NUMBERED piece,
+    blocking goal N is absolute denial rather than delay, since that piece has no
+    other banking square — so goal-blocking in a real game is worth strictly more
+    than these numbers.
+
 Goal-pair blocking bias (exploration gap, NOT expected to be fixed by TD).
 Owner (Tom) clarified the domain reasoning: blocking certain goal *pairs*
 can be an *absolute* block — a structural dead-end where the opponent has
