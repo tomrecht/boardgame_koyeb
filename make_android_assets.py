@@ -15,6 +15,7 @@ Re-run after changing the web icons, then `npx cap sync`. NOTE the launcher icon
 is baked at install time, so seeing a change on a device needs a remove-and-
 re-add, not just a reinstall.
 """
+import math
 import os
 from PIL import Image
 
@@ -22,11 +23,41 @@ RES = 'android/app/src/main/res'
 GROUND = (236, 227, 211)          # #ece3d3, the icon's own parchment
 DENSITIES = {'mdpi': 1, 'hdpi': 1.5, 'xhdpi': 2, 'xxhdpi': 3, 'xxxhdpi': 4}
 
+# An adaptive icon's foreground is 108dp but only the central 72dp is guaranteed
+# to survive the launcher's mask -- 66.7%. That is MUCH tighter than the web's
+# maskable spec: icon-512-maskable.png draws to 85.2% of its canvas, and using it
+# unscaled put the board's rim outside the circle on a real phone (owner). Target
+# a little under the guarantee for margin.
+SAFE_SPAN = 0.64
+
+
+def content_span(im):
+    """How much of the canvas width the drawn art covers, as a diameter about the
+    centre -- the board is circular and concentric, so a radius is the honest
+    measure where a bounding box would overstate the corners."""
+    w, h = im.size
+    cx, cy = w / 2.0, h / 2.0
+    px = im.load()
+    far = 0.0
+    for y in range(h):
+        for x in range(w):
+            p = px[x, y]
+            if (abs(p[0] - GROUND[0]) + abs(p[1] - GROUND[1])
+                    + abs(p[2] - GROUND[2])) > 24:
+                d = math.hypot(x - cx, y - cy)
+                if d > far:
+                    far = d
+    return 2.0 * far / w
+
 
 def main():
     icon = Image.open('icon-512.png').convert('RGB')
     mask = Image.open('icon-512-maskable.png').convert('RGB')
     assert icon.getpixel((4, 4)) == GROUND, 'icon ground changed; update GROUND'
+
+    span = content_span(mask)
+    print('maskable art covers %.1f%% of its canvas; scaling to %.1f%%'
+          % (100 * span, 100 * SAFE_SPAN))
 
     n = 0
     for d, k in DENSITIES.items():
@@ -39,10 +70,16 @@ def main():
         sq = icon.resize((px, px), Image.LANCZOS)
         sq.save(os.path.join(mip, 'ic_launcher.png'))
         sq.save(os.path.join(mip, 'ic_launcher_round.png'))
-        # Adaptive foreground: 108dp, of which only the middle 72dp is safe.
+        # Adaptive foreground: 108dp, of which only the middle 72dp is safe. The
+        # art is scaled by MEASUREMENT so it lands inside that, and pasted on the
+        # ground rather than resized to fill -- so the mask can only ever cut
+        # parchment, never the board.
         fpx = int(108 * k)
-        mask.resize((fpx, fpx), Image.LANCZOS).save(
-            os.path.join(mip, 'ic_launcher_foreground.png'))
+        art_px = max(1, int(round(fpx * SAFE_SPAN / span)))
+        fg = Image.new('RGB', (fpx, fpx), GROUND)
+        art = mask.resize((art_px, art_px), Image.LANCZOS)
+        fg.paste(art, ((fpx - art_px) // 2, (fpx - art_px) // 2))
+        fg.save(os.path.join(mip, 'ic_launcher_foreground.png'))
         n += 3
 
     # The adaptive background sits behind the foreground; matching the ground
