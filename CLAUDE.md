@@ -320,14 +320,37 @@ one piece left, passing always available (`sweep.py`, scratchpad):
     P(bank next turn) 100%  97%   89%   75%   56%   31%
     offgoals (of 21)  0     0     0     3     4     5
 
-**Perfectly monotonic, and it never leaves goals 1-3.** The reason is arithmetic:
-a lone blank IS by definition the highest occupied goal, so the endgame rule lets
-it bank on ANY die >= G, giving 1 - ((G-1)/6)^2. Expected turns to bank are 1.00
-on goal 1 against **3.27 on goal 6** — sitting on a high goal is a genuinely bad
-place to be, and leaving it to reach a low one can be correct (reach goal 2 even
-two turns later and you beat 3.27). Only the 3/21 at goal 4 looks too eager,
-where staying is 1.33 turns and no journey can beat that. Owner predicted this
-mechanism before it was measured.
+**Perfectly monotonic, and it never leaves goals 1-3.** Owner predicted the
+mechanism before it was measured, and then supplied the wrinkle that makes the
+naive calculation wrong: **the goals are paired 4 APART — 6&1, 5&3, 4&2**
+(confirmed from the tile graph; the other gaps are 7, 11, 14). So from goal 6 a
+roll summing 4 reaches goal 1, where any second die banks.
+**Verified against the engine: landing on a goal makes the stage `endgame`
+WITHIN the same turn** (`get_valid_moves` recomputes it at line ~445), so
+"move onto a goal with one die, bank with a higher other die" is legal in one
+turn. That is what makes the high goals far less bad than they look.
+
+**Exact expected turns to bank a lone blank, by value iteration over the real
+tile graph** (`turns.py`, scratchpad — optimal play, empty board):
+
+    goal            1      2      3      4      5      6
+    turns        1.000  1.029  1.125  1.303  1.462  1.644
+    naive 1-die  1.00   1.03   1.12   1.33   1.80   3.27
+
+Goal 6 is **1.644, not 3.27** — the single-die figure nearly doubles it. Leaving
+a goal is genuinely optimal on **2/21 rolls from goal 4, 4/21 from goal 5 and
+4/21 from goal 6**, and almost always the move is to that goal's 4-apart partner
+(goal 6 -> goal 1 gains 0.644 turns). Never optimal from goals 1-3, which is
+exactly where the agent never goes.
+
+**The agent measured against that optimum** (`compare.py`; every goal x roll
+where no bank is possible, n=28): optimal play moves in 10, **the agent moves in
+15**, and it **agrees with optimal on 21/28**. Its 7 errors are all the same
+shape — a small excursion onto a FIELD tile on a low roll ((1,1), (1,2)) where
+passing is correct — and cost a **mean of 0.24 turns** (worst 0.425). So the
+behaviour owner saw is right in kind and slightly over-eager in degree: it has
+learned the real structure (stay on low goals, reposition high ones to their
+partner) and fidgets when the dice can do nothing.
 
 **The last-piece renumber to 13 is NOT the cause**, which was the leading
 hypothesis. A 13 and an ordinary blank are treated identically by every rule, so
