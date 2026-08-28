@@ -561,7 +561,7 @@ with it in mind.** Assessment and the concrete implications:
     "jar verified"**, at `android/app/build/outputs/bundle/release/
     app-release.aab`. Confirmed to contain the whole app — game.js, model.onnx,
     the 11 MB ort wasm and phaser under `base/assets/public/`. Project is
-    targetSdk/compileSdk **36**, minSdk 24, **versionCode 2**, versionName 1.0.1,
+    targetSdk/compileSdk **36**, minSdk 24, **versionCode 3**, versionName 1.0.2,
     applicationId **`com.quahuru.game`**, label "Quahuru". **Every later upload
     needs a HIGHER versionCode** — Play rejects a repeat. Hit immediately: the
     first upload predated the adaptive-icon fix, so Play kept serving the clipped
