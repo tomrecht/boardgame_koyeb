@@ -434,7 +434,13 @@ averaged over its start tile:
     then 2 +0.181, 3 +0.148, 4 +0.126, 5 +0.061, goal 6 **+0.034**. A factor of
     7, because the low goals are the cheap banking squares (any die >= G) and
     denying one forces the opponent onto a worse goal. The best non-goal blocks
-    are the ring-5/6 tiles beside goal 1.
+    are the ring-5/6 tiles beside goal 1 (+0.13 each, as much as blocking goal 4
+    itself).
+  * **THE INNER BOARD IS WORTHLESS TO WALL.** Every tile inside ring 4 scores
+    ~0.00 — near the hub a piece has many routes, so removing one tile removes
+    nothing. Blocking value is concentrated entirely on the rim: the goals and
+    their approach corridors. No SINGLE tile strands anything (0 of 69); it takes
+    a 4-apart PAIR to do that.
   * **PAIRS WORK BY TWO SEPARATE MECHANISMS, and conflating them is a trap I fell
     into.** A first pass reported the 4-apart pairs at +4.6 against +0.5 for the
     rest, but that was **dominated by the sentinel value used for unreachable
