@@ -366,6 +366,15 @@ steep. The narrower residual is that when it does step off it sometimes picks a
 poor off-goal tile (2.07 when 1.68 was adjacent), i.e. it discriminates poorly
 AMONG off-goal tiles, at a cost under half a turn.
 
+**A NUMBERED PIECE TAKES 3.273 TURNS TO BANK FROM ITS OWN GOAL — THE SAME FOR
+EVERY NUMBER.** The endgame higher-die rule is blank-only (`get_saving_die`
+gates on `number > 6`), so a numbered piece needs an EXACT match: P = 11/36 a
+turn, so 36/11 = 3.273 turns, and no move can improve it — parked on its goal it
+simply waits. Blanks range **1.00 (goal 1) to 1.644 (goal 6)**, i.e. 2-3x
+faster. Consequences worth knowing: numbered pieces are the endgame bottleneck,
+their cost is paid AFTER they arrive, and two of them on their goals clear in one
+turn only on the 2/36 rolls showing both numbers.
+
 **THE GOAL-4 NEIGHBOURHOOD IS THE BEST OFF-GOAL REAL ESTATE ON THE BOARD, which
 reframes an old worry (owner, 2026-08-27).** Owner had read the model's liking
 for parking blanks near goal 4 as a residue of the 2&4 blocking obsession. It is
