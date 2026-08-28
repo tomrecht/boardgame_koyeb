@@ -435,19 +435,33 @@ averaged over its start tile:
     7, because the low goals are the cheap banking squares (any die >= G) and
     denying one forces the opponent onto a worse goal. The best non-goal blocks
     are the ring-5/6 tiles beside goal 1.
-  * **PAIRS ARE A DIFFERENT ORDER OF MAGNITUDE, and only the 4-apart ones:**
-    **2&4 +4.62, 1&6 +4.54, 3&5 +4.49**, against **+0.42 to +0.60** for any
-    other pair (1&2, 1&3, 2&3). The reason is structural: each 4-apart pair
-    leaves **3 tiles with NO path to any goal at all** — a piece there can never
-    bank — while non-paired blocks cut off none. This is the quantified version
-    of owner's long-standing claim that those three pairs afford an ABSOLUTE
-    block.
-  * **The three pairs agree within 3%**, so they really are equivalent, as owner
-    said. Nearly all of the +4.6 is the dead-end tiles; the ordering among them
-    is second-order. **So the model's old 2&4 preference costs essentially
-    nothing in value** — it favours the best pair by a hair and the alternatives
-    are as good, which supports reading that bias as a COVERAGE problem rather
-    than a value error, exactly as the entry below concluded.
+  * **PAIRS WORK BY TWO SEPARATE MECHANISMS, and conflating them is a trap I fell
+    into.** A first pass reported the 4-apart pairs at +4.6 against +0.5 for the
+    rest, but that was **dominated by the sentinel value used for unreachable
+    tiles** — it measured the sentinel, not the game. Separated properly:
+
+        pair    tiles cut off entirely   mean +turns among tiles STILL reachable
+        2 & 4            3                        +0.280
+        1 & 6            3                        +0.204
+        3 & 5            3                        +0.156
+        1 & 2            0                        +0.598
+        1 & 3            0                        +0.516
+        2 & 3            0                        +0.420
+
+    So the 4-apart pairs alone create **absolute dead-ends — 3 tiles from which
+    no goal is reachable ever** — which is owner's long-standing claim,
+    confirmed. But they are otherwise MEDIOCRE at slowing: blocking **1&2 is
+    twice as slowing (+0.60)** because it denies the two cheapest banking goals,
+    while 2&4 leaves goal 1 open. Which wall is better depends entirely on
+    whether a piece can actually be trapped in the dead-end; if the opponent is
+    elsewhere, 1&2 is strictly better. **The model's old 2&4 preference is
+    therefore neither vindicated nor condemned by this** — it picks the best of
+    the three dead-end pairs, which is worth a lot only in the trapping case.
+  * **What this metric does NOT measure:** it is a LONE blank, started uniformly
+    over tiles (not where enemy pieces really sit), with no captures and no
+    opposing blocks, and it never counts the tempo the BUILDER spends tying up
+    two pieces — expensive, given a numbered piece needs 3.27 turns to bank once
+    parked.
   * **Caveat: all of this measures a lone BLANK.** Against a NUMBERED piece,
     blocking goal N is absolute denial rather than delay, since that piece has no
     other banking square — so goal-blocking in a real game is worth strictly more

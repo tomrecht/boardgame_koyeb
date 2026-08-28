@@ -300,3 +300,14 @@ Two consequences to check before building it:
   * the validated D3 automorphism is tied to the current numbering, so the
     symmetry-augmentation code would need generalising too.
 Only ~120 of the 6! = 720 numberings are distinct up to the board's own symmetry.
+
+OWNER'S REASON FOR REJECTING IT (2026-08-27), and it is the better one: the
+CURRENT layout is balanced because the cheap goals are spread around the rim. A
+random numbering could put 1-2-3 adjacent, making that corner of the board far
+more valuable than anywhere else, and the game would turn on who happened to roll
+their way into controlling it -- MORE stochastic, not less. Tested by permuting
+the numbering so the cheap goals cluster and re-solving the expected-turns DP:
+spread of tile values rises from **sd 0.226 to 0.269** (range 1.024 -> 1.178),
+best tile 1.487 -> 1.395 and worst 2.510 -> 2.574. Directionally confirmed, and
+the measure understates it, since it captures only solo banking speed and not
+contested control of a hot region.
