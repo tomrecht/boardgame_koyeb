@@ -311,6 +311,55 @@ edge at all: not from the candidate set, and not from play. Plan is to run
 TD first and see if better value estimates resolve these before doing any
 separate hand-debugging.
 
+**ENDGAME OFFGOALING IS NOT A DEFECT — IT TRACKS THE BANKING ODDS (2026-08-27).**
+Owner reported the deployed model (`symaug_champ_July27_iter6`) walking a piece
+off its goal in the endgame. Swept every one of the 21 rolls against every goal,
+one piece left, passing always available (`sweep.py`, scratchpad):
+
+    goal              1     2     3     4     5     6
+    P(bank next turn) 100%  97%   89%   75%   56%   31%
+    offgoals (of 21)  0     0     0     3     4     5
+
+**Perfectly monotonic, and it never leaves goals 1-3.** The reason is arithmetic:
+a lone blank IS by definition the highest occupied goal, so the endgame rule lets
+it bank on ANY die >= G, giving 1 - ((G-1)/6)^2. Expected turns to bank are 1.00
+on goal 1 against **3.27 on goal 6** — sitting on a high goal is a genuinely bad
+place to be, and leaving it to reach a low one can be correct (reach goal 2 even
+two turns later and you beat 3.27). Only the 3/21 at goal 4 looks too eager,
+where staying is 1.33 turns and no journey can beat that. Owner predicted this
+mechanism before it was measured.
+
+**The last-piece renumber to 13 is NOT the cause**, which was the leading
+hypothesis. A 13 and an ordinary blank are treated identically by every rule, so
+the only difference reaching the net is `piece_number/12` = 1.083 against <= 1.0.
+Measured both ways: **12/126 offgoals as a 13 against 13/126 as a blank**, and a
+paired value probe on an IDENTICAL board (flipping only the number) gave a gap of
+32.4 against 31.7. Inert. Note it is also self-consistent — self-play trains
+through the same engine — so changing it at serve time would create a
+train/serve mismatch and make things WORSE.
+**A numbered piece on its own goal is never offgoaled: 0/126.**
+
+**PASS-OVER-SAVE IS STILL THERE, AND IS AN INDIFFERENCE PROBLEM.** The sweep
+tripped `debug_pass_over_save` three times: `pass 127.046` against
+`save 126.756`, and `pass 128.539` against `save 128.388` — **0.3 on a 1000-point
+scale, ~0.004 of a margin unit.** The sign is not wrong; the model is nearly
+indifferent between banking a piece and doing nothing. Same razor-thin-edge
+signature as the goal-pair finding. It only appeared in deep symmetric endgames
+(both sides 10 saved, 2 left), which is why owner has never seen it in hundreds
+of games.
+
+**BLANKS ARE INTERCHANGEABLE BUT ARE ENCODED AS DISTINCT (owner, 2026-08-27) —
+a candidate change for the next training run, NOT a serve-time fix.** The encoder
+feeds `7/12, 8/12 ... 12/12` for blanks that the RULES treat as identical
+(`get_valid_moves` even dedupes unnumbered pieces on the same tile). That is a
+spurious degree of freedom the net must spend capacity learning to ignore, and it
+breaks a symmetry the game really has — the same class of argument as the
+goal-pair symmetry augmentation. Cleaner: one constant for every blank, with
+`is_numbered` carrying the distinction. Caveat: pieces are SORTED BY NUMBER in
+the encoder, so ordering already encodes identity implicitly; making the feature
+constant would not remove the distinction unless blanks were pooled or shuffled
+too.
+
 Goal-pair blocking bias (exploration gap, NOT expected to be fixed by TD).
 Owner (Tom) clarified the domain reasoning: blocking certain goal *pairs*
 can be an *absolute* block — a structural dead-end where the opponent has
