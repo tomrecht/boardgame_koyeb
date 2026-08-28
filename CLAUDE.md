@@ -561,9 +561,13 @@ with it in mind.** Assessment and the concrete implications:
     "jar verified"**, at `android/app/build/outputs/bundle/release/
     app-release.aab`. Confirmed to contain the whole app — game.js, model.onnx,
     the 11 MB ort wasm and phaser under `base/assets/public/`. Project is
-    targetSdk/compileSdk **36**, minSdk 24, **versionCode 1**, versionName 1.0,
+    targetSdk/compileSdk **36**, minSdk 24, **versionCode 2**, versionName 1.0.1,
     applicationId **`com.quahuru.game`**, label "Quahuru". **Every later upload
-    needs a HIGHER versionCode** — Play rejects a repeat.
+    needs a HIGHER versionCode** — Play rejects a repeat. Hit immediately: the
+    first upload predated the adaptive-icon fix, so Play kept serving the clipped
+    icon through an uninstall/reinstall, and replacing it needed versionCode 2.
+    **A reinstall from Play does NOT pick up a local rebuild** — obvious in
+    hindsight, easy to misread as the icon fix having failed.
     **The package name was changed from `com.tomrecht.quahuru` to
     `com.quahuru.game` (owner, before any upload)** — it matches the domain he
     now owns, and it is PERMANENT once anything is uploaded to any track, so this
