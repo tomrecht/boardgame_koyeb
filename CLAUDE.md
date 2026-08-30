@@ -2532,6 +2532,34 @@ with it in mind.** Assessment and the concrete implications:
     **Owner reported the gesture "doesn't work for captured pieces"; it does, but
     only on a sum of 7**, so most rolls correctly do nothing and it reads as
     broken. Worth remembering before treating a report like that as a defect.
+  - **MORE THAN ONE CAPTURE ON THE WAY -> NO AUTOMATIC CAPTURE (owner,
+    2026-08-27, all platforms).** Choosing between two enemy pieces is the
+    player's decision, not the game's; the numbered/higher-numbered priority
+    below was only ever a tiebreak dressed up as a rule. So a sum destination
+    whose routes offer **2 or more** captures is now withheld even when the
+    "Automatic en-route capture" setting is ON, exactly as an ambiguous route is
+    when it is OFF — the player moves one die at a time to choose. With exactly
+    ONE capture on offer there is nothing to choose and the single gesture still
+    takes it, so the setting keeps its meaning: ON = take the only capture,
+    OFF = let me pick the route whenever any capture is involved.
+    `checkEnRouteCapture` ALSO refuses when it sees 2+ (deduping the two die
+    orders first) — such a destination is already withheld, so that branch should
+    be unreachable, but the rule then holds by construction rather than by one
+    caller getting it right.
+    **The AI is unaffected, checked before changing shared code:** en-route
+    capture only fires when the destination is in `reachableBySum` with BOTH dice
+    free, and the agent applies its pair die-by-die, so its destinations are
+    single-die tiles — disjoint from sum tiles, since exact-distance movement puts
+    every tile at one BFS depth.
+    Measured, on positions built from the game's own reachability: **0 captures ->
+    offered under both settings (5/5); 1 capture -> offered with the setting ON
+    (3/3), withheld with it OFF (3/3); 2 captures -> WITHHELD under both**, and
+    the capture routine takes 0 of the 2 available.
+    Test trap hit twice: composed two-die routes are a SUPERSET of
+    `reachableBySum`, because a route can backtrack (out 2, back 3 lands 1 away)
+    while a sum destination must sit at BFS distance a+b. A test that iterates
+    the route map instead of the sum set counts non-destinations as "withheld"
+    and proves nothing.
   - **En-route capture now picks deliberately (unconditional, toggle-independent).**
     It used to capture the first eligible intermediate tile the two die orders
     happened to yield — an arbitrary choice dressed as a rule. Owner's rule:

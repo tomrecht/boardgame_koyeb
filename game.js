@@ -331,7 +331,6 @@ function _noticeIfRouteWithheld(game, piece, targetTile) {
     // undo, retry) that no harness has reproduced -- every branch says why.
     // console.log is silent unless ?dev=1, so this costs nothing in play.
     const no = (reason, extra) => { console.log('[route-notice] not shown:', reason, extra || ''); return false; };
-    if (getAutoEnRouteCapture()) return no('the "Automatic en-route capture" setting is ON');
     if (!game || !piece || !targetTile) return no('missing game/piece/target');
     let r = null;
     try { r = game.getReachableTilesByDice(piece); } catch (e) { return no('reachability threw', e); }
@@ -345,7 +344,9 @@ function _noticeIfRouteWithheld(game, piece, targetTile) {
         });
     }
     if (typeof flashNotice === 'function') {
-        flashNotice('A capture is possible on the way — move one die at a time to choose the route.', 4500);
+        flashNotice(getAutoEnRouteCapture()
+            ? 'More than one capture is possible on the way — move one die at a time to choose.'
+            : 'A capture is possible on the way — move one die at a time to choose the route.', 4500);
     }
     console.log('[route-notice] shown');
     return true;
@@ -5736,8 +5737,15 @@ class Game {
         // and therefore distinct outcomes -- there is no need to compare what
         // each route would take. With no capturable piece on any route every
         // route ends in the same position, so the single gesture stays honest.
+        // WHEN AUTO-CAPTURE IS ON, a sum destination is still withheld if MORE
+        // THAN ONE capture is available on the way (owner). Picking between two
+        // enemy pieces is the player's choice, not a rule the game should make
+        // for them -- the numbered/higher-numbered priority below was only ever
+        // a tiebreak dressed up as one. With exactly one capture on offer there
+        // is nothing to choose, so the single gesture still takes it.
         let ambiguousSum = [];
-        if (!getAutoEnRouteCapture() && reachableBySum.length && !d0.used && !d1.used) {
+        const _autoEnRoute = getAutoEnRouteCapture();
+        if (reachableBySum.length && !d0.used && !d1.used) {
             const from = piece.currentTile || this.tiles.find(t => t.type === 'home');
             const capturable = (t) => t && t.type !== 'save' && t.pieces.length === 1 &&
                                       t.pieces[0].color !== piece.color;
@@ -5756,7 +5764,12 @@ class Game {
 
             ambiguousSum = reachableBySum.filter(t => {
                 const mids = routes.get(t);
-                return mids && mids.size >= 2 && [...mids].some(capturable);
+                if (!mids || mids.size < 2) return false;
+                const caps = [...mids].filter(capturable).length;
+                // ON: only a genuine choice BETWEEN captures is withheld.
+                // OFF: any capture on a multi-route destination is withheld,
+                // because then the player wants to pick the route themselves.
+                return _autoEnRoute ? caps >= 2 : caps >= 1;
             });
             if (ambiguousSum.length) {
                 const amb = new Set(ambiguousSum);
@@ -6152,9 +6165,19 @@ class Game {
         // comparison: blanks are 7-12 internally, so +1000 keeps 1-6 on top while
         // "higher number wins" still holds inside each class.
         const priority = (p) => (p.number <= 6 ? 1000 : 0) + p.number;
+        // MORE THAN ONE CAPTURE ON OFFER -> capture NOTHING (owner). Such a
+        // destination is already withheld by getReachableTilesByDice, so this
+        // should be unreachable; it is here so the rule holds by construction
+        // rather than by that one caller getting it right. Dedupe first: the
+        // two die orders yield the same tile twice.
+        const distinct = [...new Set(allIntermediateTiles)].filter(captureConditionsMet);
+        if (distinct.length > 1) {
+            console.log('[en-route] declining: %d captures available, the choice is the player\'s',
+                        distinct.length);
+            return;
+        }
         let best = null, bestScore = -Infinity;
-        for (const tile of allIntermediateTiles) {
-            if (!captureConditionsMet(tile)) continue;
+        for (const tile of distinct) {
             const score = priority(tile.pieces[0]);
             if (score > bestScore) { bestScore = score; best = tile; }
         }
