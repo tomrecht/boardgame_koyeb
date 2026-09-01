@@ -1773,12 +1773,12 @@ function createSettingsPanel() {
     toggle('Automatic en-route capture', getAutoEnRouteCapture, 'autoEnRoute', true);
 
     // Interactive tutorial launcher
-    // Phone only, and only once something has actually been recorded -- there is
-    // nothing to explain to a player who has no log.
+    // Phone only. NOT gated on the log being non-empty, though that was the first
+    // cut: createSettingsPanel runs ONCE at start-up, so that condition is
+    // evaluated before the player has had a chance to tap anything and the button
+    // never appeared. Same race as the first-run nudge.
     if (_isPhone()) {
-        let _has = false;
-        try { _has = (JSON.parse(localStorage.getItem('tapLog') || '[]')).length > 0; } catch (e) {}
-        if (_has) {
+        {
             const tl = mk('button',
                 'width:100%; margin-top:12px; padding:8px 0; border-radius:8px; cursor:pointer;' +
                 'font-family:' + HUD_FONT + '; font-weight:600; font-size:13px;' +
@@ -1787,7 +1787,9 @@ function createSettingsPanel() {
             tl.onclick = () => {
                 let txt = '';
                 try { txt = localStorage.getItem('tapLog') || '[]'; } catch (e) { txt = '[]'; }
-                const done = () => { tl.textContent = 'Copied — paste it to Tom'; 
+                let n = 0;
+                try { n = (JSON.parse(txt)).length; } catch (e) {}
+                const done = () => { tl.textContent = n ? ('Copied ' + n + ' taps') : 'Nothing recorded yet';
                                      setTimeout(() => { tl.textContent = 'Copy tap log'; }, 2500); };
                 if (navigator.clipboard && navigator.clipboard.writeText) {
                     navigator.clipboard.writeText(txt).then(done, () => {});

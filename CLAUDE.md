@@ -2499,8 +2499,12 @@ with it in mind.** Assessment and the concrete implications:
   moved, the GAP that decided single vs double, and the verdict — `single`,
   `DOUBLE`, or `ghost-suppressed` when `_isGhostPointer` swallowed a duplicate
   (logged too, or the guard firing would leave the log silent about the very
-  case it exists for). **Settings > Copy tap log** exports it, appearing only on
-  a phone and only once something has been recorded.
+  case it exists for). **Settings > Copy tap log** exports it, on phones only.
+  It is deliberately NOT gated on the log being non-empty, though that was the
+  first cut and owner reported the button missing: `createSettingsPanel` runs
+  ONCE at start-up, so that condition is evaluated before any tap can have
+  happened and the button never appeared. Same race as the first-run nudge. It
+  reports the count when copied, or "Nothing recorded yet".
   **Deliberately NOT behind `?dev=1`** — asking owner to set a query parameter
   BEFORE a bug he cannot predict has now failed twice. Verified: records with no
   flag on the URL, survives a reload, distinguishes a fast second tap from a slow
