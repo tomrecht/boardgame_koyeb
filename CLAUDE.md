@@ -1801,10 +1801,14 @@ with it in mind.** Assessment and the concrete implications:
     **729px tall and does NOT fit a 1280x720 laptop**, so `k` is clamped by
     `innerHeight` — 720p gets 1.32x and a card that fits. And adding the icon and
     wordmark had pushed the PHONE LANDSCAPE card from ~360px to 482px in a 390px
-    viewport; `max-height:92vh; overflow-y:auto` catches that (scrolling beats
-    shrinking the type to nothing on a cramped landscape phone). Measured: all
-    four of desktop 1440x900, desktop 1280x720, phone portrait and phone
-    landscape now fit the viewport.
+    viewport. **Landscape now goes TWO-COLUMN** — text left, buttons right, in a
+    760px card — rather than scrolling or scaling down: at k=0.72 the type would
+    be 11px and the buttons 29px tall, well under any sane tap target, and a
+    landscape phone has width to spare. Stacked 482px becomes **246px**.
+    `max-height:92vh; overflow-y:auto` stays as the backstop. Measured on all
+    four — desktop 1440x900 (630px card), desktop 1280x720 (555px), phone
+    portrait (505px), phone landscape (246px): every one **fits the viewport with
+    no scrolling**, and the landscape buttons keep their full 40px height.
   - **The welcome blurb described the game BACKWARDS** and was fixed in the same
     change: it said "bring them all safely home" when the home tile is where
     pieces ENTER and the rim goals are where they leave. Now "Race your pieces out

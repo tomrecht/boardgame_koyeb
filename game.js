@@ -2710,8 +2710,14 @@ function showWelcome(starter) {
     // LANDSCAPE, where 390px of viewport cannot hold the card at any scale that
     // keeps the text readable -- adding the icon and wordmark pushed it from
     // ~360 to 482. Scrolling there beats shrinking the type to nothing.
-    card.style.cssText = 'background:#fff; color:#28313b; border-radius:' + px(18) + '; padding:' + px(30) + ' ' + px(34) + ';' +
-        'width:min(' + px(420) + ',92vw); box-sizing:border-box; text-align:center;' +
+    // A phone in LANDSCAPE has 390px of height and plenty of width, so the card
+    // goes two-column there -- text left, buttons right -- rather than shrinking
+    // the type or scrolling. Stacked it is 482px tall and cannot fit at any
+    // scale that keeps the buttons a sane tap target (owner).
+    const wide = _isPhone() && window.innerWidth > window.innerHeight;
+    card.style.cssText = 'background:#fff; color:#28313b; border-radius:' + px(18) + ';' +
+        'padding:' + (wide ? px(20) + ' ' + px(26) : px(30) + ' ' + px(34)) + ';' +
+        'width:min(' + (wide ? '760px' : px(420)) + ',94vw); box-sizing:border-box; text-align:center;' +
         'max-height:92vh; overflow-y:auto; box-shadow:0 20px 55px rgba(0,0,0,.35);';
     // The name, on the one screen where it costs nothing (owner). Not during
     // play -- the board should own the screen, especially on a phone. The mark is
@@ -2734,7 +2740,22 @@ function showWelcome(starter) {
         // makes a new player hesitate (owner).
         'Play a single game or a multi-game match. New to it? Try the tutorial first.</div>' +
         '<div id="welBtns" style="display:flex; flex-direction:column; gap:' + px(10) + ';"></div>';
+    if (wide) {
+        // Re-flow the SAME nodes into two columns; nothing about the content or
+        // the button sizes changes, only where they sit.
+        const kids = [...card.children];
+        const btns = kids.pop();
+        const row = document.createElement('div');
+        row.style.cssText = 'display:flex; gap:' + px(24) + '; align-items:center;';
+        const left = document.createElement('div');
+        left.style.cssText = 'flex:1 1 0; min-width:0;';
+        kids.forEach(n => left.appendChild(n));
+        btns.style.width = px(250); btns.style.flex = '0 0 auto';
+        row.appendChild(left); row.appendChild(btns);
+        card.appendChild(row);
+    }
     box.appendChild(card); document.body.appendChild(box);
+    if (wide) { const b = card.querySelectorAll('div')[1]; if (b) b.style.marginBottom = '0'; }
     const holder = card.querySelector('#welBtns');
     const mkBtn = (label, primary, fn) => {
         const el = document.createElement('button');
