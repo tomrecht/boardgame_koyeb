@@ -73,7 +73,10 @@ const STACK_MIN_R = 10;    // pieces shrink no smaller than this before stacking
 // Phone-only ceiling for a piece on the HOME tile: ~2x the area of the default
 // (28^2 / 20^2 = 1.96). Bounded by the ring it sits on -- 60 + 28 is inside the
 // tile's 90 radius -- and by the neighbour spacing, which is what shrinks it.
-const HOME_PR_PHONE = 28;
+// Raised 28 -> 34 once owner said >2 pieces on home is rare and >4 practically
+// never: at the pulled-in ring of 44 the spacing holds 34 all the way to four
+// pieces, and the formula below shrinks it beyond that.
+const HOME_PR_PHONE = 34;
 const TILE_RADIUS_STEP = 60;
 const CENTER_X = 900;
 // Board vertical centre. 600 (canvas midpoint) keeps goal 2's number, at
@@ -4866,9 +4869,14 @@ class Tile {
             // With 1-4 pieces there is room to spare, so sitting them closer in
             // buys a much bigger target at no cost; past that the ring goes back
             // out so they do not crowd (piece radius already shrinks there too).
+            // Owner: >2 pieces on home is very rare and >4 practically never, so
+            // optimise for the small counts. Centring a lone piece was tried and
+            // rejected -- owner prefers it off to one side as it has always sat,
+            // just bigger -- so the ring stays and HOME_PR_PHONE carries the size.
             const _n = this.pieces.length;
-            const homeTileRadius = _isPhone()
-                ? (_n <= 4 ? HOME_TILE_RADIUS - 46 : _n <= 6 ? HOME_TILE_RADIUS - 36 : HOME_TILE_RADIUS - 30)
+            const homeTileRadius = !_isPhone() ? HOME_TILE_RADIUS - 30
+                : _n <= 4 ? HOME_TILE_RADIUS - 46
+                : _n <= 6 ? HOME_TILE_RADIUS - 36
                 : HOME_TILE_RADIUS - 30;
             const angularStep = Phaser.Math.DegToRad(360 / this.pieces.length); // Angular step between pieces
             // PHONES: home is by far the biggest tile on the board, so a piece
@@ -4877,10 +4885,11 @@ class Tile {
             // piece that must move). It shrinks back toward the default as
             // pieces accumulate and never below it, so a busy home tile keeps
             // exactly the packed ring it has always had.
-            const pr = _isPhone()
-                ? Math.max(PIECE_RADIUS_BASE, Math.min(HOME_PR_PHONE, Math.floor(
-                      (2 * Math.PI * homeTileRadius) / Math.max(this.pieces.length, 2) / 2 - 1)))
-                : PIECE_RADIUS_BASE;
+            const pr = !_isPhone() ? PIECE_RADIUS_BASE
+                // The neighbour distance is the CHORD, not the arc -- using the
+                // arc overstates it and let four pieces overlap by 4px.
+                : Math.max(PIECE_RADIUS_BASE, Math.min(HOME_PR_PHONE, Math.floor(
+                      homeTileRadius * Math.sin(Math.PI / Math.max(_n, 2)) - 1)));
 
             this.pieces.forEach((piece, index) => {
                 const angle = angularStep * index; // Calculate angle for each piece

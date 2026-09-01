@@ -2375,7 +2375,15 @@ with it in mind.** Assessment and the concrete implications:
     the target size, since the clamp is `HOME_TILE_RADIUS - thatDistance`: at ring
     60 it allowed only **30** against a drawn 28. Phones now sit the ring at 44
     for 1-4 pieces (**target 46**), 54 for 5-6 (36), and 60 for 7+ (30, as
-    before) — so the case that matters, a captured or just-entered piece with the
+    before), and `HOME_PR_PHONE` rises 28 -> **34** once owner said **>2 pieces on
+    home is rare and >4 practically never**. The engine agrees that is hard to
+    reach: `get_valid_moves` offers the PASS move only when you have NO captured
+    piece, so you cannot sit on them — accumulating 3+ needs your entry blocked
+    while the opponent keeps capturing. Centring a lone piece was tried, measured
+    at a target of 90, and REJECTED: owner prefers it off to one side as it has
+    always sat, just bigger. Spacing must use the CHORD between neighbours, not
+    the arc — the arc overstates it and let four pieces overlap by 4px.
+    So the case that matters, a captured or just-entered piece with the
     board otherwise clear, gets a 53% bigger target while a crowded ring is
     unchanged. Measured: **no neighbour overlap until 12 pieces** (where the
     packed ring already overlapped), and `ring + target <= 90` at every count, so
