@@ -1780,6 +1780,23 @@ with it in mind.** Assessment and the concrete implications:
     scales by 2.2 → 14+ CSS px; the score line **wraps at 580** because goal 2's
     arc starts at x=630 and dips to y=1140, and the stack above it is spaced for
     the 2-line case. Desktop numbers are byte-identical, asserted in the run.
+  - **THE NAME IS ON THE WELCOME CARD (owner, 2026-08-27).** Quahuru appeared in
+    the tab title, the manifest and the launcher but **nowhere on the page**, so a
+    player shown it on someone else's phone had nothing to remember — and word of
+    mouth is the whole growth plan. The card's generic "Ready to play?" heading is
+    replaced by the SHIPPED `icon-512.png` (62px, rounded) above the name in
+    spaced caps. Deliberate choices: the mark is the existing app icon, so the
+    card, the launcher and the store listing cannot drift; the wordmark is set in
+    `BODY_FONT` (Georgia) at `letter-spacing:.19em` because the system sans reads
+    as "an app" and this is a board game, with `text-indent` cancelling the
+    trailing letter-space so the caps centre optically; and it is on the WELCOME
+    CARD ONLY — never during play, where the board should own the screen.
+  - **The welcome blurb described the game BACKWARDS** and was fixed in the same
+    change: it said "bring them all safely home" when the home tile is where
+    pieces ENTER and the rim goals are where they leave. Now "Race your pieces out
+    from the centre to the six goals and bank them all — while walling off your
+    opponent's routes." First sentence a new player reads, and it was about to be
+    read by twelve testers.
   - **AND NO RANDOM RACK ORDER EITHER (owner, 2026-08-27).** Same held game, same
     reasoning as the dice below: `createPieces` shuffled unconditionally, so the
     welcome screen showed a random rack that visibly RESHUFFLED the moment Play

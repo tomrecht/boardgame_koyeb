@@ -2699,10 +2699,23 @@ function showWelcome(starter) {
     const card = document.createElement('div');
     card.style.cssText = 'background:#fff; color:#28313b; border-radius:18px; padding:30px 34px;' +
         'width:min(420px,92vw); box-sizing:border-box; text-align:center; box-shadow:0 20px 55px rgba(0,0,0,.35);';
+    // The name, on the one screen where it costs nothing (owner). Not during
+    // play -- the board should own the screen, especially on a phone. The mark is
+    // the SHIPPED app icon rather than anything new, so the welcome card, the
+    // launcher and the store listing cannot drift apart. Set in the serif at
+    // spaced caps: the system sans reads as "an app", and this is a board game.
+    // text-indent cancels the trailing letter-space so the caps centre optically.
     card.innerHTML =
-        '<div style="font-size:26px; font-weight:800; margin-bottom:6px;">Ready to play?</div>' +
+        '<img src="icon-512.png" alt="" width="62" height="62" ' +
+        'style="border-radius:15px; display:block; margin:0 auto 12px;">' +
+        '<div style="font-family:' + BODY_FONT + '; font-size:25px; font-weight:700;' +
+        ' letter-spacing:.19em; text-indent:.19em; color:#5c2a5e; margin-bottom:14px;">QUAHURU</div>' +
         '<div style="font-family:' + BODY_FONT + '; font-size:15px; line-height:1.5; color:#5a6473; margin-bottom:22px;">' +
-        'Race your pieces around the board and bring them all safely home. Play a single game or a multi-game match — new to it? Take a quick tour first.</div>' +
+        // The old blurb had the game BACKWARDS -- "bring them all safely home" --
+        // when the home tile is where pieces ENTER and the goals on the rim are
+        // where they leave. First sentence a new player reads.
+        'Race your pieces out from the centre to the six goals and bank them all — while walling off your opponent’s routes. ' +
+        'Play a single game or a multi-game match; new to it? Take a quick tour first.</div>' +
         '<div id="welBtns" style="display:flex; flex-direction:column; gap:10px;"></div>';
     box.appendChild(card); document.body.appendChild(box);
     const holder = card.querySelector('#welBtns');
