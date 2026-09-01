@@ -1780,6 +1780,25 @@ with it in mind.** Assessment and the concrete implications:
     scales by 2.2 → 14+ CSS px; the score line **wraps at 580** because goal 2's
     arc starts at x=630 and dips to y=1140, and the stack above it is spaced for
     the 2-line case. Desktop numbers are byte-identical, asserted in the run.
+  - **AND NO RANDOM RACK ORDER EITHER (owner, 2026-08-27).** Same held game, same
+    reasoning as the dice below: `createPieces` shuffled unconditionally, so the
+    welcome screen showed a random rack that visibly RESHUFFLED the moment Play
+    started the real game. It now shuffles only when `!_gameFrozen` — the flag is
+    assigned immediately before the Game is constructed, so it identifies exactly
+    the held game — and creation order 1..12 is already numbered-then-blanks,
+    which is what owner asked for. Measured over three loads: held game **1..12
+    for both colours**, and after Play both racks shuffled.
+  - **THE COIN FLIP CENTRES ON THE BOARD, NOT THE SCREEN (owner, 2026-08-27,
+    phones).** The overlay is `inset:0` with `place-items:center`, i.e. the
+    VIEWPORT centre — but the canvas is not the board, and in portrait the camera
+    frames a taller rectangle than the board fills, so the two differ.
+    `_boardCentreOnScreen()` converts world `(CENTER_X, CENTER_Y)` through
+    `camera.worldView` and the canvas rect, and the coin and caption are placed
+    absolutely there. Measured: **portrait board centre (195,397) against a
+    viewport centre of (195,422) — a 25px correction**; landscape and desktop
+    already coincided and are unchanged (desktop is gated out by `_isPhone()`
+    too). Returns null while `worldView` is stale, falling back to the old
+    centring rather than mispositioning.
   - **No dice before a game starts (2026-08-14, both platforms).** The welcome
     screen sits over a held game whose dice are rolled and then thrown away —
     Play starts a fresh one — so it showed two values that were never used.

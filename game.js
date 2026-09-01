@@ -2732,6 +2732,25 @@ function showWelcome(starter) {
     mkBtn('Interactive tutorial', false, () => { box.remove(); startTutorial(); });
 }
 
+// The board's centre in CSS pixels, or null if the scene/camera is not up yet.
+// The canvas is not the board: on a phone the camera frames a taller rectangle
+// than the board occupies (portrait especially), so the viewport centre and the
+// board centre are different points.
+function _boardCentreOnScreen() {
+    try {
+        const sc = gameInstance && gameInstance.scene && gameInstance.scene.getScene('MainGameScene');
+        const cam = sc && sc.cameras && sc.cameras.main;
+        const cv = gameInstance && gameInstance.canvas;
+        if (!cam || !cv) return null;
+        const w = cam.worldView;
+        if (!w || !w.width || !w.height) return null;      // stale until a frame renders
+        const r = cv.getBoundingClientRect();
+        if (!r.width || !r.height) return null;
+        return { x: r.left + (CENTER_X - w.x) / w.width * r.width,
+                 y: r.top + (CENTER_Y - w.y) / w.height * r.height };
+    } catch (e) { return null; }
+}
+
 // A quick coin-flip overlay landing on the player who goes first.
 function showCoinFlip(starter, onDone) {
     const old = document.getElementById('coinFlip'); if (old) old.remove();
@@ -2751,6 +2770,20 @@ function showCoinFlip(starter, onDone) {
     coin.appendChild(white); coin.appendChild(black);
     const caption = document.createElement('div');
     caption.style.cssText = 'position:absolute; bottom:34%; color:#fff; font-size:22px; font-weight:600; opacity:0; transition:opacity .3s;';
+    // PHONES: centre it on the BOARD, not the screen (owner). Desktop is left
+    // alone -- there the world is centred by Scale.FIT, so the two coincide.
+    const bc = _isPhone() ? _boardCentreOnScreen() : null;
+    if (bc) {
+        box.style.display = 'block';                 // drop the grid centring
+        coin.style.position = 'absolute';
+        coin.style.left = (bc.x - 60) + 'px';        // the coin is 120 square
+        coin.style.top  = (bc.y - 60) + 'px';
+        caption.style.bottom = 'auto';
+        caption.style.left = bc.x + 'px';
+        caption.style.top = (bc.y + 86) + 'px';
+        caption.style.transform = 'translateX(-50%)';
+        caption.style.whiteSpace = 'nowrap';
+    }
     box.appendChild(coin); box.appendChild(caption); document.body.appendChild(box);
 
     const total = 5 * 360 + (starter === 'white' ? 0 : 180);
@@ -5377,8 +5410,16 @@ class Game {
             blackPieces.push(new Piece(this.scene, this, 0x000000, i, 0, 0, this.blackUnenteredRack));
         }
 
-        whitePieces = Phaser.Utils.Array.Shuffle(whitePieces);
-        blackPieces = Phaser.Utils.Array.Shuffle(blackPieces);
+        // NOT on the first load. The welcome card sits over a HELD game that is
+        // never played -- Play runs the coin flip and starts a fresh one -- so
+        // shuffling here only showed a random order that visibly reshuffled a
+        // moment later (owner). `_gameFrozen` is assigned immediately before this
+        // Game is constructed, so it identifies exactly that held game. Creation
+        // order is 1..12, which is already numbered-then-blanks.
+        if (!_gameFrozen) {
+            whitePieces = Phaser.Utils.Array.Shuffle(whitePieces);
+            blackPieces = Phaser.Utils.Array.Shuffle(blackPieces);
+        }
 
         whitePieces.forEach(piece => {
             piece.setSize(piece.rack ? piece.rack.pr : _rackPR());
