@@ -2489,6 +2489,26 @@ with it in mind.** Assessment and the concrete implications:
     evaluates true and `_tutPoll` fires — it just holds `busy` for 850ms showing
     "✓ Nice!" before advancing. Owner withdrew the report.
 
+- **THE SINGLE-AS-DOUBLE TAP IS NOT FULLY FIXED, AND IS NOW INSTRUMENTED
+  (2026-08-27).** The ghost-mouse-event fix below was real but is not the whole
+  story — owner still sees it occasionally on a phone, and neither of us can
+  reproduce it on demand. So: **record rather than theorise**, which is what
+  found the rack double-tap bug in one evening after three wrong hypotheses.
+  `_tapRecord` writes each click on a piece to `localStorage.tapLog` (capped at
+  150): the piece, the pointer KIND (touch/mouse) and id, how far the pointer
+  moved, the GAP that decided single vs double, and the verdict — `single`,
+  `DOUBLE`, or `ghost-suppressed` when `_isGhostPointer` swallowed a duplicate
+  (logged too, or the guard firing would leave the log silent about the very
+  case it exists for). **Settings > Copy tap log** exports it, appearing only on
+  a phone and only once something has been recorded.
+  **Deliberately NOT behind `?dev=1`** — asking owner to set a query parameter
+  BEFORE a bug he cannot predict has now failed twice. Verified: records with no
+  flag on the URL, survives a reload, distinguishes a fast second tap from a slow
+  one (`gaps` 1000 vs 0), and records NOTHING on desktop.
+  **What the log will separate:** one physical tap delivered twice (two entries,
+  tiny gap, same pointer id) from a genuine double from the user, and shows
+  whether the ghost guard was involved at all.
+
 - **A SINGLE TAP COULD FIRE AS A DOUBLE TAP — COMPATIBILITY MOUSE EVENTS
   (2026-08-20).** Owner: "on phone, a single tap is often mistaken for a double
   tap". A real finger fires touchstart/touchend and then, unless EVERY touchend is

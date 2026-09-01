@@ -1269,7 +1269,9 @@ function _multiTouchActive() { return _gestureWasMultiTouch || _touchesDown > 1;
 // pointer can only be that ghost. Keyed on having seen touch rather than on
 // _isPhone(), so `?phone=1` on a desktop still responds to a real mouse.
 function _isGhostPointer(pointer) {
-    return !!(_sawTouch && pointer && pointer.wasTouch === false);
+    const ghost = !!(_sawTouch && pointer && pointer.wasTouch === false);
+    if (ghost) _tapRecord('ghost-suppressed', { id: pointer && pointer.id });
+    return ghost;
 }
 
 ['touchstart', 'touchend', 'touchcancel'].forEach(type => {
@@ -1771,6 +1773,34 @@ function createSettingsPanel() {
     toggle('Automatic en-route capture', getAutoEnRouteCapture, 'autoEnRoute', true);
 
     // Interactive tutorial launcher
+    // Phone only, and only once something has actually been recorded -- there is
+    // nothing to explain to a player who has no log.
+    if (_isPhone()) {
+        let _has = false;
+        try { _has = (JSON.parse(localStorage.getItem('tapLog') || '[]')).length > 0; } catch (e) {}
+        if (_has) {
+            const tl = mk('button',
+                'width:100%; margin-top:12px; padding:8px 0; border-radius:8px; cursor:pointer;' +
+                'font-family:' + HUD_FONT + '; font-weight:600; font-size:13px;' +
+                'background:#fff; color:#5a6473; border:1px solid #cfd6e0;',
+                'Copy tap log');
+            tl.onclick = () => {
+                let txt = '';
+                try { txt = localStorage.getItem('tapLog') || '[]'; } catch (e) { txt = '[]'; }
+                const done = () => { tl.textContent = 'Copied — paste it to Tom'; 
+                                     setTimeout(() => { tl.textContent = 'Copy tap log'; }, 2500); };
+                if (navigator.clipboard && navigator.clipboard.writeText) {
+                    navigator.clipboard.writeText(txt).then(done, () => {});
+                } else {
+                    const ta = document.createElement('textarea');
+                    ta.value = txt; document.body.appendChild(ta); ta.select();
+                    try { document.execCommand('copy'); done(); } catch (e) {}
+                    ta.remove();
+                }
+            };
+            panel.appendChild(tl);
+        }
+    }
     const tut = mk('button',
         'width:100%; margin-top:12px; padding:8px 0; border-radius:8px; border:none; cursor:pointer;' +
         'font-family:' + HUD_FONT + '; font-weight:700; font-size:13px; background:' + THEME.accentCss + '; color:#fff;',
@@ -2828,6 +2858,28 @@ function _welcomeCardCss() {
         '#welcomeScreen #welBtns{width:250px;flex:0 0 auto;}' +
         '}';
     document.head.appendChild(st);
+}
+
+// TAP LOG. Owner reports a single tap occasionally acting as a double, on a
+// phone, rarely, and neither of us can reproduce it on demand. The last bug of
+// this shape took three wrong theories before a log found it in one evening, so:
+// record rather than theorise. Deliberately NOT behind ?dev=1 -- asking owner to
+// set a query parameter BEFORE a bug he cannot predict has failed twice.
+// Capped, phone-only, and written straight to localStorage so it survives the
+// reload that usually follows noticing something odd.
+const _TAP_LOG_MAX = 150;
+let _tapLog = null;
+function _tapRecord(what, extra) {
+    if (!_isPhone()) return;
+    try {
+        if (_tapLog === null) {
+            try { _tapLog = JSON.parse(localStorage.getItem('tapLog') || '[]'); }
+            catch (e) { _tapLog = []; }
+        }
+        _tapLog.push(Object.assign({ t: Date.now(), what: what }, extra || {}));
+        if (_tapLog.length > _TAP_LOG_MAX) _tapLog.splice(0, _tapLog.length - _TAP_LOG_MAX);
+        localStorage.setItem('tapLog', JSON.stringify(_tapLog));
+    } catch (e) {}
 }
 
 // A quick coin-flip overlay landing on the player who goes first.
@@ -3926,16 +3978,28 @@ class Piece {
         }
 
         const currentTime = Date.now(); // Use system time
+        // Everything the "single tap read as double" question needs: which
+        // pointer delivered it, how far it moved, and the gap that decided.
+        const _rec = {
+            piece: this.number, colour: this.player,
+            kind: pointer ? (pointer.wasTouch ? 'touch' : 'mouse') : 'none',
+            id: pointer && pointer.id,
+            moved: pointer && pointer.getDistance ? Math.round(pointer.getDistance()) : null,
+            gap: this.lastClickTime === null ? null : currentTime - this.lastClickTime,
+        };
         if (this.lastClickTime === null) {
             this.lastClickTime = currentTime;
+            _tapRecord('single', _rec);
             this.onClick();
         } else {
             const timeSinceLastClick = currentTime - this.lastClickTime;
             this.lastClickTime = currentTime;
             if (timeSinceLastClick < 300) {
+                _tapRecord('DOUBLE', _rec);
                 this.handleDoubleClick();
                 this.lastClickTime = null; // Reset after double click
             } else {
+                _tapRecord('single', _rec);
                 this.onClick();
             }
         }
