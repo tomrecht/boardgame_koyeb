@@ -6056,17 +6056,28 @@ class Game {
             }
             return no('second entrant: may not spend both dice');
         }
+        // A goal this piece COULD have used, withheld because the route offered
+        // more than one capture. That is a new way to reach zero eligible goals
+        // and it is NOT the ordinary "this roll cannot do it" case -- the player
+        // can have it by moving one die at a time -- so it has to speak, or it is
+        // the same silent decline that took three sessions to find last time.
+        // Checked against the withheld set itself, not just "something was
+        // withheld": a withheld FIELD tile is unrelated to this gesture.
+        const blockedGoals = eligible(r.ambiguousSum || []);
         if (goals.length !== 1) {
             return no(goals.length === 0 ? 'no eligible goal in reach' : 'ambiguous: more than one eligible goal',
                       { piece: piece.number, eligibleGoals: goals.map(t => t.number),
+                        blockedGoals: blockedGoals.map(t => t.number),
                         dice: this.dice.map(d => d.value + (d.used ? '(used)' : '')),
                         sumTiles: r.reachableBySum.length },
                       // Nothing to say when no goal is in reach (owner): that is
                       // the ordinary "this roll cannot do it" case and a toast for
-                      // it is noise. The ambiguous case still speaks, because
-                      // there the gesture is declining something it COULD do.
+                      // it is noise. The other two cases speak, because there the
+                      // gesture is declining something it COULD do.
                       goals.length === 0
-                          ? null
+                          ? (blockedGoals.length
+                                ? 'More than one capture is possible on the way — move one die at a time to choose.'
+                                : null)
                           : 'More than one goal is in reach, so move it by hand to choose.');
         }
         console.log('[send-to-goal] moving piece', piece.number, '-> goal', goals[0].number);

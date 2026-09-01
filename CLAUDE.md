@@ -2555,6 +2555,18 @@ with it in mind.** Assessment and the concrete implications:
     offered under both settings (5/5); 1 capture -> offered with the setting ON
     (3/3), withheld with it OFF (3/3); 2 captures -> WITHHELD under both**, and
     the capture routine takes 0 of the 2 available.
+    **THE DOUBLE-CLICK-TO-GOAL GESTURE HAD TO LEARN THE SAME REASON.**
+    `sendToGoal` reads `reachableBySum`, so the withholding applies to it for
+    free — but a goal withheld that way was a NEW way to reach zero eligible
+    goals, and that branch is deliberately SILENT (owner: no goal in reach is the
+    ordinary "this roll cannot do it" case and a toast for it is noise). Silent
+    was right for the old reason and wrong for this one, which the player can act
+    on. It now speaks, but only when a goal THIS PIECE COULD HAVE USED is in the
+    withheld set — checked with the same `eligible()` filter, since a withheld
+    FIELD tile has nothing to do with the gesture. Verified by forcing each
+    decline rather than hand-building positions for them: no goal anywhere ->
+    silent; goal withheld by a 2-capture route -> the capture notice; two goals in
+    reach -> the existing notice; a withheld field tile only -> silent.
     Test trap hit twice: composed two-die routes are a SUPERSET of
     `reachableBySum`, because a route can backtrack (out 2, back 3 lands 1 away)
     while a sum destination must sit at BFS distance a+b. A test that iterates
