@@ -1805,7 +1805,17 @@ with it in mind.** Assessment and the concrete implications:
     760px card — rather than scrolling or scaling down: at k=0.72 the type would
     be 11px and the buttons 29px tall, well under any sane tap target, and a
     landscape phone has width to spare. Stacked 482px becomes **246px**.
-    `max-height:92vh; overflow-y:auto` stays as the backstop. Measured on all
+    `max-height:92vh; overflow-y:auto` stays as the backstop.
+    **IT HAD TO BE A MEDIA QUERY, NOT A JS BRANCH.** The first cut chose the
+    layout when the card was BUILT, so opening in portrait and ROTATING kept the
+    portrait card — which is exactly how owner uses the app, and it read as the
+    change not having deployed at all. `_welcomeCardCss()` injects a rule gated on
+    `(pointer:coarse) and (orientation:landscape) and (max-height:560px)`, with
+    `!important` because the base values are inline styles; the DOM always has
+    the same two-part structure and the stylesheet decides whether it stacks.
+    Tested by rotating WITHOUT reloading, which is the case the JS branch failed:
+    portrait column 367x505 -> landscape row 760x234 -> back to column, none of
+    them scrolling, and a 1200x500 DESKTOP window never matches the query. Measured on all
     four — desktop 1440x900 (630px card), desktop 1280x720 (555px), phone
     portrait (505px), phone landscape (246px): every one **fits the viewport with
     no scrolling**, and the landscape buttons keep their full 40px height.

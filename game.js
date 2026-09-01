@@ -2710,14 +2710,21 @@ function showWelcome(starter) {
     // LANDSCAPE, where 390px of viewport cannot hold the card at any scale that
     // keeps the text readable -- adding the icon and wordmark pushed it from
     // ~360 to 482. Scrolling there beats shrinking the type to nothing.
-    // A phone in LANDSCAPE has 390px of height and plenty of width, so the card
-    // goes two-column there -- text left, buttons right -- rather than shrinking
-    // the type or scrolling. Stacked it is 482px tall and cannot fit at any
-    // scale that keeps the buttons a sane tap target (owner).
-    const wide = _isPhone() && window.innerWidth > window.innerHeight;
+    // A phone in LANDSCAPE has ~390px of height and plenty of width, so the card
+    // goes two-column there -- text left, buttons right -- rather than scrolling
+    // or scaling down: at the scale needed to fit stacked (0.72) the type is 11px
+    // and the buttons 29px tall, well under a usable tap target.
+    //
+    // Done with a MEDIA QUERY, not a JS branch on the current orientation. The
+    // first cut chose the layout when the card was BUILT, so opening in portrait
+    // and rotating kept the portrait card -- which is how owner sees the app,
+    // and it looked like the change had not deployed at all. A stylesheet
+    // re-flows on rotation for free.
+    _welcomeCardCss();
+    card.className = 'wcard';
     card.style.cssText = 'background:#fff; color:#28313b; border-radius:' + px(18) + ';' +
-        'padding:' + (wide ? px(20) + ' ' + px(26) : px(30) + ' ' + px(34)) + ';' +
-        'width:min(' + (wide ? '760px' : px(420)) + ',94vw); box-sizing:border-box; text-align:center;' +
+        'padding:' + px(30) + ' ' + px(34) + ';' +
+        'width:min(' + px(420) + ',94vw); box-sizing:border-box; text-align:center;' +
         'max-height:92vh; overflow-y:auto; box-shadow:0 20px 55px rgba(0,0,0,.35);';
     // The name, on the one screen where it costs nothing (owner). Not during
     // play -- the board should own the screen, especially on a phone. The mark is
@@ -2730,7 +2737,7 @@ function showWelcome(starter) {
         'style="border-radius:' + px(15) + '; display:block; margin:0 auto ' + px(12) + ';">' +
         '<div style="font-family:' + BODY_FONT + '; font-size:' + px(25) + '; font-weight:700;' +
         ' letter-spacing:.19em; text-indent:.19em; color:#5c2a5e; margin-bottom:' + px(14) + ';">QUAHURU</div>' +
-        '<div style="font-family:' + BODY_FONT + '; font-size:' + px(15) + '; line-height:1.5; color:#5a6473; margin-bottom:' + px(22) + ';">' +
+        '<div class="wblurb" style="font-family:' + BODY_FONT + '; font-size:' + px(15) + '; line-height:1.5; color:#5a6473; margin-bottom:' + px(22) + ';">' +
         // The old blurb had the game BACKWARDS -- "bring them all safely home" --
         // when the home tile is where pieces ENTER and the goals on the rim are
         // where they leave. First sentence a new player reads.
@@ -2740,22 +2747,21 @@ function showWelcome(starter) {
         // makes a new player hesitate (owner).
         'Play a single game or a multi-game match. New to it? Try the tutorial first.</div>' +
         '<div id="welBtns" style="display:flex; flex-direction:column; gap:' + px(10) + ';"></div>';
-    if (wide) {
-        // Re-flow the SAME nodes into two columns; nothing about the content or
-        // the button sizes changes, only where they sit.
+    // Always the same two-part structure; the stylesheet decides whether it
+    // stacks or sits side by side, so rotation is handled without any JS.
+    (function () {
         const kids = [...card.children];
         const btns = kids.pop();
         const row = document.createElement('div');
-        row.style.cssText = 'display:flex; gap:' + px(24) + '; align-items:center;';
+        row.className = 'wrow';
+        row.style.cssText = 'display:flex; flex-direction:column;';
         const left = document.createElement('div');
-        left.style.cssText = 'flex:1 1 0; min-width:0;';
+        left.className = 'wleft';
         kids.forEach(n => left.appendChild(n));
-        btns.style.width = px(250); btns.style.flex = '0 0 auto';
         row.appendChild(left); row.appendChild(btns);
         card.appendChild(row);
-    }
+    })();
     box.appendChild(card); document.body.appendChild(box);
-    if (wide) { const b = card.querySelectorAll('div')[1]; if (b) b.style.marginBottom = '0'; }
     const holder = card.querySelector('#welBtns');
     const mkBtn = (label, primary, fn) => {
         const el = document.createElement('button');
@@ -2800,6 +2806,25 @@ function _boardCentreOnScreen() {
         return { x: r.left + (CENTER_X - w.x) / w.width * r.width,
                  y: r.top + (CENTER_Y - w.y) / w.height * r.height };
     } catch (e) { return null; }
+}
+
+// The welcome card's landscape layout. A stylesheet rather than a JS branch, so
+// it follows a rotation; `!important` because the base values are inline styles.
+// Gated on a coarse pointer and a short viewport, so no desktop window ever
+// matches however it is resized.
+function _welcomeCardCss() {
+    if (document.getElementById('welcomeCardCss')) return;
+    const st = document.createElement('style');
+    st.id = 'welcomeCardCss';
+    st.textContent =
+        '@media (pointer:coarse) and (orientation:landscape) and (max-height:560px){' +
+        '#welcomeScreen .wcard{width:min(760px,94vw)!important;padding:20px 26px!important;}' +
+        '#welcomeScreen .wrow{flex-direction:row!important;gap:24px;align-items:center;}' +
+        '#welcomeScreen .wleft{flex:1 1 0;min-width:0;}' +
+        '#welcomeScreen .wblurb{margin-bottom:0!important;}' +
+        '#welcomeScreen #welBtns{width:250px;flex:0 0 auto;}' +
+        '}';
+    document.head.appendChild(st);
 }
 
 // A quick coin-flip overlay landing on the player who goes first.
