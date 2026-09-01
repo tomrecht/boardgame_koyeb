@@ -2715,7 +2715,10 @@ function showWelcome(starter) {
         // when the home tile is where pieces ENTER and the goals on the rim are
         // where they leave. First sentence a new player reads.
         'Race your pieces out from the centre to the six goals and bank them all — while walling off your opponent’s routes. ' +
-        'Play a single game or a multi-game match; new to it? Take a quick tour first.</div>' +
+        // Name the tutorial the way its BUTTON does -- "a quick tour" and
+        // "Interactive tutorial" are the same thing under two names, which just
+        // makes a new player hesitate (owner).
+        'Play a single game or a multi-game match. New to it? Try the tutorial first.</div>' +
         '<div id="welBtns" style="display:flex; flex-direction:column; gap:10px;"></div>';
     box.appendChild(card); document.body.appendChild(box);
     const holder = card.querySelector('#welBtns');

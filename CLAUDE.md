@@ -1796,7 +1796,9 @@ with it in mind.** Assessment and the concrete implications:
     pieces ENTER and the rim goals are where they leave. Now "Race your pieces out
     from the centre to the six goals and bank them all — while walling off your
     opponent's routes." First sentence a new player reads, and it was about to be
-    read by twelve testers.
+    read by twelve testers. It also called the tutorial "a quick tour" while the
+    button beside it said "Interactive tutorial" — one thing under two names —
+    and now says "New to it? Try the tutorial first."
   - **AND NO RANDOM RACK ORDER EITHER (owner, 2026-08-27).** Same held game, same
     reasoning as the dice below: `createPieces` shuffled unconditionally, so the
     welcome screen showed a random rack that visibly RESHUFFLED the moment Play
