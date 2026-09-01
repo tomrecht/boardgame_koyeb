@@ -2933,7 +2933,11 @@ function showInstructions() {
         // their own page and this is the link that makes them reachable from the
         // app. Both stores expect an attributions screen too.
         ['Credits', 'Quahuru is built with <a href="licenses.html" target="_blank" rel="noopener">Phaser and ONNX Runtime Web</a>, both open source. '
-            + 'The game collects no data — see the <a href="privacy.html" target="_blank" rel="noopener">privacy policy</a>.'],
+            + 'The game collects no data — see the <a href="privacy.html" target="_blank" rel="noopener">privacy policy</a>.'
+            // Copyright subsists without a notice, but the stores expect one and
+            // it is what tells a reader whose game this is.
+            + '<br><br>Quahuru — the game, its rules, artwork and neural network — is '
+            + '© 2026 Tom Recht. All rights reserved.'],
     ];
     // Wide two-column card so the whole thing is readable at a glance instead of
     // scrolled through; collapses to one scrolling column on a narrow screen.
@@ -4854,7 +4858,18 @@ class Tile {
  
     updatePositions() {
         if (this.type === "home") {
-            const homeTileRadius = HOME_TILE_RADIUS - 30; // Adjust radius to fit pieces comfortably within the home tile
+            // THE RING PULLS IN WHEN THERE ARE FEW PIECES. A home piece's tap
+            // target is clamped to the tile's edge (it may not overlap the six
+            // neighbouring tiles), so the ring's distance from the centre IS the
+            // target size: at 60 the clamp allows only 30, barely more than the
+            // 28 the piece is drawn at, and owner still finds them hard to hit.
+            // With 1-4 pieces there is room to spare, so sitting them closer in
+            // buys a much bigger target at no cost; past that the ring goes back
+            // out so they do not crowd (piece radius already shrinks there too).
+            const _n = this.pieces.length;
+            const homeTileRadius = _isPhone()
+                ? (_n <= 4 ? HOME_TILE_RADIUS - 46 : _n <= 6 ? HOME_TILE_RADIUS - 36 : HOME_TILE_RADIUS - 30)
+                : HOME_TILE_RADIUS - 30;
             const angularStep = Phaser.Math.DegToRad(360 / this.pieces.length); // Angular step between pieces
             // PHONES: home is by far the biggest tile on the board, so a piece
             // sitting there is drawn much larger while the ring is uncrowded --

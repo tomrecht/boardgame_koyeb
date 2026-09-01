@@ -793,6 +793,12 @@ with it in mind.** Assessment and the concrete implications:
     file plus an Acknowledgements line in How to Play. Board-game specific:
     rules and mechanics are not copyrightable, only their expression — the
     NAME is the protectable asset, via trademark.
+    **A COPYRIGHT LINE IS IN THE APP (owner, 2026-08-27)**, in How to Play >
+    Credits: "Quahuru — the game, its rules, artwork and neural network — is
+    © 2026 Tom Recht. All rights reserved." Copyright subsists without a notice,
+    so this is not a legal necessity, but both stores expect one and it is what
+    tells a reader whose game this is. `privacy.html` and `licenses.html` already
+    carried the same line in their footers.
     **DONE (2026-08-27): `licenses.html`** carries the full MIT text for both,
     with the exact upstream copyright lines fetched rather than remembered —
     Phaser "Copyright (c) 2020 Richard Davey, Photon Storm Ltd." (from
@@ -2363,6 +2369,19 @@ with it in mind.** Assessment and the concrete implications:
     Note this makes a home piece's target barely larger than the piece — that is
     the price of the tile being tappable, and the piece itself is now 28 against
     the old 20, so it is still an easier target than before.
+    **THE HOME RING PULLS IN WHEN THERE ARE FEW PIECES (owner, 2026-08-27),**
+    because the clamp above made the target barely larger than the piece and home
+    pieces were still hard to hit. The ring's distance from the board centre IS
+    the target size, since the clamp is `HOME_TILE_RADIUS - thatDistance`: at ring
+    60 it allowed only **30** against a drawn 28. Phones now sit the ring at 44
+    for 1-4 pieces (**target 46**), 54 for 5-6 (36), and 60 for 7+ (30, as
+    before) — so the case that matters, a captured or just-entered piece with the
+    board otherwise clear, gets a 53% bigger target while a crowded ring is
+    unchanged. Measured: **no neighbour overlap until 12 pieces** (where the
+    packed ring already overlapped), and `ring + target <= 90` at every count, so
+    the circle is tangent to the home tile's edge and STILL cannot reach into the
+    six neighbouring tiles — the invariant the clamp exists for, now holding by
+    construction. Desktop is untouched (ring 60, no custom hit area at all).
     **The SECOND entrant is deliberately NOT boosted** (owner, 2026-08-24): it
     was, and being both larger and lifted above its neighbour it won every
     overlap — so taps aimed at the FRONT piece kept selecting it. Taking the
