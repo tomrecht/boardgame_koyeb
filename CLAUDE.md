@@ -1791,6 +1791,20 @@ with it in mind.** Assessment and the concrete implications:
     as "an app" and this is a board game, with `text-indent` cancelling the
     trailing letter-space so the caps centre optically; and it is on the WELCOME
     CARD ONLY — never during play, where the board should own the screen.
+  - **THE CARD IS 1.5x ON DESKTOP, CLAMPED TO THE WINDOW (owner, 2026-08-27).**
+    420px of card with 15px body text is small on a 1440px screen. Every size is
+    now derived from one `k`, so the proportions hold: at 1440x900 the card is
+    **630px with a 38px wordmark, 23px body and 61px buttons**. Phones stay at
+    k=1 (the card is already 92vw there, so scaling would only overflow) and
+    measure byte-identical.
+    **Two overflows had to be fixed with it, one of them mine.** A 1.5x card is
+    **729px tall and does NOT fit a 1280x720 laptop**, so `k` is clamped by
+    `innerHeight` — 720p gets 1.32x and a card that fits. And adding the icon and
+    wordmark had pushed the PHONE LANDSCAPE card from ~360px to 482px in a 390px
+    viewport; `max-height:92vh; overflow-y:auto` catches that (scrolling beats
+    shrinking the type to nothing on a cramped landscape phone). Measured: all
+    four of desktop 1440x900, desktop 1280x720, phone portrait and phone
+    landscape now fit the viewport.
   - **The welcome blurb described the game BACKWARDS** and was fixed in the same
     change: it said "bring them all safely home" when the home tile is where
     pieces ENTER and the rim goals are where they leave. Now "Race your pieces out

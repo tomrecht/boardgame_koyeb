@@ -2696,9 +2696,23 @@ function showWelcome(starter) {
     box.id = 'welcomeScreen';
     box.style.cssText = 'position:fixed; inset:0; z-index:56; display:grid; place-items:center;' +
         'background:rgba(0,0,0,.55); font-family:' + HUD_FONT + ';';
+    // DESKTOP GETS A BIGGER CARD (owner): 420px of card with 15px body text is
+    // small on a 1440px screen. Phones are left at 1 -- the card is already
+    // 92vw there, so scaling would only overflow. Every size below is derived
+    // from k so the proportions hold.
+    let k = _isPhone() ? 1 : 1.5;
+    // ...but never taller than the window. A 1.5x card measures ~730px, which
+    // does NOT fit a 1280x720 laptop; 490 is the measured height at k=1.
+    k = Math.min(k, Math.max(1, (window.innerHeight * 0.9) / 490));
+    const px = (n) => Math.round(n * k) + 'px';
     const card = document.createElement('div');
-    card.style.cssText = 'background:#fff; color:#28313b; border-radius:18px; padding:30px 34px;' +
-        'width:min(420px,92vw); box-sizing:border-box; text-align:center; box-shadow:0 20px 55px rgba(0,0,0,.35);';
+    // The height cap is the belt to that braces: it also catches a phone in
+    // LANDSCAPE, where 390px of viewport cannot hold the card at any scale that
+    // keeps the text readable -- adding the icon and wordmark pushed it from
+    // ~360 to 482. Scrolling there beats shrinking the type to nothing.
+    card.style.cssText = 'background:#fff; color:#28313b; border-radius:' + px(18) + '; padding:' + px(30) + ' ' + px(34) + ';' +
+        'width:min(' + px(420) + ',92vw); box-sizing:border-box; text-align:center;' +
+        'max-height:92vh; overflow-y:auto; box-shadow:0 20px 55px rgba(0,0,0,.35);';
     // The name, on the one screen where it costs nothing (owner). Not during
     // play -- the board should own the screen, especially on a phone. The mark is
     // the SHIPPED app icon rather than anything new, so the welcome card, the
@@ -2706,11 +2720,11 @@ function showWelcome(starter) {
     // spaced caps: the system sans reads as "an app", and this is a board game.
     // text-indent cancels the trailing letter-space so the caps centre optically.
     card.innerHTML =
-        '<img src="icon-512.png" alt="" width="62" height="62" ' +
-        'style="border-radius:15px; display:block; margin:0 auto 12px;">' +
-        '<div style="font-family:' + BODY_FONT + '; font-size:25px; font-weight:700;' +
-        ' letter-spacing:.19em; text-indent:.19em; color:#5c2a5e; margin-bottom:14px;">QUAHURU</div>' +
-        '<div style="font-family:' + BODY_FONT + '; font-size:15px; line-height:1.5; color:#5a6473; margin-bottom:22px;">' +
+        '<img src="icon-512.png" alt="" width="' + Math.round(62 * k) + '" height="' + Math.round(62 * k) + '" ' +
+        'style="border-radius:' + px(15) + '; display:block; margin:0 auto ' + px(12) + ';">' +
+        '<div style="font-family:' + BODY_FONT + '; font-size:' + px(25) + '; font-weight:700;' +
+        ' letter-spacing:.19em; text-indent:.19em; color:#5c2a5e; margin-bottom:' + px(14) + ';">QUAHURU</div>' +
+        '<div style="font-family:' + BODY_FONT + '; font-size:' + px(15) + '; line-height:1.5; color:#5a6473; margin-bottom:' + px(22) + ';">' +
         // The old blurb had the game BACKWARDS -- "bring them all safely home" --
         // when the home tile is where pieces ENTER and the goals on the rim are
         // where they leave. First sentence a new player reads.
@@ -2719,14 +2733,14 @@ function showWelcome(starter) {
         // "Interactive tutorial" are the same thing under two names, which just
         // makes a new player hesitate (owner).
         'Play a single game or a multi-game match. New to it? Try the tutorial first.</div>' +
-        '<div id="welBtns" style="display:flex; flex-direction:column; gap:10px;"></div>';
+        '<div id="welBtns" style="display:flex; flex-direction:column; gap:' + px(10) + ';"></div>';
     box.appendChild(card); document.body.appendChild(box);
     const holder = card.querySelector('#welBtns');
     const mkBtn = (label, primary, fn) => {
         const el = document.createElement('button');
         el.textContent = label;
-        el.style.cssText = 'padding:11px 0; border-radius:10px; cursor:pointer; font-family:' + HUD_FONT + ';' +
-            'font-weight:700; font-size:15px; border:' + (primary ? 'none' : '1px solid #cfd6e0') + ';' +
+        el.style.cssText = 'padding:' + px(11) + ' 0; border-radius:' + px(10) + '; cursor:pointer; font-family:' + HUD_FONT + ';' +
+            'font-weight:700; font-size:' + px(15) + '; border:' + (primary ? 'none' : '1px solid #cfd6e0') + ';' +
             'background:' + (primary ? THEME.accentCss : '#fff') + '; color:' + (primary ? '#fff' : '#5a6473') + ';';
         el.onclick = fn; holder.appendChild(el);
     };
