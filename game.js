@@ -1255,6 +1255,11 @@ if (window.visualViewport) {
 // Pieces deliberately keep pointerdown: dragging one relies on the selection
 // being made there, and a stray selection is harmless anyway.
 let _touchesDown = 0, _gestureWasMultiTouch = false, _sawTouch = false;
+// Monotonic count of physical touchstarts. A duplicate/ghost pointerdown from a
+// SINGLE tap carries no fresh touchstart, so it lands on the same _touchSeq as
+// the real one -- which is how we tell it apart from a deliberate two-tap
+// gesture (two touchstarts, two seqs). See the guard in Piece.handleClick.
+let _touchSeq = 0;
 function _multiTouchActive() { return _gestureWasMultiTouch || _touchesDown > 1; }
 
 // A COMPATIBILITY (ghost) mouse event. A real finger fires touchstart/touchend
@@ -1276,7 +1281,7 @@ function _isGhostPointer(pointer) {
 
 ['touchstart', 'touchend', 'touchcancel'].forEach(type => {
     window.addEventListener(type, (e) => {
-        if (type === 'touchstart') _sawTouch = true;
+        if (type === 'touchstart') { _sawTouch = true; _touchSeq++; }
         _touchesDown = e.touches ? e.touches.length : 0;
         if (_touchesDown > 1) _gestureWasMultiTouch = true;
         // clear a little after the last finger lifts, so the second finger's own
@@ -3817,6 +3822,21 @@ class Piece {
         // The synthesised mouse event that follows a real finger -- never a
         // second tap. See _isGhostPointer.
         if (_isGhostPointer(pointer)) return;
+        // ...and the same ghost when the browser delivers it as a TOUCH pointer
+        // instead of a mouse one (measured on the owner's device: id 1,
+        // wasTouch true, ~150ms after the real tap, so _isGhostPointer misses it
+        // and it lands inside the 300ms double-click window -> phantom double).
+        // A real tap fires a fresh touchstart and so bumps _touchSeq; a duplicate
+        // from the same physical touch does not, so a second touch handleClick on
+        // this piece within the SAME _touchSeq is that ghost. A deliberate
+        // double-tap is two physical touches (two seqs) and passes through.
+        if (pointer && pointer.wasTouch === true) {
+            if (this._tapTouchSeq === _touchSeq) {
+                _tapRecord('dup-touch-suppressed', { piece: this.number, colour: this.player, id: pointer.id, seq: _touchSeq });
+                return;
+            }
+            this._tapTouchSeq = _touchSeq;
+        }
         // see handleDoubleClick: a just-saved piece leaves its neighbours
         // shuffling under the finger
         if (this.game._saveGuardUntil && Date.now() < this.game._saveGuardUntil) return;
