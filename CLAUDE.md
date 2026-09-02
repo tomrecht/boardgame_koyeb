@@ -366,6 +366,14 @@ steep. The narrower residual is that when it does step off it sometimes picks a
 poor off-goal tile (2.07 when 1.68 was adjacent), i.e. it discriminates poorly
 AMONG off-goal tiles, at a cost under half a turn.
 
+**TWO PIECES ON A LOW GOAL CLEAR ALMOST FREE (2026-08-27).** Two blanks on goal
+2 take **1.32 turns** to both bank (engine-driven Monte Carlo 1.320, closed form
+1.323) — barely more than the **1.303** for a SINGLE blank on goal 4. Two dice
+mean two pieces can leave in the same turn, and on goal 2 both dice qualify on
+25/36 of rolls, so the second piece is nearly free. Note a bank-only policy
+(never repositioning) measures 1.341 from goal 4 against the optimal 1.303 — the
+gap IS the goal-4-to-goal-2 repositioning described above.
+
 **A NUMBERED PIECE TAKES 3.273 TURNS TO BANK FROM ITS OWN GOAL — THE SAME FOR
 EVERY NUMBER.** The endgame higher-die rule is blank-only (`get_saving_die`
 gates on `number > 6`), so a numbered piece needs an EXACT match: P = 11/36 a
@@ -2488,6 +2496,31 @@ with it in mind.** Assessment and the concrete implications:
     the save banks the 11th piece, the arrow sets `_tut.turnEnded`, `done`
     evaluates true and `_tutPoll` fires — it just holds `busy` for 850ms showing
     "✓ Nice!" before advancing. Owner withdrew the report.
+
+- **BRANCHES PRUNED 14 -> 5 (owner, 2026-08-27).** Kept: **`main`** (Cloudflare /
+  quahuru.com), **`testing`** (Koyeb), **`symmetry-aug-main`** (the deployed
+  champion's lineage, and the ONLY home of `symmetry.py` — main does not have the
+  symmetry work at all), and **`gnn` / `gnn2`** (the pre-TD training history, 67
+  and 101 unique commits, kept pending owner's call). Deleted: seven branches
+  with **zero** commits not already reachable from main (`app-packaging`,
+  `deeper-search`, `fast-prefilter`, `frontend-overhaul`, `good_gnn`,
+  `rule-single-piece-save`, `td-lambda`), plus `rule-numbered-win` (owner dropped
+  the idea) and `symmetry-aug` — after carrying `symaug_smoke.py` onto
+  `symmetry-aug-main`, the one file that existed nowhere else. `symmetry.py` was
+  byte-identical on both.
+  **Method note that nearly caused a wrong conclusion:** `git rev-list -n 1 main
+  -- <file>` applies history simplification and reports NOTHING for files that
+  only ever appear on a merged side-branch. Use `--full-history`. And the commit
+  it names is the one that DELETED the file, so extract from its parent —
+  `git show 782c43c0^:train.py`, not `782c43c0:train.py`.
+
+- **REFERENCE: the interactive blocking tool** built 2026-08-27 lives at
+  `https://claude.ai/code/artifact/b16ccf81-f0a9-4192-bf58-46a103eaaf64`
+  ("Where to Build a Wall"): click a tile to pick the piece to slow, and every
+  other tile shows the extra turns a wall there costs it, for a blank or any
+  numbered piece. Data is the source x wall matrix from the DP; the generator
+  scripts were scratchpad one-offs and are NOT committed, so re-deriving it means
+  re-running the value iteration described above.
 
 - **TWO DEPLOY TARGETS, TWO BRANCHES (owner, 2026-08-27).** `main` is what
   **quahuru.com** serves (Cloudflare builds on push) and must stay clean, because
