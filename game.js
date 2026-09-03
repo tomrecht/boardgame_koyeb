@@ -297,6 +297,24 @@ function _currentGame() {
     catch (e) { return null; }
 }
 
+// THE BOARD ONLY ANSWERS THE PLAYER WHOSE TURN IT IS. Nothing used to check
+// this on the way in: Piece.onClick gates on `player === game.turn`, and during
+// the computer's turn the computer's OWN pieces satisfy that -- so a tap while
+// it was thinking selected one of its pieces, lit its destinations, and a tile
+// tap then moved it and spent its die (measured: black to move, tap black 7,
+// 18 destinations offered, piece moved to field 6,2, die 6 consumed). A
+// double-tap could bank one outright. The turn/thinking pill, the hover
+// highlight, the keyboard shortcuts and the end-turn arrow already refused;
+// the piece and tile handlers did not.
+//
+// Exempt: setup mode (free placement is deliberately outside the turn rules)
+// and the tutorial, which scripts both sides itself and does not touch the
+// isAI flags -- without this, a stored "White = computer" would freeze it.
+function _inputLocked(g) {
+    if (window.setupMode || window._tutorialActive) return false;
+    return !!(g && g.currentPlayerIsHuman && !g.currentPlayerIsHuman());
+}
+
 // ── TURN / THINKING INDICATOR ───────────────────────────────────────────
 function turnStatusText(game) {
     // nothing to say before the player has started a game (welcome screen up)
@@ -3818,6 +3836,7 @@ class Piece {
     }
 
         if (this.game.gameOver) return; 
+        if (_inputLocked(this.game)) return;   // the computer is to move
         if (this.game.dice[0].used && this.game.dice[1].used) return;
 
 
@@ -4030,6 +4049,9 @@ class Piece {
     }
 
     handleDoubleClick() {
+        // Reachable without handleClick (the stack picker's opponent chips call
+        // it straight, for the block-save gesture), so it needs its own guard.
+        if (_inputLocked(this.game)) return;
         // cancel any pending (deferred) destination highlight from the first click
         // and clear highlights so a double-click save shows no destination flash.
         clearTimeout(this._hlTimer);
@@ -4754,6 +4776,7 @@ class Tile {
                 return;
             }
             if (this.game.gameOver) return;
+            if (_inputLocked(this.game)) return;   // the computer is to move
             // Phones: with nothing selected yet, tapping the tile selects the
             // piece on it, as long as there is no doubt which one is meant. A
             // tile is far easier to hit than a 13px piece. Delegating to the
@@ -5285,7 +5308,7 @@ class Rack {
 
     onEntryPanelTap() {
         const game = this.scene && this.scene.game;
-        if (!game || game.gameOver || !getSumToGoal()) return;
+        if (!game || game.gameOver || _inputLocked(game) || !getSumToGoal()) return;
         const mark = game._rackSlotTap;
         if (!mark || mark.rack !== this) return;
         // Only while that piece is still sitting tentatively on the home tile --
@@ -5312,7 +5335,7 @@ class Rack {
 
     onSaveTap() {
         const game = this.scene && this.scene.game;
-        if (!game || game.gameOver) return;
+        if (!game || game.gameOver || _inputLocked(game)) return;
         const piece = game.selectedPiece;
         if (!piece) return;
         const mySaved = piece.player === 'white' ? game.whiteSavedRack : game.blackSavedRack;
@@ -7074,6 +7097,7 @@ endGame(winner, score = null, impasse_caller = null) {
         scene.input.dragDistanceThreshold = _isPhone() ? _tapSlop() : 6;
 
         const onDragStart = (pointer, obj) => {
+            if (_inputLocked(scene.game)) return;
             if (obj.__ghost) {
                 scene._draggingGhost = obj.__ghost;
                 // Enter the piece NOW, not on drop: entering is what selects it
@@ -7214,6 +7238,9 @@ endGame(winner, score = null, impasse_caller = null) {
             .setInteractive();
         onTap(this.undoButton, () => {
             hideStackPicker();
+            // Only the human whose turn it is may undo -- the twin of the guard
+            // on the end-turn arrow.
+            if (this.gameOver || _inputLocked(this)) return;
             this.undoOneMove();   // one die / one move at a time
             clearMoveRecording();
         });
