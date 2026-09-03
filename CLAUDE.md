@@ -641,6 +641,47 @@ with it in mind.** Assessment and the concrete implications:
 
 ## Current state
 
+- **THE BOARD ACCEPTED INPUT DURING THE COMPUTER'S TURN (owner, 2026-09-02).**
+  Tapping or double-tapping pieces while the computer was thinking moved them
+  and corrupted the position. `Piece.onClick` gates on `player === game.turn`,
+  and on the computer's turn **the computer's own pieces satisfy that** -- so a
+  tap selected one, lit its destinations, and a tile tap moved it and spent its
+  die. A double-tap could bank one outright. **Reproduced before fixing** (AI
+  stubbed so its turn hangs, live unfrozen game): black to move, tap black 7 ->
+  selected, **18 destinations offered, piece moved to field 6,2, die 6
+  consumed**. The turn/thinking pill, the hover highlight, the keyboard
+  shortcuts and the end-turn arrow all already refused; the piece and tile
+  handlers never did, and the line that would have (`if (this.player !==
+  this.game.turn) return;` in `handleClick`) had been commented out.
+  Fixed with one predicate, **`_inputLocked(game)`** (beside `_currentGame`),
+  applied at every entry point that mutates state: `Piece.handleClick`,
+  `Piece.handleDoubleClick` (reachable straight from the stack picker's
+  opponent chips, so it needs its own guard), `Tile.onClick`, `Rack.onSaveTap`,
+  `Rack.onEntryPanelTap`, the **undo arrow** (the twin of the guard the end-turn
+  arrow already had) and `dragstart`.
+  **Two deliberate exemptions.** Setup mode -- free placement is outside the
+  turn rules by design. And the **tutorial**, which scripts both sides and never
+  touches the `isAI` flags: without the exemption a stored "White = computer"
+  would have frozen it. Verified with exactly that setting -- `whiteIsAI true`,
+  `currentPlayerIsHuman false`, `_inputLocked false`, piece selected, 2
+  destinations.
+  Measured after the fix: computer's piece on its turn **not selected, 0
+  destinations, not moved, no die spent**; human's piece on the computer's turn
+  likewise inert; double-tap, saved-rack tap and entry-panel tap all no-ops;
+  undo arrow leaves the dice untouched. **Normal play intact** -- own piece on
+  own turn still selects, 15 destinations, moves, spends a die -- and setup mode
+  still selects a piece during an "AI" turn.
+  **The AI is unaffected because it never uses these paths**: `applyMovePair`
+  goes through `game.movePiece` / `piece.save` directly. Confirmed by a 70s
+  both-sides-computer game: 0 -> 15 pieces on the board, 1 saved.
+  **Harness note for any future frontend test:** the browser-automation skill's
+  `page.evaluate` runs in an **isolated world** and cannot see game.js's globals
+  (`typeof window._currentGame` is `"undefined"` there). Inject with
+  `page.addScriptTag` -- that lands in the main world -- and pass results back
+  through a DOM attribute, which both worlds share. Also wait for
+  `_gameFrozen === false`, not just for the welcome card to go: the coin flip
+  and scene restart run after it is removed, and the held game is still frozen.
+
 - **SESSION UPDATE (2026-08-27) — LIVE ON CLOUDFLARE, AND THE STORE PREP HAS
   STARTED.** The static hosting step of the roadmap is DONE and verified.
   - **LIVE AT `https://quahuru.com`** (owner registered it through Cloudflare
