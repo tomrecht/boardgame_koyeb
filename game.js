@@ -173,6 +173,9 @@ let _themedRedraws = [];
 // True while the first-load welcome screen is up: the game is built but held —
 // no AI moves — until the player presses Play (which starts a fresh game).
 let _gameFrozen = false;
+// True while the computer owes a move that was withheld because a card went up
+// over the running board. See _gamePausedByCard / _resumeHeldAgentTurn.
+let _agentTurnHeld = false;
 
 // Baked radial-gradient sphere texture for a piece (matches the mockup's CSS
 // spheres, which Phaser vector circles can't reproduce). Cached per colour.
@@ -269,6 +272,40 @@ function _preGameCardUp() {
     } catch (e) { return false; }
 }
 
+// A CARD IS UP OVER A LIVE GAME, so the game must not play on behind it.
+// New Game / New Match ask for confirmation over the running board, and the
+// computer used to keep moving and the turn keep switching while the card sat
+// there -- so Cancel handed the player back a position they had not been
+// watching. Everything the computer does funnels through getAgentMoves, so one
+// gate there stops the trigger, the second half of a move pair and the retry
+// alike; with no computer move there is no turn switch either.
+//
+// Derived from the DOM rather than stored, for the same reason the settings
+// gear's z-index is: these cards are opened and removed from several places
+// and one missed call would strand the game paused for the rest of the session.
+function _gamePausedByCard() {
+    try {
+        return !!(document.getElementById('confirmDlg') ||
+                  document.getElementById('matchSetup') ||
+                  document.getElementById('welcomeScreen'));
+    } catch (e) { return false; }
+}
+
+// Re-ask from the LIVE board rather than replaying whatever was withheld: a
+// held request or reply goes stale the moment anything moves, and rebuilding
+// the state is free next to the inference it feeds.
+function _resumeHeldAgentTurn() {
+    if (!_agentTurnHeld) return;
+    _agentTurnHeld = false;
+    const g = _currentGame();
+    if (!g || g.gameOver || _gameFrozen || window._tutorialActive) return;
+    const p = g.players && g.players.find(pl => pl.name === g.turn);
+    if (!p || !p.isAI) return;
+    const scene = _setupScene();
+    if (scene && scene.showThinkingIcon) scene.showThinkingIcon();
+    getAgentMoves(getGameState(g));
+}
+
 // Repaint the dice, so the rule above takes effect the moment a card appears or
 // is dismissed rather than waiting for whatever would next have redrawn them.
 function _redrawDice() {
@@ -280,12 +317,18 @@ function _redrawDice() {
 // cards are shown and removed from several places, and one missed call would
 // leave the dice in the wrong state for the rest of the session.
 try {
-    let _wasUp = null;
+    let _wasUp = null, _wasPaused = null;
     const _obs = new MutationObserver(() => {
         const up = _preGameCardUp();
-        if (up === _wasUp) return;      // ignore unrelated body changes
-        _wasUp = up;
-        _redrawDice();
+        if (up !== _wasUp) { _wasUp = up; _redrawDice(); }
+        // The same observer resumes the computer when the last card goes, so
+        // every dismissal route -- Cancel, Esc, the backdrop -- is covered
+        // without each having to remember to call anything.
+        const paused = _gamePausedByCard();
+        if (paused !== _wasPaused) {
+            _wasPaused = paused;
+            if (!paused) _resumeHeldAgentTurn();
+        }
     });
     if (document.body) _obs.observe(document.body, { childList: true });
     else document.addEventListener('DOMContentLoaded', () => _obs.observe(document.body, { childList: true }));
@@ -2917,7 +2960,14 @@ function showConfirm(message, onConfirm, confirmLabel) {
         '</div></div>';
     document.body.appendChild(box);
     box.querySelector('#cNo').onclick = () => box.remove();
-    box.querySelector('#cYes').onclick = () => { box.remove(); onConfirm(); };
+    box.querySelector('#cYes').onclick = () => {
+        // Cleared BEFORE the card goes: the observer's resume runs as a
+        // microtask, ahead of a queued scene.restart building the new game, so
+        // it would otherwise re-ask the computer for a board about to be
+        // discarded. Cancel deliberately leaves the flag alone, and resumes.
+        _agentTurnHeld = false;
+        box.remove(); onConfirm();
+    };
 }
 
 // How-to-Play as a scrollable, sectioned DOM overlay (sans headers, serif body).
@@ -3108,6 +3158,7 @@ function showMatchSetup(onCancel) {
             localStorage.setItem('blackIsAI', BLACK_IS_AI ? '1' : '0');
         } catch (e) {}
         syncSettingsPlayers();
+        _agentTurnHeld = false;        // a new match, not a resumption
         box.remove();
         const starter = startNewMatch({ mode, target, tieRule });
         _startMatchFirstGame(starter);
@@ -5482,6 +5533,7 @@ class Game {
                      new Die(scene, _f.diceX[1], _f.diceY, false, _f.dieSize)];
         this.gameOver = false;
         this.instanceId = ++_gameInstanceSeq;   // see getAgentMoves: drop stale replies
+        _agentTurnHeld = false;                 // nothing the old game owed applies here
         this.score = { 'white': 0, 'black': 0 };
         this.selectedPiece = null;
         this.fullPassCounter = 0;
@@ -7983,6 +8035,9 @@ function _askLocalForMoves(gameState) {
 }
 
 function getAgentMoves(gameState) {
+    // A card is up over the running board: hold the turn instead of playing
+    // behind it. Resumed by _resumeHeldAgentTurn when the last card goes.
+    if (_gamePausedByCard()) { _agentTurnHeld = true; return Promise.resolve(); }
     // difficulty 1 = full strength (argmax); lower = more top-p sampling (weaker)
     gameState = Object.assign({}, gameState, { difficulty: getAIDifficulty() });
     // Which game asked. Starting a new game while the computer is thinking used
@@ -8000,6 +8055,14 @@ function getAgentMoves(gameState) {
     }
     return _askLocalForMoves(gameState)
     .then(data => {
+        // The card went up while this was in flight. Applying it would move
+        // pieces behind the modal, which is the whole thing being fixed, so
+        // drop the reply -- the resume re-asks from the live board.
+        if (_gamePausedByCard()) {
+            _agentTurnHeld = true;
+            const sc = _setupScene(); if (sc && sc.hideThinkingIcon) sc.hideThinkingIcon();
+            return;
+        }
         const now = (_currentGame() || {}).instanceId;
         if (askedBy !== undefined && now !== askedBy) {
             console.log('Discarding agent reply for a game that has been replaced');
@@ -8287,6 +8350,18 @@ if (movePair.some(m => Array.isArray(m) && m[0] === 1 && m[1] === 1 && m[2] === 
         return !!live && live.instanceId === game.instanceId;
     };
 
+    // A card going up mid-pair (New Game / New Match asking over the running
+    // board) has to stop the board dead, not let the rest of the pair play out
+    // underneath it -- gating getAgentMoves alone still left up to two moves
+    // and a turn switch already scheduled. Each deferred step therefore WAITS
+    // for the card to go rather than firing under it; a confirmed New Game
+    // clears stillCurrent() instead, which ends the chain.
+    const later = (fn, delay) => setTimeout(function tick() {
+        if (!stillCurrent()) { console.log('Abandoning agent move: the game has been replaced'); return; }
+        if (_gamePausedByCard()) { setTimeout(tick, 250); return; }
+        fn();
+    }, delay);
+
     function processMove(move, callback) {
         if (!stillCurrent()) { console.log('Abandoning agent move: the game has been replaced'); return; }
         console.log('Applying move:', move);
@@ -8322,8 +8397,7 @@ if (movePair.some(m => Array.isArray(m) && m[0] === 1 && m[1] === 1 && m[2] === 
                 piece.isSelected = true;
                 piece.updateColor();
                 piece.currentTile.highlight();
-                setTimeout(() => {
-                    if (!stillCurrent()) return;
+                later(() => {
                     const savedRack = piece.color === 0xffffff ? game.whiteSavedRack : game.blackSavedRack;
                     piece.moveToRack(savedRack);   // peel only the named piece; rest of the block stays
                     game.registerSave();   // no-save streak resets immediately
@@ -8350,8 +8424,7 @@ if (movePair.some(m => Array.isArray(m) && m[0] === 1 && m[1] === 1 && m[2] === 
             piece.isSelected = true;
             piece.updateColor();
             if (targetTile !== 'save') targetTile.highlight();
-            setTimeout(() => {
-                if (!stillCurrent()) return;
+            later(() => {
                 if (targetTile === 'save') {
                     piece.save();
                     console.log(`Piece ${pieceColorNumber[0]} ${pieceColorNumber[1]} saved`);
