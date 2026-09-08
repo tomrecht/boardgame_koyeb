@@ -651,9 +651,9 @@ with it in mind.** Assessment and the concrete implications:
 
 - **THE GAME PLAYED ON BEHIND THE NEW GAME / NEW MATCH CARD (owner, 2026-09-08,
   all platforms).** Pressing either mid-game asks for confirmation over the
-  running board, and the computer kept moving and the turn kept switching while
-  the card sat there -- so Cancel handed the player back a position they had not
-  been watching. Now it freezes.
+  running board (and How to Play covers it outright), and the computer kept
+  moving and the turn kept switching while the card sat there -- so closing it
+  handed the player back a position they had not been watching. Now it freezes.
   **`_gamePausedByCard()`** (beside `_preGameCardUp`) is true while `#confirmDlg`,
   `#matchSetup` or `#welcomeScreen` is in the DOM. **Derived from the DOM, not
   stored**, for the same reason the settings gear's z-index is: these cards are
@@ -687,8 +687,14 @@ with it in mind.** Assessment and the concrete implications:
   the risky-end-turn confirm shares `#confirmDlg`, and confirming it still hands
   over -- the computer played and gave the turn back, no deadlock -- and New
   Match Start still starts a match.
-  **Deliberately NOT included: `#howToPlay`.** The game runs on behind it too,
-  which is arguably the same bug, but owner scoped this to New Game / New Match.
+  **`#howToPlay` is in the set too (owner, 2026-09-08)**, added right after the
+  first cut: it covers the board outright, so the same argument applies. Nothing
+  extra was needed -- it opens and closes from one place and starts no game, so
+  it takes no confirm-path clearing. Measured 3/3 frozen and resumed with it
+  opened 500-2500ms into the pair's chain. It is deliberately NOT in
+  `_preGameCardUp`, which blanks the dice: that rule is about a board nobody is
+  playing, and How to Play sits over a live one -- verified the dice still draw
+  (208/169 commands) while it is up.
 
 - **THE BOARD ACCEPTED INPUT DURING THE COMPUTER'S TURN (owner, 2026-09-02).**
   Tapping or double-tapping pieces while the computer was thinking moved them
