@@ -273,12 +273,13 @@ function _preGameCardUp() {
 }
 
 // A CARD IS UP OVER A LIVE GAME, so the game must not play on behind it.
-// New Game / New Match ask for confirmation over the running board, and the
-// computer used to keep moving and the turn keep switching while the card sat
-// there -- so Cancel handed the player back a position they had not been
-// watching. Everything the computer does funnels through getAgentMoves, so one
-// gate there stops the trigger, the second half of a move pair and the retry
-// alike; with no computer move there is no turn switch either.
+// New Game / New Match ask for confirmation over the running board, and How to
+// Play covers it outright; the computer used to keep moving and the turn keep
+// switching while the card sat there -- so closing it handed the player back a
+// position they had not been watching. Everything the computer does funnels
+// through getAgentMoves, so one gate there stops the trigger, the second half
+// of a move pair and the retry alike; with no computer move there is no turn
+// switch either.
 //
 // Derived from the DOM rather than stored, for the same reason the settings
 // gear's z-index is: these cards are opened and removed from several places
@@ -287,6 +288,7 @@ function _gamePausedByCard() {
     try {
         return !!(document.getElementById('confirmDlg') ||
                   document.getElementById('matchSetup') ||
+                  document.getElementById('howToPlay') ||
                   document.getElementById('welcomeScreen'));
     } catch (e) { return false; }
 }
