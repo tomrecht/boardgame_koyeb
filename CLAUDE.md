@@ -641,6 +641,47 @@ with it in mind.** Assessment and the concrete implications:
 
 ## Current state
 
+- **THE GAME PLAYED ON BEHIND THE NEW GAME / NEW MATCH CARD (owner, 2026-09-08,
+  all platforms).** Pressing either mid-game asks for confirmation over the
+  running board, and the computer kept moving and the turn kept switching while
+  the card sat there -- so Cancel handed the player back a position they had not
+  been watching. Now it freezes.
+  **`_gamePausedByCard()`** (beside `_preGameCardUp`) is true while `#confirmDlg`,
+  `#matchSetup` or `#welcomeScreen` is in the DOM. **Derived from the DOM, not
+  stored**, for the same reason the settings gear's z-index is: these cards are
+  opened and removed from several places and one missed call would strand the
+  game paused for the session. The existing body MutationObserver -- already
+  there for the dice -- resumes on the down edge, so every dismissal route
+  (Cancel, Esc, the backdrop) is covered without each having to remember.
+  **Two gates were needed, and the first alone was not enough.** Everything the
+  computer does funnels through `getAgentMoves`, so gating it there covers the
+  trigger, the second half of a pair and the retry (a reply already in flight is
+  DROPPED, not held -- `_resumeHeldAgentTurn` re-asks from the live board, which
+  cannot go stale). But `applyMovePair` plays the pair out through **chained
+  1-second setTimeouts**, so up to two moves and a turn switch were already
+  scheduled: measured, the board visibly kept moving behind the match-setup
+  card. Each deferred step now goes through `later()`, which WAITS (re-polling
+  at 250ms) while a card is up instead of firing under it.
+  **Confirming is not a resumption.** `showConfirm`'s Yes handler and match
+  setup's Start clear `_agentTurnHeld` BEFORE removing the card: the observer's
+  resume runs as a microtask, ahead of a queued `scene.restart` building the new
+  game, so it would otherwise re-ask the computer for a board about to be
+  discarded (the reply would be binned by the `instanceId` guard, but only after
+  spending an inference and hiding the new game's thinking icon). The `Game`
+  constructor clears it too, as a backstop. A confirmed New Game also ends the
+  `later()` chain through the existing `stillCurrent()` check.
+  **Measured** (both sides computer, so the board never stops on its own; the
+  fingerprint is turn + dice + every tile's pieces + saved counts): unchanged
+  over 6s with the card up and moving again within 9s of Cancel, **6/6 trials
+  with the card opened 300-3100ms into the pair's chain**; before the `later()`
+  gate that same test was 0/1 for match setup. Confirm starts a fresh game that
+  plays (new instanceId, flag cleared, not paused). **Nothing else regressed:**
+  the risky-end-turn confirm shares `#confirmDlg`, and confirming it still hands
+  over -- the computer played and gave the turn back, no deadlock -- and New
+  Match Start still starts a match.
+  **Deliberately NOT included: `#howToPlay`.** The game runs on behind it too,
+  which is arguably the same bug, but owner scoped this to New Game / New Match.
+
 - **THE BOARD ACCEPTED INPUT DURING THE COMPUTER'S TURN (owner, 2026-09-02).**
   Tapping or double-tapping pieces while the computer was thinking moved them
   and corrupted the position. `Piece.onClick` gates on `player === game.turn`,
