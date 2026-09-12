@@ -2577,13 +2577,55 @@ with it in mind.** Assessment and the concrete implications:
     evaluates true and `_tutPoll` fires — it just holds `busy` for 850ms showing
     "✓ Nice!" before advancing. Owner withdrew the report.
 
+- **THE 2026-09-11 LOG EXONERATES THE DOUBLE-CLICK TIMER, AND EXPOSED A HOLE IN
+  THE LOG ITSELF.** Owner: "my very last tap as white was a single tap mistaken
+  for a double". The log's last three rows are `single piece 10` -> two lone
+  `ghost-suppressed` (id 0), and **no `DOUBLE` anywhere in that session** — 20
+  taps, 0 doubles, 3 ghosts suppressed. So the misread did NOT come from
+  `Piece.handleClick`'s single/DOUBLE timer, which is the only thing that was
+  instrumented and which stayed silent. Contrast the 2026-09-09 session in the
+  same export: 33 DOUBLEs, gaps 112-201ms, **0 `dup-touch-suppressed` and 0
+  ghosts** — all distinct `_touchSeq`s, i.e. deliberate double-taps, not
+  phantoms. **The ghost fix is working.**
+  **The hole:** `_tapRecord` only ever covered `Piece.handleClick`, so a tap that
+  landed anywhere else left NO row — and **five gesture paths bank a piece
+  without entering that timer**: `Rack.onSaveTap` (one tap on the saved rack
+  banks the SELECTED piece), `Rack.onEntryPanelTap`, the rack-SLOT half of
+  send-to-goal, the saved-rack-piece branch of `handleClick`, the stack picker's
+  `ondblclick` straight into `handleDoubleClick`, and a drag onto the saved rack.
+  Two lone ghost rows with no tap beside them is exactly that hole: the real
+  touch hit a non-piece `onTap` target and only its compatibility mouse event
+  left a trace.
+  **Suggestive but NOT established:** piece 10 was tapped (and so selected) 7s
+  before the end and never moved, and `onSaveTap` banks the selected piece on ONE
+  tap of the saved rack — which would read as exactly the reported symptom. Not
+  recorded as a finding: this file's own lesson is that three sessions of
+  mechanism-reasoning were wrong before the log existed.
+  **So the log now covers every gesture, not just pieces.** `onTap` takes a
+  `label` and records each gesture as `tap` / `tap-refused` (with `why`:
+  multitouch / drag / consumed), across all twelve call sites — `tile`,
+  `saved-rack`, `entry-rack`, `stack-badge`, `ghost`, `undo`, `end-turn`,
+  `new-game`, `new-match`, `how-to-play`, `call-draw`, `end-card`. Every
+  bank-capable path emits a **`BANKED`** row naming its `via` and `how`, plus
+  `tile-click` (ring/sector/near-miss/selection) and `dblclick` (with `via`, so
+  the stack-picker route is no longer invisible). Cap raised 150 -> 400: the
+  exported log was exactly 150 rows, i.e. already trimming from the front.
+  Verified on an emulated phone: tile / saved-rack / dblclick rows all appear, a
+  ghost mouse pointer after a REAL touchstart still records `ghost-suppressed`
+  and does NOT reach the handler, a 9999px move records `tap-refused why:drag`,
+  and desktop records nothing (`_tapRecord` returns on `!_isPhone()`).
+  **Next occurrence should name itself**: a `BANKED` row says which path did it;
+  a `DOUBLE` row would put it back on the timer; a bank with NEITHER means
+  something still uninstrumented.
+
 - **THE SINGLE-AS-DOUBLE TAP IS NOT FULLY FIXED, AND IS NOW INSTRUMENTED
   (2026-08-27).** The ghost-mouse-event fix below was real but is not the whole
   story — owner still sees it occasionally on a phone, and neither of us can
   reproduce it on demand. So: **record rather than theorise**, which is what
   found the rack double-tap bug in one evening after three wrong hypotheses.
   `_tapRecord` writes each click on a piece to `localStorage.tapLog` (capped at
-  150): the piece, the pointer KIND (touch/mouse) and id, how far the pointer
+  400, raised from 150 — see the 2026-09-11 entry above, which also widened it
+  past pieces to every gesture): the piece, the pointer KIND (touch/mouse) and id, how far the pointer
   moved, the GAP that decided single vs double, and the verdict — `single`,
   `DOUBLE`, or `ghost-suppressed` when `_isGhostPointer` swallowed a duplicate
   (logged too, or the guard firing would leave the log silent about the very
