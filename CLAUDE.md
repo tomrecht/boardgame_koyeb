@@ -649,6 +649,38 @@ with it in mind.** Assessment and the concrete implications:
 
 ## Current state
 
+- **TAPPING YOUR OWN PIECE NOW PASSES THE SELECTION TO IT, WHEN IT STANDS ALONE
+  ON A REACHABLE TILE (owner, 2026-09-11, both platforms).** With a piece
+  selected, a tap on one of your own pieces used to ALWAYS mean "move onto the
+  tile it stands on" whenever that tile was a destination — so a piece within a
+  die of the selected one **could not be selected at all**; you had to deselect
+  first. Owner hit this repeatedly ("sometimes I've intended the former and
+  gotten the latter").
+  **The obvious split — piece = reselect, tile = move — is not implementable as
+  hit areas, and measuring is what showed it.** A piece's tap target grows to
+  half the distance to its nearest neighbour (up to 2.4r), so a piece ALONE on a
+  tile swallows the tile whole: measured on a phone, drawn radius 25 against an
+  **85** target, leaving a largest free tappable disc of **0 CSS px on five of
+  the eight tile geometries** (ring4 0.9, ring6 15.2, goal 8.3) against a ~22px
+  fingertip. Implemented literally, moving onto your own piece's tile would have
+  become impossible by tap.
+  **So the split is by WHERE inside the target the tap fell**, not by which
+  object got it (`_tapOnPieceFace`): the visible disc is the piece, the ring
+  around it is the tile. No hit area changes, so nothing else regresses, and the
+  move keeps the generous target while reselect gets the piece you can see.
+  **Restricted to a LONE occupant.** A crowded tile is the case the forwarding
+  exists for — there the faces are most of the tile and the slivers between them
+  are unhittable — so with 2+ pieces every tap still moves.
+  Measured, identical on phone and desktop: lone piece, tap its face ->
+  **selection passes**, no move; same piece, tap just outside its drawn edge ->
+  **moves**; 3 occupants, tap a face -> **moves**; an opponent's piece alone on a
+  destination, tap its face -> **moves and captures** (`selectable` is false for
+  them, so they never take the selection); own piece off the reachable set ->
+  selection passes, unchanged.
+  **Desktop gets it for free and is not a special case**: `_applyHitArea` returns
+  early off-phone, so a desktop piece's hit area IS its drawn disc — clicking the
+  piece is always a face tap, and the tile is easy to hit with a mouse.
+
 - **THE GAME PLAYED ON BEHIND THE NEW GAME / NEW MATCH CARD (owner, 2026-09-08,
   all platforms).** Pressing either mid-game asks for confirmation over the
   running board (and How to Play covers it outright), and the computer kept

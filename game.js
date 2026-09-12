@@ -1368,6 +1368,22 @@ function _consumeGesture(pointer) {
     _consumedGesture = (pointer && pointer.id !== undefined)
         ? { id: pointer.id, downTime: pointer.downTime } : null;
 }
+// DID THIS TAP LAND ON THE PIECE ITSELF, or on the generous halo around it?
+// A piece's tap target grows to half the distance to its nearest neighbour (up
+// to 2.4r), and for a piece ALONE on a tile that swallows the whole tile:
+// measured on a phone, drawn radius 25 against an 85 target, leaving 0 CSS px
+// of bare tile on five of the eight tile geometries. So "tap the tile to move,
+// tap the piece to take the selection" cannot be split by hit areas -- the tile
+// has nothing left to tap. It is split by WHERE inside the target the tap fell:
+// the visible disc is the piece, the ring around it is the tile.
+// A stub pointer (tile-tap forwarding, ghost drag, the stack picker) carries no
+// world position and is not a tap on the face -- those keep the old behaviour.
+function _tapOnPieceFace(piece, pointer) {
+    if (!pointer || pointer.worldX == null || pointer.worldY == null) return false;
+    const r = piece.radius || PIECE_RADIUS_BASE;
+    return Math.hypot(pointer.worldX - piece.x, pointer.worldY - piece.y) <= r;
+}
+
 function _gestureConsumed(pointer) {
     return !!(pointer && _consumedGesture && pointer.id === _consumedGesture.id
               && pointer.downTime === _consumedGesture.downTime);
@@ -3992,7 +4008,20 @@ class Piece {
                 [_r.reachableByFirstDie, _r.reachableBySecondDie, _r.reachableBySum]
                     .some(list => list && list.indexOf(this.currentTile) !== -1));
 
-            if (this.currentTile && (!selectable || isDestination)) {
+            // ...and even then, not when the tap landed on the piece's own face
+            // and it stands ALONE on that tile. Owner: with room on the tile,
+            // tapping the piece should pass the SELECTION to it and only the
+            // tile should mean "move here" -- previously the move always won, so
+            // a piece standing on a destination could not be selected at all.
+            // Restricted to a lone occupant because a CROWDED tile is the case
+            // the forwarding exists for: there, the faces are most of the tile
+            // and the slivers between them are unhittable.
+            const _alone = !!(this.currentTile && this.currentTile.pieces
+                              && this.currentTile.pieces.length === 1);
+            const _takeSelection = selectable && isDestination && _alone
+                                   && _tapOnPieceFace(this, pointer);
+
+            if (this.currentTile && !_takeSelection && (!selectable || isDestination)) {
                 // Claim the gesture: this tap has now been acted on, and the
                 // tile's own pointerup handler must not run onClick a second
                 // time (see onTap / _consumeGesture).
