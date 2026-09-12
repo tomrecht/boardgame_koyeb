@@ -649,6 +649,30 @@ with it in mind.** Assessment and the concrete implications:
 
 ## Current state
 
+- **TAPPING EMPTY SPACE DESELECTS (owner, 2026-09-11, both platforms).** A tap
+  that lands on nothing -- the nogo surround, the background outside the board --
+  now clears the selection. On a phone that was previously only possible by
+  tapping the piece again; Esc is desktop-only.
+  **"Nothing" is Phaser's own answer, not a geometry test.** The handler sits on
+  the scene's `pointerup` and returns unless `currentlyOver` is EMPTY, so tiles,
+  pieces, ghosts, the racks and every HUD button are excluded for free. That
+  exclusion is load-bearing: a tap on your SAVED RACK means "bank the selected
+  piece", and turning it into a deselect first would silently kill that gesture.
+  nogo tiles never call `setInteractive` (`drawTile` returns before
+  `buildTileChrome` for them), so the surround genuinely is empty.
+  Guarded like `onTap`: not a ghost mouse event, not part of a pinch, and not a
+  drag or camera pan -- releasing a one-finger pan over empty space would
+  otherwise deselect every time the board was moved.
+  Measured: empty tap -> deselected; a tap with any object under it -> still
+  selected; a 9999px release -> still selected; mid-pinch -> still selected; the
+  saved-rack tap still banks (0 -> 1 saved).
+  **Consequence worth knowing: it also returns a TENTATIVELY ENTERED piece to its
+  rack**, because `_clearSelection` does -- so a stray background tap undoes an
+  entry. Same as Esc, and fully reversible: measured rack 12 -> tentative entry
+  onto home -> empty tap -> back in **slot 0**, rack 12 again, **no die spent**.
+  Wired in `setupDragging`, not `setupCameraControls`, because the latter is
+  phone-only and this is wanted on both.
+
 - **THE RACKS SHUFFLE BEFORE THE COIN FLIP, NOT AFTER (owner, 2026-09-11).** The
   shuffle lived in `createPieces`, which runs during the scene restart that
   FOLLOWS the flip -- so the order was: coin lands -> board rebuilds -> racks

@@ -7359,6 +7359,37 @@ endGame(winner, score = null, impasse_caller = null) {
             }
         };
 
+        // TAP EMPTY SPACE TO DESELECT (owner, 2026-09-11). A tap that lands on
+        // nothing -- the nogo surround, the background outside the board -- now
+        // clears the selection, which on a phone is the only way to do it
+        // besides tapping the piece again (Esc is desktop-only).
+        //
+        // "Nothing" is Phaser's own answer, not a geometry test: `currentlyOver`
+        // is empty exactly when no interactive object was under the pointer. So
+        // tiles, pieces, ghosts, the racks and every HUD button are excluded for
+        // free -- which matters, because a tap on your SAVED RACK means "bank the
+        // selected piece" and must not be turned into a deselect first. nogo
+        // tiles never call setInteractive (drawTile returns before
+        // buildTileChrome for them), so the surround really is empty.
+        //
+        // Guarded like onTap: not a ghost mouse event, not part of a pinch, and
+        // not a drag or camera pan -- releasing a one-finger pan over empty
+        // space would otherwise deselect every time you moved the board.
+        const onEmptyTap = (pointer, currentlyOver) => {
+            if (currentlyOver && currentlyOver.length) return;
+            if (window.setupMode) return;              // free placement has its own selection
+            if (_isGhostPointer(pointer)) return;
+            if (_multiTouchActive()) return;
+            if (pointer && pointer.getDistance && pointer.getDistance() > _tapSlop()) return;
+            const game = scene.game;
+            if (!game || !game.selectedPiece || game.gameOver || _inputLocked(game)) return;
+            hideStackPicker();
+            // Same as Esc: a piece that only TENTATIVELY entered goes back to its
+            // rack rather than being stranded on the home tile.
+            _clearSelection(game);
+        };
+        scene.input.on('pointerup', onEmptyTap);
+
         scene.input.on('dragstart', onDragStart);
         scene.input.on('drag', onDrag);
         scene.input.on('dragend', onDragEnd);
