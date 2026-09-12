@@ -641,6 +641,40 @@ with it in mind.** Assessment and the concrete implications:
 
 ## Current state
 
+- **NARROW TILES KEEP THE OLD FORWARD-TAP-TO-TILE BEHAVIOUR (owner, 2026-09-11).**
+  The face/halo split (tap the piece = take the selection, tap around it = move)
+  needs somewhere to aim BESIDE the piece, and on a narrow tile the piece IS the
+  tile. Owner reported it on rings 1-2. Measured, largest disc fitting inside the
+  tile and outside the drawn piece, at rest zoom on a phone:
+
+        field ring1  arc  63 ->  7.5 CSS px    field ring3  arc 126 -> 18.0
+        field ring7  arc  84 -> 11.3           field ring4  arc 157 -> 18.1
+        field ring5  arc  94 -> 13.8           field ring6  arc 220 -> 18.1
+        field ring2  arc  94 -> 13.9           goal  ring7  arc 259 -> 27.1
+
+  **The discriminator is the tile's ARC, not its ring** -- every field tile has
+  the same 60 of radial extent. The OUTER field ring 7 is tighter than ring 2, so
+  a ring-number rule would have fixed half the problem.
+  **AND RING 5 IS NOT UNIFORM (owner's correction, and it settles the design):**
+  its 12 tiles are 6 at arc 94 and 6 at arc 188, so no per-ring rule can express
+  it at all. `_tileHasRoomBeside(tile, piece)` therefore asks the TILE:
+  `arc >= pieceDiameter * TILE_ROOM_IN_PIECE_WIDTHS` (2.2, which falls in the gap
+  between 1.88 at arc 94 and 2.52 at arc 126). Expressed in piece-widths so it
+  holds for the larger goal pieces too.
+  **Per-tile census of all 70** (`nogo` excluded): no room = ring1 x9 (arc 63),
+  ring2 x9 (94), field ring7 x9 (84), ring5 x6 (94) = **33 tiles**; room = ring3
+  x12, ring4 x6, ring5 x6 (188), ring6 x6, **goal x6 (all wide, 259)**, home = 37.
+  Behaviour measured on both sides: a face tap on a lone piece on **field ring1
+  (arc 63) MOVES** (reverted, as asked), on **field ring3 (arc 126) PASSES THE
+  SELECTION**.
+  **Measurement trap, hit twice in this session's harness:** `_tileHasRoomBeside`
+  reads the PIECE's current radius, which shrinks as a tile fills. Evaluating it
+  after the tap (when the tile holds two pieces) or against the wrong piece
+  reports "room" on a tile that has none -- both misreads made a narrow tile look
+  wide and a correct result look like a bug. In production it is only ever called
+  with `_alone` true, so the radius is `tilePieceRadius(1)`; any test must use
+  that too.
+
 - **TAPPING EMPTY SPACE DESELECTS (owner, 2026-09-11, both platforms).** A tap
   that lands on nothing -- the nogo surround, the background outside the board --
   now clears the selection. On a phone that was previously only possible by
