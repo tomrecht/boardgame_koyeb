@@ -1384,6 +1384,34 @@ function _tapOnPieceFace(piece, pointer) {
     return Math.hypot(pointer.worldX - piece.x, pointer.worldY - piece.y) <= r;
 }
 
+// IS THERE ROOM TO AIM BESIDE A LONE PIECE ON THIS TILE?
+// The face/halo split gives the visible disc to "take the selection" and the
+// ring around it to "move here" -- but on a narrow tile the piece is most of
+// the tile and there is no "beside it" to aim at (owner, on rings 1-2).
+// Measured, largest disc that fits inside the tile and outside the drawn piece,
+// at rest zoom on a phone:
+//     field ring1  arc  63 ->  7.5 CSS px      field ring3  arc 126 -> 18.0
+//     field ring7  arc  84 -> 11.3             field ring4  arc 157 -> 18.1
+//     field ring5  arc  94 -> 13.8             field ring6  arc 220 -> 18.1
+//     field ring2  arc  94 -> 13.9             goal  ring7  arc 259 -> 27.1
+// The discriminator is the tile's ARC, not its ring -- every field tile has the
+// same 60 of radial extent. Owner reported rings 1-2; the outer field ring 7 is
+// TIGHTER than ring 2, so a ring-number rule would have fixed half of them.
+// **RING 5 IS NOT UNIFORM** (owner): its 12 tiles are 6 at arc 94 and 6 at 188,
+// so no per-ring rule can express it at all. Per-tile census of all 70:
+// no room = ring1 x9 (63), ring2 x9 (94), field ring7 x9 (84), ring5 x6 (94);
+// room = ring3 x12, ring4 x6, ring5 x6 (188), ring6 x6, goal x6 (all wide), home.
+// Expressed in piece-widths so it holds for the bigger goal pieces too: 2.2
+// falls in the gap between 1.88 (arc 94) and 2.52 (arc 126).
+const TILE_ROOM_IN_PIECE_WIDTHS = 2.2;
+function _tileHasRoomBeside(tile, piece) {
+    if (!tile || !piece) return false;
+    if (tile.type === 'home') return true;          // by far the biggest tile
+    const mid = (tile.innerRadius + tile.outerRadius) / 2;
+    const arc = mid * (tile.endAngle - tile.startAngle);
+    return arc >= (piece.radius || PIECE_RADIUS_BASE) * 2 * TILE_ROOM_IN_PIECE_WIDTHS;
+}
+
 function _gestureConsumed(pointer) {
     return !!(pointer && _consumedGesture && pointer.id === _consumedGesture.id
               && pointer.downTime === _consumedGesture.downTime);
@@ -4052,7 +4080,11 @@ class Piece {
             // and the slivers between them are unhittable.
             const _alone = !!(this.currentTile && this.currentTile.pieces
                               && this.currentTile.pieces.length === 1);
+            // ...and only where the tile is wide enough that "beside the piece"
+            // is a real target. On a narrow tile the piece IS the tile, so those
+            // revert to forwarding: any tap on the piece moves onto it.
             const _takeSelection = selectable && isDestination && _alone
+                                   && _tileHasRoomBeside(this.currentTile, this)
                                    && _tapOnPieceFace(this, pointer);
 
             if (this.currentTile && !_takeSelection && (!selectable || isDestination)) {
