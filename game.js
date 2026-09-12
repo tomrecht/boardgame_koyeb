@@ -3851,6 +3851,20 @@ class Piece {
             if (this._tapTouchSeq === _touchSeq) return;
             this._tapTouchSeq = _touchSeq;
         }
+        // ONE GESTURE, ONE ACTION. This physical tap has reached a PIECE, so the
+        // tile beneath it must not act on the same tap when the finger lifts:
+        // pieces answer pointerdown and tiles answer pointerup, and both see it.
+        // _consumeGesture was claimed only where handleClick FORWARDS to the tile,
+        // so a tap that merely SELECTED a piece left the gesture unclaimed -- and
+        // the tile's pointerup then acted on the selection that had just been
+        // made. With a legal destination within a fingertip of the touch,
+        // _resolveDestination redirected to it and the piece MOVED, off a single
+        // tap (owner: "a single tap mistaken for a double ... moved to goal").
+        // Measured before the fix: tap piece 3 on field 1,2 -> selected on
+        // pointerdown, then moved to field 2,6 with a die spent on pointerup.
+        // Stub pointers (tile-tap forwarding, ghosts, drag) carry no id and must
+        // not clear a real gesture's claim.
+        if (pointer && pointer.id !== undefined) _consumeGesture(pointer);
         // see handleDoubleClick: a just-saved piece leaves its neighbours
         // shuffling under the finger
         if (this.game._saveGuardUntil && Date.now() < this.game._saveGuardUntil) return;

@@ -2585,6 +2585,41 @@ with it in mind.** Assessment and the concrete implications:
     evaluates true and `_tutPoll` fires — it just holds `busy` for 850ms showing
     "✓ Nice!" before advancing. Owner withdrew the report.
 
+- **THE "SINGLE TAP READ AS A DOUBLE" IS SOLVED, AND IT WAS NEVER THE
+  DOUBLE-CLICK TIMER (owner, 2026-09-11).** A tap that merely SELECTED a piece
+  did not claim the gesture, so the TILE acted on the same physical tap when the
+  finger lifted -- and `_resolveDestination`'s near-miss then moved the piece.
+  **Pieces answer pointerdown, tiles answer pointerup, and both see one tap.**
+  `_consumeGesture` existed for exactly this and was claimed ONLY where
+  `handleClick` FORWARDS to the tile; the plain selection path left it unclaimed.
+  Now claimed for any real pointer reaching `Piece.handleClick` (stub pointers --
+  tile-tap forwarding, ghosts, drag -- carry no id and must not clear a real
+  claim).
+  **Measured before**: one tap on piece 3 (field 1,2) -> selected on pointerdown,
+  then **moved to field 2,6 with a die spent** on pointerup. **After**: selected,
+  not moved, no die spent. Still working: a deliberate second tap on the
+  destination moves it (landed 2,6, one die), tile-tap-to-select still picks the
+  lone piece (tile 1,3 -> piece 9), a double-tap still fires `handleDoubleClick`
+  exactly once and a lone tap fires none. **Desktop is untouched by
+  construction** -- `_gestureConsumed` is consulted only in `onTap`'s phone
+  branch, and desktop binds pointerdown.
+  **THE LOG IS WHAT MADE THIS FINDABLE, BY BEING SILENT.** Owner's export ends
+  `single piece 10` then two lone `ghost-suppressed`, with **no `DOUBLE` in the
+  whole session** (20 taps, 3 ghosts) -- so the single/DOUBLE timer, the only
+  instrumented path, had not fired. Owner then said that piece "moved to goal",
+  which is a MOVE, not a bank, and the one row for it was a plain `single`: a
+  gesture with two effects and one record. Contrast the 2026-09-09 session in the
+  same export -- 33 DOUBLEs at 112-201ms with zero suppressions, i.e. distinct
+  `_touchSeq`s, real double-taps. **The ghost fix is working; this was a
+  different bug wearing its symptom.**
+  **Read the whole gesture, not the handler.** Three sessions were spent on
+  `handleClick`'s timer because that is where the log looked. The tap was
+  delivered to two objects, and only one of them was instrumented.
+  **The wider gesture logging that would have caught this in one session lives on
+  `testing`** (labelled `onTap` rows, `BANKED` rows on the five paths that bank a
+  piece outside the timer, `tile-click`, `dblclick` with `via`, cap 400) -- it is
+  instrumentation, so it stays off the live site. See that branch's CLAUDE.md.
+
 - **BRANCHES PRUNED 14 -> 5 (owner, 2026-08-27).** Kept: **`main`** (Cloudflare /
   quahuru.com), **`testing`** (Koyeb), **`symmetry-aug-main`** (the deployed
   champion's lineage, and the ONLY home of `symmetry.py` — main does not have the
