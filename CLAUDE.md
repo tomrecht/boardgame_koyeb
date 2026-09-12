@@ -2577,46 +2577,49 @@ with it in mind.** Assessment and the concrete implications:
     evaluates true and `_tutPoll` fires — it just holds `busy` for 850ms showing
     "✓ Nice!" before advancing. Owner withdrew the report.
 
-- **THE 2026-09-11 LOG EXONERATES THE DOUBLE-CLICK TIMER, AND EXPOSED A HOLE IN
-  THE LOG ITSELF.** Owner: "my very last tap as white was a single tap mistaken
-  for a double". The log's last three rows are `single piece 10` -> two lone
-  `ghost-suppressed` (id 0), and **no `DOUBLE` anywhere in that session** — 20
-  taps, 0 doubles, 3 ghosts suppressed. So the misread did NOT come from
-  `Piece.handleClick`'s single/DOUBLE timer, which is the only thing that was
-  instrumented and which stayed silent. Contrast the 2026-09-09 session in the
-  same export: 33 DOUBLEs, gaps 112-201ms, **0 `dup-touch-suppressed` and 0
-  ghosts** — all distinct `_touchSeq`s, i.e. deliberate double-taps, not
-  phantoms. **The ghost fix is working.**
-  **The hole:** `_tapRecord` only ever covered `Piece.handleClick`, so a tap that
-  landed anywhere else left NO row — and **five gesture paths bank a piece
-  without entering that timer**: `Rack.onSaveTap` (one tap on the saved rack
-  banks the SELECTED piece), `Rack.onEntryPanelTap`, the rack-SLOT half of
-  send-to-goal, the saved-rack-piece branch of `handleClick`, the stack picker's
-  `ondblclick` straight into `handleDoubleClick`, and a drag onto the saved rack.
-  Two lone ghost rows with no tap beside them is exactly that hole: the real
-  touch hit a non-piece `onTap` target and only its compatibility mouse event
-  left a trace.
-  **Suggestive but NOT established:** piece 10 was tapped (and so selected) 7s
-  before the end and never moved, and `onSaveTap` banks the selected piece on ONE
-  tap of the saved rack — which would read as exactly the reported symptom. Not
-  recorded as a finding: this file's own lesson is that three sessions of
-  mechanism-reasoning were wrong before the log existed.
-  **So the log now covers every gesture, not just pieces.** `onTap` takes a
-  `label` and records each gesture as `tap` / `tap-refused` (with `why`:
-  multitouch / drag / consumed), across all twelve call sites — `tile`,
-  `saved-rack`, `entry-rack`, `stack-badge`, `ghost`, `undo`, `end-turn`,
-  `new-game`, `new-match`, `how-to-play`, `call-draw`, `end-card`. Every
-  bank-capable path emits a **`BANKED`** row naming its `via` and `how`, plus
-  `tile-click` (ring/sector/near-miss/selection) and `dblclick` (with `via`, so
-  the stack-picker route is no longer invisible). Cap raised 150 -> 400: the
-  exported log was exactly 150 rows, i.e. already trimming from the front.
-  Verified on an emulated phone: tile / saved-rack / dblclick rows all appear, a
-  ghost mouse pointer after a REAL touchstart still records `ghost-suppressed`
-  and does NOT reach the handler, a 9999px move records `tap-refused why:drag`,
-  and desktop records nothing (`_tapRecord` returns on `!_isPhone()`).
-  **Next occurrence should name itself**: a `BANKED` row says which path did it;
-  a `DOUBLE` row would put it back on the timer; a bank with NEITHER means
-  something still uninstrumented.
+- **THE "SINGLE TAP READ AS A DOUBLE" IS SOLVED, AND IT WAS NEVER THE
+  DOUBLE-CLICK TIMER (owner, 2026-09-11).** A tap that merely SELECTED a piece
+  did not claim the gesture, so the TILE acted on the same physical tap when the
+  finger lifted -- and `_resolveDestination`'s near-miss then moved the piece.
+  **Pieces answer pointerdown, tiles answer pointerup, and both see one tap.**
+  `_consumeGesture` existed for exactly this and was claimed ONLY where
+  `handleClick` FORWARDS to the tile; the plain selection path left it unclaimed.
+  Now claimed for any real pointer reaching `Piece.handleClick` (stub pointers --
+  tile-tap forwarding, ghosts, drag -- carry no id and must not clear a real
+  claim).
+  **Measured before**: one tap on piece 3 (field 1,2) -> selected on pointerdown,
+  then **moved to field 2,6 with a die spent** on pointerup. **After**: selected,
+  not moved, no die spent. Still working: a deliberate second tap on the
+  destination moves it (landed 2,6, one die), tile-tap-to-select still picks the
+  lone piece (tile 1,3 -> piece 9), a double-tap still fires `handleDoubleClick`
+  exactly once and a lone tap fires none. **Desktop is untouched by
+  construction** -- `_gestureConsumed` is consulted only in `onTap`'s phone
+  branch, and desktop binds pointerdown.
+  **THE LOG IS WHAT MADE THIS FINDABLE, BY BEING SILENT.** Owner's export ends
+  `single piece 10` then two lone `ghost-suppressed`, with **no `DOUBLE` in the
+  whole session** (20 taps, 3 ghosts) -- so the single/DOUBLE timer, the only
+  instrumented path, had not fired. Owner then said that piece "moved to goal",
+  which is a MOVE, not a bank, and the one row for it was a plain `single`: a
+  gesture with two effects and one record. Contrast the 2026-09-09 session in the
+  same export -- 33 DOUBLEs at 112-201ms with zero suppressions, i.e. distinct
+  `_touchSeq`s, real double-taps. **The ghost fix is working; this was a
+  different bug wearing its symptom.**
+  **Read the whole gesture, not the handler.** Three sessions were spent on
+  `handleClick`'s timer because that is where the log looked. The tap was
+  delivered to two objects, and only one of them was instrumented.
+  **So the log now covers every gesture** (testing branch only). `onTap` takes a
+  `label` and records `tap` / `tap-refused` (`why`: multitouch / drag /
+  consumed) at all twelve call sites -- `tile`, `saved-rack`, `entry-rack`,
+  `stack-badge`, `ghost`, `undo`, `end-turn`, `new-game`, `new-match`,
+  `how-to-play`, `call-draw`, `end-card` -- plus `tile-click`
+  (ring/sector/near-miss/selection) and `dblclick` (with `via`, so the stack
+  picker's route out of `handleDoubleClick` is no longer invisible). **Five
+  paths bank a piece without entering the timer** and each now emits a `BANKED`
+  row naming `via` and `how`: `Rack.onSaveTap` (one tap on the saved rack banks
+  the SELECTED piece), `Rack.onEntryPanelTap`, the rack-SLOT half of
+  send-to-goal, the saved-rack-piece branch of `handleClick`, and a drag onto
+  the saved rack. Cap raised 150 -> 400: the export was exactly 150 rows, i.e.
+  already trimming from the front.
 
 - **THE SINGLE-AS-DOUBLE TAP IS NOT FULLY FIXED, AND IS NOW INSTRUMENTED
   (2026-08-27).** The ghost-mouse-event fix below was real but is not the whole
