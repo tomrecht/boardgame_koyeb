@@ -649,6 +649,33 @@ with it in mind.** Assessment and the concrete implications:
 
 ## Current state
 
+- **THE RACKS SHUFFLE BEFORE THE COIN FLIP, NOT AFTER (owner, 2026-09-11).** The
+  shuffle lived in `createPieces`, which runs during the scene restart that
+  FOLLOWS the flip -- so the order was: coin lands -> board rebuilds -> racks
+  visibly reshuffle. Reversed.
+  **It could not just be moved, because the shuffle has to happen to the game
+  that is ON SCREEN.** `_shuffleRacksThen(cb)` shuffles the HELD game's two
+  unentered racks in place (`shiftPiecesUp` re-lays out from the new order),
+  waits `SHUFFLE_BEAT_MS` (500) so it reads as its own step rather than flashing
+  under the overlay in the same frame, then runs the coin flip -- and hands the
+  resulting order to the fresh game as `rackOrder`, which `init` stores and
+  `createPieces` ADOPTS instead of drawing a new one. Without that carry-through
+  the racks would shuffle twice and the order the player just watched settle
+  would be thrown away.
+  Gated on `_gameFrozen`, the same test `createPieces` already used to identify
+  the held game: anything else (a finished game, the end-of-match card) has no
+  meaningful rack to shuffle and falls straight through to the old behaviour.
+  Measured on both entry points -- welcome "Single game" and a match's first game
+  (via match setup's Start): rack goes 1..12 -> shuffled at frame 0, coin appears
+  at 300/400ms, **shuffle before coin both times**, and the order after the game
+  starts is byte-identical to the one shown before the flip (no reshuffle). Later
+  New Games still draw a FRESH order -- four consecutive games gave four distinct
+  orders, none of them sorted -- since they pass no `rackOrder` and fall back to
+  the `!_gameFrozen` shuffle.
+  `SHUFFLE_BEAT_MS` is declared immediately above the function it serves, not
+  among unrelated constants: `RACK_TAP_WINDOW_MS` was once deleted along with the
+  log block it happened to sit under.
+
 - **TAPPING YOUR OWN PIECE NOW PASSES THE SELECTION TO IT, WHEN IT STANDS ALONE
   ON A REACHABLE TILE (owner, 2026-09-11, both platforms).** With a piece
   selected, a tap on one of your own pieces used to ALWAYS mean "move onto the

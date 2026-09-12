@@ -2758,7 +2758,7 @@ function matchScoreLine() {
 // a black/AI opener) moves until the flip resolves, mirroring the casual path.
 function _startMatchFirstGame(starter) {
     clearMoveRecording();
-    showCoinFlip(starter, () => {   // reveal who goes first, then start the game
+    _shuffleRacksThen((rackOrder) => showCoinFlip(starter, () => {   // shuffle, reveal who goes first, then start
         if (typeof gameInstance !== 'undefined' && gameInstance && gameInstance.scene) {
             // SceneManager.start() does not stop whatever is currently showing
             // (a scene's own scene.start() does). Starting a match from the
@@ -2768,9 +2768,9 @@ function _startMatchFirstGame(starter) {
                 const key = sc.scene.key;
                 if (key !== 'MainGameScene') gameInstance.scene.stop(key);
             });
-            gameInstance.scene.start('MainGameScene', { startingPlayer: starter });
+            gameInstance.scene.start('MainGameScene', { startingPlayer: starter, rackOrder });
         }
-    });
+    }));
 }
 
 // First-load landing screen: a short greeting with Play / How to Play / Tutorial,
@@ -2863,17 +2863,51 @@ function showWelcome(starter) {
     // committed, and the AI never moves, until this point.
     mkBtn('Single game', true, () => {
         box.remove();
-        showCoinFlip(starter, () => {
+        _shuffleRacksThen((rackOrder) => showCoinFlip(starter, () => {
             clearMoveRecording();
             const sc = _setupScene();
-            if (sc && sc.scene) sc.scene.restart({ startingPlayer: starter });
-        });
+            if (sc && sc.scene) sc.scene.restart({ startingPlayer: starter, rackOrder });
+        }));
     });
     // Match: configure a multi-game match; its own setup handles the coin flip
     // and the fresh first game.
     mkBtn('Play a match', true, () => { box.remove(); showMatchSetup(() => showWelcome(starter)); });
     mkBtn('How to Play', false, () => showInstructions());
     mkBtn('Interactive tutorial', false, () => { box.remove(); startTutorial(); });
+}
+
+// SHUFFLE THE RACKS FIRST, THEN FLIP THE COIN (owner, 2026-09-11).
+// The shuffle used to happen inside createPieces during the scene restart that
+// FOLLOWS the coin flip, so the order was: coin lands -> board rebuilds ->
+// racks visibly reshuffle. Owner wants the shuffle to come first.
+//
+// It has to be done on the HELD game that is on screen (the one the welcome
+// card sits over, whose rack is the unshuffled 1..12), and the resulting order
+// then handed to the fresh game -- otherwise createPieces shuffles a second
+// time and the order the player just watched settle is thrown away.
+// Only while `_gameFrozen`: that is exactly the held game, and it is the same
+// test createPieces uses. Anything else (a finished game, the end-of-match
+// card) has no meaningful rack to shuffle, so it falls straight through.
+// Long enough for the new rack order to read as its own step before the coin
+// overlay covers it. Declared beside the function it serves, not next to
+// unrelated constants -- RACK_TAP_WINDOW_MS was once deleted along with the
+// log block it happened to sit under.
+const SHUFFLE_BEAT_MS = 500;
+function _shuffleRacksThen(cb) {
+    const g = _currentGame();
+    if (!_gameFrozen || !g || !g.whiteUnenteredRack || !g.blackUnenteredRack) return cb(null);
+    const racks = [g.whiteUnenteredRack, g.blackUnenteredRack];
+    if (racks.some(r => r.pieces.length !== TOTAL_PIECES)) return cb(null);
+    racks.forEach(r => {
+        Phaser.Utils.Array.Shuffle(r.pieces);
+        r.shiftPiecesUp();                       // canonical re-layout from the new order
+    });
+    if (typeof _refreshHitAreas === 'function') _refreshHitAreas();
+    const order = { white: g.whiteUnenteredRack.pieces.map(p => p.number),
+                    black: g.blackUnenteredRack.pieces.map(p => p.number) };
+    // A beat, so the new order registers as its own step rather than flashing
+    // under the coin-flip overlay in the same frame.
+    setTimeout(() => cb(order), SHUFFLE_BEAT_MS);
 }
 
 // The board's centre in CSS pixels, or null if the scene/camera is not up yet.
@@ -5653,7 +5687,20 @@ class Game {
         // moment later (owner). `_gameFrozen` is assigned immediately before this
         // Game is constructed, so it identifies exactly that held game. Creation
         // order is 1..12, which is already numbered-then-blanks.
-        if (!_gameFrozen) {
+        // Already shuffled ON SCREEN before the coin flip: adopt that exact
+        // order rather than drawing a new one, or the racks the player just
+        // watched settle would reshuffle the moment the board rebuilds.
+        const ord = this.scene && this.scene._rackOrder;
+        const _adopt = (arr, nums) => {
+            if (!Array.isArray(nums) || nums.length !== arr.length) return null;
+            const out = nums.map(n => arr.find(p => p.number === n));
+            return out.every(Boolean) ? out : null;
+        };
+        const _w = ord && _adopt(whitePieces, ord.white);
+        const _b = ord && _adopt(blackPieces, ord.black);
+        if (_w && _b) {
+            whitePieces = _w; blackPieces = _b;
+        } else if (!_gameFrozen) {
             whitePieces = Phaser.Utils.Array.Shuffle(whitePieces);
             blackPieces = Phaser.Utils.Array.Shuffle(blackPieces);
         }
@@ -7453,12 +7500,17 @@ class MainGameScene extends Phaser.Scene {
             // behind the start screen until the player picks something.
             this.startingPlayer = Math.random() < 0.5 ? 'white' : 'black';
             this._coinFlipOnStart = true;
+            this._rackOrder = null;
         } else if (data && data.startingPlayer) {
             this.startingPlayer = data.startingPlayer;
+            // The order the player just watched the racks settle into, if the
+            // shuffle has already happened on screen (see _shuffleRacksThen).
+            this._rackOrder = (data && data.rackOrder) || null;
         } else {
             // initial page-load casual game: random first player, revealed by a coin flip
             this.startingPlayer = Math.random() < 0.5 ? 'white' : 'black';
             this._coinFlipOnStart = true;
+            this._rackOrder = null;
         }
         _lastGameStarter = this.startingPlayer;
     }
