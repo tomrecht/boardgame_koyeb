@@ -122,8 +122,16 @@ Two modes, both implemented and validated:
   in-memory per iteration; no `.jsonl` file is ever read during Mode A).
 - **Paired-seed evaluation**: eval game pairs `(2k, 2k+1)` (color-swapped,
   challenger plays both colors) share one dice-stream seed instead of each
-  game getting an independent seed — cancels dice-luck variance across the
-  pair, giving a sharper win-rate signal from the same `eval_games` budget.
+  game getting an independent seed. **Intent was to cancel dice-luck variance
+  across the pair; MEASURED 2026-09-12, it buys almost nothing.** Over the 15
+  arena matchups with >=40 complete pairs, the correlation between a pair's two
+  games is **rho = -0.06 (win) / -0.11 (margin)** — i.e. ~zero. Variance
+  reduction is **1.11x, so SE is only 1.05x smaller** than independent games.
+  The mechanism: the two games diverge at the first differing move and the
+  shared dice stream is consumed differently thereafter, so it is shared in name
+  only. Harmless, costs nothing, but **do not credit it with a sharper signal —
+  the gate's real noise floor is 3.34pp at `eval_games=200`**, essentially the
+  independent-sampling 3.54pp.
 - **Seed-overlap watch-out**: generation and eval seeds must stay in
   disjoint ranges, and this is *not* automatic — generation uses
   `seed_base + it*games_per_iter + i`, so shrinking `games_per_iter` shrinks
@@ -3250,30 +3258,78 @@ with it in mind.** Assessment and the concrete implications:
   every tag present in `arena.jsonl`, not just checkpoints still on disk (a
   deleted contender used to vanish along with its games), and `FOCUS=<tag>`
   plays only that champion's pairings until its game count catches up.
-  - **The promotion gates do not survive open play.** Of five recorded
-    promotions, three REVERSE in the arena: iter10 over iter4 (gate 56.3% vs
-    arena 47%), iter14 over iter10 (60.2% vs 44%), aux_iter8 over iter14 (58.5%
-    vs 44%). The deployed-then champion aux_iter14 loses to two of its own
-    ancestors (39-41% vs iter4, 43% vs iter14).
-  - **Two mechanisms, and the second dominates.** Winner's curse: simulating the
-    loop (true edges ~N(48%,5), promote at ≥55% of 200 games) gives promoted
-    models measuring 57.8% but truly 54.6% — ~3 points of inflation, 8% of
-    promotions not actually better. That alone would still compound to ~73% for
-    the last champion vs the first; it is at 41%. The rest is
-    **non-transitivity**: there is an outright cycle,
-    `aux_iter14 > iter10 (58%) > iter14 (56%) > aux_iter14 (57%)`.
+  - **SUPERSEDED 2026-09-12 — the "gates reverse in the arena" claim does NOT
+    survive the fuller sample.** It was computed when the key matchups had 9-16
+    games; they now have 250+, and two of the three reversals evaporate:
+
+        promotion              gate     as written   at full sample
+        iter10 over iter4      56.3%    47%          50.8%  (n=252)
+        iter14 over iter10     60.2%    44%          51.2%  (n=84)
+        aux_iter8 over iter14  58.5%    44%          44.6%  (n=28, still weak)
+
+    aux_iter14 does NOT lose to iter4 either — it **wins, 54.8% / +0.538 margin,
+    z=+3.62 at n=272**. The one reversal that survives is the best-powered one:
+    **aux_iter14 loses to iter14, 40.7% at n=102 (-65 Elo)**, despite two
+    intervening promotions gated at 58.5% and 55.1%. Recompute from
+    `arena.jsonl` before quoting any of these; `winner` is `white`/`black`, so
+    a won iff `(winner=='white')==a_white` — scoring it as a tag name silently
+    yields ~0% for everyone.
+  - **THE GATE IS MORE INFORMATIVE THAN IT LOOKS; THAT MAKES THE REAL PROBLEM
+    WORSE (2026-09-12).** Quantified from the measured noise floor (3.34pp at
+    200 games) and the unselected spread of gate readings over iters 7-24
+    (mean 48.5%, pooled SD 5.97pp, from the momentum partition):
+      * deconvolving, the **TRUE candidate spread is SD ~4.9pp** — signal
+        exceeds noise, and one gate reading has **reliability 0.69**;
+      * a candidate measuring exactly 55% is truly ~53.0% and is a genuine
+        improvement with **86% probability**;
+      * a typical promotion (which measures ~58%) is truly **~55.1% = +35 Elo**,
+        and only **~6% of promotions are duds**;
+      * **winner's curse is 3.0pp** of inflation — independently reproducing
+        CLAUDE.md's earlier simulation (57.8 -> 54.6), so that figure stands.
+    Sensitivity across SD_obs 4.9-6.4 keeps P(real) in 79-87% and duds in 4-11%.
+    **So "beats its parent by >=55% over 200 games" is a sound measurement.**
+  - **THE FAILURE IS ACCUMULATION, NOT MEASUREMENT.** Four promotions at
+    ~+35 Elo each should be **+141 Elo**; measured end to end, iter4 ->
+    aux_iter14 is **+33 Elo (54.8%, n=272)** — **24% realised, so ~76% of
+    genuine, correctly-measured local gain does not generalise.** And the
+    DEPLOYED champion `symaug_iter6` is statistically indistinguishable from the
+    entire field, including iter4 from five promotions back: 50.9% vs iter4,
+    52.7% vs iter10, 47.3% vs iter14, 46.4% vs aux_iter14 (all +-9.3, n~112).
+    Mechanism is **non-transitivity**: a candidate genuinely beats the specific
+    parent it was trained against without becoming generally stronger — which is
+    what parent-only gating selects for. **Buying more eval games does not fix
+    this** (400 games lifts reliability 0.64->0.78 and P(real|55%) 81%->94%, but
+    attacks the 6%, not the 76%); a fixed-panel gate does.
+  - **Caveat against over-trusting the arena itself:** it is agent-vs-agent, and
+    owner reports `symaug_iter6` as his strongest opponent. This project already
+    has a precedent for those diverging — owner beat iter14 (20/32) but lost to
+    iter10 (12/32) while iter14 beat iter10 60% agent-to-agent. Flat in the
+    arena is NOT proof of flat against a human; a panel gate optimises the proxy,
+    so it wants a human score log beside it, not instead of it.
   - **The top four are statistically inseparable.** Bootstrapping the standings
     over paired units: P(best) 30/30/22/18% for iter10/iter4/aux_iter14/iter14,
     and 0% for iter1, iter5 and aux_iter8 (so trimming those three was sound).
     Paired-margin SD within the top four is 1.8, so separating a 0.5-margin edge
     needs ~103 paired games per matchup and 0.3 needs ~287 — the matchups had
-    9-16. **Implication: "most recently promoted" carries no weight when picking
+    9-16 **at the time; the main ones now have 250+, which is why the reversal
+    numbers above had to be redone.** The inseparability conclusion still holds
+    at the larger sample (every champion-vs-champion CI straddles 50%).
+    **Implication: "most recently promoted" carries no weight when picking
     a warm start**; use human play and the arena, not the gate.
   - **Suggested gate change (not implemented):** gate against a fixed panel
     (champion + iter4 + iter10) at the same total game budget — 50 games each
     gives the same ~3.5% SE on the mean as 200 against one opponent — promoting
     on mean ≥55% with no member below 45%. It measures the thing that matters
-    and makes runs comparable across experiments.
+    and makes runs comparable across experiments. **The 2026-09-12 numbers are
+    the argument for it**: the parent gate's error rate is ~6%, but 76% of the
+    gain it correctly certifies fails to generalise, and a panel is the cheapest
+    thing that gates on generality rather than on beating one opponent.
+  - **Sample sizes, for reference** (80% power, one-sided 5%, from the measured
+    per-game SD of ~0.5 with no meaningful pairing gain): resolving a true edge
+    of 5pp needs **618 games**, 3pp needs **1,715**, 2pp needs **3,860**, 1pp
+    needs **15,438**. This is why champions separated by a promotion or two can
+    never be ranked confidently on arena-sized samples, and why margin (paired
+    SD 1.8) is the better statistic when a fine distinction is actually needed.
   - **Pass-over-save reproduced.** In a constructed endgame (white 10 saved, a
     blank on goal 4, the numbered 2 on goal 2, roll 4+5) the agent rates
     "shuffle the blank to goal 2 and pass" (+307.8) and even "pass both"
