@@ -55,11 +55,11 @@ A. ANDROID CLOSED-TESTING SUBREDDITS  (r/AndroidClosedTesting,
 
 Title: [Closed test] Quahuru — an original dice strategy board game, free, no ads
 
-Looking for testers for the 14-day closed test. I'll join yours in return.
+Looking for testers for the 14-day closed test. Happy to join yours in return!
 
-Quahuru is a board game I designed and built from scratch — a dice game played
+Quahuru is a board game I designed and built from scratch: a dice game played
 on a six-spoked wheel, where you race twelve pieces to six numbered goals while
-walling off your opponent's routes.
+walling off your opponent's routes. It's a hobby project, not something I'm looking to monetize:
 
   • Free, no ads, no in-app purchases, no accounts
   • Collects no data at all — no analytics, no crash reporting
@@ -67,21 +67,89 @@ walling off your opponent's routes.
     your device, not on a server
   • ~14 MB
 
-You can try it in a browser first, which I'd rather you did — no install, and
-it's the whole game:
+You can try it in a browser first with no install:
 https://quahuru.com
 
-TO TEST, TWO STEPS IN THIS ORDER:
+To test:
 
   1. Join the group:  https://groups.google.com/g/quahuru-testers
-  2. Then opt in:     [PASTE YOUR CLOSED-TEST OPT-IN LINK]
+  2. Then opt in on web: https://play.google.com/apps/testing/com.quahuru.game
+  or Android: https://play.google.com/store/apps/details?id=com.quahuru.game
 
-Step 1 first, please — the opt-in link only works for group members, and if you
-hit it before joining you'll just get "not available". Give it a minute between
-the two.
+Happy to test yours — drop a link and I'll opt in today. Thanks!
 
-Happy to test yours — drop a link and I'll opt in today.
 
+======================================================================
+A2. WHEN THE FILTER KEEPS REMOVING POST A  (r/AndroidClosedTesting,
+    r/TestersCommunity -- happened 2026-09-13)
+======================================================================
+
+FIRST FIND OUT WHICH FILTER. The fix is completely different, and the
+wording of the removal tells you which one you are dealing with:
+
+  * "Sorry, this post was removed by Reddit's filters" -- that is REDDIT,
+    site-wide, not the subreddit. It is about your ACCOUNT and your LINKS,
+    and no amount of rules compliance will move it.
+  * A reply or modmail from AutoModerator -- that is the SUBREDDIT, and it
+    almost always names the rule: title format, missing flair, a karma or
+    account-age minimum, a required "I will test yours in return" line.
+    Do what it says and repost.
+  * Nothing at all, but the post is invisible to everyone else -- treat it
+    as the first case.
+
+  To check: open the post in a private window while LOGGED OUT. If it 404s
+  or shows [removed], it is filtered. Your own profile keeps showing it to
+  you, which is exactly why a filtered post looks fine from the inside.
+
+THE LIKELIEST CAUSE, given it happens on TWO different subreddits: the
+common factor is not their rules, it is the account and the links. A
+low-karma account posting three outbound links -- one of them a domain
+registered weeks ago (quahuru.com), one a Google Groups invite -- is the
+precise shape Reddit's site-wide spam filter exists to catch.
+
+WHAT TO DO, in order:
+
+  1. MODMAIL THE SUBREDDIT. One short plain message: "My post keeps getting
+     filtered -- could you approve it, or tell me what to fix?" These subs
+     approve filtered posts every day. Fastest fix, costs nothing, and the
+     answer also tells you which filter it was.
+  2. EARN SOME KARMA FIRST. Spend twenty minutes commenting on other
+     people's test posts and opting into two or three of their tests. You
+     were going to do that anyway -- reciprocity is the currency of these
+     communities -- and it clears most automod karma/age gates as a side
+     effect. Then repost.
+  3. REPOST WITH NO LINKS AT ALL (version below), and put the opt-in links
+     in a COMMENT on your own post once it is live. A link-free post is far
+     less likely to be filtered, and in these subs nobody minds asking.
+     (A comment can be filtered too -- check it logged out as well.)
+  4. ONLY THEN rewrite for rules: read the pinned post and the sidebar for a
+     required title prefix and a required flair. Several of these subs
+     silently remove anything posted without the flair.
+
+  Do NOT delete and resubmit the same text over and over. Repeated identical
+  submissions are exactly what the filter is looking for, and it escalates to
+  the account rather than the post.
+
+LINK-FREE VERSION OF POST A
+---------------------------
+Title: [Closed test] Quahuru -- original dice strategy board game, free, no ads
+
+Looking for testers for a 14-day closed test, and happy to join yours in
+return -- drop your link in a comment and I'll opt in today.
+
+Quahuru is a two-player dice board game I designed and built myself. You race
+twelve pieces out from the centre of a six-spoked wheel to six numbered goals,
+while walling off your opponent's routes with the same pieces you need to
+score. It's a hobby project, not something I'm trying to monetize.
+
+  • Free, no ads, no in-app purchases, no accounts
+  • Collects no data at all -- no analytics, no crash reporting
+  • Works fully offline: the computer opponent is a neural network that runs
+    on your device, not on a server
+  • ~14 MB
+
+Opt-in link, the Google group, and a browser version you can try with no
+install are all in a comment below. Comment or DM and I'll get you set up.
 
 ======================================================================
 B. r/AbstractGames, r/boardgames (check their self-promo rules first --
