@@ -901,6 +901,15 @@ with it in mind.** Assessment and the concrete implications:
   through a DOM attribute, which both worlds share. Also wait for
   `_gameFrozen === false`, not just for the welcome card to go: the coin flip
   and scene restart run after it is removed, and the held game is still frozen.
+  **And get the accessors right before believing a probe (2026-09-13):
+  `_currentGame` is a FUNCTION, not a variable** -- reading it as an object
+  yields `{}` with no error, which looks exactly like "the game never built".
+  Pieces live on the GAME (`game.pieces`, 24 of them), NOT on `Player`, which
+  holds only `name`/`isAI`/`gamePhase`; tiles are `game.tiles` (94), an array.
+  A healthy boot reads: **94 tiles, 24 pieces (12 per colour),
+  `renderer.type === 2` (WebGL), exactly one active scene, 0 failed requests.**
+  The Canvas2D `willReadFrequently` warnings are the RenderTexture bake's
+  readbacks -- expected, not a fault.
 
 - **SESSION UPDATE (2026-08-27) — LIVE ON CLOUDFLARE, AND THE STORE PREP HAS
   STARTED.** The static hosting step of the roadmap is DONE and verified.
@@ -992,17 +1001,37 @@ with it in mind.** Assessment and the concrete implications:
     -validity 10000 -alias quahuru`. **Use Play App Signing and back the .jks and
     its passwords up** — the upload key is how Google knows an update is from
     the same developer.
-  - **A SIGNED `.aab` HAS BEEN BUILT (2026-08-27): 8.3 MB, `jarsigner` says
-    "jar verified"**, at `android/app/build/outputs/bundle/release/
-    app-release.aab`. Confirmed to contain the whole app — game.js, model.onnx,
-    the 11 MB ort wasm and phaser under `base/assets/public/`. Project is
-    targetSdk/compileSdk **36**, minSdk 24, **versionCode 3**, versionName 1.0.2,
-    applicationId **`com.quahuru.game`**, label "Quahuru". **Every later upload
-    needs a HIGHER versionCode** — Play rejects a repeat. Hit immediately: the
-    first upload predated the adaptive-icon fix, so Play kept serving the clipped
-    icon through an uninstall/reinstall, and replacing it needed versionCode 2.
-    **A reinstall from Play does NOT pick up a local rebuild** — obvious in
-    hindsight, easy to misread as the icon fix having failed.
+  - **A SIGNED `.aab` HAS BEEN BUILT: 8.3 MB, `jarsigner` says "jar verified"**,
+    at `android/app/build/outputs/bundle/release/app-release.aab`. Confirmed to
+    contain the whole app — game.js, model.onnx, the 11 MB ort wasm and phaser
+    under `base/assets/public/`. Project is targetSdk/compileSdk **36**, minSdk
+    24, applicationId **`com.quahuru.game`**, label "Quahuru". **Every later
+    upload needs a HIGHER versionCode** — Play rejects a repeat. Hit
+    immediately: the first upload predated the adaptive-icon fix, so Play kept
+    serving the clipped icon through an uninstall/reinstall, and replacing it
+    needed versionCode 2. **A reinstall from Play does NOT pick up a local
+    rebuild** — obvious in hindsight, easy to misread as the icon fix having
+    failed.
+    **CURRENT PACKAGE: versionCode 4, versionName 1.0.3, 8.66 MB, built
+    2026-09-13** (superseding versionCode 3 / 1.0.2 of 2026-08-27). It carries
+    the September input and pre-game work — the ghost-tap fix, the input lock
+    during the computer's turn, the freeze behind New Game / New Match / How to
+    Play, the tap-claims-the-gesture fix, tap-to-pass-the-selection, empty-space
+    deselect, the shuffle-before-the-coin-flip order and the narrow-tile
+    exemption. **`game.js` was the ONLY shipped file that changed** (542 diff
+    lines over ten commits); index.html, sw.js, the manifest, the ported agent
+    and the ort runtime are byte-identical, so `sw.js` keeps `quahuru-v8` — it
+    is network-first for index.html and game.js, and no cache-first asset moved.
+    **Rebuilding the package (the whole recipe):**
+    `python3 build_web.py --out dist` → bump `versionCode`/`versionName` in
+    `android/app/build.gradle` → `npx --cache ./.npm-cache cap sync android` →
+    `cd android && ./gradlew bundleRelease > /tmp/rel.log 2>&1; echo $?`.
+    `npm run sync` does the first and third in one step.
+    **Verify before uploading, and verify the BUNDLE, not the source:**
+    `jarsigner -verify` (expect "jar verified"; the PKIX warning is normal for a
+    self-signed upload key), the versionCode/versionName/package read out of
+    `base/manifest/AndroidManifest.xml` in the .aab, and a hash of
+    `base/assets/public/game.js` against the working tree's.
     **The package name was changed from `com.tomrecht.quahuru` to
     `com.quahuru.game` (owner, before any upload)** — it matches the domain he
     now owns, and it is PERMANENT once anything is uploaded to any track, so this
@@ -1079,7 +1108,7 @@ with it in mind.** Assessment and the concrete implications:
      device answers every move and the runtime starts loading when a computer
      role is set. A full self-playing game against a files-only host makes **0
      API requests**. Owner reports no perceptible first-move wait.
-  3. **`build_web.py`** assembles the shipped bundle (25 files, 13.9 MB) into
+  3. **`build_web.py`** assembles the shipped bundle (27 files, 14.0 MB) into
      `dist/` — a static deploy must build this, NOT point at the repo root.
   4. **Settings are reachable from the welcome / match-setup screens.**
 
@@ -2385,8 +2414,9 @@ with it in mind.** Assessment and the concrete implications:
     (`?aicompare=1`, `?aiserver=`). Nothing calls them in play; do not restore a
     fallback to them. **Still to do: point the hosting at a static host** — the
     code no longer needs Flask at runtime, but the deployment has not moved.
-  - **`build_web.py` assembles the shipped bundle into `dist/` — 25 files,
-    13.9 MB.** A static deploy must NOT point at the repo root: **79 MB is
+  - **`build_web.py` assembles the shipped bundle into `dist/` — 27 files,
+    14.0 MB** (25 before `privacy.html` and `licenses.html` were added). A
+    static deploy must NOT point at the repo root: **79 MB is
     tracked, 45 MB of it training data** (`training_data/positions_with_moves.
     jsonl` alone is 34 MB) plus ~10 MB of checkpoints and design PNGs, none of
     which belongs on a public host. The script CHECKS rather than trusts: every
