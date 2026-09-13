@@ -723,6 +723,13 @@ with it in mind.** Assessment and the concrete implications:
   wide and a correct result look like a bug. In production it is only ever called
   with `_alone` true, so the radius is `tilePieceRadius(1)`; any test must use
   that too.
+  **Second harness trap, same session: `tile.addPiece(piece)` does NOT set
+  `piece.currentTile`** -- it only pushes onto `tile.pieces` and re-lays out. Only
+  `piece.move(tile)` sets both. A position built with `addPiece` therefore has the
+  tile and the piece disagreeing about where it is, and every reachability test
+  run against it silently reports nonsense (here: a destination that "was not
+  reachable", making a correct result look like a bug). Build test positions with
+  `piece.move(tile, false)` after removing the piece from wherever it was.
 
 - **TAPPING EMPTY SPACE DESELECTS (owner, 2026-09-11, both platforms).** A tap
   that lands on nothing -- the nogo surround, the background outside the board --
@@ -2809,6 +2816,16 @@ with it in mind.** Assessment and the concrete implications:
   where work-in-progress and instrumentation go, so a diagnostic never reaches
   the live site. Koyeb serves app.py from the repo root, so a branch works there
   with no build step.
+  **EVERY BUG FIX GOES TO BOTH (owner, 2026-09-11).** The branches are two live
+  deploy targets, and `testing` does NOT receive main's commits by itself -- it
+  carries instrumentation on top of main -- so a fix left on main is simply
+  absent from the Koyeb build owner is often the one actually playing. Commit on
+  `main`, push, then `git checkout testing && git merge --ff-only origin/testing
+  && git cherry-pick -x <sha>` and push. Keep it a cherry-pick, not a merge, so
+  `testing` never drags its instrumentation back toward main. **Re-run the
+  verification on the `testing` checkout too** -- it has extra code in the same
+  files, so a clean auto-merge is not proof. Cheap audit that a fix reached both:
+  `git diff main testing -- game.js` should show instrumentation and nothing else.
   **Living on `testing` only:** the tap log for the single-tap-as-double report —
   `_tapRecord` writing every click on a piece to `localStorage.tapLog` (pointer kind
   and id, distance moved, the gap that decided single vs double, and the verdict
