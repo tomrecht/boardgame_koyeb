@@ -723,6 +723,13 @@ with it in mind.** Assessment and the concrete implications:
   wide and a correct result look like a bug. In production it is only ever called
   with `_alone` true, so the radius is `tilePieceRadius(1)`; any test must use
   that too.
+  **Second harness trap, same session: `tile.addPiece(piece)` does NOT set
+  `piece.currentTile`** -- it only pushes onto `tile.pieces` and re-lays out. Only
+  `piece.move(tile)` sets both. A position built with `addPiece` therefore has the
+  tile and the piece disagreeing about where it is, and every reachability test
+  run against it silently reports nonsense (here: a destination that "was not
+  reachable", making a correct result look like a bug). Build test positions with
+  `piece.move(tile, false)` after removing the piece from wherever it was.
 
 - **TAPPING EMPTY SPACE DESELECTS (owner, 2026-09-11, both platforms).** A tap
   that lands on nothing -- the nogo surround, the background outside the board --
@@ -2811,6 +2818,58 @@ with it in mind.** Assessment and the concrete implications:
   **What the log will separate:** one physical tap delivered twice (two entries,
   tiny gap, same pointer id) from a genuine double from the user, and shows
   whether the ghost guard was involved at all.
+
+- **BRANCHES PRUNED 14 -> 5 (owner, 2026-08-27).** Kept: **`main`** (Cloudflare /
+  quahuru.com), **`testing`** (Koyeb), **`symmetry-aug-main`** (the deployed
+  champion's lineage, and the ONLY home of `symmetry.py` — main does not have the
+  symmetry work at all), and **`gnn` / `gnn2`** (the pre-TD training history, 67
+  and 101 unique commits, kept pending owner's call). Deleted: seven branches
+  with **zero** commits not already reachable from main (`app-packaging`,
+  `deeper-search`, `fast-prefilter`, `frontend-overhaul`, `good_gnn`,
+  `rule-single-piece-save`, `td-lambda`), plus `rule-numbered-win` (owner dropped
+  the idea) and `symmetry-aug` — after carrying `symaug_smoke.py` onto
+  `symmetry-aug-main`, the one file that existed nowhere else. `symmetry.py` was
+  byte-identical on both.
+  **Method note that nearly caused a wrong conclusion:** `git rev-list -n 1 main
+  -- <file>` applies history simplification and reports NOTHING for files that
+  only ever appear on a merged side-branch. Use `--full-history`. And the commit
+  it names is the one that DELETED the file, so extract from its parent —
+  `git show 782c43c0^:train.py`, not `782c43c0:train.py`.
+
+- **REFERENCE: the interactive blocking tool** built 2026-08-27 lives at
+  `https://claude.ai/code/artifact/b16ccf81-f0a9-4192-bf58-46a103eaaf64`
+  ("Where to Build a Wall"): click a tile to pick the piece to slow, and every
+  other tile shows the extra turns a wall there costs it, for a blank or any
+  numbered piece. Data is the source x wall matrix from the DP; the generator
+  scripts were scratchpad one-offs and are NOT committed, so re-deriving it means
+  re-running the value iteration described above.
+
+- **TWO DEPLOY TARGETS, TWO BRANCHES (owner, 2026-08-27).** `main` is what
+  **quahuru.com** serves (Cloudflare builds on push) and must stay clean, because
+  it is what testers install and play. **`testing` is tracked by KOYEB** and is
+  where work-in-progress and instrumentation go, so a diagnostic never reaches
+  the live site. Koyeb serves app.py from the repo root, so a branch works there
+  with no build step.
+  **EVERY BUG FIX GOES TO BOTH (owner, 2026-09-11).** The branches are two live
+  deploy targets, and `testing` does NOT receive main's commits by itself -- it
+  carries instrumentation on top of main -- so a fix left on main is simply
+  absent from the Koyeb build owner is often the one actually playing. Commit on
+  `main`, push, then `git checkout testing && git merge --ff-only origin/testing
+  && git cherry-pick -x <sha>` and push. Keep it a cherry-pick, not a merge, so
+  `testing` never drags its instrumentation back toward main. **Re-run the
+  verification on the `testing` checkout too** -- it has extra code in the same
+  files, so a clean auto-merge is not proof. Cheap audit that a fix reached both:
+  `git diff main testing -- game.js` should show instrumentation and nothing else.
+  **Living on `testing` only:** the tap log for the single-tap-as-double report —
+  `_tapRecord` writing every click on a piece to `localStorage.tapLog` (pointer kind
+  and id, distance moved, the gap that decided single vs double, and the verdict
+  including `ghost-suppressed`), plus **Settings > Copy tap log**. It was reverted
+  from main in the same change that created the branch; see `testing` for the
+  code and its own CLAUDE.md entry.
+  **Watch-out already hit there:** the export button was first gated on the log
+  being non-empty, but `createSettingsPanel` runs ONCE at start-up, so the
+  condition was evaluated before any tap could have happened and the button never
+  appeared — the same race as the first-run nudge.
 
 - **A SINGLE TAP COULD FIRE AS A DOUBLE TAP — COMPATIBILITY MOUSE EVENTS
   (2026-08-20).** Owner: "on phone, a single tap is often mistaken for a double
