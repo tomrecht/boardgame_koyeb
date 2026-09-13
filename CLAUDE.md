@@ -366,6 +366,47 @@ steep. The narrower residual is that when it does step off it sometimes picks a
 poor off-goal tile (2.07 when 1.68 was adjacent), i.e. it discriminates poorly
 AMONG off-goal tiles, at a cost under half a turn.
 
+**A BLANK ON A LOWER GOAL IS OFTEN COMPLETELY FREE (owner asked, 2026-09-12).**
+Exact value iteration over goal-tile states, `endgame_turns.py` (COMMITTED this
+time -- the 2026-08-27 scripts were scratchpad one-offs and had to be rebuilt
+from scratch to answer this):
+
+    numbered-2 + 2 blanks, all on goal 2     3.626
+    numbered-2 on goal 2 + blank on goal 1   3.273   <- lone numbered-2 EXACTLY
+    blanks on 2, 2, 1                        2.017   <- floor for 3 pieces is 2
+    blanks on 4, 2                           1.510
+    numbered-2 alone on goal 2               3.273
+    numbered-2 + one blank, both on goal 2   3.332
+    blanks on 2, 2 / 2, 1 / 1,1,1 / 4,4      1.322 / 1.029 / 2.000 / 2.133
+
+**A blank on goal 1 under a numbered-2 on goal 2 costs NOTHING -- 3.273 either
+way -- while the same blank ON goal 2 costs 0.059, and two of them 0.353.** The
+mechanism is the highest-occupied-goal rule. Under the numbered, the goal-1
+blank is locked to an exact 1; but on the turn the 2 finally arrives, the
+numbered banks and goal 1 becomes the highest occupied, so the OTHER die (any
+value) banks the blank, and there is always a spare die that turn. A blank on
+goal 2 instead competes with the numbered for the same dice. Same effect
+without any numbered piece: blanks on 2,1 = 1.029, identical to a lone blank on
+goal 2. **Stack low and the extras ride out free; stack level and they queue.**
+`blanks on 2,2,1` = 2.017 is within 0.017 of 2.000, the hard floor for three
+pieces (two dice, so at most two banks a turn).
+**Repositioning is worth nothing on goals 1-2 and little anywhere:** with
+goal-to-goal moves disabled the table is unchanged except 4,2 (1.510 -> 1.526),
+4,4 (2.133 -> 2.222) and a lone blank on goal 4 (1.303 -> 1.333).
+**Verified before being trusted, per the rule below:** goal distances against
+the engine's own `get_reachable_tiles` (0 disagreements / 420) and `can_save` +
+the endgame stage against `get_saving_die` / `get_game_stage` over every
+arrangement of up to 3 pieces x every die (**0 / 13032**). It then reproduces
+the published full-board numbers exactly on goals 1-4, 3.273 for every numbered
+piece, and 1.322 for two blanks on goal 2 against the 1.323 closed form.
+**Scope:** pieces are confined to goal tiles, which reads **0.001 high on goal 5
+and 0.006 high on goal 6** -- precisely the two goals the full-board DP
+sometimes leaves for a field tile. Exact for everything above (goals 1, 2, 4);
+a tight upper bound if a piece sits on goal 5 or 6. With 2+ pieces the
+restriction is structural rather than an approximation: stepping onto a field
+tile makes `can_be_saved` false, dropping the player out of `endgame` and
+killing the higher-die rule for every piece at once.
+
 **TWO PIECES ON A LOW GOAL CLEAR ALMOST FREE (2026-08-27).** Two blanks on goal
 2 take **1.32 turns** to both bank (engine-driven Monte Carlo 1.320, closed form
 1.323) — barely more than the **1.303** for a SINGLE blank on goal 4. Two dice
