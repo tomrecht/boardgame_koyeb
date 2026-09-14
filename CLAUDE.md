@@ -698,6 +698,33 @@ with it in mind.** Assessment and the concrete implications:
 
 ## Current state
 
+- **THE TUTORIAL'S CLOSING PANEL NOW POINTS AT THE DIFFICULTY SLIDER (first
+  tester, 2026-09-13).** `getAIDifficulty()` defaults to **1.0 = argmax, full
+  strength** -- the champion that beats the owner ~50-60% -- and a player who
+  had just finished the tutorial had no idea the setting existed. The last step
+  now ends: *"The computer plays at full strength by default. For a gentler
+  first game, turn Difficulty down under the ⚙ settings."*
+  **It had to be SHORT, and the first two drafts were not.** The phone card is
+  capped to the band under the rack (`_tutFitBoard`), and `#tutText` scrolls
+  inside it -- so a longer closing panel pushes the difficulty sentence, which
+  is at the END of the text, below the fold. Measured: at 288 characters it
+  scrolled on a phone WITH system-bar insets (the tester's own case, where the
+  card is 256px rather than 270), at 226 it does not. **Do not lengthen this
+  step without re-checking `scrollHeight > clientHeight` at
+  `?safeinset=48,0,56,0`.** Verified no scroll and the Finish button on screen
+  at phone portrait (with and without insets), phone landscape and desktop, and
+  step 1's card box is byte-identical -- the bubble is pinned to the TALLEST
+  step, so a longer final step would otherwise have shrunk the board on desktop
+  for every step.
+  **Not done, and the open question:** the default itself. Options discussed
+  with owner -- lower it globally (but a silently weaker opponent is its own
+  problem), ask once at the end of the tutorial with two buttons, or relabel
+  the slider's ends ("Max"/"Easy"/"70%" says nothing about what it does).
+  **Nobody has ever measured what a given difficulty PLAYS like**: it is
+  top-p sampling over a z-scored softmax (`_pick_move_index`), so a win rate
+  per setting against d=1 is a cheap arena run and would let the slider be
+  labelled honestly.
+
 - **ANDROID 15/16 EDGE-TO-EDGE PUT THE STATUS BAR ON THE RACKS AND THE
   NAVIGATION BAR ON THE TUTORIAL'S BUTTONS (first tester, Pixel 10,
   2026-09-13).** The packaged app targets **SDK 36**; Android 15 enforces
