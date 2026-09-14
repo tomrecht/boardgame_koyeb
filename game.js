@@ -2553,7 +2553,12 @@ const _tutSteps = [
     },
     {
         title: 'You win!',
-        text: 'All twelve saved. The game ends the moment your last piece is off the board, and you score the number of pieces your opponent still had out — four. That’s the whole game: enter, move, capture, wall, save. Ready for a real one?',
+        // The difficulty note is here because a first tester finished the
+        // tutorial, lost to a full-strength net and had no idea the slider
+        // existed. Kept SHORT deliberately: the phone card is capped to the
+        // band under the rack, and a longer closing panel scrolls -- which
+        // would hide the very sentence this exists for.
+        text: 'All twelve saved — and you score the number of pieces your opponent still had out: four.<br><br>The computer plays at <b>full strength</b> by default. For a gentler first game, turn <b>Difficulty</b> down under the ⚙ settings. Ready for a real one?',
         finish: true,
         done: () => false,
     },
