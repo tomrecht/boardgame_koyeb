@@ -1131,6 +1131,12 @@ with it in mind.** Assessment and the concrete implications:
     lines over ten commits); index.html, sw.js, the manifest, the ported agent
     and the ort runtime are byte-identical, so `sw.js` keeps `quahuru-v8` — it
     is network-first for index.html and game.js, and no cache-first asset moved.
+    **DO NOT REBUILD THE PACKAGE FOR EVERY CHANGE (owner, 2026-09-13).** Push
+    commits as normal -- the web build at quahuru.com carries each one -- and
+    package only when a BATCH is worth a new version; the versionCode bump
+    belongs to that moment. Every upload costs a Play review cycle and a
+    permanent versionCode, and the closed test's 14-day clock counts opted-in
+    testers, not versions, so batching costs nothing.
     **Rebuilding the package (the whole recipe):**
     `python3 build_web.py --out dist` → bump `versionCode`/`versionName` in
     `android/app/build.gradle` → `npx --cache ./.npm-cache cap sync android` →
