@@ -1093,8 +1093,17 @@ with it in mind.** Assessment and the concrete implications:
     needed versionCode 2. **A reinstall from Play does NOT pick up a local
     rebuild** — obvious in hindsight, easy to misread as the icon fix having
     failed.
-    **CURRENT PACKAGE: versionCode 4, versionName 1.0.3, 8.66 MB, built
-    2026-09-13** (superseding versionCode 3 / 1.0.2 of 2026-08-27). It carries
+    **CURRENT PACKAGE: versionCode 5, versionName 1.0.4, 8.3 MB, built
+    2026-09-13** -- the safe-area fix for Android 15/16 edge-to-edge (see the
+    entry at the top of Current state); it is the one to upload for the closed
+    test, since versionCode 4 puts the status bar on the racks on any Android
+    15+ device. Verified: `jar verified`, versionCode 5 / versionName 1.0.4 /
+    com.quahuru.game read out of the bundle's protobuf manifest (an .aab's
+    manifest is PROTOBUF, not binary XML -- `aapt2 dump xmltree` cannot read
+    the bundle at all, and a UTF-16 string scan finds nothing; grep it as
+    UTF-8), and `base/assets/public/game.js` and `index.html` hash-identical to
+    the working tree.
+    versionCode 4 / 1.0.3 (also 2026-09-13) carried
     the September input and pre-game work — the ghost-tap fix, the input lock
     during the computer's turn, the freeze behind New Game / New Match / How to
     Play, the tap-claims-the-gesture fix, tap-to-pass-the-selection, empty-space
