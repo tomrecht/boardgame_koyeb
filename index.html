@@ -29,6 +29,21 @@
     <script src="local_agent.js" defer></script>
     <script src="game.js" defer></script>
     <style>
+        /* SAFE AREA, BOTH PLATFORMS AND BOTH DELIVERY MECHANISMS.
+           Android 15 enforces edge-to-edge for anything targeting SDK 35+, and
+           Android 16 removed the opt-out entirely, so the packaged app's
+           WebView draws BEHIND the status and navigation bars. iOS has the
+           notch and the home indicator. The insets reach the page two
+           different ways -- env() on iOS and on Android WebView 140+, and
+           Capacitor's own --safe-area-inset-* custom properties (its
+           SystemBars inset handling) on anything older -- so take the larger
+           of the two and read only these four everywhere else. */
+        :root {
+            --safe-t: max(env(safe-area-inset-top,    0px), var(--safe-area-inset-top,    0px));
+            --safe-r: max(env(safe-area-inset-right,  0px), var(--safe-area-inset-right,  0px));
+            --safe-b: max(env(safe-area-inset-bottom, 0px), var(--safe-area-inset-bottom, 0px));
+            --safe-l: max(env(safe-area-inset-left,   0px), var(--safe-area-inset-left,   0px));
+        }
         html, body {
             margin: 0;
             height: 100%;
@@ -65,8 +80,13 @@
             max-width: none;
             max-height: none;
             position: fixed;
-            top: 0;
-            left: 0;
+            /* Inset by the safe area rather than pinned to 0,0: the canvas
+               carries every piece of furniture the game draws, so keeping it
+               clear of the system bars keeps the racks, dice, HUD row and
+               score clear of them too, in one move and in both orientations.
+               _sizeCanvasToScreen sets all four properties. */
+            top: var(--vy, 0px);
+            left: var(--vx, 0px);
         }
     </style>
 </head>

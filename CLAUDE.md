@@ -698,6 +698,79 @@ with it in mind.** Assessment and the concrete implications:
 
 ## Current state
 
+- **ANDROID 15/16 EDGE-TO-EDGE PUT THE STATUS BAR ON THE RACKS AND THE
+  NAVIGATION BAR ON THE TUTORIAL'S BUTTONS (first tester, Pixel 10,
+  2026-09-13).** The packaged app targets **SDK 36**; Android 15 enforces
+  edge-to-edge for anything targeting 35+, and Android 16 removed
+  `windowOptOutEdgeToEdgeEnforcement` entirely -- so the WebView renders BEHIND
+  the system bars and there is no opt-out at that target. Owner's own Android
+  never showed it (older OS), so this arrived with the first outside tester.
+  **Capacitor 8.5 already hands the page the numbers, two different ways**
+  (`SystemBars.java`, `insetsHandling: "css"` by default): on WebView **140+**
+  with `viewport-fit=cover` it passes the insets through, so `env(safe-area-
+  inset-*)` is correct AND it injects `--safe-area-inset-*` as custom
+  properties; on anything older it pads the WebView instead. Either way the
+  PAGE has to read them, and this one read only the bottom (for the iPhone home
+  indicator) and nothing read the top at all.
+  **index.html defines `--safe-t/r/b/l` as the `max()` of the two sources** and
+  everything else reads only those four.
+  **THE CANVAS IS NOW INSET BY THE SAFE AREA** (`_sizeCanvasToScreen` sets
+  `--vx/--vy` alongside `--vw/--vh`). One change covers every piece of
+  furniture the game draws -- board, racks, dice, arrows, score, HUD row -- on
+  all four edges, because they are all inside the camera's frame; and it costs
+  nothing elsewhere, since every world-to-CSS conversion in game.js already
+  goes through the canvas's own bounding rect and **Phaser maps pointers
+  through it too**. Measured: a tap aimed at the front rack piece selects that
+  piece with a 48/56 inset in portrait, with 48/24/48 in landscape, and with no
+  inset -- the offset canvas does not move the input.
+  `_safeBottomWorld()` is **deleted**; the portrait bottom stack no longer
+  subtracts anything, because the frame it sits in is already inset.
+  **The DOM chrome is a separate job** -- it is positioned against the
+  VIEWPORT, not the canvas, so it does not ride that inset: the gear and its
+  panel, the legend button and popup, the flash notice, the first-run toast and
+  the tutorial card all add the relevant `--safe-*` in `calc()`, and the five
+  full-screen centred overlays (welcome, match setup, confirm, How to Play,
+  coin flip) pad their centring box by all four.
+  Measured on an emulated 412x915 phone, `?safeinset=48,0,56,0`:
+
+        canvas 0..915 -> 48..859 (= 915 - 56)   tutorial rack top 15 -> 61
+        tutorial card bottom 899 -> 843          gear top 10 -> 58
+
+  and landscape `?safeinset=0,48,24,48`: canvas x 48..867, card right edge 851,
+  gear right edge 855 -- all inside. **With no inset the layout is unchanged**
+  (canvas, racks, HUD row, tutorial card and the desktop build all identical to
+  the previous commit, measured against a stashed baseline).
+  **`?safeinset` now takes `T,R,B,L` as well as a single bottom value, and it
+  WRITES THE CSS VARIABLES rather than short-circuiting the JS read.** The
+  first cut only overrode the JS side, so the gear -- which is CSS `calc()` --
+  measured at its uninset position while the test passed: an override that only
+  half the code can see tests only half the fix.
+  **The insets can arrive late and without a resize**, because Capacitor
+  injects them from a window-insets listener after the page is up, so
+  `setupCameraControls` watches the reading itself every 250ms for the first
+  six seconds and re-lays out when it moves; after that a resize covers it.
+  When the BUFFER is unchanged but the canvas has MOVED, `scale.updateBounds()`
+  has to be called by hand or Phaser keeps mapping pointers through the old
+  rect.
+  **The page is painted the theme's ground on phones** (`_paintPageGround`), so
+  the strips behind the bars read as a continuation of the board rather than as
+  a grey frame. Desktop keeps index.html's colour -- its letterbox bands have
+  always been that colour.
+  **Open, not established: whether Settings > Fullscreen actually hides the
+  bars in the PACKAGED app.** It is on by default on phones, and if it worked
+  there the tester would have seen no bars at all -- Capacitor's
+  `onShowCustomView` may satisfy `requestFullscreen` without going immersive.
+  Worth checking on a device; the layout fix stands either way, and in
+  fullscreen the insets simply go to zero and the board gets the whole screen
+  back.
+  **Two harness traps, both of which produced a convincing wrong answer:**
+  `camera.worldView` is all zeros until a frame RENDERS and headless Chrome
+  does not always paint, so a world-to-CSS test must derive the view from
+  `scrollX`/`zoom` (`worldView.x = scrollX + (camW - camW/zoom)/2`) instead;
+  and a tap test that happens to run on the COMPUTER's turn reads as a dead tap
+  -- `_inputLocked` is doing its job. Set both sides human before the game
+  starts.
+
 - **NARROW TILES KEEP THE OLD FORWARD-TAP-TO-TILE BEHAVIOUR (owner, 2026-09-11).**
   The face/halo split (tap the piece = take the selection, tap around it = move)
   needs somewhere to aim BESIDE the piece, and on a narrow tile the piece IS the
