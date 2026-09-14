@@ -158,6 +158,20 @@ const THEMES = {
 // Phaser hex int -> CSS colour string
 function _cssHex(n) { return '#' + n.toString(16).padStart(6, '0'); }
 
+// The PAGE shows through wherever the canvas does not reach. On a phone that is
+// now the safe-area strips behind the status and navigation bars, so painting
+// the page the theme's own ground makes them read as a continuation of the
+// board rather than as a grey frame around it. Phone-only: desktop letterboxes
+// with Scale.FIT and its bands have always been index.html's colour.
+function _paintPageGround() {
+    if (!_isPhone()) return;
+    const css = _cssHex(THEME.bg);
+    try {
+        document.documentElement.style.background = css;
+        if (document.body) document.body.style.background = css;
+    } catch (e) {}
+}
+
 const _themeKey = new URLSearchParams(location.search).get('theme')
     || (typeof localStorage !== 'undefined' && localStorage.getItem('boardTheme'))
     || 'parchment';
@@ -488,8 +502,12 @@ function _placeTurnStatus(el) {
     }
     const r = c.getBoundingClientRect();
     const H = 34, GAP = 8;                       // pill height, and its clearance
-    const above = r.top, below = window.innerHeight - r.bottom;
-    const side = Math.max(r.left, window.innerWidth - r.right);
+    // The bands are measured against the SAFE rectangle, not the viewport: the
+    // canvas is inset by the system bars, so the strip above it is the status
+    // bar itself and a pill placed there would be underneath the clock.
+    const ins = _safeInsets();
+    const above = r.top - ins.top, below = (window.innerHeight - ins.bottom) - r.bottom;
+    const side = Math.max(r.left - ins.left, (window.innerWidth - ins.right) - r.right);
     const set = (css) => { el.style.cssText = el._base + css; };
     if (above >= H + GAP) {                      // portrait: band above the board
         set(`left:50%; transform:translateX(-50%); top:${Math.round(r.top - H - GAP / 2)}px;`);
@@ -501,17 +519,20 @@ function _placeTurnStatus(el) {
         // narrow to use).
         const onLeft = r.left >= window.innerWidth - r.right - 24;
         const w = Math.round((onLeft ? r.left : window.innerWidth - r.right) - 16);
-        set(`top:${onLeft ? 10 : 84}px; ${onLeft ? 'left' : 'right'}:8px; transform:none;` +
+        set(`top:${(onLeft ? 10 : 84) + ins.top}px;` +
+            `${onLeft ? 'left' : 'right'}:${8 + (onLeft ? ins.left : ins.right)}px; transform:none;` +
             `width:${w}px; font-size:12px; text-align:center; white-space:normal; line-height:1.25;`);
     } else if (_isPortrait()) {
         // The strip above the rack band is free apart from the gear, which owns
         // the top right.
-        set('left:12px; top:14px; transform:none; font-size:12px; padding:4px 10px;');
+        set(`left:${12 + ins.left}px; top:${14 + ins.top}px; transform:none;` +
+            'font-size:12px; padding:4px 10px;');
     } else {
         // No band at all -- on a phone the canvas now fills the screen. Sit under
         // the settings gear on the right: the top left holds the HUD buttons and
         // the centre is the board.
-        set('right:12px; top:84px; transform:none; font-size:12px; padding:4px 10px;');
+        set(`right:${12 + ins.right}px; top:${84 + ins.top}px; transform:none;` +
+            'font-size:12px; padding:4px 10px;');
     }
 }
 
@@ -652,13 +673,14 @@ function _fur() {
     return { diceX: [wd.x + 60, wd.x + 60 + ds + 20], diceY: wd.y + 455 - lift, dieSize: ds,
              undoX: wd.x + 855, endX: wd.x + 1045, arrowY: wd.y + 530 - lift,
              cols, rows,
-             // THE WHOLE BOTTOM STACK RIDES UP WITH THE SAFE-AREA INSET, not just
-             // the button row. Lifting the buttons alone walked them straight
-             // into the counter above: owner, on an iPhone, saw "turns with no
-             // save" underneath New Game / New Match / How to Play. Measured at
-             // a 34px inset: the row moved from 1765-1865 to 1664-1764 while the
-             // counter stayed at 1645-1735, overlapping all three buttons.
-             scoreAt: [wd.x + wd.w / 2, wd.y + 2040 - lift - _safeBottomWorld()],
+             // The bottom stack used to subtract the safe-area inset here, so
+             // that the button row cleared the iPhone home indicator (and the
+             // counter and Call draw had to ride up with it, or the row walked
+             // into them). It no longer does: _sizeCanvasToScreen insets the
+             // CANVAS by the safe area, so the whole world -- board, racks,
+             // dice, this stack -- is already drawn inside it, on every edge
+             // rather than only the bottom.
+             scoreAt: [wd.x + wd.w / 2, wd.y + 2040 - lift],
              scoreOrigin: [0.5, 0],
              // Call draw sits BESIDE the counter, not below it. Stacked, its
              // centre was 65 below the counter's top and the counter is 90 tall,
@@ -667,10 +689,10 @@ function _fur() {
              // 584 world units against 455 of content).
              // These are the CENTRED defaults; _placeImpasseRow overrides both
              // whenever the button is actually showing.
-             impasseAt: [wd.x + wd.w / 2, wd.y + 2225 - lift - _safeBottomWorld()],
-             callDrawAt: [wd.x + wd.w / 2, wd.y + 2270 - lift - _safeBottomWorld()],
+             impasseAt: [wd.x + wd.w / 2, wd.y + 2225 - lift],
+             callDrawAt: [wd.x + wd.w / 2, wd.y + 2270 - lift],
              hudX: [wd.x + 230, wd.x + 550, wd.x + 870],
-             hudY: wd.y + 2395 - lift - _safeBottomWorld(),
+             hudY: wd.y + 2395 - lift,
              whiteUn: w.un, whiteSv: w.sv, blackUn: b.un, blackSv: b.sv };
 }
 
@@ -703,35 +725,49 @@ function _sizeGear(el) {
 // because env() is only available to CSS. ?safeinset=NN forces a value, which
 // is the only way to exercise this without an iPhone.
 let _safeProbe = null;
-function _safeBottomCss() {
-    try {
-        const q = new URLSearchParams(location.search).get('safeinset');
-        if (q !== null && q !== '' && !isNaN(+q)) return +q;
-    } catch (e) {}
+const _SAFE_ZERO = { top: 0, right: 0, bottom: 0, left: 0 };
+let _safeForced = false;
+function _safeInsets() {
+    // ?safeinset=NN keeps its original meaning -- bottom only, the iPhone home
+    // indicator. ?safeinset=T,R,B,L forces all four, which is the only way to
+    // exercise an Android status bar AND navigation bar without the device.
+    // The override WRITES THE CSS VARIABLES rather than short-circuiting the
+    // read: half this layout is CSS calc() on those variables (the gear, the
+    // tutorial card, the centred cards) and an override only JS could see left
+    // that half at its uninset position -- which is exactly the half the bug
+    // was reported against, so the test would have passed while the device
+    // still failed.
+    if (!_safeForced) {
+        try {
+            const q = new URLSearchParams(location.search).get('safeinset');
+            if (q) {
+                const n = q.split(',').map(v => parseFloat(v) || 0);
+                const v = n.length === 1 ? [0, 0, n[0], 0] : n.length === 4 ? n : null;
+                if (v && document.documentElement) {
+                    ['t', 'r', 'b', 'l'].forEach((k, i) =>
+                        document.documentElement.style.setProperty('--safe-' + k, v[i] + 'px'));
+                }
+            }
+        } catch (e) {}
+        _safeForced = true;
+    }
+    if (!document.body) return _SAFE_ZERO;
     if (!_safeProbe) {
+        // ONE hidden probe, padded with all four values and read back through
+        // getComputedStyle: env() is available only to CSS, and index.html's
+        // --safe-t/r/b/l already fold in Capacitor's own --safe-area-inset-*
+        // for the WebViews where env() reports nothing.
         _safeProbe = document.createElement('div');
-        _safeProbe.style.cssText = 'position:fixed; left:0; bottom:0; width:0; visibility:hidden;' +
-            'pointer-events:none; height:env(safe-area-inset-bottom, 0px);';
+        _safeProbe.style.cssText = 'position:fixed; left:0; top:0; width:0; height:0;' +
+            'visibility:hidden; pointer-events:none;' +
+            'padding:var(--safe-t) var(--safe-r) var(--safe-b) var(--safe-l);';
         document.body.appendChild(_safeProbe);
     }
-    return _safeProbe.getBoundingClientRect().height || 0;
-}
-
-// The same distance in world units, so a layout number can be shifted by it.
-function _safeBottomWorld() {
-    const css = _safeBottomCss();
-    if (!css) return 0;
-    // World units per CSS pixel -- NOT camera zoom, which is world units per
-    // BUFFER pixel and is ~3x off on a device-pixel-ratio 3 screen.
-    const cam = _mainCamera();
-    const cv = gameInstance && gameInstance.canvas;
-    const rect = cv && cv.getBoundingClientRect();
-    if (cam && rect && rect.height && cam.worldView.height) {
-        return css * (cam.worldView.height / rect.height);
-    }
-    // Before the first render: the frame fills the screen at base zoom.
-    const vh = window.innerHeight || 0;
-    return vh ? css * (_world().h / vh) : 0;
+    const cs = getComputedStyle(_safeProbe);
+    return { top:    parseFloat(cs.paddingTop)    || 0,
+             right:  parseFloat(cs.paddingRight)  || 0,
+             bottom: parseFloat(cs.paddingBottom) || 0,
+             left:   parseFloat(cs.paddingLeft)   || 0 };
 }
 
 function _hudK()   { return _isPortrait() ? 2.6 : (_isPhone() ? 2 : 1); }
@@ -883,13 +919,28 @@ function _setCameraView(cam, left, top) {
 function _sizeCanvasToScreen() {
     if (!_isPhone() || !gameInstance || !gameInstance.scale) return;
     const dpr = Math.min(window.devicePixelRatio || 1, 3);   // cap: 4x buffers cost more than they show
-    const vw = Math.round(window.innerWidth), vh = Math.round(window.innerHeight);
+    // THE CANVAS SITS INSIDE THE SAFE AREA, NOT ACROSS THE WHOLE SCREEN.
+    // Android 15 enforces edge-to-edge for targetSdk 35+ and Android 16 removed
+    // the opt-out, so the packaged app's WebView renders behind the status and
+    // navigation bars; a tester on a Pixel 10 had the clock sitting on his rack
+    // and the navigation bar over the tutorial's buttons. Insetting the canvas
+    // is one change that covers EVERYTHING the game draws -- board, racks,
+    // dice, arrows, score, HUD row -- on all four edges, and it costs nothing
+    // elsewhere: every world-to-screen conversion in this file already goes
+    // through the canvas's own bounding rect, and Phaser maps pointers through
+    // it too, so input follows the canvas without a special case.
+    const ins = _safeInsets();
+    const vw = Math.round(window.innerWidth - ins.left - ins.right);
+    const vh = Math.round(window.innerHeight - ins.top - ins.bottom);
     if (!vw || !vh) return;
-    // CSS owns the displayed size, from these two custom properties, so Phaser
-    // re-asserting its own inline width/height on resize cannot win.
+    // CSS owns the displayed size and position, from these custom properties,
+    // so Phaser re-asserting its own inline width/height on resize cannot win.
     document.body.classList.add('fill-screen');
     document.documentElement.style.setProperty('--vw', vw + 'px');
     document.documentElement.style.setProperty('--vh', vh + 'px');
+    document.documentElement.style.setProperty('--vx', Math.round(ins.left) + 'px');
+    document.documentElement.style.setProperty('--vy', Math.round(ins.top) + 'px');
+    _paintPageGround();
     let bw = vw * dpr, bh = vh * dpr;
     // Never let the camera shrink the world at RASTERISATION time. Tile outlines
     // are ~1.5 world px; drawn at a zoom below 1 they fall under a device pixel
@@ -919,7 +970,14 @@ function _sizeCanvasToScreen() {
     // event or it recurses until the stack blows -- which is what broke rotation
     // and left the camera controls half-wired (no panning).
     const sz = gameInstance.scale.gameSize;
-    if (sz.width === bw && sz.height === bh) return;
+    if (sz.width === bw && sz.height === bh) {
+        // The BUFFER is unchanged but the canvas may still have MOVED -- an
+        // inset that appears without a size change (the system bars coming
+        // back) shifts it. Phaser maps every pointer through a cached canvas
+        // rect, so without this a tap would land at the wrong world point.
+        gameInstance.scale.updateBounds();
+        return;
+    }
     gameInstance.scale.resize(bw, bh);
 }
 
@@ -1639,7 +1697,7 @@ function flashNotice(text, ms = 2400) {
         // so being missable defeats the point. Bigger, darker, opaque, with a
         // wrap width: the route-choice notice is a full sentence and used to run
         // off the edge as one line.
-        el.style.cssText = 'position:fixed; top:44px; left:50%; transform:translateX(-50%);' +
+        el.style.cssText = 'position:fixed; top:calc(44px + var(--safe-t)); left:50%; transform:translateX(-50%);' +
             'z-index:31; font-family:' + HUD_FONT + '; font-size:17px; font-weight:700;' +
             'color:#28313b; background:rgba(255,255,255,.97); padding:11px 20px;' +
             'border-radius:14px; box-shadow:0 6px 22px rgba(0,0,0,.30); pointer-events:none;' +
@@ -1769,6 +1827,7 @@ function applyThemeLive(key) {
     // the whole board keeps the previous theme's colours.
     if (scene && scene._boardRT) { try { _bakeBoard(scene); } catch (e) {} }
     _themedRedraws.forEach(fn => { try { fn(); } catch (e) {} });
+    _paintPageGround();
 }
 
 // A single unobtrusive Settings gear (top-right) holding theme, difficulty and
@@ -1779,7 +1838,8 @@ function createSettingsPanel() {
         if (css) e.style.cssText = css; if (txt != null) e.textContent = txt; return e; };
 
     const gear = mk('button',
-        'position:fixed; top:10px; right:12px; z-index:41; width:64px; height:64px;' +
+        'position:fixed; top:calc(10px + var(--safe-t)); right:calc(12px + var(--safe-r));' +
+        'z-index:41; width:64px; height:64px;' +
         'border-radius:14px; border:1px solid rgba(0,0,0,.15); background:rgba(255,255,255,.75);' +
         'color:#28313b; font-size:34px; line-height:1; cursor:pointer; opacity:.6;' +
         'display:grid; place-items:center; transition:opacity .15s;', '⚙');
@@ -1789,12 +1849,13 @@ function createSettingsPanel() {
     gear.onmouseleave = () => gear.style.opacity = '.6';
 
     const panel = mk('div',
-        'position:fixed; top:82px; right:12px; z-index:41; display:none;' +
+        'position:fixed; top:calc(82px + var(--safe-t)); right:calc(12px + var(--safe-r));' +
+        'z-index:41; display:none;' +
         'background:#fff; color:#28313b; font-family:' + HUD_FONT + '; font-size:13px;' +
         'border:1px solid rgba(0,0,0,.15); border-radius:12px; padding:12px 14px; width:216px;' +
         // A landscape phone is ~390px tall, far shorter than this panel: without
         // a cap its lower half (sound, tutorial) sat off-screen and unreachable.
-        'box-sizing:border-box; max-height:calc(100vh - 94px);' +
+        'box-sizing:border-box; max-height:calc(100vh - 94px - var(--safe-t) - var(--safe-b));' +
         'overflow-y:auto; overscroll-behavior:contain; -webkit-overflow-scrolling:touch;' +
         'box-shadow:0 12px 34px rgba(0,0,0,.22);');
     panel.id = 'settingsPanel';
@@ -1980,7 +2041,8 @@ function createLegendButton() {
         if (css) e.style.cssText = css; if (txt != null) e.innerHTML = txt; return e; };
 
     const btn = mk('button',
-        'position:fixed; bottom:12px; right:12px; z-index:41; width:30px; height:30px;' +
+        'position:fixed; bottom:calc(12px + var(--safe-b)); right:calc(12px + var(--safe-r));' +
+        'z-index:41; width:30px; height:30px;' +
         'border-radius:50%; border:1px solid rgba(0,0,0,.15); background:rgba(255,255,255,.75);' +
         'color:#28313b; font-size:15px; font-weight:700; cursor:pointer; opacity:.55; transition:opacity .15s;', '?');
     btn.id = 'legendBtn'; btn.title = 'Legend';
@@ -1988,7 +2050,8 @@ function createLegendButton() {
     btn.onmouseleave = () => btn.style.opacity = '.55';
 
     const pop = mk('div',
-        'position:fixed; bottom:50px; right:12px; z-index:41; display:none; width:250px;' +
+        'position:fixed; bottom:calc(50px + var(--safe-b)); right:calc(12px + var(--safe-r));' +
+        'z-index:41; display:none; width:250px;' +
         'background:#fff; color:#28313b; font-family:' + HUD_FONT + '; font-size:12.5px; line-height:1.45;' +
         'border:1px solid rgba(0,0,0,.15); border-radius:12px; padding:12px 14px;' +
         'box-shadow:0 12px 34px rgba(0,0,0,.22);');
@@ -2027,7 +2090,7 @@ function maybeShowFirstRunNudge() {
 
     const t = document.createElement('div');
     t.id = 'firstRunNudge';
-    t.style.cssText = 'position:fixed; left:50%; bottom:18px; transform:translateX(-50%) translateY(12px);' +
+    t.style.cssText = 'position:fixed; left:50%; bottom:calc(18px + var(--safe-b)); transform:translateX(-50%) translateY(12px);' +
         'z-index:55; background:#28313b; color:#fff; font-family:' + HUD_FONT + '; font-size:13.5px;' +
         'padding:11px 16px; border-radius:11px; box-shadow:0 12px 30px rgba(0,0,0,.3);' +
         'display:flex; align-items:center; gap:12px; opacity:0; transition:opacity .3s, transform .3s; max-width:90vw;';
@@ -2207,6 +2270,10 @@ function _tutFitBoard() {
     const b = _tut.bubble;
     const mode = _tutLayout();
     const gap = 16;
+    // The card is a DOM overlay, so it does NOT ride the canvas inset -- it is
+    // positioned against the viewport and would sit under the navigation bar.
+    // A tester on a Pixel 10 had Exit and Skip half-hidden behind it.
+    const ins = _isPhone() ? _safeInsets() : _SAFE_ZERO;
 
     // Phones use Scale.NONE and the canvas always fills the viewport, so the
     // board CANNOT be shrunk to make room -- setParentSize does nothing here.
@@ -2240,35 +2307,35 @@ function _tutFitBoard() {
             const bw = _tut._cardW;
             b.style.width = bw + 'px';
             b.style.left = 'auto';
-            b.style.right = gap + 'px';
+            b.style.right = (gap + ins.right) + 'px';
             // Anchor the TOP, not the centre. Vertically centring means a step
             // with more text grows both ways, so the card appears to move
             // between steps even though its box rules never changed -- which is
             // the drift owner still saw after the width was fixed.
-            b.style.top = gap + 'px';
+            b.style.top = (gap + ins.top) + 'px';
             b.style.bottom = 'auto';
             b.style.transform = _tut._xform = 'none';
-            b.style.maxHeight = (H - 2 * gap) + 'px';
+            b.style.maxHeight = (H - ins.top - ins.bottom - 2 * gap) + 'px';
         } else {
             b.style.width = 'min(640px, ' + (W - 2 * gap) + 'px)';
             b.style.left = '50%';
             b.style.right = 'auto';
             b.style.top = 'auto';
-            b.style.bottom = gap + 'px';
+            b.style.bottom = (gap + ins.bottom) + 'px';
             b.style.transform = _tut._xform = 'translateX(-50%)';
             // Portrait: cap the card to the band BELOW the lower rack rather
             // than to a fraction of the screen, so it cannot cover black's
             // pieces. That band is what hiding the score stack, and the lift in
             // _tutLift, are for. Falls back to the fraction if the camera has
             // not rendered a frame yet.
-            let cap = Math.round(H * 0.45);
+            let cap = Math.round((H - ins.top - ins.bottom) * 0.45);
             if (_isPortrait()) {
                 const f = _fur(), pr = _rackPR(), spacing = pr * 2 + 12;
                 // Rack panel bottom: drawBackground runs from y - pr for
                 // rows*spacing + pr + verticalPadding.
                 const below = Math.max(f.whiteUn[1], f.blackUn[1]) + f.rows * spacing + 22;
                 const cssY = _worldYToCss(below);
-                if (cssY !== null) cap = Math.max(120, Math.round(H - cssY - 2 * gap));
+                if (cssY !== null) cap = Math.max(120, Math.round(H - ins.bottom - cssY - 2 * gap));
             }
             b.style.maxHeight = cap + 'px';
         }
@@ -2849,7 +2916,7 @@ function showWelcome(starter) {
     const raced = document.getElementById('firstRunNudge'); if (raced) raced.remove();
     const box = document.createElement('div');
     box.id = 'welcomeScreen';
-    box.style.cssText = 'position:fixed; inset:0; z-index:56; display:grid; place-items:center;' +
+    box.style.cssText = 'position:fixed; inset:0; box-sizing:border-box;padding:var(--safe-t) var(--safe-r) var(--safe-b) var(--safe-l); z-index:56; display:grid; place-items:center;' +
         'background:rgba(0,0,0,.55); font-family:' + HUD_FONT + ';';
     // DESKTOP GETS A BIGGER CARD (owner): 420px of card with 15px body text is
     // small on a 1440px screen. Phones are left at 1 -- the card is already
@@ -2880,7 +2947,7 @@ function showWelcome(starter) {
     card.style.cssText = 'background:#fff; color:#28313b; border-radius:' + px(18) + ';' +
         'padding:' + px(30) + ' ' + px(34) + ';' +
         'width:min(' + px(420) + ',94vw); box-sizing:border-box; text-align:center;' +
-        'max-height:92vh; overflow-y:auto; box-shadow:0 20px 55px rgba(0,0,0,.35);';
+        'max-height:min(92vh, calc(100vh - var(--safe-t) - var(--safe-b))); overflow-y:auto; box-shadow:0 20px 55px rgba(0,0,0,.35);';
     // The name, on the one screen where it costs nothing (owner). Not during
     // play -- the board should own the screen, especially on a phone. The mark is
     // the SHIPPED app icon rather than anything new, so the welcome card, the
@@ -3043,7 +3110,7 @@ function showCoinFlip(starter, onDone) {
     const old = document.getElementById('coinFlip'); if (old) old.remove();
     const box = document.createElement('div');
     box.id = 'coinFlip';
-    box.style.cssText = 'position:fixed; inset:0; z-index:65; display:grid; place-items:center;' +
+    box.style.cssText = 'position:fixed; inset:0; box-sizing:border-box;padding:var(--safe-t) var(--safe-r) var(--safe-b) var(--safe-l); z-index:65; display:grid; place-items:center;' +
         'background:rgba(0,0,0,.4); font-family:' + HUD_FONT + ';';
     const coin = document.createElement('div');
     coin.style.cssText = 'width:120px; height:120px; position:relative; transform-style:preserve-3d;';
@@ -3087,7 +3154,7 @@ function showConfirm(message, onConfirm, confirmLabel) {
     const old = document.getElementById('confirmDlg'); if (old) old.remove();
     const box = document.createElement('div');
     box.id = 'confirmDlg';
-    box.style.cssText = 'position:fixed; inset:0; z-index:70; display:grid; place-items:center;' +
+    box.style.cssText = 'position:fixed; inset:0; box-sizing:border-box;padding:var(--safe-t) var(--safe-r) var(--safe-b) var(--safe-l); z-index:70; display:grid; place-items:center;' +
         'background:rgba(0,0,0,.42); font-family:' + HUD_FONT + ';';
     const btn = 'font-family:' + HUD_FONT + '; font-weight:700; font-size:15px; padding:9px 18px;' +
         'border-radius:9px; border:none; cursor:pointer;';
@@ -3117,7 +3184,7 @@ function showInstructions() {
     const old = document.getElementById('howToPlay'); if (old) old.remove();
     const box = document.createElement('div');
     box.id = 'howToPlay';
-    box.style.cssText = 'position:fixed; inset:0; z-index:60; display:grid; place-items:center;' +
+    box.style.cssText = 'position:fixed; inset:0; box-sizing:border-box;padding:var(--safe-t) var(--safe-r) var(--safe-b) var(--safe-l); z-index:60; display:grid; place-items:center;' +
         'background:rgba(0,0,0,.5); font-family:' + HUD_FONT + ';';
     // Two variants: a phone has no mouse and no keyboard, and it has gestures a
     // desktop does not, so the wording differs rather than covering both at once.
@@ -3172,11 +3239,13 @@ function showInstructions() {
     sections.forEach(([h, b]) => { html += '<h3>' + h + '</h3><p>' + b + '</p>'; });
     const card = document.createElement('div');
     card.style.cssText = 'position:relative; background:#fff; color:#28313b; border-radius:16px;' +
-        'width:min(720px,94vw); max-height:90vh; overflow:hidden; box-sizing:border-box;' +
+        'width:min(720px,94vw); box-sizing:border-box; overflow:hidden;' +
+        'max-height:min(90vh, calc(100vh - var(--safe-t) - var(--safe-b)));' +
         'box-shadow:0 18px 50px rgba(0,0,0,.3);';
     const body = document.createElement('div');
     body.className = 'htpBody';
-    body.style.cssText = 'padding:26px 30px; max-height:90vh; box-sizing:border-box;' +
+    body.style.cssText = 'padding:26px 30px; box-sizing:border-box;' +
+        'max-height:min(90vh, calc(100vh - var(--safe-t) - var(--safe-b)));' +
         'overflow-y:auto; -webkit-overflow-scrolling:touch;';
     body.innerHTML = html;
     const close = document.createElement('button');
@@ -3224,7 +3293,7 @@ function showMatchSetup(onCancel) {
     const old = document.getElementById('matchSetup'); if (old) old.remove();
     const box = document.createElement('div');
     box.id = 'matchSetup';
-    box.style.cssText = 'position:fixed; inset:0; z-index:60; display:grid; place-items:center;' +
+    box.style.cssText = 'position:fixed; inset:0; box-sizing:border-box;padding:var(--safe-t) var(--safe-r) var(--safe-b) var(--safe-l); z-index:60; display:grid; place-items:center;' +
         'background:rgba(0,0,0,.42); font-family:' + HUD_FONT + ';';
     const btnCss = 'font-family:' + HUD_FONT + '; font-weight:700; font-size:15px; padding:9px 18px;' +
         'border-radius:9px; border:none; cursor:pointer;';
@@ -7221,6 +7290,26 @@ endGame(winner, score = null, impasse_caller = null) {
         window.addEventListener('resize', onScreenChange);
         const onOrient = () => setTimeout(onScreenChange, 250);
         window.addEventListener('orientationchange', onOrient);
+        // THE INSETS CAN ARRIVE LATE AND WITHOUT A RESIZE. In the packaged app
+        // Capacitor injects --safe-area-inset-* from a window-insets listener
+        // that fires after the page is up, and the values change again when the
+        // system bars are hidden or shown (fullscreen, an edge swipe revealing
+        // them) -- which does not always resize the viewport. So watch the
+        // reading itself for the first few seconds and re-lay out when it moves,
+        // rather than trusting a resize to announce it.
+        if (!scene._insetWatch) {
+            let last = JSON.stringify(_safeInsets()), ticks = 0;
+            scene._insetWatch = setInterval(() => {
+                const now = JSON.stringify(_safeInsets());
+                if (now !== last) {
+                    last = now;
+                    onScreenChange();
+                    if (_replaceTurnStatus) _replaceTurnStatus();
+                    if (typeof _tut !== 'undefined' && _tut.active) _tutFitBoard();
+                }
+                if (++ticks > 24) { clearInterval(scene._insetWatch); scene._insetWatch = null; }
+            }, 250);
+        }
 
         const cam = scene.cameras.main;
         const PAN_SLOP = 8, MAX_FACTOR = 4;
