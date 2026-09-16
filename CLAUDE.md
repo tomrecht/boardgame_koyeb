@@ -3166,6 +3166,20 @@ with it in mind.** Assessment and the concrete implications:
     while a sum destination must sit at BFS distance a+b. A test that iterates
     the route map instead of the sum set counts non-destinations as "withheld"
     and proves nothing.
+    **A WITHHELD DESTINATION IS NOW STILL LIT YELLOW (owner, 2026-09-15).**
+    Dropping it from `reachableBySum` removed the highlight as well as the move,
+    so a reachable tile read as out of range -- owner found it entering a rack
+    piece on a sum of 7 where two lone enemies sat on the way to one goal, and
+    it applied to field destinations identically. `highlightReachableTiles` now
+    paints `ambiguousSum` in the sum colour too; the tile stays OUT of the
+    accepted set, so tapping it explains itself through `_noticeIfRouteWithheld`
+    instead of moving. Owner's call over the two alternatives (let it move and
+    auto-pick the capture; or offer a capture picker): keep the rule, just stop
+    hiding the tile. Measured, entry case: goal 4 with lone enemies on its two
+    intermediates -- lit yellow, move refused, piece still on the rack, no die
+    spent, notice shown; field case from a board piece -- same; control, an
+    ordinary sum destination is lit and still moves, both dice spent; and
+    `unhighlightAllTiles` still clears it.
   - **En-route capture now picks deliberately (unconditional, toggle-independent).**
     It used to capture the first eligible intermediate tile the two die orders
     happened to yield — an arbitrary choice dressed as a rule. Owner's rule:
