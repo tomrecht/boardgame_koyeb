@@ -4766,6 +4766,16 @@ class Piece {
         reachableByFirstDie.forEach(tile => { tile.reachableColor = colorFirstDie; tile.highlight(); });
         reachableBySecondDie.forEach(tile => { tile.reachableColor = colorSecondDie; tile.highlight(); });
         reachableBySum.forEach(tile => { tile.reachableColor = colorSum; tile.highlight(); });
+        // A sum destination WITHHELD because its routes offer a choice of
+        // captures is still genuinely reachable -- the player just has to spend
+        // the dice one at a time to say which piece they meant. Leaving it unlit
+        // made it read as out of range, which is how owner found it (entering a
+        // piece on a sum of 7 with two lone enemies on the way to one goal).
+        // It stays out of the accepted set, so tapping it explains itself
+        // through _noticeIfRouteWithheld instead of moving.
+        (reachableTiles.ambiguousSum || []).forEach(tile => {
+            tile.reachableColor = colorSum; tile.highlight();
+        });
     }
 
     canBeSaved() {
