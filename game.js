@@ -7018,7 +7018,6 @@ endGame(winner, score = null, impasse_caller = null) {
     // (or two computers) just get the win chime.
     const humanSide = (!WHITE_IS_AI && BLACK_IS_AI) ? 'white'
                     : (WHITE_IS_AI && !BLACK_IS_AI) ? 'black' : null;
-    if (winner === 'draw' || !humanSide || winner === humanSide) SFX.win(); else SFX.lose();
     if (winner === 'draw') {
         scoreTracker.draws += 1;
     } else if (winner === 'white') {
@@ -7032,6 +7031,14 @@ endGame(winner, score = null, impasse_caller = null) {
     if (typeof updateTurnStatus === 'function') updateTurnStatus('');   // hide during end screen
     // Fold this game into the active match (if any) before showing the result.
     const matchOver = matchTracker ? recordMatchGame(winner, score) : false;
+    // THE LAST GAME OF A MATCH SOUNDS FOR THE MATCH, NOT THE GAME (owner,
+    // 2026-09-20): a match is decided on TOTAL SCORE, so you can lose the final
+    // game and still take the match -- and the lose chime there reads as having
+    // lost the whole thing. Every earlier game still sounds for its own result.
+    // This has to run AFTER recordMatchGame, which is what sets
+    // matchTracker.winner; it used to fire above, before the match knew.
+    const soundFor = matchOver ? matchTracker.winner : winner;
+    if (soundFor === 'draw' || !humanSide || soundFor === humanSide) SFX.win(); else SFX.lose();
     this.scene.updateScoreText();
     this.scene.scene.start('EndGameScene', {
         winner: winner, score: score, impasse_caller: impasse_caller,

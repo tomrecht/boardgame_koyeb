@@ -690,6 +690,17 @@ with it in mind.** Assessment and the concrete implications:
 
 ## Current state
 
+- **THE LAST GAME OF A MATCH SOUNDS FOR THE MATCH, NOT THE GAME (owner,
+  2026-09-20).** A match is decided on TOTAL SCORE, so you can lose the final
+  game and still take the match -- and the lose chime there read as having lost
+  the whole thing. `endGame` now picks the chime from `matchTracker.winner` when
+  `recordMatchGame` reports the match over, and from the game's own winner
+  otherwise; the call had to MOVE below `recordMatchGame`, which is what sets
+  that field. Earlier games in a match still sound for their own result.
+  Untouched next to it: a `'tie'` game plays the LOSE chime for a human, because
+  the condition special-cases `'draw'` and not `'tie'`. Pre-existing, unrelated
+  to matches, not fixed.
+
 - **THE TUTORIAL'S CLOSING PANEL NOW POINTS AT THE DIFFICULTY SLIDER (first
   tester, 2026-09-13).** `getAIDifficulty()` defaults to **1.0 = argmax, full
   strength** -- the champion that beats the owner ~50-60% -- and a player who
