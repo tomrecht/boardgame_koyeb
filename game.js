@@ -1297,7 +1297,7 @@ function _updateMustEnterGhosts() {
             onTap(gh.body, () => {
                 piece.handleClick({ rightButtonDown: () => false });
                 _updateMustEnterGhosts();
-            }, 'ghost');
+            });
             // The ghost stands in for the piece, so it drags like one: drag it
             // onto a tile and the piece is entered and moved there in one go.
             gh.body.__ghost = { piece, ghost: gh };
@@ -1395,9 +1395,7 @@ function _multiTouchActive() { return _gestureWasMultiTouch || _touchesDown > 1;
 // pointer can only be that ghost. Keyed on having seen touch rather than on
 // _isPhone(), so `?phone=1` on a desktop still responds to a real mouse.
 function _isGhostPointer(pointer) {
-    const ghost = !!(_sawTouch && pointer && pointer.wasTouch === false);
-    if (ghost) _tapRecord('ghost-suppressed', { id: pointer && pointer.id });
-    return ghost;
+    return !!(_sawTouch && pointer && pointer.wasTouch === false);
 }
 
 ['touchstart', 'touchend', 'touchcancel'].forEach(type => {
@@ -1507,21 +1505,13 @@ function _bufferPerCss() {
 }
 function _tapSlop() { return _tapSlopCss() * _bufferPerCss(); }
 
-function onTap(obj, handler, label) {
+function onTap(obj, handler) {
     if (!_isPhone()) { obj.on('pointerdown', handler); return obj; }
     obj.on('pointerup', function (pointer, ...rest) {
-        const _r = { on: label || '?', id: pointer && pointer.id,
-                     kind: pointer ? (pointer.wasTouch ? 'touch' : 'mouse') : 'none',
-                     moved: pointer && pointer.getDistance ? Math.round(pointer.getDistance()) : null };
-        if (_isGhostPointer(pointer)) return;       // compatibility mouse event (records its own row)
-        if (_multiTouchActive()) { _tapRecord('tap-refused', Object.assign({ why: 'multitouch' }, _r)); return; }
-        if (pointer && pointer.getDistance && pointer.getDistance() > _tapSlop()) {
-            _tapRecord('tap-refused', Object.assign({ why: 'drag' }, _r)); return;  // a drag, not a tap
-        }
-        if (_gestureConsumed(pointer)) {
-            _tapRecord('tap-refused', Object.assign({ why: 'consumed' }, _r)); return;  // a piece already acted
-        }
-        _tapRecord('tap', _r);
+        if (_isGhostPointer(pointer)) return;       // compatibility mouse event
+        if (_multiTouchActive()) return;
+        if (pointer && pointer.getDistance && pointer.getDistance() > _tapSlop()) return;  // a drag, not a tap
+        if (_gestureConsumed(pointer)) return;      // a piece already acted on this tap
         return handler.call(this, pointer, ...rest);
     });
     return obj;
@@ -1954,36 +1944,6 @@ function createSettingsPanel() {
     toggle('Automatic en-route capture', getAutoEnRouteCapture, 'autoEnRoute', true);
 
     // Interactive tutorial launcher
-    // Phone only. NOT gated on the log being non-empty, though that was the first
-    // cut: createSettingsPanel runs ONCE at start-up, so that condition is
-    // evaluated before the player has had a chance to tap anything and the button
-    // never appeared. Same race as the first-run nudge.
-    if (_isPhone()) {
-        {
-            const tl = mk('button',
-                'width:100%; margin-top:12px; padding:8px 0; border-radius:8px; cursor:pointer;' +
-                'font-family:' + HUD_FONT + '; font-weight:600; font-size:13px;' +
-                'background:#fff; color:#5a6473; border:1px solid #cfd6e0;',
-                'Copy tap log');
-            tl.onclick = () => {
-                let txt = '';
-                try { txt = localStorage.getItem('tapLog') || '[]'; } catch (e) { txt = '[]'; }
-                let n = 0;
-                try { n = (JSON.parse(txt)).length; } catch (e) {}
-                const done = () => { tl.textContent = n ? ('Copied ' + n + ' taps') : 'Nothing recorded yet';
-                                     setTimeout(() => { tl.textContent = 'Copy tap log'; }, 2500); };
-                if (navigator.clipboard && navigator.clipboard.writeText) {
-                    navigator.clipboard.writeText(txt).then(done, () => {});
-                } else {
-                    const ta = document.createElement('textarea');
-                    ta.value = txt; document.body.appendChild(ta); ta.select();
-                    try { document.execCommand('copy'); done(); } catch (e) {}
-                    ta.remove();
-                }
-            };
-            panel.appendChild(tl);
-        }
-    }
     const tut = mk('button',
         'width:100%; margin-top:12px; padding:8px 0; border-radius:8px; border:none; cursor:pointer;' +
         'font-family:' + HUD_FONT + '; font-weight:700; font-size:13px; background:' + THEME.accentCss + '; color:#fff;',
@@ -3088,28 +3048,6 @@ function _welcomeCardCss() {
     document.head.appendChild(st);
 }
 
-// TAP LOG. Owner reports a single tap occasionally acting as a double, on a
-// phone, rarely, and neither of us can reproduce it on demand. The last bug of
-// this shape took three wrong theories before a log found it in one evening, so:
-// record rather than theorise. Deliberately NOT behind ?dev=1 -- asking owner to
-// set a query parameter BEFORE a bug he cannot predict has failed twice.
-// Capped, phone-only, and written straight to localStorage so it survives the
-// reload that usually follows noticing something odd.
-const _TAP_LOG_MAX = 400;
-let _tapLog = null;
-function _tapRecord(what, extra) {
-    if (!_isPhone()) return;
-    try {
-        if (_tapLog === null) {
-            try { _tapLog = JSON.parse(localStorage.getItem('tapLog') || '[]'); }
-            catch (e) { _tapLog = []; }
-        }
-        _tapLog.push(Object.assign({ t: Date.now(), what: what }, extra || {}));
-        if (_tapLog.length > _TAP_LOG_MAX) _tapLog.splice(0, _tapLog.length - _TAP_LOG_MAX);
-        localStorage.setItem('tapLog', JSON.stringify(_tapLog));
-    } catch (e) {}
-}
-
 // A quick coin-flip overlay landing on the player who goes first.
 function showCoinFlip(starter, onDone) {
     const old = document.getElementById('coinFlip'); if (old) old.remove();
@@ -3945,7 +3883,7 @@ function openStackPicker(tile) {
             chip.ondblclick = (ev) => {
                 ev.stopPropagation();
                 hideStackPicker();
-                if (piece.currentTile) piece.handleDoubleClick('stack-picker');
+                if (piece.currentTile) piece.handleDoubleClick();
             };
         }
         row.appendChild(chip);
@@ -4062,10 +4000,7 @@ class Piece {
         // this piece within the SAME _touchSeq is that ghost. A deliberate
         // double-tap is two physical touches (two seqs) and passes through.
         if (pointer && pointer.wasTouch === true) {
-            if (this._tapTouchSeq === _touchSeq) {
-                _tapRecord('dup-touch-suppressed', { piece: this.number, colour: this.player, id: pointer.id, seq: _touchSeq });
-                return;
-            }
+            if (this._tapTouchSeq === _touchSeq) return;
             this._tapTouchSeq = _touchSeq;
         }
         // ONE GESTURE, ONE ACTION. This physical tap has reached a PIECE, so the
@@ -4132,8 +4067,6 @@ class Piece {
             // A saved piece is part of the rack as far as aiming goes, so with a
             // piece selected this means "save it here" -- otherwise a filling
             // rack would shrink the target the player is told to click.
-            _tapRecord('saved-rack-piece', { piece: this.number, colour: this.player,
-                                             sel: this.game.selectedPiece ? this.game.selectedPiece.number : null });
             if (this.game.selectedPiece && this.rack.onSaveTap) this.rack.onSaveTap();
             return;
         }
@@ -4171,11 +4104,7 @@ class Piece {
                 // Kill the pending destination highlight, or it fires after the
                 // piece has already gone and re-lights the board.
                 clearTimeout(mark.piece._hlTimer);
-                if (this.game.sendToGoal(mark.piece)) {
-                    _tapRecord('BANKED', { via: 'rack-slot-tap', how: 'sendToGoal',
-                                           piece: mark.piece.number, colour: mark.piece.player });
-                    _clearSelection(this.game);
-                }
+                if (this.game.sendToGoal(mark.piece)) _clearSelection(this.game);
                 else if (this.game.selectedPiece === mark.piece) mark.piece.highlightReachableTiles();
                 return;
             }
@@ -4269,28 +4198,16 @@ class Piece {
         }
 
         const currentTime = Date.now(); // Use system time
-        // Everything the "single tap read as double" question needs: which
-        // pointer delivered it, how far it moved, and the gap that decided.
-        const _rec = {
-            piece: this.number, colour: this.player,
-            kind: pointer ? (pointer.wasTouch ? 'touch' : 'mouse') : 'none',
-            id: pointer && pointer.id,
-            moved: pointer && pointer.getDistance ? Math.round(pointer.getDistance()) : null,
-            gap: this.lastClickTime === null ? null : currentTime - this.lastClickTime,
-        };
         if (this.lastClickTime === null) {
             this.lastClickTime = currentTime;
-            _tapRecord('single', _rec);
             this.onClick();
         } else {
             const timeSinceLastClick = currentTime - this.lastClickTime;
             this.lastClickTime = currentTime;
             if (timeSinceLastClick < 300) {
-                _tapRecord('DOUBLE', _rec);
                 this.handleDoubleClick();
                 this.lastClickTime = null; // Reset after double click
             } else {
-                _tapRecord('single', _rec);
                 this.onClick();
             }
         }
@@ -4367,12 +4284,10 @@ class Piece {
         }
     }
 
-    handleDoubleClick(via) {
+    handleDoubleClick() {
         // Reachable without handleClick (the stack picker's opponent chips call
         // it straight, for the block-save gesture), so it needs its own guard.
         if (_inputLocked(this.game)) return;
-        _tapRecord('dblclick', { piece: this.number, colour: this.player, via: via || 'handleClick',
-                                 tile: this.currentTile ? this.currentTile.type : 'rack' });
         // cancel any pending (deferred) destination highlight from the first click
         // and clear highlights so a double-click save shows no destination flash.
         clearTimeout(this._hlTimer);
@@ -5417,7 +5332,7 @@ class Tile {
             onTap(this.badgeCircle, () => {
                     if (this.game.selectedPiece) { this.onClick(); return; }
                     if (stackPickerOpen()) hideStackPicker(); else openStackPicker(this);
-                }, 'stack-badge');
+                });
             this.badgeText = this.scene.add.text(x, y, '', {
                 fontFamily: HUD_FONT, fontStyle: 'bold', color: '#ffffff'
             }).setOrigin(0.5).setDepth(61);
@@ -5506,11 +5421,8 @@ class Tile {
         this.graphics.setInteractive(new Phaser.Geom.Polygon(points), Phaser.Geom.Polygon.Contains);
         onTap(this.graphics, (pointer) => {
             const t = pointer ? _resolveDestination(this.game, this, pointer.worldX, pointer.worldY) : this;
-            _tapRecord('tile-click', { ring: t.ring, sector: t.sector, type: t.type,
-                                       nearMiss: t !== this,
-                                       sel: this.game.selectedPiece ? this.game.selectedPiece.number : null });
             t.onClick();
-        }, 'tile');
+        });
         this.graphics
             .on('pointerover', () => this.onHover())
             .on('pointerout', () => this.onOut());
@@ -5634,7 +5546,7 @@ class Rack {
         if (!this.background.input) {
             this.background.setInteractive(new Phaser.Geom.Rectangle(bx, by, bw, bh),
                                            Phaser.Geom.Rectangle.Contains);
-            onTap(this.background, () => this.onEntryPanelTap(), 'entry-rack');
+            onTap(this.background, () => this.onEntryPanelTap());
         } else if (this.background.input.hitArea && this.background.input.hitArea.setTo) {
             this.background.input.hitArea.setTo(bx, by, bw, bh);
         }
@@ -5653,17 +5565,15 @@ class Rack {
         if (!p || !p.justMovedHome || !p.currentTile || p.currentTile.type !== 'home') return;
         game._rackSlotTap = null;
         clearTimeout(p._hlTimer);
-        if (game.sendToGoal(p)) {
-            _tapRecord('BANKED', { via: 'entry-panel-tap', how: 'sendToGoal', piece: p.number, colour: p.player });
-            _clearSelection(game);
-        } else if (game.selectedPiece === p && p.highlightReachableTiles) p.highlightReachableTiles();
+        if (game.sendToGoal(p)) _clearSelection(game);
+        else if (game.selectedPiece === p && p.highlightReachableTiles) p.highlightReachableTiles();
     }
 
     _wireSaveTap(bx, by, bw, bh) {
         if (!this.background.input) {
             this.background.setInteractive(new Phaser.Geom.Rectangle(bx, by, bw, bh),
                                            Phaser.Geom.Rectangle.Contains);
-            onTap(this.background, () => this.onSaveTap(), 'saved-rack');
+            onTap(this.background, () => this.onSaveTap());
         } else if (this.background.input.hitArea && this.background.input.hitArea.setTo) {
             this.background.input.hitArea.setTo(bx, by, bw, bh);
         }
@@ -5679,17 +5589,11 @@ class Rack {
         // Same order as dropping it here: save from where it stands, else the
         // two-dice walk-to-a-goal-and-save.
         if (piece.canBeSaved && piece.canBeSaved() && piece.save()) {
-            _tapRecord('BANKED', { via: 'saved-rack-tap', how: 'save', piece: piece.number, colour: piece.player });
             game._saveGuardUntil = Date.now() + 250;
             _clearSelection(game);
             return;
         }
-        if (game.sumSave(piece)) {
-            _tapRecord('BANKED', { via: 'saved-rack-tap', how: 'sumSave', piece: piece.number, colour: piece.player });
-            _clearSelection(game);
-        } else {
-            _tapRecord('saved-rack-tap', { piece: piece.number, colour: piece.player, banked: false });
-        }
+        if (game.sumSave(piece)) _clearSelection(game);
     }
 
     drawBackground() {
@@ -7580,16 +7484,8 @@ endGame(winner, score = null, impasse_caller = null) {
             if (rackDrop === mySaved) {
                 // already on its goal -> save; otherwise try a reach-goal-and-save
                 // (sum-save) in one drop.
-                if (piece.canBeSaved && piece.canBeSaved() && piece.save()) {
-                    _tapRecord('BANKED', { via: 'drag-to-saved-rack', how: 'save',
-                                           piece: piece.number, colour: piece.player });
-                    return;
-                }
-                if (piece.game.sumSave(piece)) {
-                    _tapRecord('BANKED', { via: 'drag-to-saved-rack', how: 'sumSave',
-                                           piece: piece.number, colour: piece.player });
-                    return;
-                }
+                if (piece.canBeSaved && piece.canBeSaved() && piece.save()) return;
+                if (piece.game.sumSave(piece)) return;
             }
 
             const drop = _resolveDestination(piece.game, target, pointer.worldX, pointer.worldY);
@@ -7665,7 +7561,7 @@ endGame(winner, score = null, impasse_caller = null) {
             if (this.gameOver || _inputLocked(this)) return;
             this.undoOneMove();   // one die / one move at a time
             clearMoveRecording();
-        }, 'undo');
+        });
 
         const undoTooltip = makeHudTip(scene, this.undoButton.x, this.undoButton.y + buttonSize * 0.72, 'Undo');
         this.undoButton.on('pointerover', () => undoTooltip.show(true));
@@ -7687,7 +7583,7 @@ endGame(winner, score = null, impasse_caller = null) {
                 } else {
                     this.switchTurn();
                 }
-            }, 'end-turn');
+            });
 
         const switchTurnTooltip = makeHudTip(scene, this.switchTurnButton.x,
                                              this.switchTurnButton.y + buttonSize * 0.72, 'End turn');
@@ -7848,7 +7744,7 @@ class MainGameScene extends Phaser.Scene {
         onTap(newGameButton, () => {
             if (matchTracker && !matchTracker.over) return;
             this.showNewGameConfirmationModal();
-        }, 'new-game');
+        });
         if (inMatch) newGameButton.setHudVisible(false);
 
         // New Match sits where New Game would be during a match; starting one
@@ -7860,10 +7756,10 @@ class MainGameScene extends Phaser.Scene {
             } else {
                 showMatchSetup();
             }
-        }, 'new-match');
+        });
 
         const instructionsButton = makeHudButton(this, hx(inMatch ? 1 : 2), hy(inMatch ? 1 : 2), 'How to Play', { ghost: true, k: hudK });
-        onTap(instructionsButton, () => { showInstructions(); }, 'how-to-play');
+        onTap(instructionsButton, () => { showInstructions(); });
         this._hudRow = [newGameButton, newMatchButton, instructionsButton];
         _layoutHudRow(this);
         // The tutorial hides these: New Game / New Match restart the scene, which
@@ -7943,7 +7839,7 @@ class MainGameScene extends Phaser.Scene {
                 // nothing the client needs; the draw is ended right here.
                 const g = gameInstance.scene.scenes[0].game;
                 g.endGame('draw', null, g.turn);
-            }, 'call-draw');
+            });
 
         this.checkInitialAIReady();
 
@@ -8282,7 +8178,7 @@ class EndGameScene extends Phaser.Scene {
             // The card's buttons are its only controls and it covers the screen,
             // so they get a further step up beyond the card's own scale.
             const b = makeHudButton(this, x, y, label, { ghost, k: _isPhone() ? K * 1.35 : 1 });
-            onTap(b, cb, 'end-card');
+            onTap(b, cb);
             return b;
         };
 

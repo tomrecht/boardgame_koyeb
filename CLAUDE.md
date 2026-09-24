@@ -243,55 +243,6 @@ with it in mind.** Assessment and the concrete implications:
 
 ## Current state
 
-- **TESTING-BRANCH ONLY: THE GESTURE LOG.** This branch carries tap
-  instrumentation that must never reach `main` / quahuru.com. `git diff main
-  testing -- game.js` should show this and nothing else. The bug it was built
-  for (a single tap read as a double) is described in ARCHIVE.md; what follows
-  is the instrumentation itself.
-
-  **Read the whole gesture, not the handler.** Three sessions were spent on
-  `handleClick`'s timer because that is where the log looked. The tap was
-  delivered to two objects, and only one of them was instrumented.
-  **The log now covers every gesture** (testing branch only). `onTap` takes a
-  `label` and records `tap` / `tap-refused` (`why`: multitouch / drag /
-  consumed) at all twelve call sites -- `tile`, `saved-rack`, `entry-rack`,
-  `stack-badge`, `ghost`, `undo`, `end-turn`, `new-game`, `new-match`,
-  `how-to-play`, `call-draw`, `end-card` -- plus `tile-click`
-  (ring/sector/near-miss/selection) and `dblclick` (with `via`, so the stack
-  picker's route out of `handleDoubleClick` is no longer invisible). **Five
-  paths bank a piece without entering the timer** and each now emits a `BANKED`
-  row naming `via` and `how`: `Rack.onSaveTap` (one tap on the saved rack banks
-  the SELECTED piece), `Rack.onEntryPanelTap`, the rack-SLOT half of
-  send-to-goal, the saved-rack-piece branch of `handleClick`, and a drag onto
-  the saved rack. Cap raised 150 -> 400: the export was exactly 150 rows, i.e.
-  already trimming from the front.
-
-- **THE SINGLE-AS-DOUBLE TAP IS NOT FULLY FIXED, AND IS NOW INSTRUMENTED
-  (2026-08-27).** The ghost-mouse-event fix below was real but is not the whole
-  story — owner still sees it occasionally on a phone, and neither of us can
-  reproduce it on demand. So: **record rather than theorise**, which is what
-  found the rack double-tap bug in one evening after three wrong hypotheses.
-  `_tapRecord` writes each click on a piece to `localStorage.tapLog` (capped at
-  400, raised from 150 — see the 2026-09-11 entry above, which also widened it
-  past pieces to every gesture): the piece, the pointer KIND (touch/mouse) and id, how far the pointer
-  moved, the GAP that decided single vs double, and the verdict — `single`,
-  `DOUBLE`, or `ghost-suppressed` when `_isGhostPointer` swallowed a duplicate
-  (logged too, or the guard firing would leave the log silent about the very
-  case it exists for). **Settings > Copy tap log** exports it, on phones only.
-  It is deliberately NOT gated on the log being non-empty, though that was the
-  first cut and owner reported the button missing: `createSettingsPanel` runs
-  ONCE at start-up, so that condition is evaluated before any tap can have
-  happened and the button never appeared. Same race as the first-run nudge. It
-  reports the count when copied, or "Nothing recorded yet".
-  **Deliberately NOT behind `?dev=1`** — asking owner to set a query parameter
-  BEFORE a bug he cannot predict has now failed twice. Verified: records with no
-  flag on the URL, survives a reload, distinguishes a fast second tap from a slow
-  one (`gaps` 1000 vs 0), and records NOTHING on desktop.
-  **What the log will separate:** one physical tap delivered twice (two entries,
-  tiny gap, same pointer id) from a genuine double from the user, and shows
-  whether the ghost guard was involved at all.
-
-
 - **THE LAST GAME OF A MATCH SOUNDS FOR THE MATCH, NOT THE GAME (owner,
   2026-09-20).** A match is decided on TOTAL SCORE, so you can lose the final
   game and still take the match -- and the lose chime there read as having lost
