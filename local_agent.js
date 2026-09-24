@@ -209,6 +209,19 @@ const LocalAgent = (function () {
             (occupancy[idx] || (occupancy[idx] = [])).push([bp.color, bp.number]);
             if ('reachableBySum' in bp) firstMove = [bp.color, bp.number, idx];
         }
+        // An EXPLICIT first_move, which the hint in game.js passes. The marker
+        // above infers it from a posted reachableBySum, and the frontend sets
+        // that on the SELECTED piece as well as the moved one -- harmless while
+        // only the computer's own turn asked (nothing is selected then), wrong
+        // for a hint asked mid-turn on a human's. It also carries the ORIGIN
+        // tile, which the marker cannot: that reports the piece's CURRENT tile,
+        // and the engine's forward-only filter needs where the turn began.
+        if (gs.firstMove) {
+            const fm = gs.firstMove;
+            const oi = graph.indexOf(fm.from.ring, fm.from.sector);
+            if (oi < 0) throw new Error('no tile at ring ' + fm.from.ring + ' sector ' + fm.from.sector);
+            firstMove = [fm.color, fm.number, oi];
+        }
         const numbers = (list) => (list || []).map(p => p.number);
         return {
             racks: {

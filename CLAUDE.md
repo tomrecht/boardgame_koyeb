@@ -174,16 +174,30 @@ ARCHIVE.md; these are the rules that came out of them.
   renders. A healthy boot: 94 tiles, 24 pieces, `renderer.type === 2`, one
   active scene, 0 failed requests; the Canvas2D `willReadFrequently` warnings
   are the board bake's readbacks and are expected.
-- **HARNESS BROKEN ON THIS MACHINE (2026-09-20, unresolved).** The
-  browser-automation skill resolves `patchright` from the newest CodeGPT
-  extension. That updated to 3.24.72 / patchright 1.63, which **dropped macOS 13
-  support** — `patchright install chromium` answers *"does not support chromium
-  on mac13"*, and this iMac is Darwin 22.6 = Ventura. The previous extension
-  (3.24.69, patchright 1.61.1) is still on disk and DID install
-  `chromium-1193`, but `browser.mjs` always picks the newest extension, so it
-  looks for `chromium-1243` and fails. Options if a browser proof is needed:
-  point `browser.mjs` at the 3.24.69 standalone dir, or launch with the system
-  Google Chrome via `executablePath`.
+- **HARNESS: DRIVE SYSTEM CHROME, NOT A DOWNLOADED CHROMIUM (fixed 2026-09-24).**
+  The browser-automation skill resolves `patchright` from the newest CodeGPT
+  extension and then looks for that patchright's own chromium build. **That build
+  cannot be installed here** -- patchright 1.63 dropped macOS 13 support and this
+  iMac is Darwin 22.6 (Ventura); the 3.24.69 extension that had `chromium-1193`
+  on disk is **gone**, so the workaround recorded here on 2026-09-20 is dead.
+  **What works: point patchright at the system Google Chrome.** No download, no
+  extension archaeology:
+
+        const req = createRequire('/Users/tom/.vscode/extensions/danielsanmedium.dscodegpt-3.24.74/standalone/')
+        const { chromium } = req('patchright')
+        await chromium.launch({ executablePath: '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome',
+          headless: true, args: ['--use-gl=angle','--use-angle=swiftshader','--enable-unsafe-swiftshader'] })
+
+  The swiftshader args are what get **WebGL** in headless, so `renderer.type === 2`
+  and the board actually bakes; without them Phaser falls back and the geometry
+  measurements are not the ones the player sees.
+  **PATCHRIGHT RELAYS NO PAGE CONSOLE AT ALL.** It suppresses `Runtime.enable` to
+  stay undetectable, so `page.on('console')` sees browser-level warnings (the
+  Canvas2D readback ones) and **not a single `console.log`, `warn` or `error` from
+  the page** -- verified against a bare `data:` URL: zero messages of any type.
+  So `?dev=1` is still right and still necessary for a human reading the console,
+  but **a harness must assert through the DOM**, never by reading log output. A
+  test that "found no errors" in the console found nothing at all.
 
 ## Project direction: a real Android/iOS app (owner, 2026-08-14)
 
@@ -242,6 +256,109 @@ with it in mind.** Assessment and the concrete implications:
      twin later. Settings already live in localStorage, which a WebView keeps.
 
 ## Current state
+
+- **LEARNABILITY WORK, ON `testing` FOR TRIAL (owner, 2026-09-24).** Two testers
+  reported the game still hard to learn after the tutorial, one asking for a hint
+  mode. Four changes, all on `testing` and NOT yet on main, at owner's request.
+  **1. A HINT LAMP (💡, beside the "?" legend).** Tapping it asks the SAME
+  on-device agent that plays the computer's side what it would do in your
+  position, and rings the piece and the destination tile. It is presentation, not
+  new search -- `local_agent.js` has answered `selectMoves()` since the port, so a
+  hint costs one inference batch, the same as one of the computer's turns.
+  **Always at full strength**, whatever the difficulty slider says: a top-p
+  sampled hint would sometimes recommend a move the agent itself ranks worse.
+  **ONE MOVE AT A TIME, and that is not laziness** -- the agent picks a PAIR whose
+  second half is chosen against the board as it stands AFTER the first, so that
+  destination is frequently not a destination yet and marking both would ring a
+  tile the player cannot legally tap. Default ON (`hintsEnabled`), with a Settings
+  row; a lamp you never tap costs nothing, so there is no first-game-only state
+  machine.
+  **Two correctness traps, both real:**
+  `getGameState` posts `reachableBySum` on a piece, and `engineState` reads that
+  as the marker for "this piece already moved this turn" (the engine's
+  `first_move`) -- but the frontend sets it on the SELECTED piece too. Harmless
+  while only the computer's own turn asked (nothing is selected then), WRONG for a
+  hint asked mid-turn on a human's. `_hintGameState` strips it and passes
+  `gs.firstMove` explicitly, carrying the ORIGIN tile, which the marker cannot:
+  it reports the piece's CURRENT tile. (`engineState` gained 13 lines for this and
+  the old marker path is untouched, so the computer's own turns are unchanged.)
+  And **the engine models the rack-entry obligation as applying to the turn's
+  FIRST move only, while game.js also enforces it on the second** -- a difference
+  the port never exercised, since the computer is only ever asked at the start of
+  its turn. So `_renderHint` asks the LIVE game whether the half it is about to
+  mark is playable (`_hintMoveIsLegalNow`) and **refuses rather than falling back
+  to marking it anyway**: a hint pointing at an illegal move is worse than none.
+  The marker is cleared by a 250ms poll against a signature (turn + dice + every
+  piece's tile) rather than by hooks in movePiece / undo / switchTurn / the picker
+  -- one place to be right instead of six to remember.
+  **2. "why can't I move there?" NOW ANSWERS ITSELF.** The shortest-route rule is
+  the one rule that contradicts what a player can see: a piece always travels its
+  shortest route, so a longer path they have traced by hand is not a move and the
+  tile just refuses the tap. `_noticeWhyUnreachable` (called from the ordinary
+  refusal in `_noticeIfRouteWithheld`) **names the number** -- "That tile is 7
+  steps away by the shortest route, so it takes a 7" -- which is what turns an
+  arbitrary-feeling refusal into a rule. It also covers a wall on the tile, no
+  route at all, and the mid-turn no-doubling-back half of the same rule.
+  **Deliberately narrow:** it stays SILENT when the dice CAN make the distance,
+  because then some other rule refused it and this function has nothing true to
+  say -- a confident wrong explanation teaches a rule that does not exist.
+  **3. THE TUTORIAL IS REACHABLE FROM HOW TO PLAY**, leading the panel above the
+  first section. It was previously only on the welcome card (gone the moment you
+  start playing) and in Settings (where nobody looks for a tutorial). It
+  **confirms first when a game is in progress** -- the tutorial scripts positions
+  into the live game and ends by restarting the scene to the welcome card, so
+  launching it over a game throws that game away. "In progress" is asked of the
+  board (anything entered or banked), because the frontend `Game` has no move
+  history -- that lives on the ported engine.
+  **4. THE CLOSING PANEL ASKS THE DIFFICULTY QUESTION AS TWO BUTTONS**, "Go easy"
+  (sets `TUT_EASY_DIFFICULTY` = 0.5) and "Full strength", replacing the sentence
+  that pointed at the slider. The sentence was the wrong instrument for the reason
+  the 2026-09-13 entry gives: the phone card is capped and `#tutText` scrolls, so
+  a sentence at the END of the text is the first thing below the fold. The buttons
+  are pinned to the bottom of the card and cannot scroll away. Closing text is now
+  190 characters, the SHORTEST of the eleven steps (step 7, at 450, is the tallest
+  and still sets the pinned height), so nothing about the other steps moved.
+  **`TUT_EASY_DIFFICULTY = 0.5` IS A GUESS, NOT A MEASUREMENT** -- the open
+  question from 2026-09-13 stands: nobody has measured what a difficulty setting
+  PLAYS like, and a win rate per setting against d=1 is a cheap arena run that
+  would let the slider be labelled honestly.
+  **Measured in a browser** (5 viewports: desktop, phone portrait, phone
+  portrait + `?safeinset=48,0,56,0`, phone landscape, phone landscape +
+  `?safeinset=0,48,24,48`), against main's game.js served side by side as a
+  baseline:
+
+        every goal is 7 from home, so a front rack piece tapped at a goal is
+        a distance-7 move -- which makes the rule testable with no fixture:
+          dice 2+3 (sum 5): sum not offered, no move, 0 dice spent,
+                            "That tile is 7 steps away ... so it takes a 7"
+          dice 3+4 (sum 7): sum offered, LANDED ON GOAL 3, 2 dice spent,
+                            no notice            <- the control that matters
+          wall (2 black) 4 away with a die of 4: wall message, not distance
+        hint: 2 markers at depth 76, one on the piece and one on the tile
+              centre, markedMoveIsLegalNow TRUE, cleared 2 -> 0 when the board
+              moved, "Hints are for your own turn." on the computer's turn
+        lamp inside the viewport and clear of the legend at all 5, and it
+              honours the insets (portrait bottom 903 -> 847, landscape right
+              865 -> 817)
+        tutorial card box BYTE-IDENTICAL to main on every step at every
+              viewport except the closing one in landscape, which SHRANK
+              314 -> 292; closing-step text overflow is LOWER than main's
+              (portrait 56 vs 78; with insets 85 vs 107)
+        0 console errors, 0 failed requests, 94 tiles, 24 pieces, WebGL
+
+  **Three fixture traps hit while measuring, each of which produced a convincing
+  false pass** -- all three are the "read the denominator" rule again:
+  selecting a rack piece **TENTATIVELY ENTERS it onto the home tile**, and a
+  stranded one there makes two own pieces on home, which blanks `reachableBySum`
+  -- so the "it should move" control silently could not move, and its `notice:
+  null` looked like the code correctly staying quiet. Every case now gets a fresh
+  page. `piece.move(tile)` **does not remove the piece from its rack**, so a
+  hand-placed piece left the board empty and the "game in progress" confirm test
+  passed against a fresh game; play into the position with the real handlers
+  instead. And a gate test must pull the lever the gate actually reads:
+  `currentPlayerIsHuman()` reads the **Player's `isAI`**, never the module-level
+  `WHITE_IS_AI`, so setting the global left the predicate true and the hint went
+  quietly ahead.
 
 - **THE LAST GAME OF A MATCH SOUNDS FOR THE MATCH, NOT THE GAME (owner,
   2026-09-20).** A match is decided on TOTAL SCORE, so you can lose the final
@@ -817,12 +934,23 @@ with it in mind.** Assessment and the concrete implications:
   verification on the `testing` checkout too** -- it has extra code in the same
   files, so a clean auto-merge is not proof. Cheap audit that a fix reached both:
   `git diff main testing -- game.js` should show instrumentation and nothing else.
-  **Living on `testing` only:** the tap log for the single-tap-as-double report —
-  `_tapRecord` writing every click on a piece to `localStorage.tapLog` (pointer kind
-  and id, distance moved, the gap that decided single vs double, and the verdict
-  including `ghost-suppressed`), plus **Settings > Copy tap log**. It was reverted
-  from main in the same change that created the branch; see `testing` for the
-  code and its own CLAUDE.md entry.
+  **`testing` IS NO LONGER A PARALLEL HISTORY (2026-09-24).** It used to carry the
+  same fixes as CHERRY-PICKS, so main was never an ancestor and every fix had to
+  be applied twice by hand. It has now been **merged with main** (conflicts
+  resolved by taking main's files wholesale, so the merge changed no shipped
+  byte) and main IS an ancestor. A fix can therefore reach `testing` with
+  `git merge main`, and only genuinely `testing`-only work needs care.
+  **The tap log is RETIRED.** `_tapRecord` and Settings > Copy tap log existed to
+  catch the single-tap-as-double report; that was found and fixed (`a945a9d`,
+  "suppress the touch-typed ghost"), so the instrumentation was dropped in the
+  same merge. The lesson worth keeping is the shape, not the code: **an
+  investigation gets a throwaway branch that is deleted when the bug is found.**
+  A `?dev=1`-style gate is NOT a substitute -- asking owner to set a query
+  parameter before a bug he cannot predict has failed twice.
+  **Living on `testing` now:** the learnability work of 2026-09-24 (hint lamp,
+  the shortest-route explanation, the tutorial's new entry point and the closing
+  panel's difficulty buttons) — see the entry at the top of Current state. It is
+  there for owner to play before any of it reaches quahuru.com.
   **Watch-out already hit there:** the export button was first gated on the log
   being non-empty, but `createSettingsPanel` runs ONCE at start-up, so the
   condition was evaluated before any tap could have happened and the button never

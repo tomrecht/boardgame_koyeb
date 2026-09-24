@@ -232,6 +232,27 @@ function getAIDifficulty() {
     try { const s = localStorage.getItem('aiDifficulty'); if (s !== null) v = parseFloat(s); } catch (e) {}
     return isFinite(v) ? Math.min(1, Math.max(0, v)) : 1.0;
 }
+// Set it from outside the settings panel -- the tutorial's closing panel offers
+// a gentler first game as a BUTTON rather than a sentence pointing at the
+// slider. Driving the slider's own input event rather than writing localStorage
+// twice keeps the panel's label in step without duplicating labelFor().
+function setAIDifficulty(v) {
+    const d = Number(v);
+    if (!isFinite(d)) return;
+    const clamped = Math.min(1, Math.max(0, d));
+    try { localStorage.setItem('aiDifficulty', String(clamped)); } catch (e) {}
+    const row = document.getElementById('settingsDiff');
+    const slider = row && row.querySelector('input[type=range]');
+    if (slider) {
+        slider.value = String(Math.round(clamped * 100));
+        slider.dispatchEvent(new Event('input'));
+    }
+}
+// What "go easy" means at the end of the tutorial. A GUESS, not a measurement:
+// nobody has yet measured what a given difficulty plays like (it is top-p
+// sampling over a z-scored softmax), so this is the midpoint pending an arena
+// run per setting. Change it when that number exists.
+const TUT_EASY_DIFFICULTY = 0.5;
 // Boolean settings persisted in localStorage, with a default when unset.
 function _boolSetting(key, dflt) {
     try { const s = localStorage.getItem(key); return s === null ? dflt : s === '1'; }
@@ -416,12 +437,16 @@ function _noticeIfRouteWithheld(game, piece, targetTile) {
     try { r = game.getReachableTilesByDice(piece); } catch (e) { return no('reachability threw', e); }
     if (!r) return no('no reachable set (both dice used?)');
     if (!(r.ambiguousSum || []).includes(targetTile)) {
-        return no('target is not a withheld route', {
+        no('target is not a withheld route', {
             ambiguous: (r.ambiguousSum || []).length,
             sum: r.reachableBySum.length,
             dice: game.dice.map(d => d.value + (d.used ? '(used)' : '')),
             target: targetTile.type + ' ' + targetTile.ring + ',' + targetTile.sector,
         });
+        // Not withheld, so it is one of the ORDINARY refusals -- which used to
+        // be silent, and the shortest-route one is the single thing testers keep
+        // asking about.
+        return _noticeWhyUnreachable(game, piece, targetTile);
     }
     if (typeof flashNotice === 'function') {
         flashNotice(getAutoEnRouteCapture()
@@ -431,6 +456,86 @@ function _noticeIfRouteWithheld(game, piece, targetTile) {
     console.log('[route-notice] shown');
     return true;
 }
+
+// "why can't I move there?" -- the question two testers asked of the SHORTEST-
+// ROUTE rule, which is the one rule of this game that contradicts what a player
+// can see with their own eyes. A piece always travels its shortest route, so only
+// the shortest distance counts: a longer path the player has traced by hand is
+// not a move, and the tile simply refuses the tap. How to Play does say it
+// ("A piece always takes the shortest route to the tile you choose") -- which is
+// exactly where a confused player is not looking. So say it in the moment, and
+// NAME THE NUMBER: that is what turns an arbitrary-feeling refusal into a rule.
+//
+// DELIBERATELY NARROW. It speaks for three unambiguous refusals -- a wall on the
+// tile, no route at all, and a shortest distance the dice cannot make -- plus the
+// mid-turn no-doubling-back case, which is the same rule's other half. Every
+// other refusal either has its own cue already (_flashMustMove for an obligatory
+// piece) or cannot be told apart from another (the second-entrant reordering, a
+// sum withheld by a rule rather than by distance), and a confident WRONG
+// explanation is worse than none: it teaches a rule that does not exist.
+const WHY_BURST_MS = 1200;          // one message per burst of refused taps
+function _noticeWhyUnreachable(game, piece, targetTile) {
+    const no = (why, extra) => { console.log('[why-unreachable] not shown:', why, extra || ''); return false; };
+    if (!game || !piece || !targetTile) return no('missing game/piece/target');
+    if (targetTile === piece.currentTile) return no('the piece is already there');
+    // nogo is not interactive at all and home is not a destination, so neither
+    // can be tapped as one.
+    if (targetTile.type === 'nogo' || targetTile.type === 'home') return no('nogo/home');
+    const now = Date.now();
+    if (game._whyFlashUntil && now < game._whyFlashUntil) return no('inside the previous burst');
+    const say = (msg) => {
+        game._whyFlashUntil = now + WHY_BURST_MS;
+        if (typeof flashNotice === 'function') flashNotice(msg, 5000);
+        console.log('[why-unreachable] shown:', msg);
+        return true;
+    };
+
+    // A wall refuses the tile at every distance, so it is checked before any
+    // arithmetic -- otherwise a wall two steps away with a 2 in hand would get
+    // the distance message, which would be false.
+    if (game.isBlocked(targetTile)) {
+        return say('Two or more enemy pieces hold that tile — that’s a wall. You can’t land on it or pass through it.');
+    }
+
+    const home = game.tiles.find(t => t.type === 'home');
+    const from = piece.currentTile || home;     // still on the rack: it enters via home
+    let dist;
+    try { dist = game._bfsDistances(from); } catch (e) { return no('bfs threw', e); }
+    const d = dist.get(targetTile);
+    if (d == null) {
+        return say('There’s no route to that tile at all — enemy walls are blocking every way in.');
+    }
+
+    const live = game.dice.filter(die => !die.used).map(die => die.value);
+
+    // The same rule's other half: this piece has already spent one die, so the
+    // other has to carry it FURTHER from where it began the turn. Detected the
+    // way getReachableTilesByDice enforces it -- cumulative pips from the
+    // turn-start tile -- rather than by re-deriving the rule from scratch.
+    const start = piece._turnStartTile;
+    if (start && piece.currentTile && start !== piece.currentTile && live.includes(d)) {
+        let sd = null;
+        try { sd = game._bfsDistances(start); } catch (e) { sd = null; }
+        const moved = sd && sd.get(piece.currentTile);
+        if (sd && moved != null && sd.get(targetTile) !== moved + d) {
+            return say('This piece has already moved this turn, so the other die has to carry it further on — it can’t double back.');
+        }
+    }
+
+    // THE HEADLINE CASE. Only when the distance is a number the dice cannot make
+    // at all: that is unambiguous, whereas a distance they CAN make was refused
+    // by some other rule and this function has nothing true to say about it.
+    // "a 4" covers both a single die of 4 and two dice adding to 4, so the
+    // message does not have to enumerate which.
+    const makeable = live.slice();
+    if (live.length === 2) makeable.push(live[0] + live[1]);
+    if (makeable.includes(d)) return no('the dice can make that distance; another rule refused it', { d: d, live: live });
+    return say('That tile is ' + d + ' ' + (d === 1 ? 'step' : 'steps') + ' away by the shortest route, so it takes ' +
+               _anNumber(d) + ' — a piece always travels the shortest way, whichever path you had in mind.');
+}
+// "an 8" / "an 11" / "a 4". Distances here run 1..12 (two dice), so 8 and 11 are
+// the only ones that take "an".
+function _anNumber(n) { return (n === 8 || n === 11) ? 'an ' + n : 'a ' + n; }
 
 // You tried to move a piece while a DIFFERENT one is obliged to move (a captured
 // piece on the home tile, or the entry from the rack). Nothing happened, and
@@ -1936,6 +2041,20 @@ function createSettingsPanel() {
         frow.appendChild(fsBox); frow.appendChild(mk('span', null, 'Fullscreen'));
         panel.appendChild(frow);
     }
+    // Hints. NOT the generic toggle(): the lamp's visibility is derived from this
+    // setting, so changing it has to refresh the button (and drop any marker
+    // already on the board) rather than only write localStorage.
+    const hrow = mk('label', 'display:flex; align-items:center; gap:8px; cursor:pointer; margin-bottom:8px;');
+    const hintBox = mk('input'); hintBox.type = 'checkbox'; hintBox.checked = getHintsEnabled();
+    hintBox.onchange = () => {
+        try { localStorage.setItem('hintsEnabled', hintBox.checked ? '1' : '0'); } catch (e) {}
+        if (!hintBox.checked) clearHint();
+        refreshHintButton();
+    };
+    hrow.appendChild(hintBox);
+    hrow.appendChild(mk('span', null, 'Hint lamp (\uD83D\uDCA1 bottom right)'));
+    panel.appendChild(hrow);
+
     toggle('Move & capture effects', getFeedbackEnabled, 'fxEnabled', true);
     toggle('End turn automatically when both dice used', getAutoEndTurn, 'autoEndTurn', true);
     toggle('Confirm ending a turn with a move left', getConfirmRiskyEnd, 'confirmRiskyEnd', false);
@@ -2031,6 +2150,264 @@ function createLegendButton() {
         if (pop.style.display === 'block' && e.target !== btn && !pop.contains(e.target)) pop.style.display = 'none';
     }, true);
     document.body.appendChild(btn); document.body.appendChild(pop);
+}
+
+// ── Hints ────────────────────────────────────────────────────────────────────
+// A lamp beside the "?" legend. Tapping it asks the SAME on-device agent that
+// plays the computer's side what it would do in your position, and marks the
+// piece and the tile.
+//
+// It is presentation, not new search: local_agent.js has answered selectMoves()
+// for the computer since the port, so a hint costs exactly one inference batch --
+// the same as one of the computer's own turns. Always at FULL STRENGTH, whatever
+// the difficulty slider says: a hint that was top-p sampled would sometimes
+// recommend a move the agent itself thinks is worse, which is not a hint.
+//
+// ONE MOVE AT A TIME, and that is not laziness. The agent picks a PAIR, and the
+// second half is chosen against the board as it stands AFTER the first -- so its
+// destination is frequently not a destination yet, and marking both at once would
+// point at a tile the player cannot legally tap. Tap the lamp again after moving.
+const HINT_COLOR = 0x7b4fe0;        // violet: not turquoise / pink / yellow (the
+                                    // two dice and the sum) and not the amber
+                                    // that already means "this piece must move"
+function getHintsEnabled() { return _boolSetting('hintsEnabled', true); }
+const _hint = { objs: [], sig: null, busy: false, timer: null };
+
+function createHintButton() {
+    if (document.getElementById('hintBtn')) return;
+    const btn = document.createElement('button');
+    btn.id = 'hintBtn';
+    btn.title = 'Hint';
+    btn.textContent = '💡';
+    // Beside the legend "?" (bottom-right, 30px at right:12px) and at the SAME
+    // z-index, so both sit under the full-screen cards rather than floating over
+    // the welcome screen and How to Play. Reads --safe-* like the rest of the DOM
+    // chrome: it is positioned against the viewport, not the canvas, so it does
+    // not ride the canvas's safe-area inset.
+    btn.style.cssText = 'position:fixed; bottom:calc(12px + var(--safe-b)); right:calc(50px + var(--safe-r));' +
+        'z-index:41; width:30px; height:30px; padding:0; border-radius:50%;' +
+        'border:1px solid rgba(0,0,0,.15); background:rgba(255,255,255,.75);' +
+        'font-size:14px; line-height:1; cursor:pointer; opacity:.55; transition:opacity .15s;' +
+        'display:grid; place-items:center;';
+    btn.onmouseenter = () => btn.style.opacity = '1';
+    btn.onmouseleave = () => btn.style.opacity = '.55';
+    btn.onclick = () => { showHint(); };
+    document.body.appendChild(btn);
+    // The marker must not outlive the position it describes. POLLED rather than
+    // hooked into each of the paths that can change the board (movePiece, undo,
+    // switchTurn, the stack picker, a scene restart): one place to be right
+    // instead of six to remember, which is the shape the tutorial's own runner
+    // already uses.
+    clearInterval(_hint.timer);
+    _hint.timer = setInterval(_hintTick, 250);
+    refreshHintButton();
+}
+// DERIVED from the setting and the mode, never stored: the setting can change
+// under the panel, and the tutorial hides the chrome from more than one place.
+function refreshHintButton() {
+    const btn = document.getElementById('hintBtn'); if (!btn) return;
+    const show = getHintsEnabled() && !_tut.active && !window.setupMode;
+    btn.style.display = show ? 'grid' : 'none';
+}
+function _hintTick() {
+    if (!_hint.objs.length) return;
+    const game = _currentGame();
+    if (!game || _hintSig(game) !== _hint.sig) clearHint();
+}
+// Turn, dice and every piece's tile. Anything that makes the marked move stale
+// changes one of the three.
+function _hintSig(game) {
+    if (!game) return '';
+    return game.turn + '|' +
+        game.dice.map(d => d.value + (d.used ? 'u' : '')).join(',') + '|' +
+        game.pieces.map(p => p.currentTile ? p.currentTile.ring + '.' + p.currentTile.sector : 'x').join(',');
+}
+function clearHint() {
+    _hint.objs.forEach(o => {
+        // Kill the pulse BEFORE destroying its target: a repeating tween left
+        // pointing at a destroyed game object is the classic way to strand one.
+        try { if (o.scene && o.scene.tweens) o.scene.tweens.killTweensOf(o); } catch (e) {}
+        try { o.destroy(); } catch (e) {}
+    });
+    _hint.objs = [];
+    _hint.sig = null;
+}
+
+// The state a hint is computed from. Two differences from getGameState(), both
+// load-bearing:
+//
+//  - reachableBySum is STRIPPED. local_agent's engineState reads that key as the
+//    marker for "this piece has already moved this turn" (the engine's
+//    first_move), and the frontend sets it on the SELECTED piece as well as the
+//    moved one. That never mattered while only the computer's own turn asked --
+//    nothing is selected then -- but a hint is asked on a HUMAN turn, with a
+//    piece very likely selected, and it would tell the engine a piece had moved
+//    when it had not.
+//  - firstMove is passed EXPLICITLY, from _turnStartTile, and carries the ORIGIN
+//    tile. The marker cannot: it reports the piece's CURRENT tile, which is not
+//    what the engine's forward-only filter needs.
+function _hintGameState(game) {
+    const gs = getGameState(game);
+    (gs.boardPieces || []).forEach(bp => { delete bp.reachableBySum; });
+    const moved = game.pieces.filter(p => p.player === game.turn && p.currentTile &&
+                                          p._turnStartTile !== p.currentTile);
+    // Exactly one, and a die still live: two movers means both dice are spent and
+    // there is no hint to give, and none means the turn has not started moving.
+    if (moved.length === 1 && game.dice.some(d => !d.used)) {
+        const p = moved[0];
+        // Entered from the rack this turn: _turnStartTile is null, and the origin
+        // the engine wants is the home tile it came through.
+        const origin = p._turnStartTile || game.tiles.find(t => t.type === 'home');
+        if (origin) {
+            gs.firstMove = { color: p.player, number: p.number,
+                             from: { ring: origin.ring, sector: origin.sector } };
+        }
+    }
+    gs.difficulty = 1.0;
+    gs._sig = _hintSig(game);
+    return gs;
+}
+
+async function showHint() {
+    const game = _currentGame();
+    clearHint();
+    if (!game || game.gameOver) return;
+    // The tutorial scripts both sides and hard-blocks off-script destinations, so
+    // a hint there could only ever recommend a move the tutorial refuses. Setup
+    // mode is outside the turn rules by design.
+    if (_tut.active || window.setupMode) return;
+    if (_gameFrozen || _gamePausedByCard()) return;
+    if (_hint.busy) return;
+    if (!game.currentPlayerIsHuman || !game.currentPlayerIsHuman()) {
+        flashNotice('Hints are for your own turn.', 2500); return;
+    }
+    if (game.dice.every(d => d.used)) {
+        flashNotice('Both dice are spent — end your turn with ↷.', 3000); return;
+    }
+    if (typeof LocalAgent === 'undefined' || !LocalAgent.enabled()) {
+        flashNotice('Hints need the on-device computer, which is switched off for this session.', 5000); return;
+    }
+    _hint.busy = true;
+    const btn = document.getElementById('hintBtn');
+    if (btn) { btn.style.opacity = '1'; btn.textContent = '…'; }
+    // A human-vs-human session never loads the runtime, so the FIRST hint there
+    // pays for it (a few MB) and takes visibly longer than the rest. Say so
+    // rather than looking dead.
+    if (!LocalAgent.ready()) flashNotice('Getting the computer ready…', 2500);
+    try {
+        const state = _hintGameState(game);
+        const ok = await LocalAgent.init({ serverUrl: SERVER_URL });
+        if (!ok) throw new Error('on-device AI unavailable: ' + (LocalAgent.state().error || 'load failed'));
+        const pair = await LocalAgent.selectMoves(state);
+        // The board can change while an inference is in flight. A marker drawn
+        // for a position that has moved on is worse than no marker.
+        if (_hintSig(game) !== state._sig) { console.log('[hint] the board moved; dropping the answer'); return; }
+        if (!pair || !pair.length) {
+            flashNotice('No legal move with this roll — end your turn with ↷.', 4000); return;
+        }
+        _renderHint(game, pair);
+    } catch (e) {
+        console.warn('[hint] failed', e);
+        flashNotice('Couldn’t work out a hint just now.', 3000);
+    } finally {
+        _hint.busy = false;
+        if (btn) { btn.style.opacity = '.55'; btn.textContent = '💡'; }
+    }
+}
+
+// Is this half of the pair playable from the board AS IT STANDS? Asked of the
+// live engine rather than assumed from the pair's order: applyMovePair reorders
+// the computer's pair for two different reasons (a bring-out must lead, a
+// numbered save must not lose its die), and a hint that marked the wrong half
+// would point at a tile the player cannot legally tap.
+function _hintMoveIsLegalNow(game, m) {
+    if (!Array.isArray(m) || !Array.isArray(m[0])) return false;   // pass / call-a-draw
+    const piece = findPieceByColorAndNumber(m[0][0], m[0][1]);
+    if (!piece) return false;
+    if (m[1] === 0) return piece.player !== game.turn;              // block-save: an enemy piece
+    if (m[1] === 'save') return !!(piece.currentTile && piece.currentTile.type === 'save');
+    let r = null;
+    try { r = game.getReachableTilesByDice(piece); } catch (e) { return false; }
+    if (!r) return false;
+    const tile = findTileByRingAndSector(m[1][0], m[1][1]);
+    if (!tile) return false;
+    return [...r.reachableByFirstDie, ...r.reachableBySecondDie, ...r.reachableBySum].includes(tile);
+}
+// Tiles store their wedge, not a centre point, so derive one. Home is a disc
+// about the board's centre and has no meaningful arc.
+function _hintTileCentre(tile) {
+    if (!tile) return null;
+    if (tile.type === 'home') return { x: CENTER_X, y: CENTER_Y };
+    if (tile.startAngle == null || tile.innerRadius == null) return null;
+    const a = (tile.startAngle + tile.endAngle) / 2;
+    const r = (tile.innerRadius + tile.outerRadius) / 2;
+    return { x: CENTER_X + r * Math.cos(a), y: CENTER_Y + r * Math.sin(a) };
+}
+function _hintRing(scene, x, y, radius) {
+    const g = scene.add.circle(x, y, radius, 0, 0)
+        .setStrokeStyle(6, HINT_COLOR, 1)
+        .setDepth(76);                 // over the must-move pulse (75), under 80
+    scene.tweens.add({ targets: g, scale: 1.16, alpha: 0.4, duration: 750,
+                       yoyo: true, repeat: -1, ease: 'Sine.easeInOut' });
+    _hint.objs.push(g);
+    return g;
+}
+function _renderHint(game, pair) {
+    const scene = _setupScene(); if (!scene || !scene.add) return;
+    const isPass = (m) => Array.isArray(m) && m[0] === 0 && m[1] === 0 && m[2] === 0;
+    const isDraw = (m) => Array.isArray(m) && m[0] === 1 && m[1] === 1 && m[2] === 1;
+    const real = pair.filter(m => !isPass(m) && !isDraw(m));
+    if (!real.length) {
+        flashNotice(pair.some(isDraw)
+            ? 'Hint: you can call a draw — the button is bottom-left.'
+            : 'Hint: nothing this roll can usefully do. End your turn with ↷.', 4500);
+        return;
+    }
+    // NO FALLBACK TO "mark it anyway". The engine models the rack-entry
+    // obligation as applying to the turn's FIRST move only, while game.js also
+    // enforces it on the second -- a difference the port never exercised, since
+    // the computer is only ever asked at the start of its turn. So if neither
+    // half is playable right now, say nothing rather than ring a tile the player
+    // cannot tap: a hint that points at an illegal move is worse than no hint.
+    const m = real.find(mv => _hintMoveIsLegalNow(game, mv));
+    if (!m) {
+        console.log('[hint] neither half of the pair is legal from here', pair);
+        flashNotice('No hint for a half-finished turn — tap 💡 at the start of a turn instead.', 4500);
+        return;
+    }
+    const piece = findPieceByColorAndNumber(m[0][0], m[0][1]);
+    if (!piece) return;
+    _hint.sig = _hintSig(game);
+    _hint.move = m;        // kept so a test can re-ask the live game whether what
+                           // was marked is actually playable
+    console.log('[hint] recommending', JSON.stringify(m));
+    const dbl = _dblWord(false);
+
+    // The piece, wherever it is -- on the board, or still waiting on the rack,
+    // which is itself the hint ("bring this one out").
+    if (piece.x != null && piece.y != null) {
+        _hintRing(scene, piece.x, piece.y, (piece.radius || PIECE_RADIUS_BASE) * 1.5);
+    }
+    if (m[1] === 'save') {
+        flashNotice('Hint: save the marked piece — ' + dbl + ' it, or drag it to your saved rack.', 5000);
+        return;
+    }
+    if (m[1] === 0) {
+        flashNotice('Hint: ' + dbl + ' the marked enemy piece to save it for them. It costs both dice and hands '
+                    + 'them a point, but it breaks the wall.', 6500);
+        return;
+    }
+    const tile = findTileByRingAndSector(m[1][0], m[1][1]);
+    const c = _hintTileCentre(tile);
+    if (c) {
+        // Sized from the tile's own radial extent: a goal wedge is far deeper
+        // than a ring-1 field tile, and one fixed radius reads as sloppy on both.
+        const depth = (tile.outerRadius != null && tile.innerRadius != null)
+            ? (tile.outerRadius - tile.innerRadius) : 80;
+        _hintRing(scene, c.x, c.y, Math.max(20, Math.min(62, depth * 0.42)));
+    }
+    const where = (tile && tile.type === 'save') ? 'goal ' + tile.number : 'the marked tile';
+    flashNotice('Hint: move the marked piece to ' + where + '.', 5000);
 }
 
 // One-time toast for brand-new visitors, pointing at How to Play.
@@ -2513,12 +2890,16 @@ const _tutSteps = [
     },
     {
         title: 'You win!',
-        // The difficulty note is here because a first tester finished the
-        // tutorial, lost to a full-strength net and had no idea the slider
-        // existed. Kept SHORT deliberately: the phone card is capped to the
-        // band under the rack, and a longer closing panel scrolls -- which
-        // would hide the very sentence this exists for.
-        text: 'All twelve saved — and you score the number of pieces your opponent still had out: four.<br><br>The computer plays at <b>full strength</b> by default. For a gentler first game, turn <b>Difficulty</b> down under the ⚙ settings. Ready for a real one?',
+        // A first tester finished the tutorial, lost to a full-strength net and
+        // had no idea the difficulty slider existed. A SENTENCE pointing at the
+        // slider was the first attempt and the wrong instrument: the phone card
+        // is capped to the band under the rack and #tutText scrolls inside it,
+        // so the sentence -- at the END of the text -- was the first thing to go
+        // below the fold. The two BUTTONS in _tutRender replace it: shorter than
+        // the sentence, they cannot scroll (the button row is pinned to the
+        // bottom of the card), and they set the thing instead of saying where it
+        // is set. Keep this text short anyway, for the same reason as before.
+        text: 'All twelve saved — and you score the number of pieces your opponent still had out: four.<br><br>Now pick how hard your first real game should be. Either way you can change it later under ⚙ settings.',
         finish: true,
         done: () => false,
     },
@@ -2548,7 +2929,14 @@ function _tutStepHtml(step, idx) {
         // them. min-height:0 is what lets a flex child shrink enough to scroll.
         '<div id="tutText" style="font-family:' + BODY_FONT + '; font-size:14.5px; line-height:1.5;' +
             'color:#33404b; overflow-y:auto; min-height:0; flex:1 1 auto;">' + step.text + '</div>' +
-        '<div id="tutBtns" style="display:flex; gap:8px; margin-top:auto; padding-top:13px;' +
+        // flex-wrap, for the finish step's two difficulty buttons: on a PHONE IN
+        // LANDSCAPE the card is only 180-300px wide (_tut._cardW), which is not
+        // enough for them side by side. Exit/Skip have always fitted and are
+        // unaffected. On a phone the card's height is capped with #tutText
+        // scrolling, so a wrapped row takes its space from the text and the
+        // buttons stay pinned; on desktop the measured width leaves them on one
+        // line, and _tutMeasureBubble would account for a wrap if it did not.
+        '<div id="tutBtns" style="display:flex; flex-wrap:wrap; gap:8px; margin-top:auto; padding-top:13px;' +
             'justify-content:flex-end; min-height:32px; align-items:center; flex:0 0 auto;"></div>';
 }
 // The board must not resize from step to step, so the bubble reserves the same
@@ -2589,7 +2977,11 @@ function _tutRender() {
         el.onclick = fn; btns.appendChild(el); return el;
     };
     if (step.finish) {
-        mkBtn('Finish', true, () => _tutEnd(true));       // Exit would do the same thing
+        // Two ways to finish, which is also the difficulty question being asked
+        // once, in the one moment a new player is certain to see it. Both end the
+        // tutorial exactly as the old single Finish button did.
+        mkBtn('Go easy', true, () => { setAIDifficulty(TUT_EASY_DIFFICULTY); _tutEnd(true); });
+        mkBtn('Full strength', false, () => { setAIDifficulty(1.0); _tutEnd(true); });
         if (typeof updateTurnStatus === 'function') updateTurnStatus('');   // the game is over
     } else {
         mkBtn('Exit', false, () => _tutEnd(false));
@@ -2654,6 +3046,7 @@ function startTutorial() {
     // what keep the AI out, not this flag.
     _gameFrozen = false;
     _tutHudVisible(false);
+    if (typeof refreshHintButton === 'function') { clearHint(); refreshHintButton(); }
     _tutBubble();
     _tutRender();
     // Layout first: the tutorial changes the world rect (see _tutLift), and the
@@ -2674,6 +3067,7 @@ function _tutEnd(startGame) {
     _tut._cardW = null;
     _tutFitBoard();                       // give the board the full window back
     _tutHudVisible(true);
+    if (typeof refreshHintButton === 'function') refreshHintButton();
     const scene = _setupScene();
     if (scene && scene.scene) scene.scene.restart({ welcome: true });
 }
@@ -2681,8 +3075,8 @@ function _tutEnd(startGame) {
 // Defer to after the whole script has run (this file `defer`s, so the DOM is
 // ready; setTimeout ensures later `let` globals like matchTracker are initialised
 // before createSettingsPanel -> refreshSettingsMatchState touches them).
-function _initChrome() { createSettingsPanel(); createLegendButton(); maybeShowFirstRunNudge();
-                        _armFullscreenOnFirstGesture(); }
+function _initChrome() { createSettingsPanel(); createLegendButton(); createHintButton();
+                        maybeShowFirstRunNudge(); _armFullscreenOnFirstGesture(); }
 if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', _initChrome);
 else setTimeout(_initChrome, 0);
 
@@ -3179,6 +3573,17 @@ function showInstructions() {
         '#howToPlay p { margin:0; font-family:' + BODY_FONT + '; font-size:18px; line-height:1.55;' +
             'color:#33404b; }' +
         '</style><h2>How to Play</h2>';
+    // THE TUTORIAL IS THE THING THAT TEACHES THIS GAME, and until now it was
+    // reachable only from the welcome card (gone the moment you start playing)
+    // and from the settings panel (where nobody looks for a tutorial). Two
+    // testers finished a first game still unsure of the rules. How to Play is
+    // where a lost player DOES go, so it leads with the tutorial rather than
+    // burying it: reading eleven sections is not the same as being walked
+    // through a game.
+    html += '<button id="htpTutBtn" style="width:100%; margin:0 0 20px; padding:11px 0;' +
+        'border:none; border-radius:10px; cursor:pointer; font-family:' + HUD_FONT + ';' +
+        'font-weight:700; font-size:15px; background:' + THEME.accentCss + '; color:#fff;">' +
+        'Take the interactive tutorial</button>';
     sections.forEach(([h, b]) => { html += '<h3>' + h + '</h3><p>' + b + '</p>'; });
     const card = document.createElement('div');
     card.style.cssText = 'position:relative; background:#fff; color:#28313b; border-radius:16px;' +
@@ -3191,6 +3596,23 @@ function showInstructions() {
         'max-height:min(90vh, calc(100vh - var(--safe-t) - var(--safe-b)));' +
         'overflow-y:auto; -webkit-overflow-scrolling:touch;';
     body.innerHTML = html;
+    // The tutorial REPLACES the board underneath (it scripts positions into the
+    // live game) and ends by restarting the scene back to the welcome card, so
+    // launching it over a game in progress throws that game away. Ask first --
+    // and only when there is actually something to lose.
+    const tutBtn = body.querySelector('#htpTutBtn');
+    if (tutBtn) tutBtn.onclick = () => {
+        const g = _currentGame();
+        // "In progress" = anything has entered or been banked. There is no move
+        // history on the frontend Game (that lives on the ported engine), and a
+        // freshly dealt board has nothing to lose, so ask the board itself.
+        const live = !!(g && !g.gameOver && !_gameFrozen &&
+                        (g.pieces.some(p => p.currentTile) ||
+                         g.whiteSavedRack.pieces.length || g.blackSavedRack.pieces.length));
+        const go = () => { box.remove(); startTutorial(); };
+        if (live) showConfirm('Abandon this game and run the tutorial?', go, 'Run tutorial');
+        else go();
+    };
     const close = document.createElement('button');
     close.setAttribute('aria-label', 'Close');
     close.textContent = '✕';   // ✕
