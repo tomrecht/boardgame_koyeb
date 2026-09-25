@@ -248,11 +248,16 @@ function setAIDifficulty(v) {
         slider.dispatchEvent(new Event('input'));
     }
 }
-// What "go easy" means at the end of the tutorial. A GUESS, not a measurement:
-// nobody has yet measured what a given difficulty plays like (it is top-p
-// sampling over a z-scored softmax), so this is the midpoint pending an arena
-// run per setting. Change it when that number exists.
-const TUT_EASY_DIFFICULTY = 0.5;
+// What "go easy" means at the end of the tutorial. NOW MEASURED (2026-09-25,
+// difficulty_arena.py, 566 games): 0.5 was a bad guess. At d=0.5 the computer
+// does not play a game at all -- every setting at or below 0.6 loses to the same
+// net at full strength in 94 of 94 games and is SHUT OUT (beaten by the maximum
+// 12) in 15% to 90% of them. 0.8 is the mildest weakening the slider offers, and
+// the only one that still plays a real game: 0 wins in 94 against full strength,
+// but ZERO shutouts, median -6, worst -10. That is what "go easy" should mean --
+// clearly beatable, still coherent. The whole usable range is 0.8..1.0 and the
+// slider needs remapping; see the CLAUDE.md entry.
+const TUT_EASY_DIFFICULTY = 0.8;
 // Boolean settings persisted in localStorage, with a default when unset.
 function _boolSetting(key, dflt) {
     try { const s = localStorage.getItem(key); return s === null ? dflt : s === '1'; }

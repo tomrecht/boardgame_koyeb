@@ -257,6 +257,75 @@ with it in mind.** Assessment and the concrete implications:
 
 ## Current state
 
+- **THE DIFFICULTY SLIDER IS AN OFF SWITCH, NOT A DIFFICULTY CONTROL (measured
+  2026-09-25, `difficulty_arena.py`, 566 games).** The open question from
+  2026-09-13 -- "nobody has ever measured what a given difficulty PLAYS like" --
+  is now answered, and the answer is that the control is mis-scaled badly enough
+  that it cannot be labelled as it stands.
+  Method: the deployed champion (`symaug_champ_July27_iter6.pt`) on BOTH sides,
+  one at difficulty d and the other always at 1.0, paired colour-swapped seeds,
+  plain 2-ply shallow. `d=1.0` is in the sweep as the control.
+
+        d   slider  games  win%   (95% CI)   avg margin  shutouts  turns
+       1.00   Max      96  50.0  (40-60)       +0.00        0%      56
+       0.80   80%      94   0.0  ( 0-3.9)      -6.06        0%      61
+       0.60   60%      94   0.0  ( 0-3.9)     -10.06       15%      56
+       0.40   40%      94   0.0  ( 0-3.9)     -11.27       53%      53
+       0.20   20%      94   0.0  ( 0-3.9)     -11.68       72%      51
+       0.00  Easy      94   0.0  ( 0-3.9)     -11.89       90%      49
+
+  **The control is clean, so the rest is trustworthy:** d=1.0 vs d=1.0 gives
+  exactly 50.0% (48/96), the colour-swapped halves are 26/48 and 22/48 at margin
+  +0.21 / -0.21, and white takes 52 of 96. The harness is symmetric.
+  **The findings:**
+  1. **Even 80% -- the mildest weakening the slider offers -- never wins.** 0 of
+     94, and its BEST result in 94 games is losing by 2.
+  2. **At 40% and below it is being shut out** (beaten by the maximum margin of
+     12) in 53%, 72% and 90% of games. "Easy" does not play the game.
+  3. **The bottom 80% of the slider's travel is undifferentiated.** Every setting
+     from 0.0 to 0.8 has the same 0% win rate; only the margin separates them,
+     and only from -6 to -11.9. **All the usable signal is between 0.8 and 1.0**,
+     which is the top fifth of the control.
+  Why: at d=0.8 the ramps give temp 0.92 and top_p 0.40, and because the softmax
+  is z-scored by the CANDIDATE SPREAD, a temperature near 1 std makes the
+  distribution nearly flat relative to the scores -- so it deviates from the best
+  move on a large fraction of turns, and over ~56 turns that is dozens of
+  blunders. The ramps (`0.4 + (1-d)*2.6` and `0.25 + (1-d)*0.75` in
+  `_pick_move_index`, mirrored in `agent.js`'s `pickMoveIndex`) are simply scaled
+  wrong for this game's turn count.
+  **DONE: `TUT_EASY_DIFFICULTY` 0.5 -> 0.8.** At 0.5 the "Go easy" button added
+  on 2026-09-24 would have promised a gentler game and handed over an opponent
+  that loses by ~11 every time, which is worse than the full-strength default.
+  0.8 is the only weakened setting that still plays a real game: 0 wins against
+  full strength but ZERO shutouts, median -6, worst -10.
+  **NOT DONE, and the recommendation:** remap the slider so its travel covers
+  0.8..1.0 instead of 0..1, and label it from a FINE sweep of that band
+  (0.99 / 0.97 / 0.95 / 0.92 / 0.90 / 0.85) -- that is where the transition from
+  50% to 0% happens and nobody has looked inside it yet. Those games are also
+  cheaper (178-267s against 300-345s at the bottom), so ~2.5 h per pass of ten
+  games a level. Remapping changes what an existing saved `aiDifficulty` means,
+  so it is a product decision, not a silent fix.
+  **CAVEAT ON WHAT THIS MEASURES:** strength relative to the net at full
+  strength, NOT relative to a human. Owner is beaten by d=1.0 about 50-60% of the
+  time, and a tutorial graduate is far weaker than owner -- so d=0.8, which never
+  beats full strength, may well be a fair fight for a beginner. The ordering and
+  the scale are now measured; the mapping onto a human opponent still needs a
+  human.
+  **A CLAIM I MADE FROM WALL CLOCK AND THE TURNS COLUMN DISPROVED:** the first
+  six games suggested weakened agents "play 2.3-2.5x longer games", inferred from
+  seconds. Turns say otherwise -- 56 / 61 / 56 / 53 / 51 / 49, flat and if
+  anything DECREASING as the setting drops. The inflation is **seconds per turn**
+  (3.2 -> 6.6), not more turns: the losing side banks nothing, so it keeps ~12
+  pieces on the board all game, its move generation is maximal every turn and the
+  2-ply search costs twice as much. Seconds are not a proxy for game length when
+  the branching factor is what changed.
+  **Cost, for anyone extending it:** ~216s per game of throughput on 3 workers of
+  this 4-core iMac, so ~3.6 h per pass of ten games per level across six levels.
+  `difficulty_arena.jsonl` holds every game and the script skips what is already
+  recorded, so a longer run just resumes. **That file is GITIGNORED** (`*.jsonl`,
+  the same convention as `arena.jsonl`), so the raw games are local to this iMac
+  and the table above is the record -- re-running elsewhere starts from zero.
+
 - **LEARNABILITY WORK, ON `testing` FOR TRIAL (owner, 2026-09-24).** Two testers
   reported the game still hard to learn after the tutorial, one asking for a hint
   mode. Four changes, all on `testing` and NOT yet on main, at owner's request.
@@ -318,10 +387,9 @@ with it in mind.** Assessment and the concrete implications:
   are pinned to the bottom of the card and cannot scroll away. Closing text is now
   190 characters, the SHORTEST of the eleven steps (step 7, at 450, is the tallest
   and still sets the pinned height), so nothing about the other steps moved.
-  **`TUT_EASY_DIFFICULTY = 0.5` IS A GUESS, NOT A MEASUREMENT** -- the open
-  question from 2026-09-13 stands: nobody has measured what a difficulty setting
-  PLAYS like, and a win rate per setting against d=1 is a cheap arena run that
-  would let the slider be labelled honestly.
+  **`TUT_EASY_DIFFICULTY` was 0.5, a guess; it is now 0.8 and MEASURED** -- see
+  the difficulty-slider entry above, which also records that the slider as a
+  whole is mis-scaled.
   **Measured in a browser** (5 viewports: desktop, phone portrait, phone
   portrait + `?safeinset=48,0,56,0`, phone landscape, phone landscape +
   `?safeinset=0,48,24,48`), against main's game.js served side by side as a
@@ -393,10 +461,10 @@ with it in mind.** Assessment and the concrete implications:
   with owner -- lower it globally (but a silently weaker opponent is its own
   problem), ask once at the end of the tutorial with two buttons, or relabel
   the slider's ends ("Max"/"Easy"/"70%" says nothing about what it does).
-  **Nobody has ever measured what a given difficulty PLAYS like**: it is
-  top-p sampling over a z-scored softmax (`_pick_move_index`), so a win rate
-  per setting against d=1 is a cheap arena run and would let the slider be
-  labelled honestly.
+  **ANSWERED 2026-09-25** -- measured, and the slider turns out to be an off
+  switch rather than a difficulty control (every setting from 0.0 to 0.8 wins 0%
+  against full strength). See the difficulty-slider entry at the top of Current
+  state; relabelling needs a remap first, not just better words.
 
 - **ANDROID 15/16 EDGE-TO-EDGE PUT THE STATUS BAR ON THE RACKS AND THE
   NAVIGATION BAR ON THE TUTORIAL'S BUTTONS (first tester, Pixel 10,
