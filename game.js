@@ -226,11 +226,46 @@ function _mixColor(a, b, t) {
     return (m(16) << 16) | (m(8) << 8) | m(0);
 }
 
-// AI difficulty (1 = full strength / argmax; lower = weaker via top-p sampling).
-function getAIDifficulty() {
+// AI difficulty. The agent takes a number where 1 = full strength / argmax and
+// lower means top-p sampling over a z-scored softmax, so it deviates from its
+// best move more and more often.
+//
+// THE SLIDER IS REMAPPED ONTO 0.8..1.0, BECAUSE THE BOTTOM OF THE RAW RANGE IS
+// NOT A DIFFICULTY SETTING AT ALL (measured 2026-09-25, 566 games; the table is
+// in CLAUDE.md). Every raw value from 0.0 to 0.8 loses to the same net at full
+// strength in 94 of 94 games, and at 0.4 and below it is beaten by the maximum
+// margin of 12 in most of them -- so four fifths of the control's travel was
+// undifferentiated, and "50%" on the label meant nothing. All the usable range
+// is between 0.8 and 1.0.
+//
+// So there are now two quantities and they must not be confused:
+//   getDifficultySetting() -- where the SLIDER sits, 0..1, what is persisted
+//   getAIDifficulty()      -- the EFFECTIVE number handed to the agent
+const DIFFICULTY_FLOOR = 0.8;   // what slider-0 means to the agent
+// `aiDifficulty` in localStorage is the SLIDER POSITION. It used to be the
+// effective value, so a player who had saved 0.5 is now read as position 0.5 ->
+// effective 0.9, i.e. their opponent gets stronger. That is deliberate and is the
+// fix: every saved value below 0.8 was a setting that could not play the game, so
+// there is no old position worth preserving and nothing to migrate to.
+function getDifficultySetting() {
     let v = 1.0;
     try { const s = localStorage.getItem('aiDifficulty'); if (s !== null) v = parseFloat(s); } catch (e) {}
     return isFinite(v) ? Math.min(1, Math.max(0, v)) : 1.0;
+}
+function getAIDifficulty() {
+    return DIFFICULTY_FLOOR + (1 - DIFFICULTY_FLOOR) * getDifficultySetting();
+}
+// ORDINAL WORDS, AND DELIBERATELY NO PERCENTAGE. A number on this label reads as
+// a win rate, and nobody has measured inside 0.8..1.0 yet -- only the endpoints
+// (0.8 never beats full strength; 1.0 is full strength). The ordering is safe to
+// claim, because both ramps in _pick_move_index move monotonically with the
+// value; a figure is not. Put numbers here once the fine sweep exists.
+function difficultyLabel(pos) {
+    if (pos >= 0.99) return 'Max';
+    if (pos >= 0.75) return 'Strong';
+    if (pos >= 0.50) return 'Medium';
+    if (pos >= 0.25) return 'Gentle';
+    return 'Easiest';
 }
 // Boolean settings persisted in localStorage, with a default when unset.
 function _boolSetting(key, dflt) {
@@ -1867,11 +1902,12 @@ function createSettingsPanel() {
     drow.appendChild(dhead);
     const slider = mk('input', 'width:100%; cursor:pointer;');
     slider.type = 'range'; slider.min = '0'; slider.max = '100'; slider.step = '5';
-    slider.value = String(Math.round(getAIDifficulty() * 100));
-    const labelFor = (d) => d >= 0.99 ? 'Max' : d <= 0.01 ? 'Easy' : Math.round(d * 100) + '%';
-    dval.textContent = labelFor(getAIDifficulty());
-    slider.oninput = () => { const d = parseInt(slider.value) / 100; dval.textContent = labelFor(d);
-        try { localStorage.setItem('aiDifficulty', String(d)); } catch (e) {} };
+    // The slider shows and stores its POSITION; getAIDifficulty does the remap.
+    slider.value = String(Math.round(getDifficultySetting() * 100));
+    dval.textContent = difficultyLabel(getDifficultySetting());
+    slider.oninput = () => { const pos = parseInt(slider.value) / 100;
+        dval.textContent = difficultyLabel(pos);
+        try { localStorage.setItem('aiDifficulty', String(pos)); } catch (e) {} };
     drow.appendChild(slider);
     const dnote = mk('div', 'font-size:11px; color:#8b95a3; margin-top:2px; display:none;', 'Locked during a match');
     dnote.id = 'settingsDiffNote'; drow.appendChild(dnote);
