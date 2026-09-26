@@ -372,6 +372,38 @@ with it in mind.** Assessment and the concrete implications:
   **Deliberately narrow:** it stays SILENT when the dice CAN make the distance,
   because then some other rule refused it and this function has nothing true to
   say -- a confident wrong explanation teaches a rule that does not exist.
+  **AND IT ONLY EXPLAINS WHEN YOU ASK TWICE (owner, 2026-09-25: "too trigger
+  happy, they often fire when I've just mistapped by one tile").** The first
+  suppression was a bare 1200ms timer with no memory of WHICH tile, so every
+  isolated refused tap got a full explanation -- and a mistap by one tile is
+  GUARANTEED to hit an unmakeable distance: if the dice make 3, 5 and 8, the
+  neighbours of the intended tile sit at 2, 4 and 6. The message was correct every
+  time and answering a question nobody asked; exploratory tapping did the same.
+  Now a first refusal on a tile is SILENT and a second on the SAME tile speaks
+  (`game._whyLast` = {tile, at}, plus `_whyShownAt` for the post-message cooldown).
+  A slip is corrected and never repeated; a misunderstanding taps the same tile
+  again because the player still thinks it should work. **Silence is not absence of
+  feedback** -- a refused move re-asserts the lit destinations in `Tile.onClick`'s
+  else branch, which is the answer without prose.
+  **A repeat must be DELIBERATE:** `WHY_REPEAT_MIN_MS` 300 (a physical double-tap
+  is one gesture, not asking twice) and `WHY_REPEAT_MAX_MS` 8000 (after that the
+  board has moved on, so a later tap starts fresh rather than cashing a stale first
+  strike).
+  **The WALL and NO-ROUTE messages still speak on the FIRST tap** -- they are about
+  board state the player may genuinely not have seen rather than a rule they know,
+  and they are rare, since a wall has to be on the exact tile tapped. Only the two
+  ARITHMETIC messages (distance, no-doubling-back) go through `sayOnRepeat`.
+  Measured, six cases: 1st tap silent; 2nd on the same tile 600ms later speaks; a
+  first tap then a DIFFERENT tile stays silent; a same-tick double-tap stays
+  silent; a repeat after 8.4s is silent again; a wall 4 away with a die of 4 speaks
+  on the first tap; and a legal sum-7 move still lands and spends both dice.
+  **Rejected alternatives** (asked for and considered): suppressing when the
+  distance is within 1 of a makeable value silences a large slice of genuine cases
+  and guesses at intent from arithmetic; suppressing when the tile is adjacent to a
+  legal destination silences almost everything, since with two dice plus the sum
+  most tiles are; snapping a near-miss onto the adjacent legal destination would
+  move a piece the player did not tap. A dosage cap (N per game) was offered and
+  owner chose second-tap alone for now.
   **3. THE TUTORIAL IS REACHABLE FROM HOW TO PLAY**, leading the panel above the
   first section. It was previously only on the welcome card (gone the moment you
   start playing) and in Settings (where nobody looks for a tutorial). It

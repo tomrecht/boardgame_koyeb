@@ -517,22 +517,59 @@ function _noticeIfRouteWithheld(game, piece, targetTile) {
 // piece) or cannot be told apart from another (the second-entrant reordering, a
 // sum withheld by a rule rather than by distance), and a confident WRONG
 // explanation is worse than none: it teaches a rule that does not exist.
-const WHY_BURST_MS = 1200;          // one message per burst of refused taps
+// IT ONLY EXPLAINS WHEN YOU ASK TWICE (owner, 2026-09-25: "too trigger happy,
+// they often fire when I've just mistapped by one tile").
+//
+// The old suppression was a bare 1200ms timer with no memory of WHICH tile, so
+// every isolated refused tap got a full explanation -- and a mistap by one tile is
+// GUARANTEED to land on an unmakeable distance: if the dice make 3, 5 and 8, the
+// neighbours of the intended tile are at 2, 4 and 6. The message was right every
+// time and answering a question nobody asked. Exploratory tapping did the same.
+//
+// So a first refusal on a tile is SILENT and a second one on the SAME tile speaks.
+// A slip is corrected and never repeated; a genuine misunderstanding taps the same
+// tile again, because the player still thinks it should work. That is the signal.
+// **Silence is not absence of feedback:** a refused move re-asserts the lit
+// destinations (see Tile.onClick's else branch), which is the answer without prose.
+//
+// A REPEAT HAS TO BE DELIBERATE, hence the minimum gap: a physical double-tap is
+// one gesture, not asking twice. And after the maximum the board has usually moved
+// on, so a later tap starts fresh rather than cashing in a stale first strike.
+const WHY_BURST_MS = 1200;          // cooldown after a message IS shown
+const WHY_REPEAT_MIN_MS = 300;      // faster than this is one double-tap
+const WHY_REPEAT_MAX_MS = 8000;     // slower than this is a new situation
 function _noticeWhyUnreachable(game, piece, targetTile) {
     const no = (why, extra) => { console.log('[why-unreachable] not shown:', why, extra || ''); return false; };
     if (!game || !piece || !targetTile) return no('missing game/piece/target');
     if (targetTile === piece.currentTile) return no('the piece is already there');
     // nogo is not interactive at all and home is not a destination, so neither
-    // can be tapped as one.
+    // can be tapped as one. Checked BEFORE the repeat bookkeeping, so a tap that
+    // was never a refusal cannot count as the first of two.
     if (targetTile.type === 'nogo' || targetTile.type === 'home') return no('nogo/home');
     const now = Date.now();
-    if (game._whyFlashUntil && now < game._whyFlashUntil) return no('inside the previous burst');
+    if (game._whyShownAt && now - game._whyShownAt < WHY_BURST_MS) {
+        return no('inside the cooldown after the last message');
+    }
+    const prev = game._whyLast;
+    const gap = prev && prev.tile === targetTile ? now - prev.at : null;
+    const asked_twice = gap !== null && gap >= WHY_REPEAT_MIN_MS && gap <= WHY_REPEAT_MAX_MS;
+    game._whyLast = { tile: targetTile, at: now };
+
     const say = (msg) => {
-        game._whyFlashUntil = now + WHY_BURST_MS;
+        game._whyShownAt = now;
         if (typeof flashNotice === 'function') flashNotice(msg, 5000, 'move');
         console.log('[why-unreachable] shown:', msg);
         return true;
     };
+    // The two messages about ARITHMETIC are the noisy ones and the ones a mistap
+    // provokes, so they wait for the second ask. The wall and no-route messages
+    // below do NOT: they are about board state the player may genuinely not have
+    // seen rather than a rule they already know, and they are rare -- a wall has
+    // to be on the exact tile tapped.
+    const sayOnRepeat = (msg) => asked_twice ? say(msg)
+        : no('first refusal on this tile; the lit destinations are the answer',
+             { tile: targetTile.type + ' ' + targetTile.ring + ',' + targetTile.sector,
+               gapToPrevious: gap });
 
     // A wall refuses the tile at every distance, so it is checked before any
     // arithmetic -- otherwise a wall two steps away with a 2 in hand would get
@@ -562,7 +599,7 @@ function _noticeWhyUnreachable(game, piece, targetTile) {
         try { sd = game._bfsDistances(start); } catch (e) { sd = null; }
         const moved = sd && sd.get(piece.currentTile);
         if (sd && moved != null && sd.get(targetTile) !== moved + d) {
-            return say('This piece has already moved this turn, so the other die has to carry it further on — it can’t double back.');
+            return sayOnRepeat('This piece has already moved this turn, so the other die has to carry it further on — it can’t double back.');
         }
     }
 
@@ -574,7 +611,7 @@ function _noticeWhyUnreachable(game, piece, targetTile) {
     const makeable = live.slice();
     if (live.length === 2) makeable.push(live[0] + live[1]);
     if (makeable.includes(d)) return no('the dice can make that distance; another rule refused it', { d: d, live: live });
-    return say('That tile is ' + d + ' ' + (d === 1 ? 'step' : 'steps') + ' away by the shortest route, so it takes ' +
+    return sayOnRepeat('That tile is ' + d + ' ' + (d === 1 ? 'step' : 'steps') + ' away by the shortest route, so it takes ' +
                _anNumber(d) + ' — a piece always travels the shortest way, whichever path you had in mind.');
 }
 // "an 8" / "an 11" / "a 4". Distances here run 1..12 (two dice), so 8 and 11 are
