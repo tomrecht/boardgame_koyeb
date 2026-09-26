@@ -385,18 +385,35 @@ with it in mind.** Assessment and the concrete implications:
   again because the player still thinks it should work. **Silence is not absence of
   feedback** -- a refused move re-asserts the lit destinations in `Tile.onClick`'s
   else branch, which is the answer without prose.
-  **A repeat must be DELIBERATE:** `WHY_REPEAT_MIN_MS` 300 (a physical double-tap
-  is one gesture, not asking twice) and `WHY_REPEAT_MAX_MS` 8000 (after that the
-  board has moved on, so a later tap starts fresh rather than cashing a stale first
-  strike).
+  **"ASKING TWICE" MEANS THE SAME QUESTION ABOUT THE SAME BOARD (owner's
+  correction, and it is the right rule).** The first cut used an 8-second window as
+  a PROXY for "the board has moved on"; the condition is now tested directly and
+  there is **no maximum gap at all** -- if the board is identical the player has not
+  moved, so they are still asking the same thing however long they took. Anything
+  that changes breaks it and the tap counts as a fresh first one.
+  `_whySig(game, piece)` is `_hintSig(game)` (turn + both dice, value AND used +
+  every piece's tile) plus the SELECTED PIECE, because the distance in the message
+  is measured from it -- the same tile asked about by a different piece is a
+  different question with a different answer.
+  `WHY_REPEAT_MIN_MS` 300 stays: a physical double-tap has an identical board state
+  and is one gesture, not asking twice.
   **The WALL and NO-ROUTE messages still speak on the FIRST tap** -- they are about
   board state the player may genuinely not have seen rather than a rule they know,
   and they are rare, since a wall has to be on the exact tile tapped. Only the two
   ARITHMETIC messages (distance, no-doubling-back) go through `sayOnRepeat`.
-  Measured, six cases: 1st tap silent; 2nd on the same tile 600ms later speaks; a
-  first tap then a DIFFERENT tile stays silent; a same-tick double-tap stays
-  silent; a repeat after 8.4s is silent again; a wall 4 away with a die of 4 speaks
-  on the first tap; and a legal sum-7 move still lands and spends both dice.
+  Measured: 1st tap silent; 2nd on the same tile with the board unchanged speaks;
+  **the same pair 9 SECONDS apart still speaks** (no max window); a first tap then a
+  DIFFERENT tile stays silent; **spending a die between the two taps makes the
+  second a first tap** (sig changed, silent); **the same tile asked by a different
+  selected piece is a first tap** (silent); a same-tick double-tap stays silent; a
+  wall 4 away with a die of 4 speaks on the first tap; and on a clean board a legal
+  sum-7 move still lands and spends both dice.
+  **Fixture trap, hit a third time:** `_clearSelection(game)` did NOT return the
+  tentatively entered piece to its rack in the harness, so selecting the next rack
+  piece put a SECOND own piece on home, which blanks `reachableBySum` and made the
+  legal-move control fail for reasons unrelated to the change. Give that control its
+  own fresh page and assert `ownOnHomeBefore === 0` and `sumOffered === true` so the
+  fixture proves itself.
   **Rejected alternatives** (asked for and considered): suppressing when the
   distance is within 1 of a makeable value silences a large slice of genuine cases
   and guesses at intent from arithmetic; suppressing when the tile is adjacent to a

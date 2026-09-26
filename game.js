@@ -532,12 +532,27 @@ function _noticeIfRouteWithheld(game, piece, targetTile) {
 // **Silence is not absence of feedback:** a refused move re-asserts the lit
 // destinations (see Tile.onClick's else branch), which is the answer without prose.
 //
-// A REPEAT HAS TO BE DELIBERATE, hence the minimum gap: a physical double-tap is
-// one gesture, not asking twice. And after the maximum the board has usually moved
-// on, so a later tap starts fresh rather than cashing in a stale first strike.
+// What counts as "the same question about the same board". _hintSig already carries
+// turn + both dice (value AND used) + every piece's tile, so a move, a spent die or
+// a turn change all break it. The SELECTED PIECE is appended because the distance
+// in the message is measured from it -- tapping the same tile with a different piece
+// selected is a different question with a different answer, so it starts over.
+function _whySig(game, piece) {
+    return _hintSig(game) + '|' + (piece ? piece.player + piece.number : '-');
+}
+// "ASKING TWICE" MEANS THE SAME QUESTION ABOUT THE SAME BOARD (owner, 2026-09-25).
+// The first cut used an 8-second window as a PROXY for "the board has moved on".
+// The real condition is board-state equality, so it is tested directly: the second
+// tap speaks only if nothing has changed since the first, and if anything has, that
+// tap counts as a fresh first one. Strictly better than a timer, and it is the
+// house rule anyway -- derived state beats a flag.
+//
+// With that in place there is NO maximum gap: if the board is identical the player
+// has not moved, so they are still looking at the same position and asking the same
+// thing, however long they took. The MINIMUM gap stays, because a physical
+// double-tap has an identical board state and is one gesture, not asking twice.
 const WHY_BURST_MS = 1200;          // cooldown after a message IS shown
 const WHY_REPEAT_MIN_MS = 300;      // faster than this is one double-tap
-const WHY_REPEAT_MAX_MS = 8000;     // slower than this is a new situation
 function _noticeWhyUnreachable(game, piece, targetTile) {
     const no = (why, extra) => { console.log('[why-unreachable] not shown:', why, extra || ''); return false; };
     if (!game || !piece || !targetTile) return no('missing game/piece/target');
@@ -550,10 +565,14 @@ function _noticeWhyUnreachable(game, piece, targetTile) {
     if (game._whyShownAt && now - game._whyShownAt < WHY_BURST_MS) {
         return no('inside the cooldown after the last message');
     }
+    // Same tile, same board, and a deliberate gap.
+    const sig = _whySig(game, piece);
     const prev = game._whyLast;
-    const gap = prev && prev.tile === targetTile ? now - prev.at : null;
-    const asked_twice = gap !== null && gap >= WHY_REPEAT_MIN_MS && gap <= WHY_REPEAT_MAX_MS;
-    game._whyLast = { tile: targetTile, at: now };
+    const sameTile = !!prev && prev.tile === targetTile;
+    const sameBoard = !!prev && prev.sig === sig;
+    const gap = prev ? now - prev.at : null;
+    const asked_twice = sameTile && sameBoard && gap >= WHY_REPEAT_MIN_MS;
+    game._whyLast = { tile: targetTile, at: now, sig: sig };
 
     const say = (msg) => {
         game._whyShownAt = now;
@@ -567,9 +586,9 @@ function _noticeWhyUnreachable(game, piece, targetTile) {
     // seen rather than a rule they already know, and they are rare -- a wall has
     // to be on the exact tile tapped.
     const sayOnRepeat = (msg) => asked_twice ? say(msg)
-        : no('first refusal on this tile; the lit destinations are the answer',
+        : no('not the same question asked twice; the lit destinations are the answer',
              { tile: targetTile.type + ' ' + targetTile.ring + ',' + targetTile.sector,
-               gapToPrevious: gap });
+               sameTile: sameTile, sameBoard: sameBoard, gapToPrevious: gap });
 
     // A wall refuses the tile at every distance, so it is checked before any
     // arithmetic -- otherwise a wall two steps away with a 2 in hand would get
