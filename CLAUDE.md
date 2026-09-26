@@ -979,7 +979,27 @@ with it in mind.** Assessment and the concrete implications:
     needed versionCode 2. **A reinstall from Play does NOT pick up a local
     rebuild** — obvious in hindsight, easy to misread as the icon fix having
     failed.
-    **CURRENT PACKAGE: versionCode 5, versionName 1.0.4, 8.3 MB, built
+    **CURRENT PACKAGE: versionCode 6, versionName 1.0.5, 8.7 MB, built
+    2026-09-25** -- the learnability batch: the hint pill and its sum-move
+    collapse, the shortest-route explanation, the tutorial's entry point in How to
+    Play, the closing difficulty buttons, the difficulty-slider remap onto
+    0.8..1.0, the withheld-sum highlight and the match-winner chime. See the
+    entries at the top of Current state.
+    **`game.js` and `local_agent.js` are the ONLY shipped files that changed**
+    since versionCode 5; index.html, sw.js, the manifest, the ported agent and the
+    ort runtime are byte-identical, so **`sw.js` keeps `quahuru-v8`** -- CHECKED,
+    not assumed: `ALWAYS_FRESH` is `!VENDORED && /(\/|\.html|\.js|\.json)$/`, so
+    every non-vendored `.js` is network-first and both changed files are covered.
+    Verified on the BUNDLE: `jar verified`; versionCode `6` read as the
+    length-delimited value after the `versionCode` attribute name in
+    `base/manifest/AndroidManifest.xml`, versionName `1.0.5` and package
+    `com.quahuru.game` as UTF-8 strings; and `base/assets/public/game.js`,
+    `local_agent.js` and `index.html` all hash-identical to the working tree.
+    **Two PATH gotchas on this iMac:** `npx` and `node` are not on the default
+    PATH for a non-interactive shell -- prefix with `PATH="/usr/local/bin:$PATH"`
+    -- and `jarsigner` comes from `./.jdk/jdk-21.0.12.1+1/Contents/Home/bin/`, not
+    the system.
+    Previous: versionCode 5, versionName 1.0.4, 8.3 MB, built
     2026-09-13** -- the safe-area fix for Android 15/16 edge-to-edge (see the
     entry at the top of Current state); it is the one to upload for the closed
     test, since versionCode 4 puts the status bar on the racks on any Android
