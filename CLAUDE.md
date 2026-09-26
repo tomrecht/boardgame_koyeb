@@ -465,6 +465,26 @@ with it in mind.** Assessment and the concrete implications:
   difficulty sentence became buttons: the card is capped with `#tutText` scrolling
   inside it, so a sentence about hints would be the next thing below the fold.
 
+  **(d) THE MARKER DIES THE MOMENT A MOVE COMMITS (owner, 2026-09-25: it
+  "persists a bit too long").** `_hintTick` would have caught it within 250ms, but
+  that is long enough to watch the ring linger through the slide animation. There
+  is now a synchronous `clearHint()` at the commit point of `movePiece` and of
+  `Piece.save` -- **after every legality check, so a REFUSED move leaves the hint
+  and the selection exactly as they were.** The 250ms poll STAYS as the backstop
+  for everything that changes the board without coming through those two (undo, a
+  turn switch, a scene restart).
+  Measured in the same tick, giving the poll no chance to run: a committed move
+  2 markers -> 0 (move happened, 2 dice spent); a committed save 2 -> 0 (piece off
+  the board, saved count up); a refused move 2 -> 2, no move, no die spent.
+  **Two fixture traps in verifying just this:** a save is ILLEGAL IN THE OPENING,
+  so the first attempt tested nothing -- `save()` returned false and the marker
+  "failed" to clear because no save had happened. Borrow the tutorial's own
+  `Saving` step position (verified by construction) and apply it to a normal game
+  with `_tutApply` / `_tutPhases` / `_tutRefresh`. And a probe that reuses the page
+  after a refused-move case finds the rack piece still TENTATIVELY ENTERED on home,
+  which gives the mover two pieces there, blanks `reachableBySum` and silently
+  turns the "committed move" case into another refused one.
+
   **Three fixture traps hit while measuring, each of which produced a convincing
   false pass** -- all three are the "read the denominator" rule again:
   selecting a rack piece **TENTATIVELY ENTERS it onto the home tile**, and a

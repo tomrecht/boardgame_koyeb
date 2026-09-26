@@ -5337,6 +5337,9 @@ class Piece {
             if (dieToUse) {
                 console.log(`Using die ${dieToUse.value} to save piece ${this.number}`);
                 const dieValue = dieToUse.value;
+                // Same synchronous edge as movePiece: the save is committed here,
+                // so drop the hint marker now rather than up to 250ms later.
+                if (typeof clearHint === 'function') clearHint();
                 this.game.pushUndo();   // snapshot before the save so undo reverts just it
                 // Use the corresponding die
                 dieToUse.setUsed();
@@ -6876,6 +6879,17 @@ class Game {
                     return false;
                 }
             }
+
+            // A HINT DIES THE MOMENT A MOVE COMMITS (owner, 2026-09-25: it
+            // "persists a bit too long"). _hintTick would catch it within 250ms,
+            // but that is long enough to see the ring linger through the slide
+            // animation. The poll STAYS as the backstop for everything that
+            // changes the board without coming through here (undo, a turn
+            // switch, a scene restart); this is the synchronous edge for the one
+            // case the player is actually watching.
+            // Placed after every legality check, so a REFUSED move leaves the
+            // hint -- and the selection -- exactly as they were.
+            if (typeof clearHint === 'function') clearHint();
 
             // snapshot BEFORE this move so undo reverts just it. Prefer the
             // pre-selection snapshot (captured while an entering piece was still
