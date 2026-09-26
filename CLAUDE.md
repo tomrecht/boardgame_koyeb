@@ -328,7 +328,7 @@ with it in mind.** Assessment and the concrete implications:
 - **LEARNABILITY WORK, ON `testing` FOR TRIAL (owner, 2026-09-24).** Two testers
   reported the game still hard to learn after the tutorial, one asking for a hint
   mode. Four changes, all on `testing` and NOT yet on main, at owner's request.
-  **1. A HINT LAMP (💡, beside the "?" legend).** Tapping it asks the SAME
+  **1. A HINT PILL ("💡 Hint", bottom right beside the "?" legend).** Tapping it asks the SAME
   on-device agent that plays the computer's side what it would do in your
   position, and rings the piece and the destination tile. It is presentation, not
   new search -- `local_agent.js` has answered `selectMoves()` since the port, so a
@@ -415,6 +415,55 @@ with it in mind.** Assessment and the concrete implications:
               314 -> 292; closing-step text overflow is LOWER than main's
               (portrait 56 vs 78; with insets 85 vs 107)
         0 console errors, 0 failed requests, 94 tiles, 24 pieces, WebGL
+
+  **AMENDED AFTER OWNER'S TRIAL (2026-09-25). Three changes, all verified:**
+  **(a) ONE PIECE MOVED TWICE IS NOW ONE HINT, ON THE DICE SUM.** The agent
+  returns it as two halves because that is how it searched, but the player makes
+  it in a single gesture, so hinting the intermediate tile and only revealing the
+  real destination on a second tap was teaching the hard way. `_hintSumMove`
+  collapses it: both halves the same piece, both ordinary tile moves, and the
+  SECOND half's destination (pair order is application order -- select_move_pair
+  chooses the second against the board after the first) actually in
+  `reachableBySum`.
+  **THE EXCEPTION IS THE GAME'S OWN, NOT A RE-IMPLEMENTATION:** a sum destination
+  whose routes offer a choice of captures is withheld in `ambiguousSum` precisely
+  so the player spends the dice one at a time to pick the capture, and there the
+  two-step hint is correct -- so it falls through. A save half, a block-save half,
+  two different pieces and a one-move pair all decline to collapse too.
+  Measured, and with the PAIRED CONTROL that proves the gate is doing the work
+  rather than the position: the same stubbed reader collapses when the tile is in
+  `reachableBySum` (roll 7) and does NOT when the only difference is that the tile
+  sits in `ambiguousSum`. On a real opening position the front rack piece offers
+  6 sum destinations (the six goals, all exactly 7 from home), and the render puts
+  a ring on the piece and on the FINAL tile, none on the intermediate, with
+  "...to goal 4 — both dice on the one piece."
+  **(b) THE LAMP IS A LABELLED PILL IN THE ACCENT COLOUR** -- owner: *"the hint
+  lamp is tiny."* It was a 30px translucent dot matching the legend "?", which is
+  wrong by intent: the legend is a reference you consult once and is deliberately
+  faint, while this is an action to reach for mid-game. Now 77x34 (2606px2 against
+  the legend's 900), accent ground, white glyph plus the word "Hint", which also
+  removes the guesswork a bare emoji leaves. Measured inside the viewport with a
+  10px gap to the legend at desktop, phone portrait, portrait + `?safeinset=
+  48,0,56,0`, landscape + `?safeinset=0,48,24,48`, and a 320px-wide phone.
+  **Watch-out:** the "thinking" state must rewrite only the GLYPH span --
+  `btn.textContent = '…'` flattens the pill's two spans and the label never
+  returns.
+  **(c) THE TUTORIAL HANDS OVER WITH HINTS ON AND SAYS SO.** Both closing buttons
+  go through `_tutFinish(position)`, which sets the difficulty, WRITES
+  `hintsEnabled = '1'` (rather than relying on the default, so a player who had
+  turned hints off still gets them back for this one game, and the notice is never
+  a lie) and arms `_hintNudgePending`.
+  **The notice cannot fire where the button is pressed:** `_tutEnd` restarts the
+  scene to the WELCOME CARD, so a notice shown then would sit under it and be gone
+  before the first game began. It is delivered from `_hintTick`, the 250ms poll the
+  marker already uses, once a real unfrozen game exists with no card over it --
+  one waiting place instead of hooking the four paths a game can start from.
+  Measured from a start with hints explicitly OFF: "Go easy" gives position 0 /
+  effective 0.8 / hints on / nudge armed; **no notice under the welcome card**, and
+  the notice appears with the pill visible once the game starts.
+  **It is a NOTICE and not another line in the card** for the same reason the
+  difficulty sentence became buttons: the card is capped with `#tutText` scrolling
+  inside it, so a sentence about hints would be the next thing below the fold.
 
   **Three fixture traps hit while measuring, each of which produced a convincing
   false pass** -- all three are the "read the denominator" rule again:

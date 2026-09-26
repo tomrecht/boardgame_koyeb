@@ -2223,19 +2223,25 @@ function createHintButton() {
     const btn = document.createElement('button');
     btn.id = 'hintBtn';
     btn.title = 'Hint';
-    btn.textContent = '💡';
-    // Beside the legend "?" (bottom-right, 30px at right:12px) and at the SAME
-    // z-index, so both sit under the full-screen cards rather than floating over
-    // the welcome screen and How to Play. Reads --safe-* like the rest of the DOM
-    // chrome: it is positioned against the viewport, not the canvas, so it does
-    // not ride the canvas's safe-area inset.
-    btn.style.cssText = 'position:fixed; bottom:calc(12px + var(--safe-b)); right:calc(50px + var(--safe-r));' +
-        'z-index:41; width:30px; height:30px; padding:0; border-radius:50%;' +
-        'border:1px solid rgba(0,0,0,.15); background:rgba(255,255,255,.75);' +
-        'font-size:14px; line-height:1; cursor:pointer; opacity:.55; transition:opacity .15s;' +
-        'display:grid; place-items:center;';
-    btn.onmouseenter = () => btn.style.opacity = '1';
-    btn.onmouseleave = () => btn.style.opacity = '.55';
+    // A LABELLED PILL IN THE ACCENT COLOUR, not a translucent 30px dot (owner,
+    // 2026-09-25: "the hint lamp is tiny"). The legend "?" is deliberately faint
+    // because it is a reference you consult once; this is an ACTION you are meant
+    // to reach for mid-game, so it reads as a button and says what it does. The
+    // word also removes the guesswork a bare emoji leaves.
+    btn.innerHTML = '<span style="font-size:15px; line-height:1;">\uD83D\uDCA1</span>' +
+                    '<span style="font-size:13px; font-weight:700; letter-spacing:.01em;">Hint</span>';
+    // Clear of the legend "?" (30px at right:12px, so it ends at 42) and at the
+    // SAME z-index, so both sit under the full-screen cards rather than floating
+    // over the welcome screen and How to Play. Reads --safe-* like the rest of the
+    // DOM chrome: it is positioned against the viewport, not the canvas, so it
+    // does not ride the canvas's safe-area inset.
+    btn.style.cssText = 'position:fixed; bottom:calc(11px + var(--safe-b)); right:calc(52px + var(--safe-r));' +
+        'z-index:41; height:34px; padding:0 13px 0 11px; border-radius:17px; border:none;' +
+        'background:' + THEME.accentCss + '; color:#fff; cursor:pointer;' +
+        'font-family:' + HUD_FONT + '; box-shadow:0 3px 10px rgba(0,0,0,.28);' +
+        'display:flex; align-items:center; gap:6px; opacity:.92; transition:opacity .15s, transform .15s;';
+    btn.onmouseenter = () => { btn.style.opacity = '1'; btn.style.transform = 'translateY(-1px)'; };
+    btn.onmouseleave = () => { btn.style.opacity = '.92'; btn.style.transform = 'none'; };
     btn.onclick = () => { showHint(); };
     document.body.appendChild(btn);
     // The marker must not outlive the position it describes. POLLED rather than
@@ -2252,9 +2258,26 @@ function createHintButton() {
 function refreshHintButton() {
     const btn = document.getElementById('hintBtn'); if (!btn) return;
     const show = getHintsEnabled() && !_tut.active && !window.setupMode;
-    btn.style.display = show ? 'grid' : 'none';
+    btn.style.display = show ? 'flex' : 'none';
+}
+// Set by the tutorial's closing panel. It cannot fire its notice there and then:
+// _tutEnd restarts the scene back to the WELCOME CARD, so a notice shown at the
+// moment the button was pressed would sit under that card and be gone before the
+// first game began. Delivered off the interval the hint marker already polls on,
+// rather than hooked into each of the four places a game can start.
+let _hintNudgePending = false;
+function _maybeNudgeHint() {
+    const game = _currentGame();
+    if (!game || game.gameOver || _gameFrozen || _tut.active) return;
+    if (_gamePausedByCard() || _preGameCardUp()) return;
+    if (!getHintsEnabled()) { _hintNudgePending = false; return; }
+    const btn = document.getElementById('hintBtn');
+    if (!btn || btn.style.display === 'none') return;   // nothing to point at yet
+    _hintNudgePending = false;
+    flashNotice('Hints are on for this game — tap Hint, bottom right, for a suggested move whenever you want one.', 8000);
 }
 function _hintTick() {
+    if (_hintNudgePending) _maybeNudgeHint();
     if (!_hint.objs.length) return;
     const game = _currentGame();
     if (!game || _hintSig(game) !== _hint.sig) clearHint();
@@ -2276,6 +2299,7 @@ function clearHint() {
     });
     _hint.objs = [];
     _hint.sig = null;
+    _hint.sumRoll = null;
 }
 
 // The state a hint is computed from. Two differences from getGameState(), both
@@ -2334,7 +2358,11 @@ async function showHint() {
     }
     _hint.busy = true;
     const btn = document.getElementById('hintBtn');
-    if (btn) { btn.style.opacity = '1'; btn.textContent = '…'; }
+    // Only the GLYPH changes while thinking -- writing textContent would flatten
+    // the pill's two spans and the label would never come back.
+    const btnGlyph = btn && btn.firstElementChild;
+    if (btn) btn.style.opacity = '1';
+    if (btnGlyph) btnGlyph.textContent = '\u2026';
     // A human-vs-human session never loads the runtime, so the FIRST hint there
     // pays for it (a few MB) and takes visibly longer than the rest. Say so
     // rather than looking dead.
@@ -2356,7 +2384,8 @@ async function showHint() {
         flashNotice('Couldn’t work out a hint just now.', 3000);
     } finally {
         _hint.busy = false;
-        if (btn) { btn.style.opacity = '.55'; btn.textContent = '💡'; }
+        if (btn) btn.style.opacity = '.92';
+        if (btnGlyph) btnGlyph.textContent = '\uD83D\uDCA1';
     }
 }
 
@@ -2397,6 +2426,56 @@ function _hintRing(scene, x, y, radius) {
     _hint.objs.push(g);
     return g;
 }
+// Is this pair one piece moved twice, reachable in a single gesture on the dice
+// SUM? Returns { piece, tile, roll } when it is, else null.
+//
+// Order matters and is not arbitrary: select_move_pair chooses the second half
+// against the board AFTER the first, so pair[1] carries the FINAL destination and
+// pair[0] the intermediate. Both halves must be ordinary tile moves -- a save or a
+// block-save is a different gesture, not a longer move, and the sum-to-goal and
+// sum-save shortcuts are optional settings that are off by default.
+function _hintSumMove(game, real) {
+    if (real.length !== 2) return null;
+    const [a, b] = real;
+    if (!Array.isArray(a[0]) || !Array.isArray(b[0])) return null;            // pass / draw
+    if (a[0][0] !== b[0][0] || a[0][1] !== b[0][1]) return null;              // different pieces
+    if (!Array.isArray(a[1]) || !Array.isArray(b[1])) return null;            // a save or a block-save
+    const piece = findPieceByColorAndNumber(b[0][0], b[0][1]);
+    if (!piece || piece.player !== game.turn) return null;
+    const tile = findTileByRingAndSector(b[1][0], b[1][1]);
+    if (!tile) return null;
+    let r = null;
+    try { r = game.getReachableTilesByDice(piece); } catch (e) { return null; }
+    if (!r) return null;
+    // Withheld for a choice of captures: the player really does have to spend the
+    // dice one at a time, so let the two-step hint stand.
+    if ((r.ambiguousSum || []).includes(tile)) {
+        console.log('[hint] sum destination withheld for a capture choice; hinting one die at a time');
+        return null;
+    }
+    if (!r.reachableBySum.includes(tile)) return null;   // not actually a sum move from here
+    return { piece: piece, tile: tile, roll: Number(a[2]) + Number(b[2]) };
+}
+function _renderSumHint(game, scene, sum) {
+    const { piece, tile, roll } = sum;
+    _hint.sig = _hintSig(game);
+    // The FINAL destination is what is marked and what a test should check, so
+    // record the collapsed move rather than either half.
+    _hint.move = [[piece.player, piece.number], [tile.ring, tile.sector], roll];
+    _hint.sumRoll = roll;
+    console.log('[hint] recommending a sum move', JSON.stringify(_hint.move));
+    if (piece.x != null && piece.y != null) {
+        _hintRing(scene, piece.x, piece.y, (piece.radius || PIECE_RADIUS_BASE) * 1.5);
+    }
+    const c = _hintTileCentre(tile);
+    if (c) {
+        const depth = (tile.outerRadius != null && tile.innerRadius != null)
+            ? (tile.outerRadius - tile.innerRadius) : 80;
+        _hintRing(scene, c.x, c.y, Math.max(20, Math.min(62, depth * 0.42)));
+    }
+    const where = (tile.type === 'save') ? 'goal ' + tile.number : 'the marked tile';
+    flashNotice('Hint: move the marked piece to ' + where + ' — both dice on the one piece.', 5000);
+}
 function _renderHint(game, pair) {
     const scene = _setupScene(); if (!scene || !scene.add) return;
     const isPass = (m) => Array.isArray(m) && m[0] === 0 && m[1] === 0 && m[2] === 0;
@@ -2406,6 +2485,21 @@ function _renderHint(game, pair) {
         flashNotice(pair.some(isDraw)
             ? 'Hint: you can call a draw — the button is bottom-left.'
             : 'Hint: nothing this roll can usefully do. End your turn with ↷.', 4500);
+        return;
+    }
+    // ONE PIECE MOVED TWICE IS ONE MOVE TO THE PLAYER (owner, 2026-09-25). The
+    // agent returns it as two halves because that is how it searched, but the
+    // player makes it in a single gesture on the DICE SUM, so hinting the
+    // intermediate tile first and the real destination only on a second tap was
+    // telling them to do it the hard way.
+    //
+    // THE EXCEPTION IS THE GAME'S OWN, NOT A GUESS: a sum destination whose routes
+    // offer a choice of captures is WITHHELD (`ambiguousSum`) precisely so the
+    // player spends the dice one at a time to say which piece they meant. There
+    // the two-step hint is the correct advice, so fall through to it.
+    const sum = _hintSumMove(game, real);
+    if (sum) {
+        _renderSumHint(game, scene, sum);
         return;
     }
     // NO FALLBACK TO "mark it anyway". The engine models the rack-entry
@@ -3025,8 +3119,8 @@ function _tutRender() {
         // Two ways to finish, which is also the difficulty question being asked
         // once, in the one moment a new player is certain to see it. Both end the
         // tutorial exactly as the old single Finish button did.
-        mkBtn('Go easy', true, () => { setDifficultySetting(TUT_EASY_POSITION); _tutEnd(true); });
-        mkBtn('Full strength', false, () => { setDifficultySetting(1.0); _tutEnd(true); });
+        mkBtn('Go easy', true, () => _tutFinish(TUT_EASY_POSITION));
+        mkBtn('Full strength', false, () => _tutFinish(1.0));
         if (typeof updateTurnStatus === 'function') updateTurnStatus('');   // the game is over
     } else {
         mkBtn('Exit', false, () => _tutEnd(false));
@@ -3102,6 +3196,25 @@ function startTutorial() {
     _sizeGear();
     requestAnimationFrame(() => { if (_tut.active) _tutFitBoard(); });
     clearInterval(_tut.timer); _tut.timer = setInterval(_tutPoll, 300);
+}
+// Both ways out of the closing panel: set the difficulty, arm hints for the first
+// real game, and leave.
+//
+// Hints are WRITTEN here rather than left to the default (which is already on), so
+// that a player who had turned them off before running the tutorial still gets
+// them back for this one game -- and so the notice below is never a lie.
+//
+// The telling is a NOTICE, not another line in the card. The card is capped to the
+// band under the rack with #tutText scrolling inside it, which is exactly why the
+// difficulty sentence had to become buttons (see the 2026-09-13 entry); a sentence
+// about hints would be the next thing to go below the fold. A notice timed to the
+// first game cannot scroll away and arrives when it is useful.
+function _tutFinish(position) {
+    setDifficultySetting(position);
+    try { localStorage.setItem('hintsEnabled', '1'); } catch (e) {}
+    if (typeof refreshHintButton === 'function') refreshHintButton();
+    _hintNudgePending = true;
+    _tutEnd(true);
 }
 function _tutEnd(startGame) {
     _tut.active = false; window._tutorialActive = false;
