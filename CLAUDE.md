@@ -34,9 +34,11 @@ nothing on a chime.
     documented."* Three sessions were lost to theorising without data, so the
     standard is not gone — it is targeted.
 
-**BATCH THE CHERRY-PICKS TO `testing` (owner, 2026-09-20).** Fixes still reach
-both live branches, but do the checkout / cherry-pick / push once at the END of
-a session rather than after every fix — see "TWO DEPLOY TARGETS" below.
+**`testing` IS THE STAGING BRANCH (owner, 2026-09-25).** New features land on
+`testing`, which KOYEB builds for owner to play; once he is happy they reach
+`main`, which Cloudflare builds as quahuru.com, by a fast-forward merge. The old
+cherry-pick-to-both rule is GONE — the branches share one history now. See
+"`testing` IS A STAGING BRANCH" below.
 
 **WORKSPACE CONSTRAINT (owner, 2026-07-21): Ownder works on two machines, iMac and MacBook. 
 Work only inside this folder (`/Users/tomrecht/game/boardgame_koyeb` on MacBook, `/Users/tom/Game/BoardGame` on iMac).** Reads/writes outside it trigger permission prompts. Do NOT create git worktrees or files in sibling dirs; run new experiments from a branch checked out *in this folder* (or keep files here).
@@ -1057,40 +1059,46 @@ with it in mind.** Assessment and the concrete implications:
   scripts were scratchpad one-offs and are NOT committed, so re-deriving it means
   re-running the value iteration described above.
 
-- **TWO DEPLOY TARGETS, TWO BRANCHES (owner, 2026-08-27).** `main` is what
-  **quahuru.com** serves (Cloudflare builds on push) and must stay clean, because
-  it is what testers install and play. **`testing` is tracked by KOYEB** and is
-  where work-in-progress and instrumentation go, so a diagnostic never reaches
-  the live site. Koyeb serves app.py from the repo root, so a branch works there
-  with no build step.
-  **EVERY BUG FIX GOES TO BOTH (owner, 2026-09-11).** The branches are two live
-  deploy targets, and `testing` does NOT receive main's commits by itself -- it
-  carries instrumentation on top of main -- so a fix left on main is simply
-  absent from the Koyeb build owner is often the one actually playing. Commit on
-  `main`, push, then `git checkout testing && git merge --ff-only origin/testing
-  && git cherry-pick -x <sha>` and push. Keep it a cherry-pick, not a merge, so
-  `testing` never drags its instrumentation back toward main. **Re-run the
-  verification on the `testing` checkout too** -- it has extra code in the same
-  files, so a clean auto-merge is not proof. Cheap audit that a fix reached both:
-  `git diff main testing -- game.js` should show instrumentation and nothing else.
-  **`testing` IS NO LONGER A PARALLEL HISTORY (2026-09-24).** It used to carry the
-  same fixes as CHERRY-PICKS, so main was never an ancestor and every fix had to
-  be applied twice by hand. It has now been **merged with main** (conflicts
-  resolved by taking main's files wholesale, so the merge changed no shipped
-  byte) and main IS an ancestor. A fix can therefore reach `testing` with
-  `git merge main`, and only genuinely `testing`-only work needs care.
-  **The tap log is RETIRED.** `_tapRecord` and Settings > Copy tap log existed to
-  catch the single-tap-as-double report; that was found and fixed (`a945a9d`,
-  "suppress the touch-typed ghost"), so the instrumentation was dropped in the
-  same merge. The lesson worth keeping is the shape, not the code: **an
-  investigation gets a throwaway branch that is deleted when the bug is found.**
-  A `?dev=1`-style gate is NOT a substitute -- asking owner to set a query
-  parameter before a bug he cannot predict has failed twice.
-  **Living on `testing` now:** the learnability work of 2026-09-24 (hint lamp,
-  the shortest-route explanation, the tutorial's new entry point and the closing
-  panel's difficulty buttons) — see the entry at the top of Current state. It is
-  there for owner to play before any of it reaches quahuru.com.
-  **Watch-out already hit there:** the export button was first gated on the log
-  being non-empty, but `createSettingsPanel` runs ONCE at start-up, so the
-  condition was evaluated before any tap could have happened and the button never
-  appeared — the same race as the first-run nudge.
+- **`testing` IS A STAGING BRANCH: FEATURES GO THERE FIRST, THEN TO `main`
+  (owner, 2026-09-25).** This REPLACES the old cherry-pick-to-both rule, which was
+  the right answer only while `testing` carried instrumentation on top of main.
+  It does not any more -- the tap log is retired and the two branches share one
+  history, with main an ancestor of testing -- so the flow is now one-directional
+  and there is nothing to apply twice.
+
+        new feature  ->  commit on `testing`  ->  push  ->  KOYEB builds it
+                     ->  owner plays it there
+                     ->  `git checkout main && git merge --ff-only testing`
+                     ->  push  ->  CLOUDFLARE builds quahuru.com
+
+  * **`main` is live.** Cloudflare builds it on push and it is what testers
+    install and play, so it must stay clean.
+  * **`testing` is tracked by KOYEB**, which serves `app.py` from the repo root,
+    so a branch works there with no build step.
+  * **A HOTFIX for the live site may still go straight to `main`** -- then
+    `git checkout testing && git merge --ff-only main` so testing does not fall
+    behind. Never cherry-pick: the branches share history, so a cherry-pick
+    would recreate the parallel-history problem this replaced.
+  * **Keep them fast-forwardable.** After a feature lands on main both should be
+    the same commit; `git diff main testing` empty is the normal state between
+    pieces of work, not a sign something is missing.
+  * **KOYEB TESTS THE GAME, NOT THE HOSTING.** The two targets are not the same
+    environment: quahuru.com is a Cloudflare Worker serving static assets with
+    `_headers`, Brotli and a service worker at scope `/`, while Koyeb is a Flask
+    process serving files from the repo root. Anything that depends on caching,
+    headers, the service worker or offline behaviour has to be checked on
+    quahuru.com after the merge -- staging on Koyeb will not show it.
+  * **A DIAGNOSTIC STILL DOES NOT BELONG ON EITHER.** `testing` is now a staging
+    branch that owner PLAYS, so instrumentation left there is instrumentation in
+    a build he is playing. **An investigation gets its own throwaway branch,
+    deleted when the bug is found** -- that is the lesson the retired tap log
+    left, and a `?dev=1`-style gate is not a substitute, because asking owner to
+    set a query parameter before a bug he cannot predict has failed twice.
+  * **Koyeb is also still the revert path** for the live site (hand out the old
+    URL), which is the other reason the branch is kept. Anyone who home-screened
+    the Koyeb URL is still pointed at it -- a different origin with its own
+    service worker.
+  **Watch-out from the tap log's time there, still worth knowing:** a settings
+  control gated on state that only exists later never appears, because
+  `createSettingsPanel` runs ONCE at start-up -- the same race as the first-run
+  nudge.
