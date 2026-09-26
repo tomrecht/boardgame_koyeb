@@ -495,7 +495,7 @@ function _noticeIfRouteWithheld(game, piece, targetTile) {
     if (typeof flashNotice === 'function') {
         flashNotice(getAutoEnRouteCapture()
             ? 'More than one capture is possible on the way — move one die at a time to choose.'
-            : 'A capture is possible on the way — move one die at a time to choose the route.', 4500);
+            : 'A capture is possible on the way — move one die at a time to choose the route.', 4500, 'move');
     }
     console.log('[route-notice] shown');
     return true;
@@ -529,7 +529,7 @@ function _noticeWhyUnreachable(game, piece, targetTile) {
     if (game._whyFlashUntil && now < game._whyFlashUntil) return no('inside the previous burst');
     const say = (msg) => {
         game._whyFlashUntil = now + WHY_BURST_MS;
-        if (typeof flashNotice === 'function') flashNotice(msg, 5000);
+        if (typeof flashNotice === 'function') flashNotice(msg, 5000, 'move');
         console.log('[why-unreachable] shown:', msg);
         return true;
     };
@@ -1613,7 +1613,19 @@ function _tapOnPieceFace(piece, pointer) {
 // room = ring3 x12, ring4 x6, ring5 x6 (188), ring6 x6, goal x6 (all wide), home.
 // Expressed in piece-widths so it holds for the bigger goal pieces too: 2.2
 // falls in the gap between 1.88 (arc 94) and 2.52 (arc 126).
-const TILE_ROOM_IN_PIECE_WIDTHS = 2.2;
+// RING 3 NOW FORWARDS TOO (owner, 2026-09-25: "they're also pretty small").
+// Re-measured on a phone at tilePieceRadius(1), arc / piece-diameter per geometry:
+//   field ring1  1.26 (arc  63)   field ring3  2.51 (arc 126)  <- was "room"
+//   field ring7  1.68 (arc  84)   field ring4  3.14 (arc 157)
+//   field ring2  1.88 (arc  94)   goal  ring7  3.60 (arc 259, bigger pieces)
+//   field ring5  1.88 (arc  94)   field ring5  3.77 (arc 188)
+//                                 field ring6  4.40 (arc 220)
+// So 2.8 is the only sensible value: it excludes ring 3 at 2.51 and keeps ring 4
+// at 3.14, sitting in the gap with 0.29 of margin below and 0.34 above. Still
+// expressed in PIECE WIDTHS rather than per ring, because ring 5 is not uniform
+// (6 tiles at 1.88 and 6 at 3.77) so no ring rule can express it, and because the
+// goal pieces are larger.
+const TILE_ROOM_IN_PIECE_WIDTHS = 2.8;
 function _tileHasRoomBeside(tile, piece) {
     if (!tile || !piece) return false;
     if (tile.type === 'home') return true;          // by far the biggest tile
@@ -1830,7 +1842,12 @@ const SFX = (() => {
 
 // Brief centred notice under the status pill, for things that would otherwise
 // happen invisibly (the computer passing its whole turn).
-function flashNotice(text, ms = 2400) {
+// `tag` marks a notice as belonging to a category that can be dismissed early --
+// currently only 'move', for the messages that explain a move (why one was
+// refused, or what the hint suggests). Untagged notices are untouched by
+// _clearMoveNotice, which matters: "Getting the computer ready", "White passed"
+// and the graphics warnings must run their full time.
+function flashNotice(text, ms = 2400, tag = null) {
     let el = document.getElementById('flashNotice');
     if (!el) {
         el = document.createElement('div'); el.id = 'flashNotice';
@@ -1852,9 +1869,21 @@ function flashNotice(text, ms = 2400) {
         document.body.appendChild(el);
     }
     el.textContent = text;
+    el.dataset.tag = tag || '';
     el.style.opacity = '1';
     clearTimeout(el._t);
     el._t = setTimeout(() => { el.style.opacity = '0'; }, ms);
+}
+// A MOVE MAKES ITS OWN EXPLANATION STALE (owner, 2026-09-25): "that tile is 7
+// steps away" is an answer to a move that did NOT happen, so once one does it is
+// describing a board that has gone. Called from the same two commit points as
+// clearHint. Only clears a notice TAGGED 'move' -- an untagged one (the computer
+// retrying, a pass, a graphics warning) keeps its full dwell.
+function _clearMoveNotice() {
+    const el = document.getElementById('flashNotice');
+    if (!el || el.dataset.tag !== 'move') return;
+    clearTimeout(el._t);
+    el.style.opacity = '0';
 }
 
 // ── KEYBOARD SHORTCUTS ──────────────────────────────────────────────────
@@ -2547,7 +2576,7 @@ function _renderSumHint(game, scene, sum) {
         _hintRing(scene, c.x, c.y, Math.max(20, Math.min(62, depth * 0.42)));
     }
     const where = (tile.type === 'save') ? 'goal ' + tile.number : 'the marked tile';
-    flashNotice('Hint: move the marked piece to ' + where + ' — both dice on the one piece.', 5000);
+    flashNotice('Hint: move the marked piece to ' + where + ' — both dice on the one piece.', 5000, 'move');
 }
 function _renderHint(game, pair) {
     const scene = _setupScene(); if (!scene || !scene.add) return;
@@ -2601,7 +2630,7 @@ function _renderHint(game, pair) {
         _hintRing(scene, piece.x, piece.y, (piece.radius || PIECE_RADIUS_BASE) * 1.5);
     }
     if (m[1] === 'save') {
-        flashNotice('Hint: save the marked piece — ' + dbl + ' it, or drag it to your saved rack.', 5000);
+        flashNotice('Hint: save the marked piece — ' + dbl + ' it, or drag it to your saved rack.', 5000, 'move');
         return;
     }
     if (m[1] === 0) {
@@ -2619,7 +2648,7 @@ function _renderHint(game, pair) {
         _hintRing(scene, c.x, c.y, Math.max(20, Math.min(62, depth * 0.42)));
     }
     const where = (tile && tile.type === 'save') ? 'goal ' + tile.number : 'the marked tile';
-    flashNotice('Hint: move the marked piece to ' + where + '.', 5000);
+    flashNotice('Hint: move the marked piece to ' + where + '.', 5000, 'move');
 }
 
 // One-time toast for brand-new visitors, pointing at How to Play.
@@ -5414,6 +5443,7 @@ class Piece {
                 // Same synchronous edge as movePiece: the save is committed here,
                 // so drop the hint marker now rather than up to 250ms later.
                 if (typeof clearHint === 'function') clearHint();
+                if (typeof _clearMoveNotice === 'function') _clearMoveNotice();
                 this.game.pushUndo();   // snapshot before the save so undo reverts just it
                 // Use the corresponding die
                 dieToUse.setUsed();
@@ -6964,6 +6994,7 @@ class Game {
             // Placed after every legality check, so a REFUSED move leaves the
             // hint -- and the selection -- exactly as they were.
             if (typeof clearHint === 'function') clearHint();
+            if (typeof _clearMoveNotice === 'function') _clearMoveNotice();
 
             // snapshot BEFORE this move so undo reverts just it. Prefer the
             // pre-selection snapshot (captured while an entering piece was still

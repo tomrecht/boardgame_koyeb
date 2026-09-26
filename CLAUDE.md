@@ -532,6 +532,42 @@ with it in mind.** Assessment and the concrete implications:
   and the panel contained zero links. A probe that counted anchors found 0 and said
   so; one that had checked for the word "Privacy" would have passed.
 
+  **(h) THE ROUTE EXPLANATION VANISHES ON A MOVE TOO (owner, 2026-09-25).** "That
+  tile is 7 steps away" answers a move that did NOT happen, so once one does it is
+  describing a board that has gone. `flashNotice` gained an optional third
+  argument, a **tag**, and `_clearMoveNotice()` dismisses a notice only when it is
+  tagged `'move'` -- called from the same two commit points as `clearHint`.
+  **The tag is what makes it safe:** an UNTAGGED notice keeps its full dwell, which
+  matters for "Getting the computer ready — retrying", "White passed" and the
+  graphics warnings, none of which a move makes stale. Tagged: the four
+  `_noticeWhyUnreachable` messages, `_noticeIfRouteWithheld`'s capture-choice
+  notice, and the three hint messages.
+  Measured with the control: a refused tap shows the notice with `tag='move'`, a
+  committed move takes it from opacity 1 to 0 in the same tick (moved onto the
+  goal, 2 dice spent), and an untagged notice survives the identical move.
+  **Fixture trap:** a refused move leaves the piece SELECTED, so re-clicking it to
+  set up the legal move DESELECTS it and returns the tentative entry to the rack --
+  the first version of the test moved nothing and the clearing looked broken. Keep
+  the selection and recompute `piece.reachableTiles` after changing the dice.
+  **(i) RING 3 FORWARDS THE TAP TO THE TILE TOO (owner, 2026-09-25: "they're also
+  pretty small").** `TILE_ROOM_IN_PIECE_WIDTHS` 2.2 -> **2.8**. Re-measured on a
+  phone at `tilePieceRadius(1)`, arc / piece-diameter per geometry:
+
+        field ring1  1.26 (arc  63)      field ring3  2.51 (arc 126)  <- was "room"
+        field ring7  1.68 (arc  84)      field ring4  3.14 (arc 157)
+        field ring2  1.88 (arc  94)      goal  ring7  3.60 (arc 259, bigger pieces)
+        field ring5  1.88 (arc  94)      field ring5  3.77 (arc 188)
+                                         field ring6  4.40 (arc 220)
+
+  2.8 is the only sensible value: it excludes ring 3 at 2.51 and keeps ring 4 at
+  3.14, with 0.29 of margin below and 0.34 above. **Still expressed in PIECE WIDTHS
+  and not per ring** -- ring 5 is not uniform (6 tiles at 1.88, 6 at 3.77) so no
+  ring rule can express it, and the goal pieces are larger (72px against 50).
+  **New census, measured by asking `_tileHasRoomBeside` about all 70 tiles** (not
+  by re-deriving the arithmetic): FORWARDS = ring1 x9, ring2 x9, **ring3 x12**,
+  ring5 x6, field ring7 x9 = **45**; PASSES THE SELECTION = ring4 x6, ring5 x6,
+  ring6 x6, goal x6, home = **25**. Goals keep the pass behaviour, as intended.
+
   **Three fixture traps hit while measuring, each of which produced a convincing
   false pass** -- all three are the "read the denominator" rule again:
   selecting a rack piece **TENTATIVELY ENTERS it onto the home tile**, and a
@@ -677,9 +713,13 @@ with it in mind.** Assessment and the concrete implications:
   `arc >= pieceDiameter * TILE_ROOM_IN_PIECE_WIDTHS` (2.2, which falls in the gap
   between 1.88 at arc 94 and 2.52 at arc 126). Expressed in piece-widths so it
   holds for the larger goal pieces too.
-  **Per-tile census of all 70** (`nogo` excluded): no room = ring1 x9 (arc 63),
-  ring2 x9 (94), field ring7 x9 (84), ring5 x6 (94) = **33 tiles**; room = ring3
-  x12, ring4 x6, ring5 x6 (188), ring6 x6, **goal x6 (all wide, 259)**, home = 37.
+  **SUPERSEDED 2026-09-25: the threshold is now 2.8 and RING 3 FORWARDS TOO** --
+  45 tiles forward, 25 pass the selection. See item (i) of the learnability entry
+  at the top of Current state for the re-measured ratios and the new census. The
+  census below is the state at 2.2 and is kept only to show what changed:
+  no room = ring1 x9 (arc 63), ring2 x9 (94), field ring7 x9 (84), ring5 x6 (94)
+  = **33 tiles**; room = ring3 x12, ring4 x6, ring5 x6 (188), ring6 x6,
+  **goal x6 (all wide, 259)**, home = 37.
   Behaviour measured on both sides: a face tap on a lone piece on **field ring1
   (arc 63) MOVES** (reverted, as asked), on **field ring3 (arc 126) PASSES THE
   SELECTION**.
