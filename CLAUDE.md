@@ -487,6 +487,51 @@ with it in mind.** Assessment and the concrete implications:
   which gives the mover two pieces there, blanks `reachableBySum` and silently
   turns the "committed move" case into another refused one.
 
+  **(e) HINTS ARE OFF BY DEFAULT, WITH TWO EXCEPTIONS (owner, 2026-09-25).** A
+  prominent pill is clutter for a player who does not want it. `getHintsEnabled()`
+  now defaults FALSE; what turns it on is finishing the tutorial (`_tutFinish`) or
+  a FIRST-EVER VISIT, seeded once by `_seedFirstRunDefaults`.
+  **HOW GOOD IS "first-ever visit"? Honest answer: good on desktop, imprecise on a
+  phone.** Every localStorage key this app writes is written only when the player
+  changes something, so "no key at all" means EITHER a first visit OR a returning
+  player who has never touched a setting. `_ALL_SETTING_KEYS` lists all fourteen
+  and must stay complete -- a key missing from it makes a returning player look
+  new. On desktop `seenNudge` is written on the very first load, so a desktop
+  returner is always identified correctly; **on a phone the nudge is skipped
+  entirely**, so a phone player who has never changed a setting is misread as new
+  and offered hints once. Accepted deliberately: the cost is one dismissible pill,
+  and there is no unconditional visit marker to key off without inventing one that
+  would only help from now on anyway.
+  Measured: a browser with nothing stored seeds `hintsEnabled=1` and shows the
+  pill; one with other keys but no `hintsEnabled` gets OFF and no pill; an explicit
+  '1' and an explicit '0' are both respected; and the tutorial still turns them on
+  from an explicit OFF.
+  **(f) THE PILL SAT ON TOP OF "How to Play" ON A PORTRAIT PHONE (owner,
+  2026-09-25).** The three HUD buttons are world furniture and in portrait they run
+  the whole width of the band below the racks -- measured on a 412px phone, the row
+  occupies y 845..880 and x 14..398, and How to Play is the RIGHTMOST, exactly
+  under a pill pinned to the bottom-right corner. There is a **133px free band**
+  between the rack bottom (712) and the row top (845), so `_placeHintButton` raises
+  the pill into it at `calc(78px + var(--safe-b))`, right-aligned.
+  **Portrait only, and only on a phone:** in landscape and on desktop the HUD row
+  is at world x=150, on the far LEFT, so the corner is free and the pill stays
+  beside the legend where it is easiest to reach. Driven from JS rather than a media
+  query so it honours `?phone=` and `?portrait=`, and re-run from
+  `_relayoutFurniture`, which is the handler rotation and resize already go through.
+  Measured clear of the row at all four: portrait 803..837 (8px gap), portrait with
+  insets 747..781 (25px), landscape and desktop unchanged in the corner.
+  **Pre-existing and NOT fixed:** the legend "?" also overlaps How to Play's right
+  edge by a few px in portrait. Owner did not report it and it is not new.
+  **(g) PRIVACY POLICY AND LICENCES LINKED UNDER SETTINGS (tester, 2026-09-25).**
+  Both were already reachable from How to Play > Credits; this is a second door,
+  because Settings is where people look for a policy and both stores expect it to
+  be easy to find. `target="_blank"`, since leaving the page would drop the game.
+  **Trap, and the test caught it:** `createSettingsPanel` has its OWN local `mk()`
+  which sets **textContent, not innerHTML** (unlike the one in
+  `createLegendButton`), so the first cut rendered the anchor tags as literal text
+  and the panel contained zero links. A probe that counted anchors found 0 and said
+  so; one that had checked for the word "Privacy" would have passed.
+
   **Three fixture traps hit while measuring, each of which produced a convincing
   false pass** -- all three are the "read the denominator" rule again:
   selecting a rack piece **TENTATIVELY ENTERS it onto the home tile**, and a
@@ -1075,7 +1120,11 @@ with it in mind.** Assessment and the concrete implications:
     install and play, so it must stay clean.
   * **`testing` is tracked by KOYEB**, which serves `app.py` from the repo root,
     so a branch works there with no build step.
-  * **A HOTFIX for the live site may still go straight to `main`** -- then
+  * **SMALL FIXES GO STRAIGHT TO `main` (owner, 2026-09-25).** Staging is for a
+    FEATURE worth playing before testers see it; a label, a default, a position
+    fix or a link does not earn a round trip through Koyeb. Commit on main, push,
+    then fast-forward `testing`.
+  * **A HOTFIX for the live site may likewise go straight to `main`** -- then
     `git checkout testing && git merge --ff-only main` so testing does not fall
     behind. Never cherry-pick: the branches share history, so a cherry-pick
     would recreate the parallel-history problem this replaced.

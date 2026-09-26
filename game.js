@@ -973,6 +973,9 @@ function _hideRotateHint() {
 function _relayoutFurniture() {
     _hideRotateHint();
     _sizeGear();
+    // The pill's corner depends on orientation (see _placeHintButton), and this is
+    // the handler rotation and resize already go through.
+    if (typeof refreshHintButton === 'function') refreshHintButton();
     const g = _currentGame();
     if (!g) return;
     // Deliberately no "nothing changed" guard: a transient reading at start-up
@@ -2122,6 +2125,23 @@ function createSettingsPanel() {
     };
     panel.appendChild(tut);
 
+    // A tester asked for the privacy policy under Settings. It was already
+    // reachable -- How to Play > Credits links both it and the licences -- but
+    // Settings is where people look for it, and both stores expect it to be easy
+    // to find. Same two documents, a second door; `target="_blank"` because
+    // leaving the page would drop the game.
+    // NOTE the local mk() sets textContent, NOT innerHTML (unlike the one in
+    // createLegendButton) -- passing markup to it renders the tags as literal
+    // text, which is exactly what the first cut of this did. Set innerHTML here.
+    const legal = mk('div',
+        'margin-top:12px; padding-top:10px; border-top:1px solid #e6e9ee;' +
+        'font-size:11.5px; color:#8b95a3; text-align:center; line-height:1.5;');
+    legal.innerHTML =
+        '<a href="privacy.html" target="_blank" rel="noopener" style="color:#8b95a3;">Privacy policy</a>' +
+        ' \u00B7 ' +
+        '<a href="licenses.html" target="_blank" rel="noopener" style="color:#8b95a3;">Licences</a>';
+    panel.appendChild(legal);
+
     document.body.appendChild(gear); document.body.appendChild(panel);
 
     // The welcome card (z 56) and match setup (z 60) sit OVER the gear's own
@@ -2215,7 +2235,38 @@ function createLegendButton() {
 const HINT_COLOR = 0x7b4fe0;        // violet: not turquoise / pink / yellow (the
                                     // two dice and the sum) and not the amber
                                     // that already means "this piece must move"
-function getHintsEnabled() { return _boolSetting('hintsEnabled', true); }
+// OFF BY DEFAULT (owner, 2026-09-25). A prominent pill is clutter for a player who
+// does not want it, and hints are for learning the game rather than playing it. Two
+// things turn them on: finishing the tutorial (`_tutFinish`), and a FIRST-EVER
+// VISIT, seeded by _seedFirstRunDefaults below.
+function getHintsEnabled() { return _boolSetting('hintsEnabled', false); }
+// Every localStorage key this app writes. Used only to answer "have we ever seen
+// this browser before?", so it has to stay complete -- a key missing from here
+// makes a returning player look new.
+const _ALL_SETTING_KEYS = ['aiDifficulty', 'blackIsAI', 'whiteIsAI', 'boardTheme', 'sound',
+    'fullscreen', 'hintsEnabled', 'seenNudge', 'fxEnabled', 'autoEndTurn',
+    'confirmRiskyEnd', 'sumToGoal', 'sumSaveGesture', 'autoEnRoute'];
+// HINTS ON FOR A BRAND-NEW VISITOR, once, without making them the global default.
+//
+// HOW GOOD IS THE DETECTION? Every key above is written only when the player
+// changes something, so "no key at all" means EITHER a first visit OR a returning
+// player who has never touched a setting. On DESKTOP that second case barely
+// exists, because `seenNudge` is written on the very first load, so any desktop
+// returner is correctly identified. ON A PHONE the nudge is skipped
+// (maybeShowFirstRunNudge returns early), so a phone player who has never changed
+// a setting is misread as new and offered hints once. That is the known
+// imprecision and it is deliberate: the cost is one dismissible pill, and there is
+// no unconditional visit marker to key off without inventing one that only helps
+// from now on anyway.
+// Runs BEFORE createHintButton, so the button's first read already sees the seed.
+function _seedFirstRunDefaults() {
+    try {
+        const seen = _ALL_SETTING_KEYS.some(k => localStorage.getItem(k) !== null);
+        if (seen) return;
+        localStorage.setItem('hintsEnabled', '1');
+        console.log('[first-run] no stored settings: seeding hints on for a new visitor');
+    } catch (e) { /* storage blocked: hints simply stay off */ }
+}
 const _hint = { objs: [], sig: null, busy: false, timer: null };
 
 function createHintButton() {
@@ -2259,6 +2310,28 @@ function refreshHintButton() {
     const btn = document.getElementById('hintBtn'); if (!btn) return;
     const show = getHintsEnabled() && !_tut.active && !window.setupMode;
     btn.style.display = show ? 'flex' : 'none';
+    _placeHintButton(btn);
+}
+// ON A PORTRAIT PHONE THE PILL SAT ON TOP OF "How to Play" (owner, 2026-09-25).
+// The three HUD buttons are world furniture and in portrait they run the whole
+// width of the band below the racks -- measured 412px phone: the row occupies
+// y 845..880 and x 14..398, and How to Play is the RIGHTMOST of the three, exactly
+// under a pill pinned to the bottom-right corner.
+//
+// There is a 133px free band between the rack bottom (712) and the row top (845),
+// so the pill goes there rather than anywhere new. Measured with insets too, where
+// the canvas shrinks and the row rides up to 806..838: a 78px offset clears it by
+// 8px bare and 25px inset.
+//
+// Only portrait, and only on a phone: in landscape and on desktop the HUD row is
+// at world x=150, on the far LEFT, so the corner is free and the pill stays beside
+// the legend where it is easiest to reach. Driven from JS rather than a media query
+// so it honours ?phone= and ?portrait=, and re-run from _relayoutFurniture on
+// resize and rotation.
+function _placeHintButton(btn) {
+    const raised = _isPhone() && _isPortrait();
+    btn.style.bottom = raised ? 'calc(78px + var(--safe-b))' : 'calc(11px + var(--safe-b))';
+    btn.style.right = raised ? 'calc(12px + var(--safe-r))' : 'calc(52px + var(--safe-r))';
 }
 // Set by the tutorial's closing panel. It cannot fire its notice there and then:
 // _tutEnd restarts the scene back to the WELCOME CARD, so a notice shown at the
@@ -3233,7 +3306,8 @@ function _tutEnd(startGame) {
 // Defer to after the whole script has run (this file `defer`s, so the DOM is
 // ready; setTimeout ensures later `let` globals like matchTracker are initialised
 // before createSettingsPanel -> refreshSettingsMatchState touches them).
-function _initChrome() { createSettingsPanel(); createLegendButton(); createHintButton();
+function _initChrome() { _seedFirstRunDefaults();
+                        createSettingsPanel(); createLegendButton(); createHintButton();
                         maybeShowFirstRunNudge(); _armFullscreenOnFirstGesture(); }
 if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', _initChrome);
 else setTimeout(_initChrome, 0);
