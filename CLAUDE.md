@@ -259,6 +259,134 @@ with it in mind.** Assessment and the concrete implications:
 
 ## Current state
 
+- **GAME RECORDER FOR OWNER'S OWN GAMES (owner, 2026-09-27). Local-only, opt-in,
+  nothing transmitted.** Purposes, in owner's words: (a) his real stats against
+  the model, (b) learning from positions where his move and the model's differ,
+  (c) data for future training.
+  **THE PRIVACY ARGUMENT IS STRUCTURAL, NOT A PROMISE.** There is no endpoint:
+  games go to this browser's localStorage and, on desktop, to a file the player
+  chose. So there is no other data subject, `privacy.html`'s "collects no data"
+  stays literally true, and other players need no notice because nothing of theirs
+  is touched. Owner asked specifically for the version with no privacy surface and
+  no need to tell anyone; this is that version, and the property is provable from
+  the code rather than intended.
+  **Unlocked once by `?rec=rec-quahuru-7f3a`**, which writes `recEnabled`;
+  dormant in every other browser. **THE TOKEN DOES NOT NEED TO BE SECRET and it
+  does not matter that the repo is public:** because nothing is transmitted, the
+  worst a reader can do is enable recording of their OWN games in their OWN
+  browser. It only has to be non-obvious enough not to be tripped by accident.
+  Rejected: automatic upload (needs a server, storage, a policy change, and puts
+  an endpoint in a public bundle), always-on local recording for everyone (writes
+  to other people's devices unasked), and a separate private build (owner would
+  stop playing the build his testers play, and it would mean a fourth origin).
+  **WHAT IS RECORDED: the INPUTS, not the positions.** The engine is
+  deterministic, so a game is `{starter, both rack orders, per turn [d0,d1] +
+  the moves applied}` and everything else is recomputable -- which is also what
+  lets the disagreement analysis be re-run against ANY future net rather than
+  against whatever the model was on the day. Per game also: uuid, device id,
+  timestamp, `REC_MODEL_TAG`, **effective difficulty AND slider position** (two
+  different quantities since the remap), both `isAI` flags, match context, the
+  turn indices where a HINT was consulted, result and a completed flag.
+  **Hints are recorded because otherwise (a) is contaminated** -- a game where the
+  pill was consulted is not a measure of unaided play, and `merge_games.py` reports
+  those separately rather than folding them in. **Undo is deliberately NOT
+  recorded** (owner: you cannot undo after finishing your turn, so intra-turn undo
+  is composing the turn, not a takeback).
+  **`REC_MODEL_TAG` must be updated whenever `model.onnx` is re-exported** --
+  nothing else in the shipped bundle carries a version, and a stats table that
+  silently mixes two champions is worse than no table.
+  **FOUR MUTATION SITES, and the fourth was nearly missed:** `movePiece`'s commit
+  point, `Piece.save`, `handleDoubleClick`'s block-save (the human gesture) and
+  **`applyMovePair`'s own block-save branch** -- the computer does not go through
+  the human gesture, so its block-saves would have gone unrecorded. Found by
+  checking which move types a replayed game actually exercised, not by reading.
+  (`Board.saveOpponentPieces` is DEAD CODE and deliberately not hooked.)
+  **`replay_games.py` IS THE PROOF, and it does two jobs.** It replays a recorded
+  game through `game.py` and compares the per-turn fingerprint, which (1) proves
+  the recording is complete -- an unhooked path shows up as a divergence naming
+  the game and turn -- and (2) **conformance-tests game.js against game.py over
+  real play**, which had never been done: the port was verified 110/110 on chosen
+  agent PAIRS, never on move application across a whole arbitrary game.
+  A recorded move is resolved against `get_valid_moves()` rather than rebuilt as a
+  tuple, which derives the die the log omits AND asserts legality.
+  **THE DIE IS NOT RECORDED** because `movePiece` and `save` both pick it
+  themselves from the position and the destination. Measured: every recorded move
+  resolved to exactly ONE legal game.py move, so the format is unambiguous.
+  **SIZE, measured, and it was 3x my estimate.** The first format was **5.9 KB a
+  game** (2.0 MB/month at a dozen games a day, which fills localStorage in ~2.5
+  months). Moves are now short strings -- `"7>5.4"`, `"7>s"`, `"o7>b"` for a
+  block-save -- with the colour omitted because the turn records its mover, and
+  the hash in base36: **2.9 KB a game, ~1.0 MB/month**. The Settings row shows
+  count and size and turns amber past 2 MB. Export-and-clear is the intended
+  rhythm; IndexedDB is the upgrade if that ever chafes.
+  **VERIFIED: 3 of 3 games, 143 turns, every fingerprint matching.** Note that an
+  earlier "1 of 1 clean" was LUCK -- the next run was 0 of 3. One game is not a
+  sample for this.
+  **FOUR BUGS, ALL MINE, EACH OF WHICH WOULD HAVE MADE THE LOG LOOK UNTRUSTWORTHY
+  MONTHS LATER:**
+  1. **`Math.imul` is load-bearing.** FNV-1a multiplies by `0x01000193`, and a
+     plain `h * prime` in JS exceeds 2^53 so floating point drops the low bits.
+     The result still looks like a fine 32-bit hash; it simply is not FNV-1a and
+     matches no other implementation. Confirmed rather than assumed: the lossy
+     multiply reproduces the recorded `1onk8rc` exactly, `Math.imul` gives
+     `12k6tp5`, and Python's exact integers give `12k6tp5`. **Without the Python
+     checker the fingerprints would have been self-consistent forever** -- JS
+     always comparing against JS -- and this would have surfaced only on the first
+     attempt to replay a year of games, looking like broken recording.
+  2. **Blanks are anonymous in the fingerprint (`w*`).** The GAME treats
+     same-colour blanks as interchangeable and `get_valid_moves` dedups them on a
+     shared tile, so game.py legally moved blank 10 where game.js recorded blank 9
+     -- an identical position that a fingerprint naming the pieces called
+     different. Numbered pieces keep their number: each has its own goal, so they
+     are not interchangeable.
+  3. **The dice came OUT of the fingerprint.** Including each die's `used` flag
+     would have flagged DIE SELECTION as a position divergence: both engines pick
+     "whichever unused die reaches the target" but need not agree when either
+     would do, so `"3,4u"` vs `"3u,4"` for the same board. The values are recorded
+     per turn anyway. What it hashes is the position: every piece's tile, the two
+     saved counts, whose turn it was.
+  4. **NEVER SUBSTITUTE AN INTERCHANGEABLE BLANK -- replay the EXACT piece.** The
+     obvious response to bug 2 was to let the checker accept an equivalent blank
+     when game.py does not offer the named one. That is a trap: substituting once
+     makes the piece-number mapping drift PERMANENTLY, so every later move naming
+     that blank is "illegal" and it reads like an engine divergence. Measured: 0 of
+     3 games replayed under substitution, 3 of 3 once identity is preserved. The
+     checker now asks the PIECE for its own reachable set (`get_reachable_tiles_by_dice`,
+     which is pre-dedup) and derives the roll from that, calling `get_valid_moves()`
+     only for its side effect of refreshing `game_stages`.
+  **NO ENGINE DIVERGENCE FOUND.** Once the fingerprint was defined correctly and
+  identity preserved, game.js and game.py agreed on the position at every one of
+  143 turns -- the first time the two have been compared on move application over
+  whole games rather than on chosen agent pairs.
+  **BLOCK-SAVES ARE NOT PRODUCED BY SELF-PLAY** (0 in 143 turns, against 220 tile
+  moves, 60 saves and 1 pass), so that path was verified on its own: the tutorial's
+  "Buy the door open" position, `handleDoubleClick` on the blocked black piece,
+  recorded as **`"o11>b"`** with black's saved rack 3 -> 4 and both dice spent. The
+  computer's block-save is the one-line twin at the `applyMovePair` site and is
+  verified by reading only.
+  **NOT VERIFIED AND CANNOT BE HEADLESSLY: the desktop auto-append.**
+  `showSaveFilePicker` needs a real user gesture and shows OS UI, so the File
+  System Access path (handle cached in IndexedDB, permission re-confirmed on the
+  first pointerdown of a session, `createWritable({keepExistingData:true})` +
+  seek-to-end to APPEND rather than truncate) is verified by reading only. **Check
+  it on the real browser once**: Settings > Game log > "Log to file...".
+  **Two devices mean two files** (localStorage is per browser) and that is fine:
+  every game carries a uuid, so `merge_games.py` dedupes exactly and re-exporting
+  without clearing cannot double-count. It reports the record split by effective
+  difficulty with hint-assisted games counted separately.
+  **HOW LONG BEFORE (a) MEANS ANYTHING:** if owner's true rate is 55%, the 95% CI
+  still spans 50% at 200 games and separates only at **~400 games, about a month
+  at a dozen a day**. Watch the average margin sooner -- it is lower variance than
+  win/loss (measured; see the arena notes).
+  **AND THE HONEST LIMIT ON (b):** outcomes cannot arbitrate a single position.
+  ~28 decisions a game share one win/loss bit, and winning correlates with playing
+  well overall rather than with that move. What can arbitrate: the existing
+  DEEPER SEARCH (expectiminimax over all 21 rolls) run on each disagreement, and
+  the model's own value gap between his move and its preferred one. The interesting
+  set is where the model says he gave up half a piece and the deeper search says he
+  was right -- those are positions where the MODEL is wrong, which is the training
+  signal. Outcomes remain useful only as a population-level check.
+
 - **THE DIFFICULTY SLIDER IS REMAPPED ONTO 0.8..1.0, BECAUSE THE BOTTOM OF ITS
   RANGE WAS NOT A DIFFICULTY SETTING AT ALL (measured 2026-09-25,
   `difficulty_arena.py`, 566 games).** The deployed champion played BOTH sides,

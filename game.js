@@ -2188,6 +2188,36 @@ function createSettingsPanel() {
     hrow.appendChild(mk('span', null, 'Hint lamp (\uD83D\uDCA1 bottom right)'));
     panel.appendChild(hrow);
 
+    // GAME RECORDER -- present in the panel but display:none unless unlocked, so
+    // no other player ever sees it. Built unconditionally because
+    // createSettingsPanel runs ONCE at start-up: a row built only when the
+    // setting was already on would never appear for the session that unlocks it,
+    // which is the same race the first-run nudge and the old tap-log button hit.
+    const recRow = mk('div', 'margin-top:12px; padding-top:10px; border-top:1px solid #e6e9ee; display:none;');
+    recRow.id = 'settingsRec';
+    recRow.appendChild(mk('div', 'font-weight:600; margin-bottom:3px;', 'Game log'));
+    const recStat = mk('div', 'font-size:11.5px; color:#8b95a3; margin-bottom:6px;', '');
+    recStat.id = 'settingsRecStat';
+    recRow.appendChild(recStat);
+    const recBtns = mk('div', 'display:flex; flex-wrap:wrap; gap:6px;');
+    const recBtn = (label, fn) => {
+        const b = mk('button',
+            'flex:1 1 auto; padding:6px 10px; border-radius:7px; cursor:pointer;' +
+            'font-family:' + HUD_FONT + '; font-weight:600; font-size:12px;' +
+            'background:#fff; color:#5a6473; border:1px solid #cfd6e0;', label);
+        b.onclick = fn; recBtns.appendChild(b); return b;
+    };
+    if (_recFileSupported()) recBtn('Log to file\u2026', () => _recPickFile());
+    recBtn('Download', () => _recDownload());
+    recBtn('Clear', () => {
+        const n = _recBuffer().length;
+        if (!n) { flashNotice('Nothing pending.', 2000); return; }
+        showConfirm('Delete ' + n + ' pending recorded game' + (n === 1 ? '' : 's') + '? Download them first if you want them.',
+            () => { _recBufferWrite([]); _recRefreshRow(); }, 'Delete');
+    });
+    recRow.appendChild(recBtns);
+    panel.appendChild(recRow);
+
     toggle('Move & capture effects', getFeedbackEnabled, 'fxEnabled', true);
     toggle('End turn automatically when both dice used', getAutoEndTurn, 'autoEndTurn', true);
     toggle('Confirm ending a turn with a move left', getConfirmRiskyEnd, 'confirmRiskyEnd', false);
@@ -2254,7 +2284,7 @@ function createSettingsPanel() {
     gear.onclick = (e) => { e.stopPropagation();
         const show = panel.style.display === 'none';
         panel.style.display = show ? 'block' : 'none';
-        if (show) refreshSettingsMatchState();
+        if (show) { refreshSettingsMatchState(); _recRefreshRow(); }
     };
     document.addEventListener('pointerdown', (e) => {
         if (panel.style.display !== 'none' && !panel.contains(e.target) && e.target !== gear)
@@ -2300,6 +2330,346 @@ function createLegendButton() {
         if (pop.style.display === 'block' && e.target !== btn && !pop.contains(e.target)) pop.style.display = 'none';
     }, true);
     document.body.appendChild(btn); document.body.appendChild(pop);
+}
+
+// ── GAME RECORDER (owner's own games only) ───────────────────────────────────
+// Records the games owner plays so they can be analysed later: his real stats
+// against the model, the positions where his move and the model's differ, and
+// data for future training. See the CLAUDE.md entry for the purposes.
+//
+// IT IS LOCAL-ONLY AND THAT IS THE WHOLE PRIVACY ARGUMENT. Nothing is ever
+// transmitted: games go to this browser's localStorage and, on desktop, to a
+// file the player picked. There is no endpoint, so there is no data of anyone
+// else's to protect and `privacy.html`'s "collects no data" stays literally
+// true -- collection implies something reaching the author, and nothing does.
+// Other players need no notice because nothing of theirs is touched.
+//
+// UNLOCKED BY `?rec=<token>` ONCE, then remembered. Dormant in every other
+// browser, so it cannot start recording anyone by accident.
+// **THE TOKEN DOES NOT NEED TO BE SECRET** and it is fine that this repo is
+// public: because nothing is transmitted, the worst a reader can do is enable
+// recording of their OWN games in their OWN browser, where it sits until they
+// clear it. It only has to be non-obvious enough that nobody turns it on by
+// accident. A transmitting design would make this a real secret and a real
+// liability; a local one makes it merely obscure.
+const REC_TOKEN = 'rec-quahuru-7f3a';
+// WHICH NET THE GAMES WERE PLAYED AGAINST. **Update this whenever model.onnx is
+// re-exported** -- a stats table that silently mixes two champions is worse than
+// no table, and nothing else in the shipped bundle carries a version.
+const REC_MODEL_TAG = 'symaug_champ_July27_iter6';
+const REC_KEY = 'recGames';           // localStorage buffer, one JSON line per game
+const REC_DEVICE_KEY = 'recDevice';   // stable random id for this browser
+const REC_WARN_BYTES = 2000000;       // localStorage tops out near 5MB
+
+function getRecordingEnabled() { return _boolSetting('recEnabled', false); }
+function _recUnlockFromUrl() {
+    try {
+        if (new URLSearchParams(location.search).get('rec') === REC_TOKEN) {
+            localStorage.setItem('recEnabled', '1');
+            console.log('[rec] recording unlocked for this browser');
+        }
+    } catch (e) {}
+}
+function _recDeviceId() {
+    try {
+        let d = localStorage.getItem(REC_DEVICE_KEY);
+        if (!d) {
+            d = Math.random().toString(36).slice(2, 10);
+            localStorage.setItem(REC_DEVICE_KEY, d);
+        }
+        return d;
+    } catch (e) { return 'nostore'; }
+}
+function _recUuid() {
+    try { if (crypto && crypto.randomUUID) return crypto.randomUUID(); } catch (e) {}
+    return 'g' + Date.now().toString(36) + Math.random().toString(36).slice(2, 10);
+}
+
+// ── the position fingerprint ────────────────────────────────────────────────
+// A REPLAY THAT SILENTLY DIVERGES IS WORSE THAN NO REPLAY, so every turn carries
+// a hash of the position it produced. Deliberately a plain canonical STRING run
+// through FNV-1a: both are three lines in any language, so the Python replay can
+// compute the identical value without sharing code. Sorted, so piece order
+// inside a tile cannot affect it.
+// NO DICE IN THE FINGERPRINT, and the reason matters. An earlier cut included
+// each die's used flag, which would have made the checker flag DIE SELECTION as a
+// position divergence: game.js and game.py both pick "whichever unused die
+// reaches the target" but need not agree on which when either would do, and after
+// a single move the string differs ("3,4u" vs "3u,4") for an identical board. The
+// dice VALUES are already recorded per turn, so nothing is lost. What this hashes
+// is the POSITION -- every piece's tile, the two saved counts, and whose turn it
+// was -- which is exactly what a replay has to reproduce.
+// BLANKS ARE ANONYMOUS IN THE FINGERPRINT (`w*`), and this is not a shortcut --
+// the GAME treats same-colour blanks as interchangeable, and game.py's
+// get_valid_moves dedups them on a shared tile so it may legally move blank 10
+// where this recorded blank 9. The resulting position is identical, so a
+// fingerprint that named them reported a divergence for two boards that are the
+// same board. Numbered pieces keep their number: each has its own goal, so they
+// are NOT interchangeable.
+function _recPosString(game) {
+    const on = game.pieces.filter(p => p.currentTile)
+        .map(p => p.currentTile.ring + '.' + p.currentTile.sector + ':' + p.player[0] +
+                  (p.number > 6 ? '*' : p.number))
+        .sort();
+    return game.turn[0] + '|' + on.join(',') + '|' +
+        game.whiteSavedRack.pieces.length + ',' + game.blackSavedRack.pieces.length;
+}
+// Math.imul IS LOAD-BEARING, and a plain `h * 0x01000193` is a silent bug: h can
+// reach 2^32 and the prime is ~2^24, so the product exceeds 2^53 and JS floating
+// point drops the low bits. The result still looks like a fine 32-bit hash -- it
+// just is not FNV-1a, and does not match the same algorithm written anywhere else.
+// Caught by the replay checker reporting a divergence on turn 1 of the first
+// recorded game: the position had replayed perfectly and only the fingerprints
+// disagreed. Math.imul multiplies exactly in 32 bits.
+function _recHash(s) {
+    let h = 0x811c9dc5;
+    for (let i = 0; i < s.length; i++) {
+        h ^= s.charCodeAt(i);
+        h = Math.imul(h, 0x01000193) >>> 0;
+    }
+    return h >>> 0;
+}
+
+let _rec = null;      // the game currently being recorded
+
+// A record is opened for EVERY Game, including the frozen welcome-screen one,
+// and any record with no turns is dropped on close -- simpler than trying to
+// identify which Game will actually be played, and it cannot miss one.
+function _recStart(game) {
+    if (!getRecordingEnabled() || !game) return;
+    _recClose('abandoned');           // an unfinished previous game, if any
+    try {
+        _rec = {
+            v: 1,
+            id: _recUuid(),
+            device: _recDeviceId(),
+            at: new Date().toISOString(),
+            model: REC_MODEL_TAG,
+            // BOTH, because they are different quantities and only the effective
+            // one means anything analytically (see the slider remap in CLAUDE.md).
+            difficulty: +getAIDifficulty().toFixed(4),
+            sliderPos: +getDifficultySetting().toFixed(4),
+            whiteIsAI: !!WHITE_IS_AI, blackIsAI: !!BLACK_IS_AI,
+            starter: game.turn,
+            // Read off the racks rather than from the scene's carried rackOrder:
+            // at construction they are full, so this IS the order, with no
+            // dependency on which start path built the game.
+            rackWhite: game.whiteUnenteredRack.pieces.map(p => p.number),
+            rackBlack: game.blackUnenteredRack.pieces.map(p => p.number),
+            match: (typeof matchTracker !== 'undefined' && matchTracker)
+                ? { mode: matchTracker.mode, target: matchTracker.target,
+                    gameIndex: matchTracker.gamesPlayed }
+                : null,
+            hints: [],                // turn indices where a hint was consulted
+            turns: [],
+            instanceId: game.instanceId,
+        };
+        _rec.pending = [];
+    } catch (e) { _rec = null; console.warn('[rec] could not start', e); }
+}
+
+// Every mutation that is part of a move funnels through one of three sites, and
+// they are hooked rather than reconstructed from a diff, which could not tell
+// which piece went where. If one is ever missed the REPLAY HASH CATCHES IT --
+// that is what the fingerprint is for.
+// A move is a SHORT STRING, not nested arrays, and the saving is not trivial:
+// `[["black",2],[5,4]]` is 19 bytes against 7 for `"2>5.4"`, which over a
+// measured 128 moves a game is the difference between 2.0 MB and 1.5 MB a month
+// at a dozen games a day -- and localStorage tops out near 5 MB.
+//
+//   "7>5.4"   piece 7 to the tile at ring 5, sector 4
+//   "7>s"     piece 7 saved from the goal it stands on
+//   "o7>b"    the OPPONENT's piece 7 peeled off a block (the block-save)
+//
+// The colour is omitted because the turn already records its mover -- except for
+// a block-save, which acts on the other side's piece, hence the `o` prefix.
+// The DIE IS NOT RECORDED either: movePiece and save both pick it themselves from
+// the position and the destination, so a replay re-derives it. One less thing to
+// get wrong, and one less thing to disagree about.
+function _recMove(piece, dest) {
+    if (!_rec || !piece) return;
+    // The `o` prefix is decided against the LIVE turn, because it has to describe
+    // the board at the moment of the move, not when the record was opened.
+    const g = _currentGame();
+    const tag = (g && piece.player !== g.turn) ? 'o' : '';
+    const d = (dest === 'save') ? 's' : (dest === 0) ? 'b' : (dest[0] + '.' + dest[1]);
+    _rec.pending.push(tag + piece.number + '>' + d);
+}
+function _recNoteHint() {
+    if (_rec) _rec.hints.push(_rec.turns.length);
+}
+// Called from switchTurn BEFORE the turn flips, so the dice and the mover are
+// still the ones that played. A pass records an empty move list, which replays
+// correctly as "declined both dice".
+function _recTurn(game) {
+    if (!_rec || !game) return;
+    try {
+        _rec.turns.push({
+            p: game.turn[0],
+            d: game.dice.map(x => x.value),
+            m: _rec.pending,
+            h: _recHash(_recPosString(game)).toString(36),
+        });
+        _rec.pending = [];
+    } catch (e) { console.warn('[rec] turn capture failed', e); }
+}
+function _recFinish(winner, score) {
+    if (!_rec) return;
+    _rec.result = { winner: winner, margin: score };
+    _recClose('complete');
+}
+function _recClose(how) {
+    const r = _rec;
+    _rec = null;
+    if (!r) return;
+    if (!r.turns.length) return;          // the frozen welcome game, or a no-op
+    r.completed = (how === 'complete');
+    delete r.pending;
+    const line = JSON.stringify(r);
+    _recPersist(line);
+}
+
+// ── where a finished game goes ──────────────────────────────────────────────
+// Desktop: appended to a file the player chose once, so there is nothing to
+// remember. Everywhere else (and whenever the file is unavailable): buffered in
+// localStorage and drained by hand from Settings.
+// JSONL, one game per line, because that is the only format you can APPEND to
+// without reading and rewriting the whole file.
+let _recFileHandle = null;       // FileSystemFileHandle, cached in IndexedDB
+let _recFileReady = false;       // permission confirmed this session
+
+function _recBuffer() {
+    try { return JSON.parse(localStorage.getItem(REC_KEY) || '[]'); } catch (e) { return []; }
+}
+function _recBufferWrite(lines) {
+    try { localStorage.setItem(REC_KEY, JSON.stringify(lines)); return true; }
+    catch (e) { console.warn('[rec] localStorage full or blocked', e); return false; }
+}
+function _recPersist(line) {
+    // Try the file FIRST and buffer only on failure, so a game is never stored
+    // twice. Games carry a uuid anyway, so a duplicate would be recoverable --
+    // but not creating one is better than deduping one.
+    _recAppendToFile(line).then(ok => {
+        if (ok) { console.log('[rec] game appended to the log file'); return; }
+        const lines = _recBuffer();
+        lines.push(line);
+        _recBufferWrite(lines);
+        console.log('[rec] game buffered locally, ' + lines.length + ' pending');
+        _recRefreshRow();
+    });
+}
+
+// ── the picked file, and its permission ─────────────────────────────────────
+// The handle survives sessions in IndexedDB, but the PERMISSION does not always:
+// Chrome may return 'prompt' on a new session, and requestPermission needs a user
+// gesture -- so it is re-asked on the first pointerdown rather than at load,
+// where it would be refused silently.
+function _recIdb(fn) {
+    return new Promise((resolve) => {
+        let req;
+        try { req = indexedDB.open('quahuruRec', 1); } catch (e) { return resolve(null); }
+        req.onupgradeneeded = () => { try { req.result.createObjectStore('h'); } catch (e) {} };
+        req.onerror = () => resolve(null);
+        req.onsuccess = () => {
+            try {
+                const tx = req.result.transaction('h', 'readwrite');
+                const out = fn(tx.objectStore('h'));
+                tx.oncomplete = () => resolve(out && out.result !== undefined ? out.result : null);
+                tx.onerror = () => resolve(null);
+            } catch (e) { resolve(null); }
+        };
+    });
+}
+function _recFileSupported() { return typeof window.showSaveFilePicker === 'function'; }
+async function _recLoadHandle() {
+    if (_recFileHandle || !_recFileSupported()) return _recFileHandle;
+    _recFileHandle = await _recIdb(store => store.get('log'));
+    return _recFileHandle;
+}
+async function _recPickFile() {
+    if (!_recFileSupported()) { flashNotice('This browser cannot append to a file — use Download instead.', 5000); return; }
+    try {
+        const h = await window.showSaveFilePicker({
+            suggestedName: 'quahuru-games-' + _recDeviceId() + '.jsonl',
+            types: [{ description: 'Game log (JSONL)', accept: { 'application/x-ndjson': ['.jsonl'] } }],
+        });
+        _recFileHandle = h;
+        _recFileReady = true;
+        await _recIdb(store => store.put(h, 'log'));
+        // Anything already buffered goes in immediately, so choosing the file
+        // also drains the backlog rather than leaving two places to look.
+        const lines = _recBuffer();
+        let moved = 0;
+        for (const line of lines) { if (await _recAppendToFile(line)) moved++; else break; }
+        if (moved) _recBufferWrite(lines.slice(moved));
+        flashNotice('Games will be appended to that file' + (moved ? ' — ' + moved + ' moved across.' : '.'), 5000);
+        _recRefreshRow();
+    } catch (e) { /* the picker was dismissed */ }
+}
+async function _recFilePermission(interactive) {
+    const h = await _recLoadHandle();
+    if (!h) return false;
+    try {
+        let p = await h.queryPermission({ mode: 'readwrite' });
+        if (p === 'granted') { _recFileReady = true; return true; }
+        if (p === 'prompt' && interactive) {
+            p = await h.requestPermission({ mode: 'readwrite' });
+            if (p === 'granted') { _recFileReady = true; return true; }
+        }
+    } catch (e) {}
+    return false;
+}
+async function _recAppendToFile(line) {
+    if (!_recFileSupported()) return false;
+    if (!_recFileReady && !(await _recFilePermission(false))) return false;
+    try {
+        const h = await _recLoadHandle();
+        if (!h) return false;
+        const file = await h.getFile();
+        // keepExistingData + seek to the end IS the append: a writable opened
+        // without it truncates the file, which would lose every earlier game.
+        const w = await h.createWritable({ keepExistingData: true });
+        await w.write({ type: 'write', position: file.size, data: line + '\n' });
+        await w.close();
+        return true;
+    } catch (e) { console.warn('[rec] file append failed', e); _recFileReady = false; return false; }
+}
+// One gesture per session is enough to re-confirm a 'prompt' permission, and the
+// first pointerdown is the earliest one there is.
+function _recArmPermissionOnFirstGesture() {
+    if (!getRecordingEnabled() || !_recFileSupported()) return;
+    const once = () => {
+        window.removeEventListener('pointerdown', once, true);
+        _recFilePermission(true).then(ok => { if (ok) console.log('[rec] log file ready'); });
+    };
+    window.addEventListener('pointerdown', once, true);
+}
+
+// ── the Settings row, visible only once unlocked ────────────────────────────
+function _recRefreshRow() {
+    const row = document.getElementById('settingsRec');
+    if (!row) return;
+    row.style.display = getRecordingEnabled() ? 'block' : 'none';
+    const st = document.getElementById('settingsRecStat');
+    if (!st) return;
+    const lines = _recBuffer();
+    const bytes = lines.reduce((a, l) => a + l.length + 1, 0);
+    const kb = (bytes / 1024).toFixed(1);
+    const filed = _recFileSupported() && _recFileHandle ? ' · logging to file' : '';
+    st.textContent = lines.length
+        ? lines.length + ' game' + (lines.length === 1 ? '' : 's') + ' pending · ' + kb + ' KB' + filed
+        : 'Nothing pending' + filed;
+    st.style.color = bytes > REC_WARN_BYTES ? '#b5623b' : '#8b95a3';
+}
+function _recExportText() { return _recBuffer().join('\n') + (_recBuffer().length ? '\n' : ''); }
+function _recDownload() {
+    const txt = _recExportText();
+    if (!txt.trim()) { flashNotice('No games recorded yet.', 2500); return; }
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(new Blob([txt], { type: 'application/x-ndjson' }));
+    a.download = 'quahuru-games-' + _recDeviceId() + '-' + new Date().toISOString().slice(0, 10) + '.jsonl';
+    document.body.appendChild(a); a.click(); a.remove();
+    setTimeout(() => URL.revokeObjectURL(a.href), 4000);
 }
 
 // ── Hints ────────────────────────────────────────────────────────────────────
@@ -2677,6 +3047,7 @@ function _renderHint(game, pair) {
     _hint.sig = _hintSig(game);
     _hint.move = m;        // kept so a test can re-ask the live game whether what
                            // was marked is actually playable
+    if (typeof _recNoteHint === 'function') _recNoteHint();
     console.log('[hint] recommending', JSON.stringify(m));
     const dbl = _dblWord(false);
 
@@ -3391,9 +3762,14 @@ function _tutEnd(startGame) {
 // Defer to after the whole script has run (this file `defer`s, so the DOM is
 // ready; setTimeout ensures later `let` globals like matchTracker are initialised
 // before createSettingsPanel -> refreshSettingsMatchState touches them).
-function _initChrome() { _seedFirstRunDefaults();
+function _initChrome() { _recUnlockFromUrl(); _seedFirstRunDefaults();
                         createSettingsPanel(); createLegendButton(); createHintButton();
-                        maybeShowFirstRunNudge(); _armFullscreenOnFirstGesture(); }
+                        maybeShowFirstRunNudge(); _armFullscreenOnFirstGesture();
+                        _recArmPermissionOnFirstGesture(); _recRefreshRow(); }
+// A game left unfinished when the tab goes is recorded as abandoned rather than
+// lost, so it cannot be mistaken for a defeat in the stats. `pagehide` rather
+// than `beforeunload`: it is the one that actually fires on mobile Safari.
+window.addEventListener('pagehide', () => { if (typeof _recClose === 'function') _recClose('abandoned'); });
 if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', _initChrome);
 else setTimeout(_initChrome, 0);
 
@@ -5092,6 +5468,7 @@ class Piece {
             const savedRack = this.color === 0xffffff ? this.game.whiteSavedRack : this.game.blackSavedRack;
 
             this.game.pushUndo();   // snapshot before the block-save
+            if (typeof _recMove === 'function') _recMove(this, 0);   // agent format for a block-save
 
             // Peel ONLY the double-clicked piece into its own saved rack; the
             // rest of the block stays (a 2-stack becomes a blot). The attacker
@@ -5500,6 +5877,7 @@ class Piece {
                 // so drop the hint marker now rather than up to 250ms later.
                 if (typeof clearHint === 'function') clearHint();
                 if (typeof _clearMoveNotice === 'function') _clearMoveNotice();
+                if (typeof _recMove === 'function') _recMove(this, 'save');
                 this.game.pushUndo();   // snapshot before the save so undo reverts just it
                 // Use the corresponding die
                 dieToUse.setUsed();
@@ -7051,6 +7429,7 @@ class Game {
             // hint -- and the selection -- exactly as they were.
             if (typeof clearHint === 'function') clearHint();
             if (typeof _clearMoveNotice === 'function') _clearMoveNotice();
+            if (typeof _recMove === 'function') _recMove(piece, [targetTile.ring, targetTile.sector]);
 
             // snapshot BEFORE this move so undo reverts just it. Prefer the
             // pre-selection snapshot (captured while an entering piece was still
@@ -7508,6 +7887,10 @@ switchTurn() {
         const playerObj = this.players.find(p => p.name === justFinished);
         const source = playerObj.isAI ? 'heuristic' : 'human';
 
+        // Snapshot the turn for the recorder while the dice and the mover are
+        // still the ones that played -- after the flip below, both are wrong.
+        if (typeof _recTurn === 'function') _recTurn(this);
+
         // No-save draw accounting happens at the real turn boundary.
         this.updateNoSaveCounter();
         // the other player's rack is a different set of enterable pieces
@@ -7670,6 +8053,7 @@ endGame(winner, score = null, impasse_caller = null) {
     }
 
     clearMoveRecording();
+    if (typeof _recFinish === 'function') _recFinish(winner, score);
 
     this.gameOver = true;
     console.log(`${winner} wins with a score of ${score}!`);
@@ -8515,6 +8899,9 @@ class MainGameScene extends Phaser.Scene {
 
         const instructionsButton = makeHudButton(this, hx(inMatch ? 1 : 2), hy(inMatch ? 1 : 2), 'How to Play', { ghost: true, k: hudK });
         onTap(instructionsButton, () => { showInstructions(); });
+        // Open a recorder entry now: the racks are built and full, so the order
+        // read off them is the shuffled one, and nothing has moved yet.
+        if (typeof _recStart === 'function') _recStart(this.game);
         this._hudRow = [newGameButton, newMatchButton, instructionsButton];
         _layoutHudRow(this);
         // The tutorial hides these: New Game / New Match restart the scene, which
@@ -9425,6 +9812,14 @@ if (movePair.some(m => Array.isArray(m) && m[0] === 1 && m[1] === 1 && m[2] === 
                 piece.currentTile.highlight();
                 later(() => {
                     const savedRack = piece.color === 0xffffff ? game.whiteSavedRack : game.blackSavedRack;
+                    // THE COMPUTER'S BLOCK-SAVE IS ITS OWN MUTATION SITE. It does
+                    // not go through Piece.handleDoubleClick (the human gesture) or
+                    // movePiece, so the recorder has to be told here too -- a gap
+                    // found by checking which move types a replayed game actually
+                    // exercised, before it could cost a divergence nobody could
+                    // explain. The four sites are: movePiece, Piece.save,
+                    // handleDoubleClick's block-save, and this one.
+                    if (typeof _recMove === 'function') _recMove(piece, 0);
                     piece.moveToRack(savedRack);   // peel only the named piece; rest of the block stays
                     game.registerSave();   // no-save streak resets immediately
                     game.dice.forEach(die => die.setUsed());
