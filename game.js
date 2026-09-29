@@ -4845,6 +4845,9 @@ function hideDebugTip() {
 // A tile that overflows hides its extra pieces behind a "+K" badge. Clicking
 // such a tile opens this popover listing ALL pieces on the tile; clicking a
 // chip selects that piece exactly as clicking it on the board would.
+// Matches Piece.handleClick's own double-click window, so a chip and the piece it
+// stands for feel the same. Declared beside the picker it serves.
+const STACK_PICKER_DBL_MS = 300;
 let _stackPicker = null, _pickerOpenedAt = 0;
 function ensureStackPicker() {
     if (_stackPicker) return _stackPicker;
@@ -4986,19 +4989,63 @@ function openStackPicker(tile) {
                         if (piece.currentTile) piece.currentTile.updatePositions();
                         else if (piece.rack) piece.rack.shiftPiecesUp();
                     } else {
-                        hideStackPicker();
-                        selectPiece();   // plain click -> select
+                        // DOUBLE-TAP A CHIP TO ACT ON THAT PIECE (owner, 2026-09-28:
+                        // "the expanded line of pieces ... should be double
+                        // tappable"). It could not work before for a reason that had
+                        // nothing to do with timing: the plain-tap path called
+                        // hideStackPicker() immediately, so THE CHIP WAS GONE before
+                        // a second tap could land on it. Own chips also had no
+                        // double handler at all -- only select and drag.
+                        //
+                        // So the first tap still selects with no added latency, and
+                        // the picker LINGERS for the double-tap window instead of
+                        // closing at once. A single tap therefore behaves as it
+                        // always did (bar a 300ms fade-out that reads as
+                        // confirmation), and a second tap on the same chip becomes
+                        // the double-tap. Delaying the SELECT instead would have put
+                        // 300ms in front of every pick.
+                        const now = Date.now();
+                        if (chip._lastTap && now - chip._lastTap < STACK_PICKER_DBL_MS) {
+                            chip._lastTap = 0;
+                            clearTimeout(chip._hideT);
+                            hideStackPicker();
+                            piece.handleDoubleClick();   // same meaning as on the board
+                        } else {
+                            chip._lastTap = now;
+                            selectPiece();               // plain click -> select
+                            // Piece.handleClick calls hideStackPicker() itself --
+                            // correct for a tap on the BOARD, wrong for one that
+                            // came from the picker -- so put it back for the
+                            // double-tap window, then close it.
+                            if (_stackPicker) _stackPicker.style.display = 'block';
+                            clearTimeout(chip._hideT);
+                            chip._hideT = setTimeout(hideStackPicker, STACK_PICKER_DBL_MS);
+                        }
                     }
                 };
                 document.addEventListener('pointermove', onMove);
                 document.addEventListener('pointerup', onUp);
             };
         } else {
-            // opponent piece: double-click supports the block-save gesture
-            chip.ondblclick = (ev) => {
-                ev.stopPropagation();
-                hideStackPicker();
-                if (piece.currentTile) piece.handleDoubleClick();
+            // OPPONENT PIECE: double-tap is the block-save gesture. This was
+            // `chip.ondblclick`, which is a MOUSE event and is not reliably
+            // delivered for a touch double-tap -- so the gesture was desktop-only
+            // (and even there the own-chip pointerdown's preventDefault suppresses
+            // the synthesised dblclick sequence). Counted from pointer events
+            // instead, so both platforms behave the same. There is no select
+            // action for an opponent piece, so a single tap still does nothing and
+            // the picker simply stays up.
+            chip.onpointerdown = (ev) => {
+                if (ev.button !== undefined && ev.button !== 0) return;
+                ev.preventDefault(); ev.stopPropagation();
+                const now = Date.now();
+                if (chip._lastTap && now - chip._lastTap < STACK_PICKER_DBL_MS) {
+                    chip._lastTap = 0;
+                    hideStackPicker();
+                    if (piece.currentTile) piece.handleDoubleClick();
+                } else {
+                    chip._lastTap = now;
+                }
             };
         }
         row.appendChild(chip);

@@ -259,6 +259,48 @@ with it in mind.** Assessment and the concrete implications:
 
 ## Current state
 
+- **THE STACK PICKER'S CHIPS ARE NOW DOUBLE-TAPPABLE (owner, 2026-09-28: "the
+  expanded line of pieces that appear when you tap the plus sign ... should be
+  double tappable").** Two separate gaps, neither of them about timing:
+  **1. Own chips had NO double handler at all** -- only select and drag -- and the
+  plain-tap path called `hideStackPicker()` immediately, so **the chip was gone
+  before a second tap could land on it.** That is the whole reason it did nothing.
+  The first tap still selects with no added latency, and the picker now LINGERS for
+  `STACK_PICKER_DBL_MS` (300, matching `Piece.handleClick`'s own window) instead of
+  closing at once; a second tap on the same chip is the double-tap. Delaying the
+  SELECT instead would have put 300ms in front of every pick.
+  **`Piece.handleClick` calls `hideStackPicker()` itself** -- right for a tap on the
+  board, wrong for one that came from the picker -- so the chip path restores
+  `display = 'block'` after selecting and lets the timer close it. Without that the
+  linger silently did nothing.
+  **2. Opponent chips used `chip.ondblclick`, a MOUSE event**, so the block-save
+  gesture was desktop-only; and the own-chip pointerdown's `preventDefault()`
+  suppresses the synthesised dblclick sequence anyway. Counted from pointer events
+  now, so both platforms behave identically.
+  Measured on desktop AND with `?phone=1`, identical both ways: double-tapping an
+  own chip on a goal banks it (saved 4 -> 5, stack 3 -> 2, picker closed); a single
+  tap still selects that piece, with the picker open at 80ms and closed by 530ms
+  and nothing banked; double-tapping an enemy chip on a block peels it (black saved
+  3 -> 4, block 2 -> 1, both dice spent).
+  **A SEPARATE, REAL BUG FOUND WHILE LOOKING IN THE WRONG PLACE, NOT FIXED:**
+  double-tapping pieces **on the board** in a stack of 3+ often does nothing,
+  because `lastClickTime` is a PER-PIECE field and a fingertip is wider than an
+  18px piece -- measured, a second tap only 6px from the first lands on a
+  NEIGHBOURING piece, so neither piece ever sees two clicks. Stacks of 1-2 survive
+  the jitter; larger ones are geometry-dependent, hence intermittent. The fix would
+  be to move the window to the tile and act on the first-tapped piece. Owner has
+  not reported this one and it is now largely moot for saving, since the picker
+  gives a reliable route.
+  **HARNESS LIMIT, and it produced a convincing wrong answer first:** patchright's
+  touch emulation imposes a floor of about **360ms between taps** (measured: 40ms
+  and 120ms requested both gave ~360ms), which is ABOVE the game's 300ms
+  double-tap window -- so **no double-tap can ever be tested by touch in this
+  harness**, and an early "reproduced: phone does nothing" was the instrument, not
+  the game. Use **`?phone=1` with MOUSE input** to exercise phone logic without the
+  touch latency. Also: the picker element has NO id, and `_stackPicker` is a
+  main-world variable, so a probe must reach it through `addScriptTag`, not
+  `page.evaluate`.
+
 - **GAME RECORDER FOR OWNER'S OWN GAMES (owner, 2026-09-27). Local-only, opt-in,
   nothing transmitted.** Purposes, in owner's words: (a) his real stats against
   the model, (b) learning from positions where his move and the model's differ,
