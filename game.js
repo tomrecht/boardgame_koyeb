@@ -2493,7 +2493,28 @@ function _recMove(piece, dest) {
     const g = _currentGame();
     const tag = (g && piece.player !== g.turn) ? 'o' : '';
     const d = (dest === 'save') ? 's' : (dest === 0) ? 'b' : (dest[0] + '.' + dest[1]);
-    _rec.pending.push(tag + piece.number + '>' + d);
+    // Tagged with the UNDO DEPTH at the moment of the move, so _recUndo can drop
+    // exactly what an undo reverted. Every caller records BEFORE its pushUndo, so
+    // this is the depth the stack returns to if this move is undone.
+    _rec.pending.push({ m: tag + piece.number + '>' + d,
+                        depth: (g && g.undoStack) ? g.undoStack.length : 0 });
+}
+// AN UNDONE MOVE MUST LEAVE THE RECORD, or the replay applies a move that was
+// never played. Owner's first real game had a turn with THREE half-moves against
+// two dice -- a move made, undone, and remade elsewhere -- which no self-play game
+// can produce, since the computer never undoes.
+//
+// Keyed on the undo stack's depth rather than by counting entries, because one
+// undo can revert a move that produced TWO records (a sum move is recorded as its
+// two halves) and popping a fixed number would be wrong.
+function _recUndo(game) {
+    if (!_rec || !game) return;
+    const depth = (game.undoStack || []).length;
+    const before = _rec.pending.length;
+    _rec.pending = _rec.pending.filter(e => e.depth < depth);
+    if (before !== _rec.pending.length) {
+        console.log('[rec] undo dropped', before - _rec.pending.length, 'recorded half-move(s)');
+    }
 }
 function _recNoteHint() {
     if (_rec) _rec.hints.push(_rec.turns.length);
@@ -2507,7 +2528,7 @@ function _recTurn(game) {
         _rec.turns.push({
             p: game.turn[0],
             d: game.dice.map(x => x.value),
-            m: _rec.pending,
+            m: _rec.pending.map(e => e.m),
             h: _recHash(_recPosString(game)).toString(36),
         });
         _rec.pending = [];
@@ -3702,8 +3723,35 @@ function _tutPoll() {
         _tutPlayBlack(game, step.black, _tutNext);
     }, 850);
 }
+// Set when the tutorial was asked for while another scene owned the screen; the
+// main scene's create() picks it up. See startTutorial.
+let _tutPendingStart = false;
 function startTutorial() {
     if (_tut.active) return;
+    // THE TUTORIAL NEEDS THE MAIN SCENE TO BE THE ONE ON SCREEN (owner, from the
+    // end-game card, 2026-09-29). `endGame` starts a separate **EndGameScene**,
+    // and `_setupScene()` returns `scenes[0]` -- the MainGameScene OBJECT --
+    // whatever is actually running. So asking for the tutorial from Settings over
+    // the end card used to HALF-START it: `_tut.active` set, the gear hidden, the
+    // canvas refitted for the tutorial's smaller board, but nothing drawn, because
+    // the main scene was not running and the end card was still on top. The white
+    // strip owner saw at the bottom was that refit against a canvas the stopped
+    // scene was no longer filling.
+    // So bring the main scene back first and let its create() resume this.
+    const sm = gameInstance && gameInstance.scene;
+    if (sm && sm.isActive && !sm.isActive('MainGameScene')) {
+        _tutPendingStart = true;
+        // STOP the scene that owns the screen first. `SceneManager.start()` is not
+        // `ScenePlugin.start()`: it does NOT stop anything else, so starting the
+        // main scene alone left EndGameScene running and its card still on top --
+        // which is exactly the symptom, half-fixed.
+        sm.getScenes(true).forEach(sc => {
+            const key = sc.scene && sc.scene.key;
+            if (key && key !== 'MainGameScene') sm.stop(key);
+        });
+        sm.start('MainGameScene', { startingPlayer: 'white' });
+        return;
+    }
     _tut.active = true; window._tutorialActive = true;
     _tut.step = 0; _tut.busy = false; _tut.turnEnded = false;
     const welcome = document.getElementById('welcomeScreen');
@@ -7494,7 +7542,17 @@ class Game {
             // hint -- and the selection -- exactly as they were.
             if (typeof clearHint === 'function') clearHint();
             if (typeof _clearMoveNotice === 'function') _clearMoveNotice();
-            if (typeof _recMove === 'function') _recMove(piece, [targetTile.ring, targetTile.sector]);
+            // A SUM MOVE IS RECORDED AS ITS TWO HALVES, further down, once
+            // checkEnRouteCapture has reported which intermediate it used.
+            // game.py has no single sum move -- the agent always plays two
+            // half-moves -- so a one-entry record of a human's sum move cannot be
+            // replayed at all, and the intermediate is what decides an en-route
+            // capture. Found by replaying owner's first real game; self-play never
+            // makes one, so it could not have surfaced before.
+            const _recIsSum = reachableBySum.includes(targetTile);
+            if (!_recIsSum && typeof _recMove === 'function') {
+                _recMove(piece, [targetTile.ring, targetTile.sector]);
+            }
 
             // snapshot BEFORE this move so undo reverts just it. Prefer the
             // pre-selection snapshot (captured while an entering piece was still
@@ -7511,8 +7569,12 @@ class Game {
             const d0 = this.dice[0], d1 = this.dice[1];
 
             // check en route capture (only a genuine two-dice sum move)
-            if (reachableBySum.includes(targetTile)) {
-                this.checkEnRouteCapture(piece, targetTile);
+            if (_recIsSum) {
+                const via = this.checkEnRouteCapture(piece, targetTile);
+                if (typeof _recMove === 'function') {
+                    if (via) _recMove(piece, [via.ring, via.sector]);
+                    _recMove(piece, [targetTile.ring, targetTile.sector]);
+                }
             }
 
             const _ox = piece.x, _oy = piece.y;   // for the slide animation
@@ -7822,10 +7884,17 @@ class Game {
         // rather than by that one caller getting it right. Dedupe first: the
         // two die orders yield the same tile twice.
         const distinct = [...new Set(allIntermediateTiles)].filter(captureConditionsMet);
+        // The RECORDER needs the route, not just the capture: game.py has no
+        // single "sum move", so a replay has to walk the two halves, and which
+        // intermediate was used decides what got captured. Returns the tile the
+        // move actually went through (an arbitrary valid one when nothing is
+        // captured -- every route then ends in the same position, which is the
+        // same argument that lets the one-gesture sum move exist at all).
+        const anyVia = [...new Set(allIntermediateTiles)][0] || null;
         if (distinct.length > 1) {
             console.log('[en-route] declining: %d captures available, the choice is the player\'s',
                         distinct.length);
-            return;
+            return anyVia;
         }
         let best = null, bestScore = -Infinity;
         for (const tile of distinct) {
@@ -7836,7 +7905,9 @@ class Game {
             console.log('Capturing piece at intermediate tile:', best,
                         'number', best.pieces[0].number);
             this.capturePiece(best.pieces[0]);   // only ever one
+            return best;
         }
+        return anyVia;
     }
     
     
@@ -8341,6 +8412,7 @@ endGame(winner, score = null, impasse_caller = null) {
         } else {
             this.restoreState();   // already at turn start -> revert to it (no-op-ish)
         }
+        if (typeof _recUndo === 'function') _recUndo(this);
         if (typeof updateMustMoveHighlights === 'function') updateMustMoveHighlights(this);
     }
 
@@ -8967,6 +9039,13 @@ class MainGameScene extends Phaser.Scene {
         // Open a recorder entry now: the racks are built and full, so the order
         // read off them is the shuffled one, and nothing has moved yet.
         if (typeof _recStart === 'function') _recStart(this.game);
+        // A tutorial asked for while another scene was on screen (the end-game
+        // card) waited for this scene to exist. Deferred a frame so the board is
+        // laid out before the tutorial measures it.
+        if (_tutPendingStart) {
+            _tutPendingStart = false;
+            requestAnimationFrame(() => startTutorial());
+        }
         this._hudRow = [newGameButton, newMatchButton, instructionsButton];
         _layoutHudRow(this);
         // The tutorial hides these: New Game / New Match restart the scene, which

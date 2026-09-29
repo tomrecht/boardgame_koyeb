@@ -259,6 +259,37 @@ with it in mind.** Assessment and the concrete implications:
 
 ## Current state
 
+- **THE TUTORIAL DID NOT START FROM THE END-GAME CARD (owner, 2026-09-29).** From
+  Settings over the end card it half-started: the gear vanished, the end card stayed
+  up, and a pale band appeared at the bottom.
+  **Cause: `endGame` starts a SEPARATE `EndGameScene`, while `_setupScene()` returns
+  `scenes[0]` -- the MainGameScene OBJECT -- whatever is actually running.** So
+  `startTutorial` found a game, set `_tut.active`, hid the gear and refitted the
+  canvas, but nothing was drawn: the main scene was stopped and the end card was
+  still on top. `startTutorial` now defers via `_tutPendingStart`, and the main
+  scene's `create()` resumes it a frame later.
+  **AND `SceneManager.start()` IS NOT `ScenePlugin.start()`** -- it does not stop
+  anything else, so the first fix left EndGameScene running and its card still over
+  the board: the symptom, half-cured. The active non-main scenes are stopped
+  explicitly first.
+  Measured: end card up (`endActive` true, `mainActive` false) -> Settings >
+  Interactive tutorial -> `mainActive` TRUE, `endActive` FALSE, tutorial active,
+  the Step 1 card on screen, 94 tiles / 24 pieces.
+  **THE PALE BAND IS NOT PART OF THIS BUG.** Measured against a control -- the
+  tutorial started the normal way from the welcome card, same viewport -- and it is
+  **identical, 251px**: the desktop tutorial reserves width for the side card, the
+  board's 3:2 aspect then gives a 641px-tall canvas in a 900px viewport, and the
+  band is index.html's `rgb(213,219,228)` showing through. `_paintPageGround`
+  deliberately paints the page the theme's ground on PHONES ONLY, because desktop
+  letterbox bands have always been that colour. Left alone rather than changed,
+  since that is a recorded decision, not an oversight.
+  **Harness note:** Phaser queues `scene.start` to a frame boundary and headless
+  Chrome paints unreliably, so a scene-transition test must WAIT on
+  `scene.isActive(key)`, never sleep -- an earlier run clicked while MainGameScene
+  was still active and exercised the wrong path entirely. And close one Phaser page
+  before opening the next: two live ones under software WebGL starve each other
+  until the second page-load times out.
+
 - **THE STACK PICKER'S CHIPS ARE NOW DOUBLE-TAPPABLE (owner, 2026-09-28: "the
   expanded line of pieces that appear when you tap the plus sign ... should be
   double tappable").** Two separate gaps, neither of them about timing:
@@ -413,6 +444,33 @@ with it in mind.** Assessment and the concrete implications:
   identity preserved, game.js and game.py agreed on the position at every one of
   143 turns -- the first time the two have been compared on move application over
   whole games rather than on chosen agent pairs.
+  **TWO GAPS THAT ONLY A REAL HUMAN GAME COULD EXPOSE (owner's first recorded game,
+  2026-09-28), both now fixed:**
+  1. **A SUM MOVE WAS UNREPLAYABLE.** `game.py` has no single "sum move" -- the
+     agent always plays two half-moves -- so a human's one-gesture move on the dice
+     sum was logged as one entry no single die can reach, AND the intermediate tile,
+     which decides an en-route capture, was not recorded at all. Now recorded as its
+     two halves, using the intermediate `checkEnRouteCapture` actually took (it
+     returns it). Self-play cannot produce one: the computer never makes a
+     single-gesture sum move.
+  2. **AN UNDO LEFT A PHANTOM MOVE.** Owner's game had a turn with THREE half-moves
+     against two dice -- made, undone, remade elsewhere. Undo TRACKING was dropped
+     on purpose (you cannot undo after ending a turn, so it does not contaminate
+     the stats), but the recorder still has to REMOVE an undone move from the turn.
+     `_recUndo` is keyed on the undo stack's DEPTH, not a count, because one undo
+     can revert a move that produced two records. The computer never undoes.
+  **`replay_games.py` tolerates the OLD one-entry sum format** so already-collected
+  games are not wasted, and it mirrors the game's en-route rule when doing so:
+  exactly one capturable intermediate is TAKEN (the game auto-captures), none means
+  any route ends in the same position, two or more means the destination was
+  withheld and cannot have been one gesture. **A first version SKIPPED capturing
+  intermediates and so silently replayed a DIFFERENT position instead of failing** --
+  the worst thing a checker can do.
+  **Owner's first game replays turns 1-18 and stops at 19 on the undo phantom,**
+  which is unrecoverable from the old format (nothing says which entry was
+  reverted). It is still fully usable for the STATS -- result, margin, difficulty
+  and model tag are all sound -- and only the disagreement analysis needs the
+  replay. Regression after both fixes: 3/3 self-play games still clean.
   **BLOCK-SAVES ARE NOT PRODUCED BY SELF-PLAY** (0 in 143 turns, against 220 tile
   moves, 60 saves and 1 pass), so that path was verified on its own: the tutorial's
   "Buy the door open" position, `handleDoubleClick` on the blocked black piece,

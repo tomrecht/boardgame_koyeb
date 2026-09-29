@@ -137,6 +137,47 @@ def replay(rec, verbose=False):
                             break
                     if roll is not None:
                         break
+            if roll is None and dest not in ('save', 0):
+                # BACKWARD TOLERANCE for logs written before sum moves were
+                # recorded as two halves. game.py has no single "sum move", so a
+                # human's one-gesture move on the dice sum appears as a
+                # destination no single die can reach. Walk it as two halves via
+                # any valid intermediate. Only sound when NOTHING is captured en
+                # route -- with a capture the intermediate decides what died, and
+                # the old format did not record which one -- so bail out rather
+                # than guess if an intermediate holds a lone enemy.
+                d0, d1 = board.dice[0], board.dice[1]
+                if not d0.used and not d1.used:
+                    start_tile = board.home_tile if piece.tile is None else piece.tile
+                    cands = []          # (intermediate, first_roll, second_roll)
+                    if start_tile is not None:
+                        for first, second in ((d0.number, d1.number), (d1.number, d0.number)):
+                            for mid in board.get_reachable_tiles(start_tile, first):
+                                outs = board.get_reachable_tiles(mid, second)
+                                if any((t.ring, t.pos) == dest for t in outs):
+                                    cands.append((mid, first, second))
+                    # game.js's own en-route rule, mirrored: a route passing exactly
+                    # ONE lone enemy TAKES it automatically, so the replay must use
+                    # that intermediate; with none, every route ends in the same
+                    # position and any will do; with two or more the destination is
+                    # withheld and cannot have been played as one gesture at all.
+                    # An earlier version SKIPPED capturing intermediates, which
+                    # silently replayed a different position instead of failing.
+                    def captures(t):
+                        return (t.type != 'save' and len(t.pieces) == 1
+                                and t.pieces[0].player != colour)
+                    capturing = [c for c in cands if captures(c[0])]
+                    chosen = None
+                    if len(capturing) == 1:
+                        chosen = capturing[0]
+                    elif not capturing and cands:
+                        chosen = cands[0]
+                    if chosen is not None:
+                        mid, first, second = chosen
+                        board.apply_move(((colour, number), (mid.ring, mid.pos), first),
+                                         switch_turn=False)
+                        board.get_reachable_tiles_by_dice(piece)
+                        roll = second
             if roll is None:
                 return False, (f'turn {ti+1} ({board.current_player}): recorded move '
                                f'{ms!r} is not reachable for that piece in game.py '
