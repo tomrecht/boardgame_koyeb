@@ -4845,9 +4845,10 @@ function hideDebugTip() {
 // A tile that overflows hides its extra pieces behind a "+K" badge. Clicking
 // such a tile opens this popover listing ALL pieces on the tile; clicking a
 // chip selects that piece exactly as clicking it on the board would.
-// Matches Piece.handleClick's own double-click window, so a chip and the piece it
-// stands for feel the same. Declared beside the picker it serves.
-const STACK_PICKER_DBL_MS = 300;
+// One window for every double-tap in the game: the picker's chips and the pieces
+// on the board (Piece.handleClick) both use it, so a chip and the piece it stands
+// for feel the same.
+const DBL_TAP_MS = 300;
 let _stackPicker = null, _pickerOpenedAt = 0;
 function ensureStackPicker() {
     if (_stackPicker) return _stackPicker;
@@ -5005,7 +5006,7 @@ function openStackPicker(tile) {
                         // the double-tap. Delaying the SELECT instead would have put
                         // 300ms in front of every pick.
                         const now = Date.now();
-                        if (chip._lastTap && now - chip._lastTap < STACK_PICKER_DBL_MS) {
+                        if (chip._lastTap && now - chip._lastTap < DBL_TAP_MS) {
                             chip._lastTap = 0;
                             clearTimeout(chip._hideT);
                             hideStackPicker();
@@ -5019,7 +5020,7 @@ function openStackPicker(tile) {
                             // double-tap window, then close it.
                             if (_stackPicker) _stackPicker.style.display = 'block';
                             clearTimeout(chip._hideT);
-                            chip._hideT = setTimeout(hideStackPicker, STACK_PICKER_DBL_MS);
+                            chip._hideT = setTimeout(hideStackPicker, DBL_TAP_MS);
                         }
                     }
                 };
@@ -5039,7 +5040,7 @@ function openStackPicker(tile) {
                 if (ev.button !== undefined && ev.button !== 0) return;
                 ev.preventDefault(); ev.stopPropagation();
                 const now = Date.now();
-                if (chip._lastTap && now - chip._lastTap < STACK_PICKER_DBL_MS) {
+                if (chip._lastTap && now - chip._lastTap < DBL_TAP_MS) {
                     chip._lastTap = 0;
                     hideStackPicker();
                     if (piece.currentTile) piece.handleDoubleClick();
@@ -5359,19 +5360,36 @@ class Piece {
             return false;
         }
 
+        // A DOUBLE-TAP MAY LAND ON A SIBLING BLANK, AND THAT STILL COUNTS (owner,
+        // 2026-09-28). `lastClickTime` is a PER-PIECE field, so a double-tap was
+        // only recognised when both taps hit the same piece -- and on a crowded
+        // tile a fingertip is wider than the piece: measured, a second tap only
+        // 6px from the first lands on a NEIGHBOUR, so neither piece ever saw two
+        // clicks and nothing happened. Intermittent, because whether the slip
+        // crosses into another piece depends on the stack's geometry.
+        //
+        // BLANKS ON ONE TILE ARE INTERCHANGEABLE -- the game's own rule, the same
+        // one that makes game.py's get_valid_moves dedupe them and the replay
+        // fingerprint anonymise them -- so two taps on two blanks of the same
+        // tile are two taps on the same target, and acting on either gives an
+        // identical position. Deliberately NOT widened to the whole tile: a
+        // NUMBERED piece is not interchangeable with anything (each has its own
+        // goal), so tapping a numbered piece and then a blank must stay two
+        // separate taps.
         const currentTime = Date.now(); // Use system time
-        if (this.lastClickTime === null) {
+        const _recentTap = (t) => t !== null && t !== undefined && currentTime - t < DBL_TAP_MS;
+        let _partner = _recentTap(this.lastClickTime) ? this : null;
+        if (!_partner && this.number > 6 && this.currentTile) {
+            _partner = this.currentTile.pieces.find(p => p !== this && p.number > 6
+                && p.player === this.player && _recentTap(p.lastClickTime)) || null;
+        }
+        if (_partner) {
+            _partner.lastClickTime = null;
+            this.lastClickTime = null;      // reset after a double tap
+            this.handleDoubleClick();
+        } else {
             this.lastClickTime = currentTime;
             this.onClick();
-        } else {
-            const timeSinceLastClick = currentTime - this.lastClickTime;
-            this.lastClickTime = currentTime;
-            if (timeSinceLastClick < 300) {
-                this.handleDoubleClick();
-                this.lastClickTime = null; // Reset after double click
-            } else {
-                this.onClick();
-            }
         }
     }
     

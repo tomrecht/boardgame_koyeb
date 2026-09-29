@@ -282,15 +282,28 @@ with it in mind.** Assessment and the concrete implications:
   tap still selects that piece, with the picker open at 80ms and closed by 530ms
   and nothing banked; double-tapping an enemy chip on a block peels it (black saved
   3 -> 4, block 2 -> 1, both dice spent).
-  **A SEPARATE, REAL BUG FOUND WHILE LOOKING IN THE WRONG PLACE, NOT FIXED:**
-  double-tapping pieces **on the board** in a stack of 3+ often does nothing,
-  because `lastClickTime` is a PER-PIECE field and a fingertip is wider than an
+  **AND THE SAME SLIP ON THE BOARD, FIXED FOR BLANKS (owner's suggestion,
+  2026-09-28).** Double-tapping pieces **on the board** in a stack of 3+ often did
+  nothing: `lastClickTime` is a PER-PIECE field, and a fingertip is wider than an
   18px piece -- measured, a second tap only 6px from the first lands on a
-  NEIGHBOURING piece, so neither piece ever sees two clicks. Stacks of 1-2 survive
-  the jitter; larger ones are geometry-dependent, hence intermittent. The fix would
-  be to move the window to the tile and act on the first-tapped piece. Owner has
-  not reported this one and it is now largely moot for saving, since the picker
-  gives a reliable route.
+  NEIGHBOURING piece, so neither ever saw two clicks. Intermittent, because whether
+  the slip crosses into another piece depends on the stack's geometry.
+  **Owner's fix, which is better than moving the window to the tile: BLANKS ON ONE
+  TILE ARE INTERCHANGEABLE, so use that.** Two taps on two blanks of the same tile
+  and player are two taps on one target -- the game's own rule, the same one that
+  makes `get_valid_moves` dedupe them and the replay fingerprint anonymise them --
+  and acting on either gives an identical position. `Piece.handleClick` now pairs a
+  tap with a recent one on a sibling blank.
+  **Deliberately NOT widened to the whole tile:** a NUMBERED piece is
+  interchangeable with nothing (each has its own goal), so numbered-then-blank must
+  stay two separate taps. Measured both ways at `?phone=1`: an all-blank stack with
+  a 6px slip gives `tap10, tap12 -> DBL12` and BANKS the piece, where it used to do
+  nothing; a mixed stack gives `tap6, tap11` and correctly does nothing.
+  **Mixed stacks therefore still have the original problem, by design** -- owner:
+  *"that's what zoom is for so not a big deal"* -- and the picker is the reliable
+  route regardless.
+  `DBL_TAP_MS` (300) is now ONE constant for every double-tap in the game, the
+  chips and the board pieces alike.
   **HARNESS LIMIT, and it produced a convincing wrong answer first:** patchright's
   touch emulation imposes a floor of about **360ms between taps** (measured: 40ms
   and 120ms requested both gave ~360ms), which is ABOVE the game's 300ms
