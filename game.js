@@ -3450,9 +3450,14 @@ function _tutFlashExpected(game) {
 // The current item's target, ringed from the moment it becomes current -- the
 // step text says "the highlighted tile", so it must be highlighted before the
 // player has touched anything. Redrawn only when the item changes (polled).
+// A ring reads as "this piece" (owner, 2026-09-30), so a MOVE's target is shown by
+// filling the tile itself; only a save or block-save -- where the thing to act on
+// IS a piece -- gets a ring.
+const TUT_TARGET_FILL = 0xd6c8f5;     // pale HINT_COLOR violet
 function _tutClearMarks() {
     (_tut.marks || []).forEach(o => { try { o.destroy(); } catch (e) {} });
     _tut.marks = []; _tut.markKey = null;
+    if (_tut.markTile) { _tut.markTile._tutTarget = false; _tut.markTile.drawTile(); _tut.markTile = null; }
 }
 function _tutUpdateMarks() {
     const game = _setupGame(), step = _tutStep();
@@ -3471,9 +3476,7 @@ function _tutUpdateMarks() {
     };
     const dest = _tutDest(game, it);
     if (dest) {
-        const c = _hintTileCentre(dest);
-        const depth = (dest.outerRadius != null && dest.innerRadius != null) ? dest.outerRadius - dest.innerRadius : 80;
-        if (c) ring(c.x, c.y, Math.max(20, Math.min(62, depth * 0.42)));
+        dest._tutTarget = true; dest.drawTile(); _tut.markTile = dest;
     } else if (it.save || it.block) {
         _tutWho(game, it).forEach(p => { if (p.x != null) ring(p.x, p.y, (p.radius || PIECE_RADIUS_BASE) * 1.5); });
     }
@@ -3541,6 +3544,92 @@ function _tutLayout() {
 }
 
 function _tutFitBoard() {
+    _tutFitBoardBase();
+    const st = _tutStep();
+    if (st && st.intro) { _tutPlaceIntro(); requestAnimationFrame(_tutPlaceIntro); }
+}
+// World -> CSS px, derived from scroll and zoom rather than camera.worldView, which
+// reads all zeros until a frame has rendered.
+function _worldToCss(wx, wy) {
+    const cam = _mainCamera(), cv = (typeof gameInstance !== 'undefined') && gameInstance.canvas;
+    const rect = cv && cv.getBoundingClientRect();
+    if (!cam || !rect || !rect.width || !cam.zoom) return null;
+    const vw = cam.width / cam.zoom, vh = cam.height / cam.zoom;
+    const x0 = cam.scrollX + (cam.width - vw) / 2, y0 = cam.scrollY + (cam.height - vh) / 2;
+    return { x: rect.left + (wx - x0) * rect.width / vw, y: rect.top + (wy - y0) * rect.height / vh,
+             k: rect.width / vw };
+}
+// STEP 1'S CARD SITS ON THE BOARD, clear of the demo (owner, 2026-09-30). The
+// board keeps the size the other steps reserve for their card, so nothing jumps
+// at Start. Where on the board depends on the layout -- on a portrait phone the
+// saved rack is ABOVE the board, so the piece's last flight crosses the top half --
+// so every position is scored against the demo's actual path (rack slot -> home ->
+// 4,6 -> goal 5 -> saved slot), the home tile and the four rack panels, and the
+// clear position nearest "just above the home tile" wins.
+function _tutPlaceIntro() {
+    const b = _tut.bubble, step = _tutStep(), game = _setupGame();
+    if (!b || !step || !step.intro || !game) return;
+    const c = _worldToCss(CENTER_X, CENTER_Y); if (!c) return;
+    const ins = _isPhone() ? _safeInsets() : _SAFE_ZERO;
+    const W = window.innerWidth, H = window.innerHeight, k = c.k;
+    const compact = _tutIntroCompact();
+    const width = Math.round(Math.max(220, Math.min(compact ? 440 : 400, W - 32 - ins.left - ins.right)));
+    b.style.width = width + 'px';
+    b.style.padding = compact ? '10px 14px' : '15px 18px';   // '' would drop the card's own padding
+    b.style.maxHeight = 'none'; b.style.bottom = 'auto'; b.style.right = 'auto';
+    b.style.transform = _tut._xform = 'none';
+    // Hold the text at its tallest beat, so the card never changes size mid-loop.
+    const tt = b.querySelector('#tutText');
+    if (tt) {
+        const cur = tt.innerHTML; let mh = 0;
+        tt.style.minHeight = '0';
+        step.beats.forEach(html => { tt.innerHTML = html; mh = Math.max(mh, tt.offsetHeight); });
+        tt.innerHTML = cur; tt.style.minHeight = mh + 'px';
+    }
+    const h = b.offsetHeight;
+    const slot = (r) => ({ x: r.x + r.horizontalPadding, y: r.y + r.verticalPadding });   // first slot
+    const way = [slot(_tutRack(game, 'white', 'unentered')), { x: CENTER_X, y: CENTER_Y },
+                 _hintTileCentre(_tutTile(game, 4, 6)), _hintTileCentre(_tutGoal(game, 5)),
+                 slot(_tutRack(game, 'white', 'saved'))].map(q => q && _worldToCss(q.x, q.y)).filter(Boolean);
+    const pts = [];
+    for (let i = 0; i + 1 < way.length; i++) {
+        const a = way[i], z = way[i + 1], n = Math.max(1, Math.ceil(Math.hypot(z.x - a.x, z.y - a.y) / 10));
+        for (let j = 0; j <= n; j++) pts.push({ x: a.x + (z.x - a.x) * j / n, y: a.y + (z.y - a.y) * j / n });
+    }
+    // The home tile and all four rack panels are off limits too: the piece
+    // enters through one, starts and ends in the others, and both saved racks
+    // are ringed at the first beat.
+    const home = _worldToCss(CENTER_X, CENTER_Y);
+    const homeR = HOME_TILE_RADIUS * k;
+    for (let a = 0; a < 16; a++) pts.push({ x: home.x + homeR * Math.cos(a * Math.PI / 8), y: home.y + homeR * Math.sin(a * Math.PI / 8) });
+    ['whiteUnenteredRack', 'whiteSavedRack', 'blackUnenteredRack', 'blackSavedRack'].forEach(key => {
+        const r = game[key]; if (!r) return;
+        const bx = r.x - r.pr, by = r.y - r.pr;
+        const bw = r.cols * r.spacing + r.pr, bh = r.rows * r.spacing + r.pr + r.verticalPadding;
+        for (let i = 0; i <= 4; i++) for (let j = 0; j <= 4; j++) {
+            const q = _worldToCss(bx + bw * i / 4, by + bh * j / 4); if (q) pts.push(q);
+        }
+    });
+    // Every position on a 12px grid; the cheapest wins. Anything covering the
+    // path costs far more than distance, so distance from the preferred spot --
+    // just above the home tile -- only decides between clear positions.
+    const pad = 14;
+    const minX = 16 + ins.left, maxX = Math.max(minX, W - 16 - ins.right - width);
+    const minY = 16 + ins.top, maxY = Math.max(minY, H - 16 - ins.bottom - h);
+    const ax = home.x - width / 2, ay = home.y - homeR - 14 - h;
+    let best = null;
+    for (let y = minY; y <= maxY; y += 12) for (let x = minX; x <= maxX; x += 12) {
+        let hit = 0;
+        for (const q of pts) if (q.x > x - pad && q.x < x + width + pad && q.y > y - pad && q.y < y + h + pad) hit++;
+        const cost = hit * 10000 + Math.hypot(x - ax, y - ay);
+        if (!best || cost < best.cost) best = { x, y, cost, hit };
+    }
+    _tut._introHits = best.hit;          // for a test: how much of the demo it covers
+    b.style.left = Math.round(best.x) + 'px';
+    b.style.top = Math.round(best.y) + 'px';
+}
+
+function _tutFitBoardBase() {
     const s = (typeof gameInstance !== 'undefined') && gameInstance.scale; if (!s) return;
     if (!_tut.active || !_tut.bubble) {
         s.resizeInterval = _tut.resizeInterval || 500;
@@ -3729,11 +3818,15 @@ const _tutSteps = [
         // acts it out, and the player moves on with Start.
         title: 'What you’re playing for',
         intro: true,
-        text: '<span data-beat="0">Quahuru is a race: the first to <b>save all twelve pieces</b> wins.</span> ' +
-              '<span data-beat="1">Each piece starts on your rack and comes out through the <b>home tile</b> in the centre,</span> ' +
-              '<span data-beat="2">travels out along a spoke — landing on a lone enemy piece <b>captures</b> it, sending it back home —</span> ' +
-              '<span data-beat="3">reaches a <b>goal</b> on the rim,</span> ' +
-              '<span data-beat="4">and is <b>saved</b> off it into your saved rack.</span>',
+        // ONE SENTENCE AT A TIME, in a card ON the board (owner, 2026-09-30: hard
+        // to follow the moves and a paragraph at once). Each beat replaces the
+        // last as its leg of the demo plays; see _tutBeat and _tutPlaceIntro.
+        beats: ['Quahuru is a race: the first to <b>save all twelve pieces</b> wins.',
+                'Each piece starts on your rack and comes out through the <b>home tile</b> in the centre…',
+                '…travels out along a spoke — landing on a lone enemy piece <b>captures</b> it, sending it back home…',
+                '…reaches a <b>goal</b> on the rim…',
+                '…and is <b>saved</b> off it into your saved rack.'],
+        text: '',
         dice: [3, 4],
         pos: { white: { rack: [7, 8, 6, 9, 10, 11, 12, 1, 2, 3, 4, 5] },
                black: { board: [[5, [4, 6]]], rack: [7, 8, 9, 10, 11, 12, 1, 2, 3, 4, 6] } },
@@ -3887,14 +3980,17 @@ const _tutSteps = [
 // `run` is a generation counter: every timer checks it, so stopping is just a
 // bump, and a late timer from a previous loop or step can never act.
 const _tutDemo = { run: 0, objs: [], timers: [], tweens: [] };
-const _TUT_DEMO_BEAT_BG = 'rgba(123,79,224,.17)';   // HINT_COLOR, faint
+// Swap the card's sentence for beat i, with a short fade. -1 (the pause before
+// the loop restarts) keeps the last sentence up.
 function _tutBeat(i) {
-    const b = _tut.bubble; if (!b) return;
-    b.querySelectorAll('[data-beat]').forEach(el => {
-        el.style.cssText = 'border-radius:4px; transition:background .3s;' +
-            '-webkit-box-decoration-break:clone; box-decoration-break:clone;' +
-            'background:' + (+el.dataset.beat === i ? _TUT_DEMO_BEAT_BG : 'transparent') + ';';
-    });
+    const b = _tut.bubble, step = _tutStep();
+    if (!b || !step || !step.intro || i < 0) return;
+    const tt = b.querySelector('#tutText');
+    if (!tt || tt._beat === i) return;
+    tt._beat = i;
+    tt.style.opacity = '0';
+    clearTimeout(tt._fade);
+    tt._fade = setTimeout(() => { tt.innerHTML = step.beats[i]; tt.style.opacity = '1'; }, 180);
 }
 function _tutDemoStop() {
     _tutDemo.run++;
@@ -3984,7 +4080,19 @@ function _tutBubble() {
     _tut.bubble = b;
     return b;
 }
+// Step 1's card on a short screen (a landscape phone): the board fills the height,
+// so there is no clear spot for the full card. Title folded into the header line,
+// smaller text, and the card goes wide instead of tall.
+function _tutIntroCompact() { return window.innerHeight <= 560; }
 function _tutStepHtml(step, idx) {
+    if (step.intro && _tutIntroCompact()) {
+        return '<div style="font-size:11px; letter-spacing:.04em; text-transform:uppercase; color:#8b95a3; margin-bottom:3px;">' +
+                'Step 1 of ' + _tutSteps.length + ' · ' + step.title + '</div>' +
+            '<div id="tutText" style="font-family:' + BODY_FONT + '; font-size:15px; line-height:1.4;' +
+                'color:#28313b; transition:opacity .18s;">' + step.beats[0] + '</div>' +
+            '<div id="tutBtns" style="display:flex; gap:8px; padding-top:8px; justify-content:flex-end;' +
+                'align-items:center; flex:0 0 auto;"></div>';
+    }
     return '<div style="font-size:12px; letter-spacing:.04em; text-transform:uppercase; color:#8b95a3; margin-bottom:3px;">' +
             'Tutorial · Step ' + (idx + 1) + ' of ' + _tutSteps.length + '</div>' +
         '<div style="font-weight:700; font-size:17px; margin-bottom:5px;">' + step.title + '</div>' +
@@ -3992,8 +4100,11 @@ function _tutStepHtml(step, idx) {
         // Exit/Skip sit at the end of the flex column and go below the fold on
         // any step taller than the cap -- which on a portrait phone is all of
         // them. min-height:0 is what lets a flex child shrink enough to scroll.
-        '<div id="tutText" style="font-family:' + BODY_FONT + '; font-size:14.5px; line-height:1.5;' +
-            'color:#33404b; overflow-y:auto; min-height:0; flex:1 1 auto;">' + step.text + '</div>' +
+        (step.intro
+            ? '<div id="tutText" style="font-family:' + BODY_FONT + '; font-size:16.5px; line-height:1.5;' +
+                  'color:#28313b; transition:opacity .18s; flex:1 1 auto;">' + step.beats[0] + '</div>'
+            : '<div id="tutText" style="font-family:' + BODY_FONT + '; font-size:14.5px; line-height:1.5;' +
+                  'color:#33404b; overflow-y:auto; min-height:0; flex:1 1 auto;">' + step.text + '</div>') +
         // flex-wrap, for the finish step's two difficulty buttons: on a PHONE IN
         // LANDSCAPE the card is only 180-300px wide (_tut._cardW), which is not
         // enough for them side by side. Exit/Skip have always fitted and are
@@ -4014,6 +4125,7 @@ function _tutMeasureBubble(width) {
     document.body.appendChild(probe);
     let max = 0;
     _tutSteps.forEach((step, i) => {
+        if (step.intro) return;          // it sits on the board, not in the band
         probe.innerHTML = _tutStepHtml(step, i);
         max = Math.max(max, probe.offsetHeight);
     });
@@ -4072,7 +4184,14 @@ function _tutRender() {
         back();
         mkBtn(step.intro ? 'Start →' : 'Skip →', true, _tutNext);
     }
-    // After the card exists: the demo lights its clauses. Deferred a frame so the
+    // Entering or leaving step 1 moves the card between the board and its band.
+    if (step.intro || _tut._introShown) {
+        _tut._introShown = !!step.intro;
+        if (!step.intro) b.style.padding = '15px 18px';          // _TUT_BUBBLE_CSS's
+        const tt = b.querySelector('#tutText'); if (tt && step.intro) tt._beat = 0;
+        _tutFitBoard();
+    }
+    // After the card exists: the demo swaps its sentences. Deferred a frame so the
     // pieces the step just laid out have their positions first.
     if (step.intro) requestAnimationFrame(() => { if (_tutStep() === step) _tutDemoStart(game); });
 }
@@ -4206,6 +4325,7 @@ function _tutFinish(position) {
 function _tutEnd(startGame) {
     _tutDemoStop();
     _tutClearMarks();
+    _tut._introShown = false;
     _tut.active = false; window._tutorialActive = false;
     _tut.busy = false;
     clearInterval(_tut.timer); _tut.timer = null;
@@ -7020,9 +7140,13 @@ class Tile {
         // command list. Only a highlighted tile draws over its baked copy.
         // (The Graphics object itself stays -- it owns the hit area, and an
         // empty one still hit-tests, which setVisible(false) would not.)
-        if (!baking && this.game && this.game._boardBaked && this._fillOverride == null) return;
+        // The tutorial's target tile (_tutTarget) is filled whenever nothing else
+        // is overriding it -- a selected piece's destination colours still win.
+        const over = this._fillOverride != null ? this._fillOverride
+                   : (this._tutTarget ? TUT_TARGET_FILL : null);
+        if (!baking && this.game && this.game._boardBaked && over == null) return;
         this.graphics.lineStyle(1.7, this.lineColor, 1);
-        this.graphics.fillStyle(!baking && this._fillOverride != null ? this._fillOverride : this.fillColor, 1);
+        this.graphics.fillStyle(!baking && over != null ? over : this.fillColor, 1);
 
         if (this.type === "home") {
             this.x = CENTER_X;

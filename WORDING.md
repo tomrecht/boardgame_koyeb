@@ -18,12 +18,14 @@ Card header: `Tutorial · Step {n} of 12`
 Buttons: **Exit** · **← Back** (from step 2 on; a bare **←** on a landscape phone) · **Skip →** (step 1: **Start →**) · closing panel: **← Back** · **Go easy** · **Full strength**
 While Black replies: `Black plays…` · On completing a step: `✓ Nice!`
 
-### Step 1 — What you’re playing for  *(no moves; the board animates each clause in turn)*
+### Step 1 — What you’re playing for  *(no moves; a card on the board shows one sentence at a time, each replacing the last as the board acts it out)*
 1. Quahuru is a race: the first to <b>save all twelve pieces</b> wins.
-2. Each piece starts on your rack and comes out through the <b>home tile</b> in the centre,
-3. travels out along a spoke — landing on a lone enemy piece <b>captures</b> it, sending it back home —
-4. reaches a <b>goal</b> on the rim,
-5. and is <b>saved</b> off it into your saved rack.
+2. Each piece starts on your rack and comes out through the <b>home tile</b> in the centre…
+3. …travels out along a spoke — landing on a lone enemy piece <b>captures</b> it, sending it back home…
+4. …reaches a <b>goal</b> on the rim…
+5. …and is <b>saved</b> off it into your saved rack.
+
+On a landscape phone the header reads `Step 1 of 12 · What you’re playing for`.
 
 ### Step 2 — Send two pieces out
 You can start saving once you’ve brought all your pieces out. Send the front one out through home and spend the <b>5</b> on the highlighted tile near goal 5. Then bring a second piece out with the <b>3</b>. Pieces 1–6 each have one matching goal; blank pieces can use any.

@@ -271,9 +271,14 @@ with it in mind.** Assessment and the concrete implications:
   and does not end it. `_tutMoveOK` / `_tutSaveOK` / `_tutBlockSaveOK` answer from
   the current item, so moves happen ONLY in order, and the second rack piece can no
   longer be brought out first (it is simply not the piece named). The destination
-  is ringed (hint violet) from the moment its item becomes current -- step 2's
-  "highlighted tile" is highlighted before anything is touched -- redrawn by the
-  300ms poll when the item changes, gone during "✓ Nice!".
+  TILE IS FILLED (pale violet, `TUT_TARGET_FILL`, via `tile._tutTarget` in
+  `drawTile`, beneath any pieces on it) from the moment its item becomes current --
+  step 2's "highlighted tile" is highlighted before anything is touched. **Not a
+  ring: owner found a ring read as "this is the piece to move".** Only a save or
+  block-save -- where the thing to act on IS a piece -- rings the piece. Redrawn by
+  the 300ms poll when the item changes, gone during "✓ Nice!"; a selected piece's
+  own destination colours still take precedence. Hover lights only the scripted
+  piece too (`onHover` asks `_tutPieceOK`; owner saw the second rack piece light).
   The old per-step `move`/`save`/`blockSave` predicates are gone from every step;
   the fallbacks in the three hooks remain for a step with no `seq`.
   Measured, desktop AND `?phone=1`, the whole tutorial played through the real
@@ -321,8 +326,22 @@ with it in mind.** Assessment and the concrete implications:
   rings on both saved racks -> slide rack -> home -> slide out to 4,6, CAPTURING
   Black's lone 5 there (sent home with the capture burst) -> goal 5 -> saved rack
   -> reset, ~13.2s a loop. **No arrows** (owner: "too low-tech"; the slow 900ms
-  slides carry it) -- they were in the first cut. Each clause of the card text is a
-  `data-beat` span lit in step with its leg. Button reads **Start ->**, and the
+  slides carry it) -- they were in the first cut. **The card sits ON THE BOARD and
+  shows ONE SENTENCE AT A TIME** (owner: following the moves and a paragraph at once
+  was too much): `step.beats`, each replacing the last with a fade as its leg plays
+  (measured 0 / 2.8 / 4.9 / 7.9 / 10.1s, loop 13.6s), text height held at the
+  tallest beat so the card never resizes. `_tutPlaceIntro` grid-searches the
+  viewport (12px) for the spot nearest "just above the home tile" that covers none
+  of the demo path, the home tile or the four rack panels. Measured: desktop above
+  centre, 0 covered; portrait phone (with and without insets) the band below the
+  racks, 0 covered; **landscape phone has no clear spot** -- a compact card
+  (`_tutIntroCompact`, H <= 560: title folded into the header, 15px, 440 wide)
+  covers 9-15 sample points, all rack-panel corners, not the path. The board keeps
+  the size the other steps reserve, so nothing jumps at Start (canvas 962x641
+  before and after), which on desktop leaves the card's usual band empty during
+  step 1. The card's usual placement returns on Start and comes back on Back.
+  Trap hit: `style.padding = ''` DROPS the card's own padding from its cssText; set
+  the value. Button reads **Start ->**, and the
   intro LOCKS INPUT (`_inputLocked` returns true for an intro step; every other
   tutorial step stays exempt) because the demo is moving the pieces a tap would
   pick up. `_tutDemo.run` is a generation counter: every timer checks it, so
