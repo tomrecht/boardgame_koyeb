@@ -698,7 +698,15 @@ function _tileTapEnabled() {
 // Re-placing the pill needs the element, which only updateTurnStatus holds.
 let _replaceTurnStatus = null;
 
+// Every placement rewrites cssText wholesale, which drops the opacity -- so an
+// EMPTY pill (the tutorial, the end card) came back as a blank white lozenge on
+// any re-layout (resize, rotation, the tutorial refitting the canvas). Visibility
+// is re-derived from the text after every placement, on every path.
 function _placeTurnStatus(el) {
+    _layoutTurnStatus(el);
+    el.style.opacity = el.textContent ? '1' : '0';
+}
+function _layoutTurnStatus(el) {
     const c = document.querySelector('canvas');
     if (!c) return;
     if (!_isPhone()) {   // desktop keeps the original top-centre pill
@@ -758,11 +766,8 @@ function updateTurnStatus(textOrGame) {
         window.addEventListener('orientationchange', () => setTimeout(() => _placeTurnStatus(el), 250));
     }
     el.textContent = text || '';
-    // Placement rewrites cssText wholesale, which would drop the opacity below
-    // and leave an empty white pill on screen -- so place first, hide second.
     _placeTurnStatus(el);
     _replaceTurnStatus = () => _placeTurnStatus(el);
-    el.style.opacity = text ? '1' : '0';
 }
 
 // ── MUST-ENTER GHOSTS ───────────────────────────────────────────────────
