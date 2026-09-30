@@ -2841,8 +2841,8 @@ function _maybeNudgeHint() {
 // ── RULE TIPS: each rule explained ONCE, the first time it happens in real play
 // (owner, 2026-09-30). The tutorial teaches rules in advance; a rule is
 // remembered when it bites, so the first capture, the first wall, the move out of
-// the opening, the endgame and the last-piece rule each get one notice the first
-// time they happen to (or are done by) a human player, and never again.
+// the opening, the endgame, the last-piece rule and a block-save each get one
+// notice the first time EITHER side does them, and never again.
 //
 // DETECTED BY POLLING THE BOARD, not hooked into each path that can cause them --
 // the same choice as the hint marker: the computer's moves, the human's gestures,
@@ -2911,10 +2911,18 @@ function _ruleTipTick() {
 function _ruleTipScan(g) {
     const humans = g.players.filter(p => !p.isAI).map(p => p.name);
     if (!humans.length) return;                         // computer v computer: nobody to teach
+    // EACH TIP FIRES FOR WHICHEVER SIDE DOES THE THING FIRST (owner, 2026-09-30),
+    // not only for the human: the computer's first capture teaches capturing just
+    // as well. The wording is chosen by who did it -- "you" when the one human in
+    // a game against the computer did, otherwise the side's name.
     const solo = humans.length === 1;
     const human = c => humans.includes(c);
-    const yours = c => solo ? 'your' : _cap(c) + '’s';
-    const them = solo ? 'the computer' : null;
+    const other = c => c === 'white' ? 'black' : 'white';
+    const name = c => solo ? (human(c) ? 'you' : 'the computer') : _cap(c);
+    const Name = c => _cap(name(c));
+    const poss = c => solo ? (human(c) ? 'your' : 'the computer’s') : _cap(c) + '’s';
+    const pron = c => solo ? (human(c) ? 'you' : 'it') : _cap(c);
+    const mine = c => solo && human(c);                 // the "you did it" wording
     const phase = c => { const p = g.players.find(pl => pl.name === c); return p && p.getGamePhase(); };
     const lastBlank = c => g.pieces.some(p => p.player === c && p.number === TOTAL_PIECES + 1);
     const now = {
@@ -2928,54 +2936,53 @@ function _ruleTipScan(g) {
     g._tipSnap = now;
     if (!was) return;                                   // baseline: see above
 
-    // The opening rule, on a human's first turn -- it is the first rule they meet.
-    if (human(g.turn) && phase(g.turn) === 'opening') {
-        _ruleTip('opening', 'Opening: until ' + yours(g.turn) + ' rack is empty, one of the two moves each turn ' +
-            'must bring the front rack piece out. Saving starts once the rack is empty.');
+    // The opening rule binds both sides from the first roll, so it is said at once.
+    if (phase(g.turn) === 'opening') {
+        _ruleTip('opening', 'Opening: until a player’s rack is empty, one of their two moves each turn must bring ' +
+            'the front rack piece out. Saving starts once the rack is empty.');
     }
     (g._captureLog || []).slice(was.caps).forEach(e => {
-        if (human(e.victim)) {
-            _ruleTip('captured', (solo ? 'Your' : _cap(e.victim) + '’s') + ' piece was captured — a piece alone on a ' +
-                'tile can be landed on. It is back on the home tile, and moving it out comes before anything else.');
-        } else if (human(e.by)) {
-            _ruleTip('capture', 'Capture! Landing on a lone enemy piece sends it back to the home tile, and ' +
-                (them || 'its owner') + ' must bring it out again before doing anything else.');
-        }
+        _ruleTip('capture', mine(e.by)
+            ? 'Capture! Landing on a lone enemy piece sends it back to the home tile, and ' + name(e.victim) +
+              ' must bring it out again before doing anything else.'
+            : Name(e.by) + ' captured ' + poss(e.victim) + ' piece — a piece alone on a tile can be landed on. ' +
+              'It goes back to the home tile, and ' + name(e.victim) + ' must bring it out again before doing anything else.');
     });
     (g._blockSaveLog || []).slice(was.blocks).forEach(e => {
-        if (human(e.by)) {
-            _ruleTip('block-save', 'You bought a wall down: saving an enemy piece off it costs both dice and ' +
-                'gives ' + (them || 'its owner') + ' the point, but leaves only one piece there — which can be captured.');
-        } else if (human(e.owner)) {
-            _ruleTip('block-saved', (solo ? 'The computer' : _cap(e.by)) + ' spent both dice saving one of ' +
-                yours(e.owner) + ' pieces for ' + (solo ? 'you' : 'them') + ' — it hands over the point to break a wall. ' +
-                'The piece left behind stands alone, so it can be captured.');
-        }
+        _ruleTip('block-save', mine(e.by)
+            ? 'You bought a wall down: saving an enemy piece off it costs both dice and gives ' + name(e.owner) +
+              ' the point, but leaves only one piece there — which can be captured.'
+            : Name(e.by) + ' spent both dice saving one of ' + poss(e.owner) + ' pieces for ' + name(e.owner) +
+              ' — that hands over the point to break a wall. The piece left behind stands alone, so it can be captured.');
     });
     ['white', 'black'].forEach(c => {
         if (now.walls[c] && !was.walls[c]) {
-            if (human(c)) {
-                _ruleTip('wall', 'That’s a wall: two or more of ' + yours(c) + ' pieces on one tile. Enemy pieces ' +
-                    'can’t land on it or pass through it.');
-            } else if (solo) {
-                _ruleTip('wall-enemy', 'The computer has built a wall — two pieces on one tile. Your pieces can’t ' +
-                    'land on it or pass through it, so the way round is longer.');
-            }
+            _ruleTip('wall', mine(c)
+                ? 'That’s a wall: two or more of your pieces on one tile. Enemy pieces can’t land on it or pass through it.'
+                : Name(c) + ' has built a wall — two pieces on one tile. ' + _cap(poss(other(c))) + ' pieces can’t ' +
+                  'land on it or pass through it, so the way round is longer.');
         }
-        if (!human(c)) return;
         if (was.phase[c] === 'opening' && now.phase[c] === 'midgame') {
-            _ruleTip('saving', (solo ? 'Your' : _cap(c) + '’s') + ' rack is empty, so saving starts: a piece on a ' +
-                'goal is saved with a die matching that goal’s number — ' + _dblWord(false) +
-                ' it, or drag it to the saved rack. Numbered pieces only on their own goal.');
+            _ruleTip('saving', mine(c)
+                ? 'Your rack is empty, so saving starts: a piece on a goal is saved with a die matching that goal’s ' +
+                  'number — ' + _dblWord(false) + ' it, or drag it to the saved rack. Numbered pieces only on their own goal.'
+                : _cap(poss(c)) + ' rack is empty, so ' + pron(c) + ' can start saving: a piece on a goal is saved with ' +
+                  'a die matching that goal’s number, and a numbered piece only on its own goal.');
         }
         if (was.phase[c] !== 'endgame' && now.phase[c] === 'endgame') {
-            _ruleTip('endgame', 'Endgame: every piece ' + (solo ? 'you have' : c + ' has') + ' left is on a goal it ' +
-                'can be saved from. A blank now also goes out on any die bigger than its goal’s number, as long ' +
-                (solo ? 'as you hold no higher goal.' : 'as ' + c + ' holds no higher goal.'));
+            _ruleTip('endgame', mine(c)
+                ? 'Endgame: every piece you have left is on a goal it can be saved from. A blank now also goes out on ' +
+                  'any die bigger than its goal’s number, as long as you hold no higher goal.'
+                : Name(c) + ' is in the endgame: every piece left is on a goal it can be saved from. Now ' + poss(c) +
+                  ' blanks also go out on any die bigger than their goal’s number, as long as ' + pron(c) +
+                  ' holds no higher goal.');
         }
         if (now.last[c] && !was.last[c]) {
-            _ruleTip('last-piece', (solo ? 'Your' : _cap(c) + '’s') + ' last piece has lost its number — it is a ' +
-                'blank now, so it no longer has to wait for its own number to be saved.');
+            _ruleTip('last-piece', mine(c)
+                ? 'Your last piece has lost its number — it is a blank now, so it no longer has to wait for its own ' +
+                  'number to be saved.'
+                : _cap(poss(c)) + ' last piece has lost its number — with one piece left, a numbered piece on its goal ' +
+                  'becomes a blank, so it no longer has to wait for its own number.');
         }
     });
 }

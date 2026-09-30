@@ -295,12 +295,16 @@ with it in mind.** Assessment and the concrete implications:
   that already scrolled got shorter (Buy the door open 86 -> 43px, The endgame
   64 -> 21px, Take what's exposed 43 -> 21px in landscape).
   **3. RULE TIPS FOR THE FIRST REAL GAME** (`_ruleTipTick`, 300ms poll): one
-  notice the first time each rule comes up -- the opening obligation (on the
-  human's first turn), a capture made / suffered, a wall built by you / by the
-  computer, the rack emptying (saving starts), the endgame, the last piece losing
-  its number, and **a block-save made / suffered** (owner's addition). Each id
-  fires once ever (`ruleTipsSeen`); tips queue rather than overwrite each other
-  and wait out the hint nudge.
+  notice the first time each rule comes up -- the opening obligation (first turn
+  of the game), the first capture, the first wall, the first rack emptied (saving
+  starts), the first endgame, the first last piece losing its number, and **the
+  first block-save** (owner's addition). **Each fires for WHICHEVER SIDE does it
+  first (owner, 2026-09-30)**, not only the human -- the computer's first capture
+  teaches capturing as well as the player's own. The wording is picked by who did
+  it: "you" when the one human in a game against the computer did, otherwise "The
+  computer" / the colour. Seven ids (`opening capture wall saving endgame
+  last-piece block-save`), each fired once ever (`ruleTipsSeen`); tips queue
+  rather than overwrite each other and wait out the hint nudge.
   **FIRST GAME ONLY (owner):** the setting turns ITSELF OFF when a game the tips
   were watching FINISHES; an abandoned game does not count. On for a first-ever
   visit (seeded with hints) and after the tutorial (`_tutFinish`); Settings row
@@ -317,6 +321,17 @@ with it in mind.** Assessment and the concrete implications:
   white as human fired **9 of 10** -- opening, capture, captured, wall, enemy wall,
   saving, block-saved, block-save, endgame; last-piece did not arise (white lost
   10-12) -- and on game over `ruleTips` went to 0 and the Settings box unticked.
+  (That run predates the either-side rework.) **Re-run after it**, same setup, 6
+  tips: opening, capture (white's, "Capture!" form), wall, saving, block-save,
+  and **"The computer is in the endgame"** -- Black got there first, so the tip
+  fired for the COMPUTER's side in the other-side wording, which is the new
+  behaviour. Last-piece again did not arise. `ruleTips` -> 0 at game over.
+  **`WORDING.md` IS A READ-ONLY SNAPSHOT OF EVERY PLAYER-FACING STRING** (tutorial,
+  tips, hints, route explanations, notices, confirms, welcome, end card, How to
+  Play, Settings labels), made for owner to read and edit. **It is NOT shipped and
+  the game does not read it** -- owner asked for exactly that, rather than moving
+  the strings into a loaded file. When he edits it, carry the edits into game.js by
+  hand; when wording changes in game.js, update it too, or it drifts silently.
   **Harness note:** the CodeGPT extension is now **3.24.75** -- update the
   `createRequire` path. And headless Chrome's canvas lags the DOM by seconds, so a
   screenshot of an animation must FREEZE it (clear the timers, wait ~2.5s) first.
