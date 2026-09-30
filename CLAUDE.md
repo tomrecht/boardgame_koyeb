@@ -429,6 +429,15 @@ with it in mind.** Assessment and the concrete implications:
   computer" / the colour. Seven ids (`opening capture wall saving endgame
   last-piece block-save`), each fired once ever (`ruleTipsSeen`); tips queue
   rather than overwrite each other and wait out the hint nudge.
+  **SWITCHING THE SETTING ON RESETS THE SEEN LIST (owner, 2026-09-30: had it on,
+  saw nothing).** Once-ever plus the auto-off after the first game meant a player
+  who turned it back on got silence -- every id was already in `ruleTipsSeen`.
+  Reproduced (all ids seen, setting on: 0 tips in 4 turns of a real human game),
+  fixed (`_resetRuleTips` on the checkbox going ON, and in `_tutFinish`): same
+  profile after off/on, 3 tips in 4 turns. Switched off, the scan also drops the
+  game's baseline, so switching on mid-game does not replay what happened while
+  it was off. A fresh profile's first real game, measured with human moves: 3 tips
+  in 8 turns (opening, wall, the computer's capture).
   **Block-save wording says "thins", not "breaks" (owner):** saving one piece off
   a wall of THREE leaves a wall, so every block-save text (tip, hint, How to Play)
   now says a wall of TWO becomes a single piece.

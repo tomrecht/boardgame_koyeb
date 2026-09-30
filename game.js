@@ -2282,7 +2282,12 @@ function createSettingsPanel() {
     toggle(_dblWord(true) + ' saves a piece in one move', getSumSaveGesture, 'sumSaveGesture', false);
     toggle('Automatic en-route capture', getAutoEnRouteCapture, 'autoEnRoute', true);
     toggle('Explain rules as they come up (first game)', getRuleTipsEnabled, 'ruleTips', true);
-    { const rows = panel.querySelectorAll('input[type=checkbox]'); rows[rows.length - 1].id = 'settingsRuleTips'; }
+    { const rows = panel.querySelectorAll('input[type=checkbox]'); const cb = rows[rows.length - 1];
+      cb.id = 'settingsRuleTips';
+      // TURNING IT ON MEANS "EXPLAIN THE RULES AGAIN" (owner, 2026-09-30: switched
+      // on, saw nothing). Each tip fires once ever, so with every id already in
+      // ruleTipsSeen the setting was on and silent. Start the list afresh.
+      cb.addEventListener('change', () => { if (cb.checked) _resetRuleTips(); }); }
 
     // Interactive tutorial launcher
     const tut = mk('button',
@@ -2909,6 +2914,11 @@ function _maybeNudgeHint() {
 // On for a first-ever visit and after the tutorial, like hints; a Settings row
 // turns them off. `ruleTipsSeen` holds the ids already shown.
 function getRuleTipsEnabled() { return _boolSetting('ruleTips', false); }
+// Forget which tips have been shown, so every rule is explained again.
+function _resetRuleTips() {
+    try { localStorage.removeItem('ruleTipsSeen'); } catch (e) {}
+    _tips.queue = [];
+}
 // A block-save moves a piece into its OWNER's saved rack during the OTHER side's
 // turn, which the board alone cannot tell from a turn switch landing between two
 // polls -- so, like captures, the two sites that do it (the human gesture and
@@ -2946,8 +2956,14 @@ function _tipWalls(g) {
     return out;
 }
 function _ruleTipTick() {
-    if (!getRuleTipsEnabled()) { _tips.queue = []; return; }
     const g = _currentGame();
+    if (!getRuleTipsEnabled()) {
+        _tips.queue = [];
+        // Re-baseline when switched back on, or everything that happened while
+        // it was off would arrive as a burst of tips.
+        if (g) g._tipSnap = null;
+        return;
+    }
     // FOR THE FIRST REAL GAME ONLY (owner, 2026-09-30): a rule that never came up
     // in it is not worth interrupting a later game for. So the setting turns
     // itself off when a game the tips were watching FINISHES. An abandoned game
@@ -4420,6 +4436,7 @@ function startTutorial() {
 function _tutFinish(position) {
     setDifficultySetting(position);
     try { localStorage.setItem('hintsEnabled', '1'); localStorage.setItem('ruleTips', '1'); } catch (e) {}
+    _resetRuleTips();                     // a new learner gets every rule explained
     if (typeof refreshHintButton === 'function') refreshHintButton();
     _hintNudgePending = true;
     _tutEnd(true);
