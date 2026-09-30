@@ -364,8 +364,14 @@ class Board:
             return False
         if self.home_tile.pieces and any(piece.player == self.current_player for piece in self.home_tile.pieces):
             return False
+        # Met by the turn's first move only if that move WAS the entry (origin None:
+        # the rack) or a re-entry from home. A board piece moved first leaves the
+        # entry still owed. Irrelevant to self-play -- the entry is forced first --
+        # but a mid-turn state (the hint) needs it. Mirrors engine.js.
         if self.firstMove:
-            return False
+            origin = self.firstMove['origin_tile']
+            if origin is None or origin is self.home_tile:
+                return False
         return True
 
     def get_saving_die(self, piece):

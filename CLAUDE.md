@@ -259,6 +259,33 @@ with it in mind.** Assessment and the concrete implications:
 
 ## Current state
 
+- **THE ENGINES DISAGREED ABOUT THE RACK ENTRY (owner's question, 2026-09-30).**
+  The rule: at least one rack piece enters each turn, unless a captured piece is
+  waiting, in which case THAT comes out and the other die is free -- the entry may
+  be the first move or the second. game.js enforces exactly that. `game.py` and
+  its port `engine.js` got there differently: at turn start they offer ONLY the
+  entry (so the agent always enters first), and `must_move_unentered` then returned
+  False for ANY first move. Equivalent for the agent's own turns, **wrong for a
+  state where a board piece moved first** -- which only the HINT produces: the
+  engine offered a free second move game.js refuses, and the hint said "No hint for
+  a half-finished turn". Measured on main: white 7 moved first, the engine offered
+  `pass, w7, w8(rack)` where game.js allows only w8.
+  **Fix, in both engines:** the obligation is met by the first move only if its
+  ORIGIN was the rack (engine -1 / game.py None) or the home tile (a captured
+  re-entry). Measured after: the same position offers only `w8(rack)` and the hint
+  marks that entry, legal; entry-first still leaves the second die free (`pass,
+  w7, w8, w9(rack)`).
+  **The origin now matters, so `getGameState` sends it** (`_turnFirstMove`, from
+  `_turnStartTile`; the hint already did). The old marker -- a posted
+  `reachableBySum` -- names the piece's CURRENT tile, so an entry made first would
+  have looked like a board move and been demanded twice. That reaches the
+  computer's own mid-turn re-asks (a single-move reply; the extra-move request when
+  a die is left over), not just hints.
+  **Nothing about the agent's own play changed, measured:** `agent_test.js` 50/50
+  candidate sets and chosen pairs against the OLD fixture, the fixture regenerated
+  from the new game.py is BYTE-IDENTICAL, and a full self-play game in the browser
+  completed (12-9).
+
 - **LEARNING CURVE, ROUND 2, ON `testing` (owner, 2026-09-30).** A new player met
   "send the front one out" before being told what the game is FOR -- "save all
   twelve" first appeared in the closing panel. Three changes, owner's picks from a
@@ -691,12 +718,12 @@ with it in mind.** Assessment and the concrete implications:
   `gs.firstMove` explicitly, carrying the ORIGIN tile, which the marker cannot:
   it reports the piece's CURRENT tile. (`engineState` gained 13 lines for this and
   the old marker path is untouched, so the computer's own turns are unchanged.)
-  And **the engine models the rack-entry obligation as applying to the turn's
-  FIRST move only, while game.js also enforces it on the second** -- a difference
-  the port never exercised, since the computer is only ever asked at the start of
-  its turn. So `_renderHint` asks the LIVE game whether the half it is about to
-  mark is playable (`_hintMoveIsLegalNow`) and **refuses rather than falling back
-  to marking it anyway**: a hint pointing at an illegal move is worse than none.
+  And **the engine used to treat the rack-entry obligation as met by ANY first
+  move** -- FIXED 2026-09-30, see "THE ENGINES DISAGREED ABOUT THE RACK ENTRY" at
+  the top of Current state. `_renderHint` still asks the LIVE game whether the half
+  it is about to mark is playable (`_hintMoveIsLegalNow`) and **refuses rather than
+  falling back to marking it anyway**: a hint pointing at an illegal move is worse
+  than none. That refusal is now a backstop, not an expected path.
   The marker is cleared by a 250ms poll against a signature (turn + dice + every
   piece's tile) rather than by hooks in movePiece / undo / switchTurn / the picker
   -- one place to be right instead of six to remember.

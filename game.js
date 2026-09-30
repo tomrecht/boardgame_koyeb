@@ -3028,20 +3028,7 @@ function clearHint() {
 function _hintGameState(game) {
     const gs = getGameState(game);
     (gs.boardPieces || []).forEach(bp => { delete bp.reachableBySum; });
-    const moved = game.pieces.filter(p => p.player === game.turn && p.currentTile &&
-                                          p._turnStartTile !== p.currentTile);
-    // Exactly one, and a die still live: two movers means both dice are spent and
-    // there is no hint to give, and none means the turn has not started moving.
-    if (moved.length === 1 && game.dice.some(d => !d.used)) {
-        const p = moved[0];
-        // Entered from the rack this turn: _turnStartTile is null, and the origin
-        // the engine wants is the home tile it came through.
-        const origin = p._turnStartTile || game.tiles.find(t => t.type === 'home');
-        if (origin) {
-            gs.firstMove = { color: p.player, number: p.number,
-                             from: { ring: origin.ring, sector: origin.sector } };
-        }
-    }
+    // gs.firstMove comes from getGameState (_turnFirstMove).
     gs.difficulty = 1.0;
     gs._sig = _hintSig(game);
     return gs;
@@ -10436,7 +10423,29 @@ function getGameState(game) {
     gameStateDetails.noSaveTurns = game.noSaveTurns;
     gameStateDetails.drawCallable = game.drawCallable;
     gameStateDetails.bothMidgame = game.bothInMidgame();
+    const fm = _turnFirstMove(game);
+    if (fm) gameStateDetails.firstMove = fm;
     return gameStateDetails;
+}
+// The turn's first move, with its ORIGIN tile, for the engine -- or null if no
+// piece has moved yet. Sent explicitly because the older marker (a posted
+// reachableBySum) can only name the piece's CURRENT tile, and since the engine
+// learned that the rack entry is still owed after a board piece moves first
+// (2026-09-30), the origin decides legality: an entry made first shows up as a
+// field tile under the marker and would be demanded a second time. That reaches
+// the computer's own mid-turn re-asks (a single-move reply, or the extra-move
+// request when a die is left over), not only hints.
+// Exactly one mover and a live die: two movers means both dice are spent.
+// Entered from the rack this turn: _turnStartTile is null, and the origin the
+// engine wants is the home tile it came through (as for a captured re-entry).
+function _turnFirstMove(game) {
+    const moved = game.pieces.filter(p => p.player === game.turn && p.currentTile &&
+                                          p._turnStartTile !== p.currentTile);
+    if (moved.length !== 1 || !game.dice.some(d => !d.used)) return null;
+    const p = moved[0];
+    const origin = p._turnStartTile || game.tiles.find(t => t.type === 'home');
+    return origin ? { color: p.player, number: p.number,
+                      from: { ring: origin.ring, sector: origin.sector } } : null;
 }
 
 // The page-unload /abort_game POST went with the recording chain: there is

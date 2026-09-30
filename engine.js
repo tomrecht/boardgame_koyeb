@@ -153,10 +153,22 @@ class Engine {
         return this.unenteredRack(this.currentPlayer).slice(0, 1);
     }
 
+    /* The rule: at least one rack piece enters each turn, unless a captured piece
+       is waiting, in which case THAT comes out and the other die is free. Taking
+       the entry first satisfies it and so does taking it second -- so after the
+       turn's first move the obligation is met only if that move WAS the entry
+       (origin: the rack, -1) or a re-entry from home. It used to be met by ANY
+       first move, which never mattered to the agent's own turns (the entry is
+       forced first, see getValidMoves) but was wrong for a hint asked after the
+       player had moved a board piece first: the engine then offered a free second
+       move that game.js refuses. Mirrors game.py's must_move_unentered. */
     mustMoveUnentered() {
         if (this.unenteredRack(this.currentPlayer).length === 0) return false;
         if (this.occ[this.home].some(p => p.player === this.currentPlayer)) return false;
-        if (this.firstMove) return false;
+        if (this.firstMove) {
+            const o = this.firstMove.originTile;
+            if (o == null || o < 0 || o === this.home) return false;
+        }
         return true;
     }
 
