@@ -269,6 +269,12 @@ with it in mind.** Assessment and the concrete implications:
   `Piece.animateRoute`, 220ms a tile). Measured: 9 steps, 3,3 up spoke 4 into
   goal 2, round 7,21 / 7,20 / 7,19 into goal 4, passing within 6 world px of goal
   2's centre. Every other move keeps the plain 160ms slide.
+  (3) **A step completes only once no piece is still animating** (`_tutPoll`), and
+  **step 7's Black reply plays under card 8** (`blackAfterCard` ->
+  `_tutNextThenBlack`), since card 8 describes that wall: owner saw Black set off
+  while the 4 was still travelling. Measured order: route ends -> "✓ Nice!" -> card
+  8 with Black's 10/11 still on 5,21 / 5,22 -> "Black plays…" -> both on 6,4 ->
+  buttons back; input held (`_tutPieceOK` refuses while `_tut.busy`).
 
 - **THE TUTORIAL SCRIPT IS ORDERED AND ONLY ITS PIECE IS SELECTABLE (owner,
   2026-09-30).** Each step with moves has a `seq`: the exact sequence -- which

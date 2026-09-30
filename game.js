@@ -3432,6 +3432,7 @@ function _tutDest(game, it) {
 function _tutPieceOK(piece) {
     const step = _tutStep();
     if (!step || !step.seq) return true;
+    if (_tut.busy) return false;                 // "✓ Nice!" or Black is moving
     const g = piece.game, it = _tutCur(g, step);
     if (!it) return false;                       // step complete: Black is about to reply
     const who = _tutWho(g, it);
@@ -3912,6 +3913,7 @@ const _tutSteps = [
         routeAnim: true,                 // show the nine-tile route through goal 2
         done: g => _tutPiece(g, 'white', 4).currentTile === _tutGoal(g, 4),
         black: [{ n: 10, to: [6, 4] }, { n: 11, to: [6, 4] }],
+        blackAfterCard: true,            // card 8 is about this wall: show it first
     },
     {
         title: 'Buy the door open',
@@ -4273,14 +4275,35 @@ function _tutPoll() {
     let ok = false;
     try { ok = !!(step.done && step.done(game)); } catch (e) { ok = false; }   // transient half-built state
     if (!ok) return;
+    // Let the move finish before celebrating: step 7's route animation takes a
+    // couple of seconds, and Black used to set off while the 4 was still on its
+    // way (owner, 2026-09-30).
+    if (game.pieces.some(p => p._moveTween)) return;
     _tut.busy = true;
     _tutNote('<span style="color:#3a9e6a; font-weight:700; font-size:14px;">✓ Nice!</span>');
     _tutUpdateMarks();                             // busy now: the ring goes
     const gen = _tut.gen;
     setTimeout(() => {
         if (!_tut.active || _tut.gen !== gen) return;
-        _tutPlayBlack(game, step.black, _tutNext);
+        if (step.blackAfterCard) _tutNextThenBlack(game, step.black);
+        else _tutPlayBlack(game, step.black, _tutNext);
     }, 850);
+}
+// A reply the NEXT card is about (owner: step 7's second wall, which card 8
+// describes): show that card first, with Black's pieces still where they were,
+// then play the reply under it. Input is held (busy) until it lands, and the step
+// is then laid out afresh so its buttons and target come back.
+function _tutNextThenBlack(game, moves) {
+    const from = (moves || []).map(m => { const p = _tutPiece(game, 'black', m.n); return [p, p && p.currentTile]; });
+    _tutNext();
+    from.forEach(([p, t]) => { if (p && t) _setupPlaceOnTile(p, t); });
+    _tut.busy = true;
+    _tutUpdateMarks();
+    const gen = _tut.gen;
+    setTimeout(() => {
+        if (!_tut.active || _tut.gen !== gen) return;
+        _tutPlayBlack(game, moves, () => { if (_tut.gen === gen) { _tut.busy = false; _tutRender(); } });
+    }, 500);
 }
 // Set when the tutorial was asked for while another scene owned the screen; the
 // main scene's create() picks it up. See startTutorial.
