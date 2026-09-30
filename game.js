@@ -652,9 +652,14 @@ function _anNumber(n) { return (n === 8 || n === 11) ? 'an ' + n : 'a ' + n; }
 // scene restart could strand one of them half-faded.
 const MUST_FLASH_COLOR = 0xffb300;        // the amber that already means "must move"
 function _flashMustMove(game) {
+    if (game) _flashPieces(game, game.mustMovePieces || []);
+}
+// The same amber pulse on any pieces -- the tutorial points at the piece its
+// script wants with it.
+function _flashPieces(game, list) {
     const scene = _setupScene();
     if (!scene || !scene.add || !game) return;
-    const must = (game.mustMovePieces || []).filter(p => p && p.x != null);
+    const must = (list || []).filter(p => p && p.x != null);
     if (!must.length) return;
     // One pulse per burst of refused taps, not one per tap.
     const now = Date.now();
@@ -3397,18 +3402,107 @@ function _tutRefresh(game) {
     game.dice.forEach(d => d.updateColor('white'));
 }
 
+// ── THE SCRIPT IS ORDERED (owner, 2026-09-30) ──────────────────────────────────
+// Each step's `seq` is the exact sequence it wants: which piece, and where it goes
+// (`tile`), or that it is saved (`save`), block-saved (`block`), or that the turn
+// ends (`end`). The CURRENT item is the first one whose done() is false -- derived
+// from the board every time, never stored, so undo walks it back on its own.
+// Only the current item's piece(s) may be selected, only its destination is
+// offered, the destination is ringed before anything is touched, and a tap on any
+// other piece flashes the right one. This also shuts the rack reordering off: the
+// second rack piece is simply not the piece the script names.
+const _tutMoveTo = (n, where) => ({ who: g => [_tutPiece(g, 'white', n)], tile: where,
+                                     done: g => _tutPiece(g, 'white', n).currentTile === where(g) });
+const _tutSaveOf = (n) => ({ who: g => [_tutPiece(g, 'white', n)], save: true,
+                             done: g => _tutPiece(g, 'white', n).rack === g.whiteSavedRack });
+function _tutCur(game, step) {
+    step = step || _tutStep();
+    if (!step || !step.seq || !game) return null;
+    return step.seq.find(it => { try { return !it.done(game); } catch (e) { return true; } }) || null;
+}
+function _tutWho(game, it) {
+    try { return (it && it.who ? it.who(game) : []).filter(Boolean); } catch (e) { return []; }
+}
+function _tutDest(game, it) {
+    try { return it && it.tile ? it.tile(game) : null; } catch (e) { return null; }
+}
+// May this piece be tapped now? The script's piece, or -- with that piece
+// selected -- whatever stands on its destination, since tapping an enemy piece
+// there is how the move onto it (a capture) is made.
+function _tutPieceOK(piece) {
+    const step = _tutStep();
+    if (!step || !step.seq) return true;
+    const g = piece.game, it = _tutCur(g, step);
+    if (!it) return false;                       // step complete: Black is about to reply
+    const who = _tutWho(g, it);
+    if (who.includes(piece)) return true;
+    const dest = _tutDest(g, it);
+    return !!(dest && piece.currentTile === dest && who.includes(g.selectedPiece));
+}
+// Point at what the script wants instead.
+function _tutFlashExpected(game) {
+    const it = _tutCur(game);
+    if (!it) return;
+    if (it.end) { _tutNudge(); return; }
+    game._mustFlashUntil = 0;                    // a refused tap always answers
+    _flashPieces(game, _tutWho(game, it));
+}
+// The current item's target, ringed from the moment it becomes current -- the
+// step text says "the highlighted tile", so it must be highlighted before the
+// player has touched anything. Redrawn only when the item changes (polled).
+function _tutClearMarks() {
+    (_tut.marks || []).forEach(o => { try { o.destroy(); } catch (e) {} });
+    _tut.marks = []; _tut.markKey = null;
+}
+function _tutUpdateMarks() {
+    const game = _setupGame(), step = _tutStep();
+    const it = (game && step && !_tut.busy) ? _tutCur(game, step) : null;
+    const key = it ? _tut.step + ':' + step.seq.indexOf(it) : null;
+    if (key === _tut.markKey) return;
+    _tutClearMarks();
+    _tut.markKey = key;
+    const scene = _setupScene();
+    if (!it || !scene || !scene.add) return;
+    const ring = (x, y, r) => {
+        const o = scene.add.circle(x, y, r, 0, 0).setStrokeStyle(6, HINT_COLOR, 1).setDepth(76);
+        scene.tweens.add({ targets: o, scale: 1.16, alpha: 0.4, duration: 750,
+                           yoyo: true, repeat: -1, ease: 'Sine.easeInOut' });
+        _tut.marks.push(o);
+    };
+    const dest = _tutDest(game, it);
+    if (dest) {
+        const c = _hintTileCentre(dest);
+        const depth = (dest.outerRadius != null && dest.innerRadius != null) ? dest.outerRadius - dest.innerRadius : 80;
+        if (c) ring(c.x, c.y, Math.max(20, Math.min(62, depth * 0.42)));
+    } else if (it.save || it.block) {
+        _tutWho(game, it).forEach(p => { if (p.x != null) ring(p.x, p.y, (p.radius || PIECE_RADIUS_BASE) * 1.5); });
+    }
+}
+
 // ── hooks called from the game itself (all no-ops outside the tutorial) ──────
 function _tutMoveOK(game, piece, tile) {
     const step = _tutStep();
     if (!step) return true;
+    if (step.seq) {
+        const it = _tutCur(game, step);
+        return !!(it && it.tile && _tutWho(game, it).includes(piece) && _tutDest(game, it) === tile);
+    }
     try { return !!(step.move && step.move(game, piece, tile)); } catch (e) { return false; }
 }
 function _tutSaveOK(piece) {
     const step = _tutStep(); if (!step) return true;
+    if (step.seq) {
+        const it = _tutCur(piece.game, step);
+        return !!(it && it.save && _tutWho(piece.game, it).includes(piece));
+    }
     try { return !!(step.save && step.save(piece.game, piece)); } catch (e) { return false; }
 }
 function _tutBlockSaveOK(piece) {
     const step = _tutStep(); if (!step) return true;
+    if (step.seq) {
+        const it = _tutCur(piece.game, step);
+        return !!(it && it.block && _tutWho(piece.game, it).includes(piece));
+    }
     try { return !!(step.blockSave && step.blockSave(piece.game, piece)); } catch (e) { return false; }
 }
 function _tutFilterReach(game, piece, r) {
@@ -3421,8 +3515,13 @@ function _tutFilterReach(game, piece, r) {
 // the player ended it (and only where the step asks them to).
 function _tutTurnEnd() {
     const step = _tutStep();
-    if (step && step.allowEndTurn) _tut.turnEnded = true;
-    else _tutNudge();
+    if (step && step.allowEndTurn) {
+        // Only once the script has reached its `end` item: ending the turn with
+        // the save still to make points at the piece instead (owner).
+        const g = _setupGame(), it = g && _tutCur(g, step);
+        if (it && !it.end) { _tutFlashExpected(g); _tutNudge(); return; }
+        _tut.turnEnded = true;
+    } else _tutNudge();
 }
 // The instruction bubble would otherwise sit on top of the bottom of the board
 // (goals 2 and 4 live down there, and most of the second half of the script
@@ -3646,7 +3745,7 @@ const _tutSteps = [
         dice: [5, 3],
         pos: { white: { rack: [7, 8, 6, 9, 10, 11, 12, 1, 2, 3, 4, 5] },
                black: { rack: [5, 7, 8, 9, 10, 11, 12, 1, 2, 3, 4, 6] } },
-        move: (g, p, t) => p.player === 'white' && (_at(t, 5, 6) || _at(t, 3, 10)),
+        seq: [_tutMoveTo(7, g => _tutTile(g, 5, 6)), _tutMoveTo(8, g => _tutTile(g, 3, 10))],
         done: g => !!_tutTile(g, 5, 6).pieces.length && !!_tutTile(g, 3, 10).pieces.length,
         black: [{ n: 5, to: [4, 6] }],
     },
@@ -3656,7 +3755,7 @@ const _tutSteps = [
         dice: [3, 4],
         pos: { white: { board: [[7, [5, 6]], [8, [3, 10]]], rack: [6, 9, 10, 11, 12, 1, 2, 3, 4, 5] },
                black: { board: [[5, [4, 6]]], rack: [7, 8, 9, 10, 11, 12, 1, 2, 3, 4, 6] } },
-        move: (g, p, t) => p.player === 'white' && p.number === 6 && _at(t, 7, 10),
+        seq: [_tutMoveTo(6, g => _tutGoal(g, 6))],
         done: g => _tutPiece(g, 'white', 6).currentTile === _tutGoal(g, 6),
         black: [{ n: 7, to: [5, 10] }],
     },
@@ -3666,8 +3765,7 @@ const _tutSteps = [
         dice: [4, 2],
         pos: { white: { board: [[7, [5, 6]], [8, [3, 10]], [6, [7, 10]]], rack: [9, 10, 11, 12, 1, 2, 3, 4, 5] },
                black: { board: [[5, [4, 6]], [7, [5, 10]]], rack: [8, 9, 10, 11, 12, 1, 2, 3, 4, 6] } },
-        move: (g, p, t) => p.player === 'white' &&
-            ((_tutIsFrontRack(g, p) && _at(t, 4, 6)) || (p.number === 8 && _at(t, 5, 10))),
+        seq: [_tutMoveTo(9, g => _tutTile(g, 4, 6)), _tutMoveTo(8, g => _tutTile(g, 5, 10))],
         done: g => _tutHub(g).pieces.filter(p => p.player === 'black').length === 2,
         black: [{ n: 5, to: [4, 4] }, { n: 7, to: [2, 2] }],
     },
@@ -3677,7 +3775,7 @@ const _tutSteps = [
         dice: [3, 2],
         pos: { white: { board: [[7, [5, 6]], [8, [5, 10]], [9, [4, 6]], [6, [7, 10]]], rack: [10, 11, 12, 1, 2, 3, 4, 5] },
                black: { board: [[5, [4, 4]], [7, [2, 2]]], rack: [8, 9, 10, 11, 12, 1, 2, 3, 4, 6] } },
-        move: (g, p, t) => p.player === 'white' && _tutIsFrontRack(g, p) && _at(t, 5, 6),
+        seq: [_tutMoveTo(10, g => _tutTile(g, 5, 6))],
         done: g => _tutTile(g, 5, 6).pieces.filter(p => p.player === 'white').length >= 2,
     },
     {
@@ -3690,7 +3788,7 @@ const _tutSteps = [
                         saved: [5, 7, 8, 9] },
                black: { board: [[8, [5, 2]], [9, [4, 2]], [10, [5, 21]], [11, [5, 22]]].concat(_TUT_BLACK_MID),
                         saved: [4, 5, 6] } },
-        save: (g, p) => p.player === 'white' && (p.number === 6 || p.number === 10),
+        seq: [_tutSaveOf(6), _tutSaveOf(10)],
         done: g => _tutSavedCount(g, 'white') >= 6,
         black: [{ n: 9, to: [6, 2] }, { n: 8, to: [6, 2] }],
     },
@@ -3702,7 +3800,7 @@ const _tutSteps = [
                         saved: [5, 6, 7, 8, 9, 10] },
                black: { board: [[8, [6, 2]], [9, [6, 2]], [10, [5, 21]], [11, [5, 22]]].concat(_TUT_BLACK_MID),
                         saved: [4, 5, 6] } },
-        move: (g, p, t) => p.player === 'white' && p.number === 4 && _at(t, 7, 2),
+        seq: [_tutMoveTo(4, g => _tutGoal(g, 4))],
         done: g => _tutPiece(g, 'white', 4).currentTile === _tutGoal(g, 4),
         black: [{ n: 10, to: [6, 4] }, { n: 11, to: [6, 4] }],
     },
@@ -3714,7 +3812,8 @@ const _tutSteps = [
                         saved: [5, 6, 7, 8, 9, 10] },
                black: { board: [[8, [6, 2]], [9, [6, 2]], [10, [6, 4]], [11, [6, 4]]].concat(_TUT_BLACK_MID),
                         saved: [4, 5, 6] } },
-        blockSave: (g, p) => p.player === 'black' && _at(p.currentTile, 6, 4),
+        seq: [{ who: g => _tutTile(g, 6, 4).pieces.filter(p => p.player === 'black'), block: true,
+                done: g => _tutSavedCount(g, 'black') >= 4 }],
         done: g => _tutSavedCount(g, 'black') >= 4,
     },
     {
@@ -3726,8 +3825,10 @@ const _tutSteps = [
                         saved: [1, 3, 4, 5, 6, 7, 8, 9, 10] },
                black: { board: [[1, [6, 4]], [2, [6, 4]], [3, [3, 10]], [7, [2, 9]]],
                         saved: [4, 5, 6, 8, 9, 10, 11, 12] } },
-        move: (g, p, t) => p.player === 'white' && p.number === 12 && _at(t, 7, 8),
-        save: (g, p) => p.player === 'white' && p.number > 6 && _at(p.currentTile, 7, 8),
+        // Either blank on goal 3 may go: they are interchangeable.
+        seq: [_tutMoveTo(12, g => _tutGoal(g, 3)),
+              { who: g => _tutGoal(g, 3).pieces.filter(p => p.player === 'white' && p.number > 6), save: true,
+                done: g => _tutSavedCount(g, 'white') >= 10 }],
         done: g => _tutSavedCount(g, 'white') >= 10,
         black: [{ n: 3, to: [3, 9] }],
     },
@@ -3739,7 +3840,7 @@ const _tutSteps = [
                         saved: [1, 3, 4, 5, 6, 7, 8, 9, 10, 12] },
                black: { board: [[1, [6, 4]], [2, [6, 4]], [3, [3, 9]], [7, [2, 9]]],
                         saved: [4, 5, 6, 8, 9, 10, 11, 12] } },
-        save: (g, p) => p.player === 'white' && p.number > 6 && _at(p.currentTile, 7, 8),
+        seq: [_tutSaveOf(11), { end: true, done: () => _tut.turnEnded }],
         allowEndTurn: true,
         done: g => _tutSavedCount(g, 'white') >= 11 && _tut.turnEnded,
         black: [{ n: 7, to: [2, 10] }],
@@ -3756,7 +3857,8 @@ const _tutSteps = [
             g.applyLastPieceRule();
             if (two && two.number !== 2) two._tutNumber = 2;   // see _tutRestoreNumbers
         },
-        save: (g, p) => p.player === 'white' && !!p.currentTile && p.currentTile.type === 'save',
+        seq: [{ who: g => _tutGoal(g, 2).pieces.filter(p => p.player === 'white'), save: true,
+                done: g => _tutSavedCount(g, 'white') >= 12 }],
         done: g => _tutSavedCount(g, 'white') >= 12,
     },
     {
@@ -3927,6 +4029,7 @@ function _tutRender() {
     // Back makes possible mid-reply.
     _tut.gen++;
     _tut.busy = false;
+    _tutClearMarks();
     if (step.pos) {
         _tutApply(game, step.pos);
         _tutSetDice(game, step.dice[0], step.dice[1]);
@@ -4013,7 +4116,9 @@ function _tutPlayBlack(game, moves, cb) {
     setTimeout(next, 300);
 }
 function _tutPoll() {
-    if (!_tut.active || _tut.busy) return;
+    if (!_tut.active) return;
+    _tutUpdateMarks();
+    if (_tut.busy) return;
     const game = _setupGame(); if (!game) return;
     const step = _tutSteps[_tut.step];
     let ok = false;
@@ -4021,6 +4126,7 @@ function _tutPoll() {
     if (!ok) return;
     _tut.busy = true;
     _tutNote('<span style="color:#3a9e6a; font-weight:700; font-size:14px;">✓ Nice!</span>');
+    _tutUpdateMarks();                             // busy now: the ring goes
     const gen = _tut.gen;
     setTimeout(() => {
         if (!_tut.active || _tut.gen !== gen) return;
@@ -4099,6 +4205,7 @@ function _tutFinish(position) {
 }
 function _tutEnd(startGame) {
     _tutDemoStop();
+    _tutClearMarks();
     _tut.active = false; window._tutorialActive = false;
     _tut.busy = false;
     clearInterval(_tut.timer); _tut.timer = null;
@@ -5573,6 +5680,8 @@ class Piece {
         if (this.game.gameOver) return; 
         if (_inputLocked(this.game)) return;   // the computer is to move
         if (this.game.dice[0].used && this.game.dice[1].used) return;
+        // The tutorial's script names the piece; any other points at it instead.
+        if (_tut.active && !_tutPieceOK(this)) { _tutFlashExpected(this.game); return; }
 
 
 
@@ -5821,6 +5930,7 @@ class Piece {
         // Reachable without handleClick (the stack picker's opponent chips call
         // it straight, for the block-save gesture), so it needs its own guard.
         if (_inputLocked(this.game)) return;
+        if (_tut.active && !_tutPieceOK(this)) { _tutFlashExpected(this.game); return; }
         // cancel any pending (deferred) destination highlight from the first click
         // and clear highlights so a double-click save shows no destination flash.
         clearTimeout(this._hlTimer);

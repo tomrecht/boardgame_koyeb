@@ -259,6 +259,30 @@ with it in mind.** Assessment and the concrete implications:
 
 ## Current state
 
+- **THE TUTORIAL SCRIPT IS ORDERED AND ONLY ITS PIECE IS SELECTABLE (owner,
+  2026-09-30).** Each step with moves has a `seq`: the exact sequence -- which
+  piece, and a `tile` / `save` / `block` / `end` (end turn). The CURRENT item is
+  the first whose `done(g)` is false, DERIVED from the board every time (so undo
+  walks it back -- measured). `_tutPieceOK` gates `Piece.handleClick` and
+  `handleDoubleClick`: only the item's piece, or, with it selected, whatever
+  stands on its destination (tapping an enemy piece there is how a capture is
+  made). A refused tap flashes the right piece (`_flashPieces`, the must-move
+  amber, now shared); ending the turn in step 10 before the save flashes the piece
+  and does not end it. `_tutMoveOK` / `_tutSaveOK` / `_tutBlockSaveOK` answer from
+  the current item, so moves happen ONLY in order, and the second rack piece can no
+  longer be brought out first (it is simply not the piece named). The destination
+  is ringed (hint violet) from the moment its item becomes current -- step 2's
+  "highlighted tile" is highlighted before anything is touched -- redrawn by the
+  300ms poll when the item changes, gone during "✓ Nice!".
+  The old per-step `move`/`save`/`blockSave` predicates are gone from every step;
+  the fallbacks in the three hooks remain for a step with no `seq`.
+  Measured, desktop AND `?phone=1`, the whole tutorial played through the real
+  handlers trying the wrong thing first at every step: every wrong tap refused and
+  flashed (second rack piece in steps 2/3/4/5, the piece already moved, the 10 before
+  the 6, the white 2 during the block-save, 11 before 12 moves, end turn before the
+  save), exactly one lit destination per move, both captures (one made by tapping
+  the enemy piece), and it reaches "You win!".
+
 - **THE ENGINES DISAGREED ABOUT THE RACK ENTRY (owner's question, 2026-09-30).**
   The rule: at least one rack piece enters each turn, unless a captured piece is
   waiting, in which case THAT comes out and the other die is free -- the entry may
