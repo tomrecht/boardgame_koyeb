@@ -311,6 +311,12 @@ with it in mind.** Assessment and the concrete implications:
   `applyMovePair`'s branch -- the same pair the recorder needed) append to
   `game._captureLog` / `game._blockSaveLog`. A baseline is taken the first time a
   game is seen and nothing fires for what was already true then.
+  Measured: a fresh profile seeds `ruleTips=1` and the opening tip appears on the
+  human's first turn (after the computer opened); with `ruleTips=0` nothing in 25s
+  in the same state. A full self-play game with the scan fed a proxy that reads
+  white as human fired **9 of 10** -- opening, capture, captured, wall, enemy wall,
+  saving, block-saved, block-save, endgame; last-piece did not arise (white lost
+  10-12) -- and on game over `ruleTips` went to 0 and the Settings box unticked.
   **Harness note:** the CodeGPT extension is now **3.24.75** -- update the
   `createRequire` path. And headless Chrome's canvas lags the DOM by seconds, so a
   screenshot of an animation must FREEZE it (clear the timers, wait ~2.5s) first.
