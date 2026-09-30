@@ -271,8 +271,11 @@ with it in mind.** Assessment and the concrete implications:
   and does not end it. `_tutMoveOK` / `_tutSaveOK` / `_tutBlockSaveOK` answer from
   the current item, so moves happen ONLY in order, and the second rack piece can no
   longer be brought out first (it is simply not the piece named). The destination
-  TILE IS FILLED (pale violet, `TUT_TARGET_FILL`, via `tile._tutTarget` in
-  `drawTile`, beneath any pieces on it) from the moment its item becomes current --
+  TILE IS FILLED in the colour its move will light up once the piece is selected
+  -- the die that reaches it, or the sum yellow, read from the mover's own
+  `getReachableTilesByDice` (owner: why a new colour?); pale violet
+  `TUT_TARGET_FILL` only if no die can be named. Via `tile._tutTarget` /
+  `_tutTargetColor` in `drawTile`, beneath any pieces on it from the moment its item becomes current --
   step 2's "highlighted tile" is highlighted before anything is touched. **Not a
   ring: owner found a ring read as "this is the piece to move".** Only a save or
   block-save -- where the thing to act on IS a piece -- rings the piece. Redrawn by
@@ -329,7 +332,8 @@ with it in mind.** Assessment and the concrete implications:
   slides carry it) -- they were in the first cut. **The card sits ON THE BOARD and
   shows ONE SENTENCE AT A TIME** (owner: following the moves and a paragraph at once
   was too much): `step.beats`, each replacing the last with a fade as its leg plays
-  (measured 0 / 2.8 / 4.9 / 7.9 / 10.1s, loop 13.6s), text height held at the
+  (paced for slow readers, measured 0 / 4.2 / 7.7 / 12.2 / 15.7s, loop 19.9s; no
+  saved-rack rings any more), card 520 wide / 19px text, text height held at the
   tallest beat so the card never resizes. `_tutPlaceIntro` grid-searches the
   viewport (12px) for the spot nearest "just above the home tile" that covers none
   of the demo path, the home tile or the four rack panels. Measured: desktop above

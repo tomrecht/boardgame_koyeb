@@ -3453,7 +3453,7 @@ function _tutFlashExpected(game) {
 // A ring reads as "this piece" (owner, 2026-09-30), so a MOVE's target is shown by
 // filling the tile itself; only a save or block-save -- where the thing to act on
 // IS a piece -- gets a ring.
-const TUT_TARGET_FILL = 0xd6c8f5;     // pale HINT_COLOR violet
+const TUT_TARGET_FILL = 0xd6c8f5;     // pale violet: only if no die can be named
 function _tutClearMarks() {
     (_tut.marks || []).forEach(o => { try { o.destroy(); } catch (e) {} });
     _tut.marks = []; _tut.markKey = null;
@@ -3476,6 +3476,18 @@ function _tutUpdateMarks() {
     };
     const dest = _tutDest(game, it);
     if (dest) {
+        // In the colour the move will light up once the piece is selected --
+        // the die that reaches it, or the sum (owner) -- so the highlight the
+        // player then sees is the same one, not a new colour.
+        const mover = _tutWho(game, it)[0];
+        let col = null;
+        try {
+            const r = mover && game.getReachableTilesByDice(mover);
+            if (r) col = r.reachableByFirstDie.includes(dest) ? colorFirstDie
+                       : r.reachableBySecondDie.includes(dest) ? colorSecondDie
+                       : r.reachableBySum.includes(dest) ? colorSum : null;
+        } catch (e) { col = null; }
+        dest._tutTargetColor = col;
         dest._tutTarget = true; dest.drawTile(); _tut.markTile = dest;
     } else if (it.save || it.block) {
         _tutWho(game, it).forEach(p => { if (p.x != null) ring(p.x, p.y, (p.radius || PIECE_RADIUS_BASE) * 1.5); });
@@ -3573,7 +3585,7 @@ function _tutPlaceIntro() {
     const ins = _isPhone() ? _safeInsets() : _SAFE_ZERO;
     const W = window.innerWidth, H = window.innerHeight, k = c.k;
     const compact = _tutIntroCompact();
-    const width = Math.round(Math.max(220, Math.min(compact ? 440 : 400, W - 32 - ins.left - ins.right)));
+    const width = Math.round(Math.max(220, Math.min(compact ? 440 : 520, W - 32 - ins.left - ins.right)));
     b.style.width = width + 'px';
     b.style.padding = compact ? '10px 14px' : '15px 18px';   // '' would drop the card's own padding
     b.style.maxHeight = 'none'; b.style.bottom = 'auto'; b.style.right = 'auto';
@@ -3823,7 +3835,7 @@ const _tutSteps = [
         // last as its leg of the demo plays; see _tutBeat and _tutPlaceIntro.
         beats: ['Quahuru is a race: the first to <b>save all twelve pieces</b> wins.',
                 'Each piece starts on your rack and comes out through the <b>home tile</b> in the centre…',
-                '…travels out along a spoke — landing on a lone enemy piece <b>captures</b> it, sending it back home…',
+                '…travels out onto the board, where it can <b>capture</b> enemy pieces on the way…',
                 '…reaches a <b>goal</b> on the rim…',
                 '…and is <b>saved</b> off it into your saved rack.'],
         text: '',
@@ -4044,21 +4056,19 @@ function _tutDemoStart(game) {
         at(t0, () => { _tutDemoClear(); _tutBeat(beat); });
         at(t0 + 450, () => _tutSlide(scene, piece, place, 900));
     };
-    at(0, () => {
-        _tutBeat(0);
-        [saved, _tutRack(game, 'black', 'saved')].forEach(r =>
-            _tutDemoRing(scene, r.nextX(), r.nextY(), (piece.radius || PIECE_RADIUS_BASE) * 1.6));
-    });
-    leg(2600, 1, () => _setupPlaceOnTile(piece, home));
-    leg(4700, 2, () => _setupPlaceOnTile(piece, mid));
-    at(6300, () => {                                   // the capture
+    // Paced for a slow reader (owner, 2026-09-30: "a second or two between
+    // clauses"): each sentence gets ~3.5s, the capture sentence -- the longest --
+    // 4.5s. No saved-rack rings at the start any more (owner).
+    at(0, () => _tutBeat(0));
+    leg(4000, 1, () => _setupPlaceOnTile(piece, home));
+    leg(7500, 2, () => _setupPlaceOnTile(piece, mid));
+    at(9300, () => {                                   // the capture
         fxBurst(scene, enemy.x, enemy.y, 0xff5555);
         _tutSlide(scene, enemy, () => _setupPlaceOnTile(enemy, home), 650);
     });
-    leg(7700, 3, () => _setupPlaceOnTile(piece, goal));
-    leg(9900, 4, () => _setupPlaceInRack(piece, saved, false));
-    at(12200, () => _tutBeat(-1));
-    at(13200, () => {                                  // reset and go round again
+    leg(12000, 3, () => _setupPlaceOnTile(piece, goal));
+    leg(15500, 4, () => _setupPlaceInRack(piece, saved, false));
+    at(19500, () => {                                  // reset and go round again
         _tutDemo.tweens.forEach(t => { try { t.stop(); } catch (e) {} }); _tutDemo.tweens = [];
         _tutDemoClear();
         _tutApply(game, step.pos);
@@ -4095,13 +4105,13 @@ function _tutStepHtml(step, idx) {
     }
     return '<div style="font-size:12px; letter-spacing:.04em; text-transform:uppercase; color:#8b95a3; margin-bottom:3px;">' +
             'Tutorial · Step ' + (idx + 1) + ' of ' + _tutSteps.length + '</div>' +
-        '<div style="font-weight:700; font-size:17px; margin-bottom:5px;">' + step.title + '</div>' +
+        '<div style="font-weight:700; font-size:' + (step.intro ? 20 : 17) + 'px; margin-bottom:5px;">' + step.title + '</div>' +
         // The TEXT scrolls, not the card: with the card scrolling as a whole,
         // Exit/Skip sit at the end of the flex column and go below the fold on
         // any step taller than the cap -- which on a portrait phone is all of
         // them. min-height:0 is what lets a flex child shrink enough to scroll.
         (step.intro
-            ? '<div id="tutText" style="font-family:' + BODY_FONT + '; font-size:16.5px; line-height:1.5;' +
+            ? '<div id="tutText" style="font-family:' + BODY_FONT + '; font-size:19px; line-height:1.45;' +
                   'color:#28313b; transition:opacity .18s; flex:1 1 auto;">' + step.beats[0] + '</div>'
             : '<div id="tutText" style="font-family:' + BODY_FONT + '; font-size:14.5px; line-height:1.5;' +
                   'color:#33404b; overflow-y:auto; min-height:0; flex:1 1 auto;">' + step.text + '</div>') +
@@ -7143,7 +7153,7 @@ class Tile {
         // The tutorial's target tile (_tutTarget) is filled whenever nothing else
         // is overriding it -- a selected piece's destination colours still win.
         const over = this._fillOverride != null ? this._fillOverride
-                   : (this._tutTarget ? TUT_TARGET_FILL : null);
+                   : (this._tutTarget ? (this._tutTargetColor != null ? this._tutTargetColor : TUT_TARGET_FILL) : null);
         if (!baking && this.game && this.game._boardBaked && over == null) return;
         this.graphics.lineStyle(1.7, this.lineColor, 1);
         this.graphics.fillStyle(!baking && over != null ? over : this.fillColor, 1);
