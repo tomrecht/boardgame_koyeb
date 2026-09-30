@@ -1933,15 +1933,58 @@ function flashNotice(text, ms = 2400, tag = null) {
             // stranding the last word or two on a line of their own.
             'max-width:min(560px, 92vw); text-align:center; line-height:1.35;' +
             'text-wrap:balance;' +
-            'border:1px solid rgba(0,0,0,.10);' +
-            'opacity:0; transition:opacity .2s;';
+            'border:1px solid rgba(0,0,0,.10); box-sizing:border-box;' +
+            'opacity:0; transition:opacity .2s, transform .2s;';
+        el.innerHTML = '<span class="fnText"></span>' +
+            '<span class="fnX" aria-label="Dismiss" style="position:absolute; top:6px; right:8px;' +
+            ' width:22px; height:22px; line-height:21px; border-radius:11px; font-size:16px; font-weight:700;' +
+            ' color:#8b95a3; background:rgba(0,0,0,.06); cursor:pointer;">×</span>';
+        // ADVICE CAN BE WAVED AWAY (owner, 2026-09-30): a tap anywhere on it, the
+        // ×, or a swipe in any direction. Only advice notices take the pointer at
+        // all (see below), so a status message never blocks the board.
+        let down = null;
+        el.addEventListener('pointerdown', e => { down = { x: e.clientX, y: e.clientY }; e.stopPropagation(); });
+        el.addEventListener('pointerup', e => {
+            if (!down) return;
+            const dx = e.clientX - down.x, dy = e.clientY - down.y;
+            down = null; e.stopPropagation();
+            _dismissNotice(Math.abs(dx) > 30 || Math.abs(dy) > 30 ? { dx, dy } : null);
+        });
         document.body.appendChild(el);
     }
-    el.textContent = text;
+    el.querySelector('.fnText').textContent = text;
     el.dataset.tag = tag || '';
+    // Advice ('move': why a move was refused, the hint's suggestion; 'tip': the
+    // rule tips and the hint nudge) is dismissible and gets the ×; a status
+    // message ("White passed", "Getting the computer ready") stays hands-off.
+    const advice = tag === 'move' || tag === 'tip';
+    el.querySelector('.fnX').style.display = advice ? 'block' : 'none';
+    el.style.padding = advice ? '11px 36px 11px 20px' : '11px 20px';
+    el.style.pointerEvents = advice ? 'auto' : 'none';
+    el.style.transform = 'translateX(-50%)';
     el.style.opacity = '1';
     clearTimeout(el._t);
-    el._t = setTimeout(() => { el.style.opacity = '0'; }, ms);
+    el._t = setTimeout(() => { el.style.opacity = '0'; el.style.pointerEvents = 'none'; }, ms);
+}
+// Hide the notice now, sliding it off in the swipe's direction if there was one.
+function _dismissNotice(swipe) {
+    const el = document.getElementById('flashNotice');
+    if (!el || el.style.opacity === '0') return;
+    clearTimeout(el._t);
+    if (swipe) el.style.transform = 'translate(calc(-50% + ' + Math.sign(swipe.dx) * 60 * (Math.abs(swipe.dx) > Math.abs(swipe.dy) ? 1 : 0) +
+                                    'px), ' + Math.sign(swipe.dy) * 40 * (Math.abs(swipe.dy) >= Math.abs(swipe.dx) ? 1 : 0) + 'px)';
+    el.style.opacity = '0';
+    el.style.pointerEvents = 'none';
+    if (el.dataset.tag === 'tip' && typeof _tips !== 'undefined') _tips.busyUntil = Date.now() + 800;
+}
+// The player has shown they are ready to move -- tapped one of their own pieces,
+// moved, or ended the turn -- so advice on screen has done its job (owner). Only a
+// HUMAN's action counts: the computer moving must not sweep a tip away unread.
+function _dismissAdvice(game) {
+    const el = document.getElementById('flashNotice');
+    if (!el || (el.dataset.tag !== 'tip' && el.dataset.tag !== 'move')) return;
+    if (game && game.currentPlayerIsHuman && !game.currentPlayerIsHuman()) return;
+    _dismissNotice(null);
 }
 // A MOVE MAKES ITS OWN EXPLANATION STALE (owner, 2026-09-25): "that tile is 7
 // steps away" is an answer to a move that did NOT happen, so once one does it is
@@ -1950,9 +1993,10 @@ function flashNotice(text, ms = 2400, tag = null) {
 // retrying, a pass, a graphics warning) keeps its full dwell.
 function _clearMoveNotice() {
     const el = document.getElementById('flashNotice');
-    if (!el || el.dataset.tag !== 'move') return;
-    clearTimeout(el._t);
-    el.style.opacity = '0';
+    if (!el) return;
+    if (el.dataset.tag === 'move') { _dismissNotice(null); return; }
+    // A rule tip or the hint nudge goes too, but only when a human moved.
+    if (el.dataset.tag === 'tip') _dismissAdvice(_currentGame());
 }
 
 // ── KEYBOARD SHORTCUTS ──────────────────────────────────────────────────
@@ -2800,7 +2844,11 @@ function createHintButton() {
 // under the panel, and the tutorial hides the chrome from more than one place.
 function refreshHintButton() {
     const btn = document.getElementById('hintBtn'); if (!btn) return;
-    const show = getHintsEnabled() && !_tut.active && !window.setupMode;
+    // Not over the end-of-game / end-of-match card (owner, 2026-09-30): there is
+    // no move to hint. _hintTick re-derives this, so it comes back with the game.
+    const sm = (typeof gameInstance !== 'undefined') && gameInstance && gameInstance.scene;
+    const endCard = !!(sm && sm.isActive && sm.isActive('EndGameScene'));
+    const show = getHintsEnabled() && !_tut.active && !window.setupMode && !endCard;
     btn.style.display = show ? 'flex' : 'none';
     _placeHintButton(btn);
 }
@@ -2839,7 +2887,7 @@ function _maybeNudgeHint() {
     const btn = document.getElementById('hintBtn');
     if (!btn || btn.style.display === 'none') return;   // nothing to point at yet
     _hintNudgePending = false;
-    flashNotice('Hints are on for this game — tap Hint, bottom right, for a suggested move whenever you want one.', 8000);
+    flashNotice('Hints are on for this game — tap Hint, bottom right, for a suggested move whenever you want one.', 8000, 'tip');
     _tips.busyUntil = Date.now() + 8400;   // a rule tip must not overwrite it
 }
 
@@ -2993,6 +3041,7 @@ function _ruleTipScan(g) {
 }
 function _hintTick() {
     if (_hintNudgePending) _maybeNudgeHint();
+    refreshHintButton();
     if (!_hint.objs.length) return;
     const game = _currentGame();
     if (!game || _hintSig(game) !== _hint.sig) clearHint();
@@ -5858,6 +5907,7 @@ class Piece {
         if (this.game.dice[0].used && this.game.dice[1].used) return;
         // The tutorial's script names the piece; any other points at it instead.
         if (_tut.active && !_tutPieceOK(this)) { _tutFlashExpected(this.game); return; }
+        if (this.player === this.game.turn) _dismissAdvice(this.game);   // ready to move
 
 
 
@@ -8692,6 +8742,7 @@ switchTurn() {
         // The tutorial script owns the dice and the turn order: never roll, never
         // record, never hand over. The step's success poll advances instead.
         if (_tut.active) { _tutTurnEnd(); return; }
+        _dismissAdvice(this);                 // a human ending the turn is done reading
         const justFinished = this.turn;
         const playerObj = this.players.find(p => p.name === justFinished);
         const source = playerObj.isAI ? 'heuristic' : 'human';

@@ -259,6 +259,22 @@ with it in mind.** Assessment and the concrete implications:
 
 ## Current state
 
+- **ADVICE NOTICES CAN BE WAVED AWAY, AND GO WHEN YOU ACT (owner, 2026-09-30).**
+  A notice tagged `'tip'` (rule tips, the hint nudge) or `'move'` (why a move was
+  refused, the hint's suggestion) now takes the pointer and shows an ×: a tap
+  anywhere on it, the ×, or a swipe dismisses it (`_dismissNotice`, sliding off
+  in the swipe's direction). It also goes when a HUMAN shows they are ready --
+  taps one of their own pieces (`handleClick`), moves (`_clearMoveNotice` at the
+  commit points), or ends the turn (`switchTurn`) -- via `_dismissAdvice`, which
+  does nothing on the computer's turn so a tip is never swept away unread. An
+  untagged STATUS notice ("White passed", "Getting the computer ready") keeps
+  `pointer-events:none`, no ×, and its full dwell. Dismissing a tip lets the next
+  queued one follow 800ms later. Measured, each path: ×, swipe, own-piece tap, end
+  turn all dismiss; the computer's move does not; a status notice survives an
+  own-piece tap. **The hint lamp is hidden while the end card (`EndGameScene`) is
+  up** -- `refreshHintButton` checks it and `_hintTick` re-derives it every 250ms,
+  so it returns with the next game (measured: flex -> none on the card -> flex).
+
 - **TUTORIAL POLISH (owner, 2026-09-30).** (1) **Desktop text 14.5 -> 16px, title
   17 -> 18.5px**, phones unchanged -- and the desktop card widened 640 -> 760 so
   the TALLEST step (which fixes the board's size for all steps) got SHORTER, 227 ->
