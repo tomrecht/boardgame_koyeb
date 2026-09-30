@@ -5591,6 +5591,9 @@ class Piece {
         }
         if (this.rack && this.rack.type === 'unentered' && !_isEntrant(this)) return;
         if (!this.game.canSelectForMove(this)) return false;
+        // The tutorial's script names the piece; hovering any other must not
+        // suggest it can be picked (owner: the second rack piece lit up).
+        if (_tut.active && !_tutPieceOK(this)) return;
         // A touch screen has no hover: a finger that leaves often sends no
         // pointerout at all, so setting this would strand the highlight on.
         if (_isPhone()) return;
