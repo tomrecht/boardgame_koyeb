@@ -267,19 +267,32 @@ with it in mind.** Assessment and the concrete implications:
   opponent -- were not taken up).
   **1. A NO-MOVE INTRO STEP, "What you're playing for"** (`intro: true`, now step 1
   of 12). It plays one white piece's whole life ON A LOOP with the real pieces:
-  rings on both saved racks -> arrow + slide rack -> home -> arrow + slide out to
-  4,6, CAPTURING Black's lone 5 there (sent home with the capture burst) -> goal 5
-  -> saved rack -> reset, ~13.6s a loop. Each clause of the card text is a
+  rings on both saved racks -> slide rack -> home -> slide out to 4,6, CAPTURING
+  Black's lone 5 there (sent home with the capture burst) -> goal 5 -> saved rack
+  -> reset, ~13.2s a loop. **No arrows** (owner: "too low-tech"; the slow 900ms
+  slides carry it) -- they were in the first cut. Each clause of the card text is a
   `data-beat` span lit in step with its leg. Button reads **Start ->**, and the
   intro LOCKS INPUT (`_inputLocked` returns true for an intro step; every other
   tutorial step stays exempt) because the demo is moving the pieces a tap would
   pick up. `_tutDemo.run` is a generation counter: every timer checks it, so
   `_tutDemoStop` (called from `_tutRender` and `_tutEnd`) is just a bump.
-  **ARROWS START FROM THE PIECE'S RESTING POINT (`piece._tutAt`), NOT piece.x.**
   Phaser advances tweens by capped frame deltas, so on a slow frame rate a slide is
-  still under way when the next leg begins; measured headless, the home->spoke
-  arrow started back at the RACK. A new slide also snaps any unfinished one.
-  Measured: legs in order (rack/home/4,6 with black 5 home/goal5/saved/reset),
+  still under way when the next leg begins (measured headless); a new slide stops
+  any unfinished one on that piece first.
+  **BACK BUTTONS (owner, 2026-09-30)** on every step after the first, including
+  the closing panel. Every step lays out its own position, so Back is just
+  `_tutRender` of the earlier step -- with two catches. (a) `_tut.gen` is bumped on
+  every render and checked by the "✓ Nice!" pause and Black's scripted reply, so a
+  reply belonging to the step being left cannot fire into the one arrived at.
+  (b) **The last-piece step BLANKS white's 2** (number -> 13, label destroyed), so
+  every earlier position would be laid out a piece short; the step records
+  `_tutNumber` and `_tutApply` restores it via `Piece._makeNumberText` (split out
+  of `drawPiece` for this). On a landscape phone Back is a bare "←": the card is
+  ~240px and Exit + "← Back" + Skip measured 225px against a 204px row and wrapped.
+  Measured: forward to the end then Back x11 -- 24 pieces at every step, the 2
+  numbered with its label from "Some dice do nothing" down, no Back on step 1;
+  Back during "✓ Nice!" and 3.5s later still on the earlier step.
+  Measured (intro): legs in order (rack/home/4,6 with black 5 home/goal5/saved/reset),
   clause lit per leg, a tap during the intro selects nothing, **Start pressed
   MID-DEMO** (piece out, black captured) lays the next step out clean and its move
   still works (lit 3,10 + 5,6, piece lands on 5,6, one die spent).
@@ -305,6 +318,14 @@ with it in mind.** Assessment and the concrete implications:
   computer" / the colour. Seven ids (`opening capture wall saving endgame
   last-piece block-save`), each fired once ever (`ruleTipsSeen`); tips queue
   rather than overwrite each other and wait out the hint nudge.
+  **Block-save wording says "thins", not "breaks" (owner):** saving one piece off
+  a wall of THREE leaves a wall, so every block-save text (tip, hint, How to Play)
+  now says a wall of TWO becomes a single piece.
+  **Double-click-to-goal now explains a waiting captured piece** ("A captured piece
+  has to come back out first ...") -- it was another silent decline. Measured with
+  its control: same position, captured piece on home -> that notice, no move;
+  without it -> the piece goes to goal 5 on both dice. `sumToGoal` is OFF by
+  default, so a test of this path must switch it on or it never gets past line 1.
   **FIRST GAME ONLY (owner):** the setting turns ITSELF OFF when a game the tips
   were watching FINISHES; an abandoned game does not count. On for a first-ever
   visit (seeded with hints) and after the tutorial (`_tutFinish`); Settings row

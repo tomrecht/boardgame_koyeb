@@ -2939,7 +2939,7 @@ function _ruleTipScan(g) {
     // The opening rule binds both sides from the first roll, so it is said at once.
     if (phase(g.turn) === 'opening') {
         _ruleTip('opening', 'Opening: until a player’s rack is empty, one of their two moves each turn must bring ' +
-            'the front rack piece out. Saving starts once the rack is empty.');
+            'the front rack piece out, unless they have a captured piece to bring out instead. Saving starts once the rack is empty.');
     }
     (g._captureLog || []).slice(was.caps).forEach(e => {
         _ruleTip('capture', mine(e.by)
@@ -2950,10 +2950,10 @@ function _ruleTipScan(g) {
     });
     (g._blockSaveLog || []).slice(was.blocks).forEach(e => {
         _ruleTip('block-save', mine(e.by)
-            ? 'You bought a wall down: saving an enemy piece off it costs both dice and gives ' + name(e.owner) +
-              ' the point, but leaves only one piece there — which can be captured.'
+            ? 'You saved an enemy piece off a wall: it costs both dice and gives ' + name(e.owner) + ' the point, ' +
+              'but thins the wall — a wall of two becomes a single piece, which can be captured.'
             : Name(e.by) + ' spent both dice saving one of ' + poss(e.owner) + ' pieces for ' + name(e.owner) +
-              ' — that hands over the point to break a wall. The piece left behind stands alone, so it can be captured.');
+              ' — that hands over the point to thin a wall. A wall of two becomes a single piece, which can be captured.');
     });
     ['white', 'black'].forEach(c => {
         if (now.walls[c] && !was.walls[c]) {
@@ -2965,9 +2965,9 @@ function _ruleTipScan(g) {
         if (was.phase[c] === 'opening' && now.phase[c] === 'midgame') {
             _ruleTip('saving', mine(c)
                 ? 'Your rack is empty, so saving starts: a piece on a goal is saved with a die matching that goal’s ' +
-                  'number — ' + _dblWord(false) + ' it, or drag it to the saved rack. Numbered pieces only on their own goal.'
+                  'number — ' + _dblWord(false) + ' it, or drag it to the saved rack. Blank pieces can be saved from any goal, numbered pieces only from their own goal.'
                 : _cap(poss(c)) + ' rack is empty, so ' + pron(c) + ' can start saving: a piece on a goal is saved with ' +
-                  'a die matching that goal’s number, and a numbered piece only on its own goal.');
+                  'a die matching that goal’s. Blank pieces can be saved from any goal, numbered pieces only from their own goal.');
         }
         if (was.phase[c] !== 'endgame' && now.phase[c] === 'endgame') {
             _ruleTip('endgame', mine(c)
@@ -2979,8 +2979,8 @@ function _ruleTipScan(g) {
         }
         if (now.last[c] && !was.last[c]) {
             _ruleTip('last-piece', mine(c)
-                ? 'Your last piece has lost its number — it is a blank now, so it no longer has to wait for its own ' +
-                  'number to be saved.'
+                ? 'Your last piece has lost its number — with one piece left, a numbered piece on its goal becomes a ' +
+                  'blank, so it no longer has to wait for its own number.'
                 : _cap(poss(c)) + ' last piece has lost its number — with one piece left, a numbered piece on its goal ' +
                   'becomes a blank, so it no longer has to wait for its own number.');
         }
@@ -3244,7 +3244,7 @@ function _renderHint(game, pair) {
     }
     if (m[1] === 0) {
         flashNotice('Hint: ' + dbl + ' the marked enemy piece to save it for them. It costs both dice and hands '
-                    + 'them a point, but it breaks the wall.', 6500);
+                    + 'them a point, but thins the wall — a wall of two becomes a single piece.', 6500);
         return;
     }
     const tile = findTileByRingAndSector(m[1][0], m[1][1]);
@@ -3310,7 +3310,7 @@ function maybeShowFirstRunNudge() {
 // slides rather than the AI (suppressed via window._tutorialActive), and
 // switchTurn is short-circuited so the script owns the dice and the turn order.
 const _tut = { active: false, step: 0, timer: null, bubble: null,
-               turnEnded: false, busy: false, shake: null };
+               turnEnded: false, busy: false, shake: null, gen: 0 };
 
 function _tutStep() { return _tut.active ? _tutSteps[_tut.step] : null; }
 function _tutRack(game, player, kind) {
@@ -3329,9 +3329,21 @@ function _tutIsFrontRack(game, piece) {
     return piece.rack === r ? r.pieces[0] === piece : piece.justMovedHome;
 }
 
+// The last-piece step blanks white's 2 (number -> 13, label destroyed). Going BACK
+// from it to any earlier step needs the 2 again, or _tutPiece(g, 'white', 2) finds
+// nothing and the position is laid out a piece short.
+function _tutRestoreNumbers(game) {
+    game.pieces.forEach(p => {
+        if (p._tutNumber == null) return;
+        p.number = p._tutNumber; p._tutNumber = null;
+        if (!p.text && p._makeNumberText) p._makeNumberText();
+        if (p.updateColor) p.updateColor();
+    });
+}
 // Lay out a whole position from a declarative spec. board/saved/rack together
 // must name all 12 pieces per side; rack order is the order given (front first).
 function _tutApply(game, spec) {
+    _tutRestoreNumbers(game);
     game.selectedPiece = null;
     if (game.unhighlightAllTiles) game.unhighlightAllTiles();
     ['white', 'black'].forEach(pl => {
@@ -3631,7 +3643,7 @@ const _tutSteps = [
         // acts it out, and the player moves on with Start.
         title: 'What you’re playing for',
         intro: true,
-        text: '<span data-beat="0">Quahuru is a race: the first to <b>save all twelve</b> pieces wins.</span> ' +
+        text: '<span data-beat="0">Quahuru is a race: the first to <b>save all twelve pieces</b> wins.</span> ' +
               '<span data-beat="1">Each piece starts on your rack and comes out through the <b>home tile</b> in the centre,</span> ' +
               '<span data-beat="2">travels out along a spoke — landing on a lone enemy piece <b>captures</b> it, sending it back home —</span> ' +
               '<span data-beat="3">reaches a <b>goal</b> on the rim,</span> ' +
@@ -3643,7 +3655,7 @@ const _tutSteps = [
     },
     {
         title: 'Send two pieces out',
-        text: 'Nothing reaches a goal from the rack, so the opening is about getting pieces out. Send the front one out through home and spend the <b>5</b> on the highlighted tile near goal 5. Then bring a second piece out with the <b>3</b>. Pieces 1–6 each have one matching goal; blank pieces can use any.',
+        text: 'You can start saving once you’ve brought all your pieces out. Send the front one out through home and spend the <b>5</b> on the highlighted tile near goal 5. Then bring a second piece out with the <b>3</b>. Pieces 1–6 each have one matching goal; blank pieces can use any.',
         dice: [5, 3],
         pos: { white: { rack: [7, 8, 6, 9, 10, 11, 12, 1, 2, 3, 4, 5] },
                black: { rack: [5, 7, 8, 9, 10, 11, 12, 1, 2, 3, 4, 6] } },
@@ -3663,7 +3675,7 @@ const _tutSteps = [
     },
     {
         title: 'Take what’s exposed',
-        text: 'A capture costs your opponent a whole trip: a lone piece is exposed, and landing on it sends it back to the home tile to start over. Black has left two. While you still have pieces on the rack, <b>one of your two moves must be that front rack piece</b> — either order. Enter it with the <b>4</b> onto Black’s 5, and use the <b>2</b> to take the other with the piece already on the board.',
+        text: 'A lone piece is exposed, and landing on it sends it back to the home tile. Black has left two. While you still have pieces on the rack, <b>one of your two moves must be that front rack piece</b>. Enter it with the <b>4</b> onto Black’s 5, and use the <b>2</b> to take the other with the piece already on the board. Black will have to move its captured pieces back out before doing anything else.',
         dice: [4, 2],
         pos: { white: { board: [[7, [5, 6]], [8, [3, 10]], [6, [7, 10]]], rack: [9, 10, 11, 12, 1, 2, 3, 4, 5] },
                black: { board: [[5, [4, 6]], [7, [5, 10]]], rack: [8, 9, 10, 11, 12, 1, 2, 3, 4, 6] } },
@@ -3697,7 +3709,7 @@ const _tutSteps = [
     },
     {
         title: 'The long way in',
-        text: 'A wall doesn’t stop you, it makes you pay. Black has walled the tile in front of goal 4. A piece always takes the shortest route to where you send it — and your 4’s shortest route was <b>five</b> tiles, so a single 5 would have done it. Now the only way in is <b>nine</b>, round through goal 2 — and your dice sum to 9, so move your 4 to its goal.',
+        text: 'A wall doesn’t stop you, but it can make you pay. Black has walled the tile in front of goal 4. A piece always takes the shortest route to where you send it — and your 4’s shortest route was <b>five</b> tiles, so a single 5 would have done it. Now the only way in is <b>nine</b>, round through goal 2 — and your dice sum to 9, so move your 4 to its goal.',
         dice: [3, 6],
         pos: { white: { board: [[4, [3, 3]], [2, [3, 4]], [11, [5, 6]], [12, [3, 6]], [1, [3, 12]], [3, [3, 8]]],
                         saved: [5, 6, 7, 8, 9, 10] },
@@ -3752,7 +3764,11 @@ const _tutSteps = [
         pos: { white: { board: [[2, [7, 4]]], saved: [1, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12] },
                black: { board: [[1, [6, 4]], [2, [6, 4]], [3, [3, 9]], [7, [2, 10]]],
                         saved: [4, 5, 6, 8, 9, 10, 11, 12] } },
-        after: g => { g.applyLastPieceRule(); },   // phase is endgame, so the 2 turns blank
+        after: g => {                                // phase is endgame, so the 2 turns blank
+            const two = _tutPiece(g, 'white', 2);
+            g.applyLastPieceRule();
+            if (two && two.number !== 2) two._tutNumber = 2;   // see _tutRestoreNumbers
+        },
         save: (g, p) => p.player === 'white' && !!p.currentTile && p.currentTile.type === 'save',
         done: g => _tutSavedCount(g, 'white') >= 12,
     },
@@ -3776,8 +3792,7 @@ const _tutSteps = [
 // ── step 0's demo ────────────────────────────────────────────────────────────
 // One white piece's whole life, on a loop: out of the rack onto home, out along
 // spoke 6 capturing Black's lone 5 at ring 4, onto goal 5, and into the saved
-// rack. Each leg is an arrow drawn first and a slide after, and the matching
-// clause of the card lights up. It moves the REAL pieces (the step's own position
+// rack. Each leg is a slow slide, and the matching clause of the card lights up. It moves the REAL pieces (the step's own position
 // is re-applied to reset the loop, and every later step lays out its own), so the
 // intro step also locks input -- see _inputLocked.
 // `run` is a generation counter: every timer checks it, so stopping is just a
@@ -3801,31 +3816,6 @@ function _tutDemoStop() {
 function _tutDemoClear() {
     _tutDemo.objs.forEach(o => { try { o.destroy(); } catch (e) {} }); _tutDemo.objs = [];
 }
-// An arrow that GROWS from `from` towards `to`, stopping short of both centres
-// so it reads between the pieces rather than on top of them.
-function _tutArrow(scene, from, to, ms) {
-    const g = scene.add.graphics().setDepth(76);
-    _tutDemo.objs.push(g);
-    const dx = to.x - from.x, dy = to.y - from.y, len = Math.hypot(dx, dy) || 1;
-    const ux = dx / len, uy = dy / len;
-    const s = Math.min(30, len * 0.2), e = Math.min(34, len * 0.25);
-    const p = { t: 0 };
-    const draw = () => {
-        g.clear();
-        const x0 = from.x + ux * s, y0 = from.y + uy * s;
-        const L = Math.max(1, (len - s - e) * p.t);
-        const x1 = x0 + ux * L, y1 = y0 + uy * L;
-        g.lineStyle(8, HINT_COLOR, 0.9);
-        g.lineBetween(x0, y0, x1, y1);
-        const h = 24, w = 15;
-        g.fillStyle(HINT_COLOR, 1);
-        g.fillTriangle(x1 + ux * h * 0.6, y1 + uy * h * 0.6,
-                       x1 - ux * h * 0.4 - uy * w, y1 - uy * h * 0.4 + ux * w,
-                       x1 - ux * h * 0.4 + uy * w, y1 - uy * h * 0.4 - ux * w);
-    };
-    draw();
-    _tutDemo.tweens.push(scene.tweens.add({ targets: p, t: 1, duration: ms, ease: 'Sine.easeOut', onUpdate: draw }));
-}
 function _tutDemoRing(scene, x, y, r) {
     const g = scene.add.circle(x, y, r, 0, 0).setStrokeStyle(6, HINT_COLOR, 1).setDepth(76);
     _tutDemo.objs.push(g);
@@ -3834,16 +3824,14 @@ function _tutDemoRing(scene, x, y, r) {
 }
 // Slower than animateFrom's 160ms on purpose -- the point is to be watched -- and
 // not gated on the effects setting, for the same reason.
-// The piece's RESTING point is kept in `_tutAt`, and the next arrow starts there
-// rather than at piece.x: Phaser advances tweens by capped frame deltas, so on a
-// slow device a slide can still be under way when the next leg begins, and an
-// arrow read from the live position started back at the rack (measured headless).
+// Phaser advances tweens by capped frame deltas, so on a slow device a slide can
+// still be under way when the next leg begins: stop it first, and the new slide
+// starts from wherever the piece has got to.
 function _tutSlide(scene, piece, place, ms) {
     if (piece._tutTween) { piece._tutTween.stop(); piece._tutTween = null; }
     const ox = piece.x, oy = piece.y;
     place();
     const nx = piece.x, ny = piece.y;
-    piece._tutAt = { x: nx, y: ny };
     const proxy = { x: ox, y: oy };
     piece.setPosition(ox, oy);
     _tutDemo.tweens.push(piece._tutTween = scene.tweens.add({
@@ -3865,27 +3853,27 @@ function _tutDemoStart(game) {
     const piece = rack.pieces[0], enemy = _tutPiece(game, 'black', 5);
     const home = _tutHub(game), mid = _tutTile(game, 4, 6), goal = _tutGoal(game, 5);
     if (!piece || !enemy || !home || !mid || !goal) return;
-    piece._tutAt = null;
-    const pos = () => piece._tutAt || { x: piece.x, y: piece.y };
-    const leg = (t0, beat, to, place) => {
-        at(t0, () => { _tutDemoClear(); _tutBeat(beat); _tutArrow(scene, pos(), to(), 700); });
-        at(t0 + 850, () => { _tutDemoClear(); _tutSlide(scene, piece, place, 650); });
+    // No arrows (owner, 2026-09-30: "too low-tech"): the slide itself shows the
+    // way. The clause lights a beat before the piece sets off.
+    const leg = (t0, beat, place) => {
+        at(t0, () => { _tutDemoClear(); _tutBeat(beat); });
+        at(t0 + 450, () => _tutSlide(scene, piece, place, 900));
     };
     at(0, () => {
         _tutBeat(0);
         [saved, _tutRack(game, 'black', 'saved')].forEach(r =>
             _tutDemoRing(scene, r.nextX(), r.nextY(), (piece.radius || PIECE_RADIUS_BASE) * 1.6));
     });
-    leg(2600, 1, () => _hintTileCentre(home), () => _setupPlaceOnTile(piece, home));
-    leg(4900, 2, () => _hintTileCentre(mid), () => _setupPlaceOnTile(piece, mid));
-    at(6500, () => {                                   // the capture
+    leg(2600, 1, () => _setupPlaceOnTile(piece, home));
+    leg(4700, 2, () => _setupPlaceOnTile(piece, mid));
+    at(6300, () => {                                   // the capture
         fxBurst(scene, enemy.x, enemy.y, 0xff5555);
-        _tutSlide(scene, enemy, () => _setupPlaceOnTile(enemy, home), 550);
+        _tutSlide(scene, enemy, () => _setupPlaceOnTile(enemy, home), 650);
     });
-    leg(7900, 3, () => _hintTileCentre(goal), () => _setupPlaceOnTile(piece, goal));
-    leg(10200, 4, () => ({ x: saved.nextX(), y: saved.nextY() }), () => _setupPlaceInRack(piece, saved, false));
-    at(12600, () => _tutBeat(-1));
-    at(13600, () => {                                  // reset and go round again
+    leg(7700, 3, () => _setupPlaceOnTile(piece, goal));
+    leg(9900, 4, () => _setupPlaceInRack(piece, saved, false));
+    at(12200, () => _tutBeat(-1));
+    at(13200, () => {                                  // reset and go round again
         _tutDemo.tweens.forEach(t => { try { t.stop(); } catch (e) {} }); _tutDemo.tweens = [];
         _tutDemoClear();
         _tutApply(game, step.pos);
@@ -3947,6 +3935,11 @@ function _tutRender() {
     const game = _setupGame(); if (!game) return;
     const step = _tutSteps[_tut.step];
     _tutDemoStop();
+    // Bumped on every render, so a "✓ Nice!" pause or Black's scripted reply that
+    // belongs to the step being left cannot fire into the one arrived at -- which
+    // Back makes possible mid-reply.
+    _tut.gen++;
+    _tut.busy = false;
     if (step.pos) {
         _tutApply(game, step.pos);
         _tutSetDice(game, step.dice[0], step.dice[1]);
@@ -3965,25 +3958,43 @@ function _tutRender() {
             'background:' + (primary ? THEME.accentCss : '#fff') + '; color:' + (primary ? '#fff' : '#5a6473') + ';';
         el.onclick = fn; btns.appendChild(el); return el;
     };
+    // BACK (owner, 2026-09-30). Every step lays out its own position, so going
+    // back is just rendering the earlier step afresh.
+    // The landscape phone card is only ~240px wide, where Exit + "← Back" + Skip
+    // measured 225px against a 204px row and wrapped, taking a line from the text.
+    // A bare arrow there fits (and is still named, for a screen reader).
+    const back = () => {
+        if (_tut.step <= 0) return;
+        const narrow = _isPhone() && _tutLayout() === 'side';
+        const el = mkBtn(narrow ? '←' : '← Back', false, _tutBack);
+        el.title = 'Back'; el.setAttribute('aria-label', 'Back');
+    };
     if (step.finish) {
         // Two ways to finish, which is also the difficulty question being asked
         // once, in the one moment a new player is certain to see it. Both end the
         // tutorial exactly as the old single Finish button did.
+        back();
         mkBtn('Go easy', true, () => _tutFinish(TUT_EASY_POSITION));
         mkBtn('Full strength', false, () => _tutFinish(1.0));
         if (typeof updateTurnStatus === 'function') updateTurnStatus('');   // the game is over
     } else {
         mkBtn('Exit', false, () => _tutEnd(false));
+        back();
         mkBtn(step.intro ? 'Start →' : 'Skip →', true, _tutNext);
     }
     // After the card exists: the demo lights its clauses. Deferred a frame so the
-    // pieces the step just laid out have their positions before an arrow reads them.
+    // pieces the step just laid out have their positions first.
     if (step.intro) requestAnimationFrame(() => { if (_tutStep() === step) _tutDemoStart(game); });
 }
 function _tutNote(html) {
     const b = _tut.bubble; if (!b) return;
     const btns = b.querySelector('#tutBtns');
     if (btns) btns.innerHTML = html;
+}
+function _tutBack() {
+    if (_tut.step <= 0) return;
+    _tut.step -= 1;
+    _tutRender();
 }
 function _tutNext() {
     _tut.busy = false;
@@ -3998,9 +4009,11 @@ function _tutPlayBlack(game, moves, cb) {
     // the pill is suppressed throughout (see turnStatusText).
     _tutNote('<span style="color:#8b95a3; font-weight:700; font-size:13px;">Black plays…</span>');
     let i = 0;
+    const gen = _tut.gen;
     const next = () => {
+        if (_tut.gen !== gen) return;               // the player went Back or on
         if (!_tut.active) { cb(); return; }
-        if (i >= moves.length) { setTimeout(cb, 400); return; }
+        if (i >= moves.length) { setTimeout(() => { if (_tut.gen === gen) cb(); }, 400); return; }
         const m = moves[i++];
         const piece = _tutPiece(game, 'black', m.n), tile = _tutTile(game, m.to[0], m.to[1]);
         if (piece && tile) {
@@ -4021,8 +4034,9 @@ function _tutPoll() {
     if (!ok) return;
     _tut.busy = true;
     _tutNote('<span style="color:#3a9e6a; font-weight:700; font-size:14px;">✓ Nice!</span>');
+    const gen = _tut.gen;
     setTimeout(() => {
-        if (!_tut.active) return;
+        if (!_tut.active || _tut.gen !== gen) return;
         _tutPlayBlack(game, step.black, _tutNext);
     }, 850);
 }
@@ -4580,7 +4594,7 @@ function showInstructions() {
         ['Capturing &amp; blocking', 'Land on a field tile holding a single enemy piece and you capture it — it goes back to the home tile and its owner must re-enter it before doing anything else. A tile with <b>two or more</b> enemy pieces is a wall: you can’t enter or pass through it.'],
         ['Saving', 'The six coloured wedges on the rim are goals, numbered 1–6. To save a piece, get it onto a goal and roll that goal’s number to lift it off the board. A numbered piece can only be saved from its own goal; a blank piece from any goal. (You can start saving once all your pieces are on the board.)'],
         ['Endgame', 'When every piece you have left is saved or sitting on a goal it can be saved from, you’re in the endgame: blank pieces can now be saved with a roll <i>higher</i> than their goal’s number, as long as you have nothing waiting on a higher-numbered goal.'],
-        ['A couple of special moves', '• Break a wall: past the opening and with no captured pieces, ' + dbl + ' (or drag from the picker) one piece of an enemy stack to save it for them — it costs both your dice and hands the opponent a piece, but turns the wall into a lone piece.<br>• Last piece: if you start a turn with a single piece left and it’s a numbered one sitting on its goal, it becomes blank (savable by any roll of that goal number or higher).'],
+        ['A couple of special moves', '• Break a wall: past the opening and with no captured pieces, ' + dbl + ' (or drag from the picker) one piece of an enemy stack to save it for them — it costs both your dice and hands the opponent a piece, but thins the wall: a wall of two becomes a lone piece.<br>• Last piece: if you start a turn with a single piece left and it’s a numbered one sitting on its goal, it becomes blank (savable by any roll of that goal number or higher).'],
         ['Stalemate', 'If 10 full rounds pass with nobody saving a piece, either player may call a draw. Any save resets the counter.'],
         ['Matches', 'A match is several games, and it is won on <b>total score</b> — the sum of your winning margins — not on games won. Two formats: a set number of games (highest total score at the end wins), or a race to a target score. Starters alternate; if the scores finish level the match goes to whoever won more games, and if that is level too it is extended by a pair of games. The score line under the board tracks the match.'],
         ['Controls', phone
@@ -6371,6 +6385,9 @@ class Piece {
             .on('pointermove', () => { if (window.debugMode && this.number > 6) showDebugTip(`${this.player} #${this.number}`); })
             .on('pointerout',  () => { hideDebugTip(); });
 
+        this._makeNumberText();
+    }
+    _makeNumberText() {
         if (this.number <= 6 || DEBUG_MODE) {
             // Phaser's default font family is Courier -- a thin monospace with a
             // small x-height, which at 12px on a phone is the worst possible
@@ -8029,6 +8046,17 @@ class Game {
         if (here && here.type === 'save' &&
             (piece.number > 6 || here.number === piece.number)) {
             return no('already on a goal it can use');
+        }
+
+        // A captured piece waiting on the home tile must come out before anything
+        // else moves (owner, 2026-09-30: say so -- it is another silent decline).
+        // `justMovedHome` marks a rack piece tentatively entered this turn, which
+        // also stands on home but is not a captured one.
+        const captured = (this.mustMovePieces || []).filter(p => p !== piece && p.player === piece.player &&
+            p.currentTile && p.currentTile.type === 'home' && !p.justMovedHome);
+        if (captured.length) {
+            return no('a captured piece must move first', null,
+                      'A captured piece has to come back out first — move it off the home tile before anything else.');
         }
 
         const r = this.getReachableTilesByDice(piece);

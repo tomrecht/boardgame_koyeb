@@ -15,24 +15,24 @@ Snapshot taken 2026-09-30, on `testing`.
 ## 1. Tutorial (`_tutSteps`, `_tutStepHtml`, `_tutRender`)
 
 Card header: `Tutorial · Step {n} of 12`
-Buttons: **Exit** · **Skip →** (step 1: **Start →**) · closing panel: **Go easy** · **Full strength**
+Buttons: **Exit** · **← Back** (from step 2 on; a bare **←** on a landscape phone) · **Skip →** (step 1: **Start →**) · closing panel: **← Back** · **Go easy** · **Full strength**
 While Black replies: `Black plays…` · On completing a step: `✓ Nice!`
 
 ### Step 1 — What you’re playing for  *(no moves; the board animates each clause in turn)*
-1. Quahuru is a race: the first to <b>save all twelve</b> pieces wins.
+1. Quahuru is a race: the first to <b>save all twelve pieces</b> wins.
 2. Each piece starts on your rack and comes out through the <b>home tile</b> in the centre,
 3. travels out along a spoke — landing on a lone enemy piece <b>captures</b> it, sending it back home —
 4. reaches a <b>goal</b> on the rim,
 5. and is <b>saved</b> off it into your saved rack.
 
 ### Step 2 — Send two pieces out
-Nothing reaches a goal from the rack, so the opening is about getting pieces out. Send the front one out through home and spend the <b>5</b> on the highlighted tile near goal 5. Then bring a second piece out with the <b>3</b>. Pieces 1–6 each have one matching goal; blank pieces can use any.
+You can start saving once you’ve brought all your pieces out. Send the front one out through home and spend the <b>5</b> on the highlighted tile near goal 5. Then bring a second piece out with the <b>3</b>. Pieces 1–6 each have one matching goal; blank pieces can use any.
 
 ### Step 3 — Numbered pieces head for their goal
 Numbered pieces are the hardest to save — only their own goal will take them — so it pays to send them home early. Your next piece is the <b>6</b>, and goal 6 is exactly seven tiles away. Both dice can go on one piece: select the 6, then goal 6 (or drag it there).
 
 ### Step 4 — Take what’s exposed
-A capture costs your opponent a whole trip: a lone piece is exposed, and landing on it sends it back to the home tile to start over. Black has left two. While you still have pieces on the rack, <b>one of your two moves must be that front rack piece</b> — either order. Enter it with the <b>4</b> onto Black’s 5, and use the <b>2</b> to take the other with the piece already on the board.
+A lone piece is exposed, and landing on it sends it back to the home tile. Black has left two. While you still have pieces on the rack, <b>one of your two moves must be that front rack piece</b>. Enter it with the <b>4</b> onto Black’s 5, and use the <b>2</b> to take the other with the piece already on the board. Black will have to move its captured pieces back out before doing anything else.
 
 ### Step 5 — Build a wall
 Walls are how you slow your opponent down. Two of your pieces on one tile make a <b>wall</b> — enemy pieces can’t land on it or pass through. Black’s 5 must reach goal 5, and its short way in runs over a tile you hold. Your dice sum to 5: bring your next piece out to join it and shut that route.
@@ -41,7 +41,7 @@ Walls are how you slow your opponent down. Two of your pieces on one tile make a
 <b>⏩ A few turns later.</b> Saving is how you win, and it opens up once your rack is empty — as yours now is. A piece on a goal goes out on a die matching that goal’s number: your <b>6</b> is on goal 6 — double-click it, or drag it to your saved rack, and the 6 banks it for a point. Then do the same on <b>goal 1</b> with the 1 — a blank piece can be saved on any goal.
 
 ### Step 7 — The long way in
-A wall doesn’t stop you, it makes you pay. Black has walled the tile in front of goal 4. A piece always takes the shortest route to where you send it — and your 4’s shortest route was <b>five</b> tiles, so a single 5 would have done it. Now the only way in is <b>nine</b>, round through goal 2 — and your dice sum to 9, so move your 4 to its goal.
+A wall doesn’t stop you, but it can make you pay. Black has walled the tile in front of goal 4. A piece always takes the shortest route to where you send it — and your 4’s shortest route was <b>five</b> tiles, so a single 5 would have done it. Now the only way in is <b>nine</b>, round through goal 2 — and your dice sum to 9, so move your 4 to its goal.
 
 ### Step 8 — Buy the door open
 Sometimes the only way past a wall is to buy it down. The two walled tiles are the only ways into goals 2 and 4, so both are sealed — your <b>2</b> has no route home on any roll. Spend your dice on the door: double-click one of the two black pieces on the wall <b>in front of goal 2</b> to <b>save it for Black</b>. It costs both dice and hands Black a point, but the wall drops to a single piece — your 2 has a path again.
@@ -74,7 +74,7 @@ second wording is used, with {Who} = "The computer" (or "White"/"Black" in a
 two-player game) and {your} = "your" (or "White’s"/"Black’s").
 
 **Opening** (the first turn of the game)
-Opening: until a player’s rack is empty, one of their two moves each turn must bring the front rack piece out. Saving starts once the rack is empty.
+Opening: until a player’s rack is empty, one of their two moves each turn must bring the front rack piece out, unless they have a captured piece to bring out instead. Saving starts once the rack is empty.
 
 **First capture**
 - by you: Capture! Landing on a lone enemy piece sends it back to the home tile, and the computer must bring it out again before doing anything else.
@@ -85,20 +85,20 @@ Opening: until a player’s rack is empty, one of their two moves each turn must
 - by the other side: {Who} has built a wall — two pieces on one tile. Your pieces can’t land on it or pass through it, so the way round is longer.
 
 **First rack emptied (saving starts)**
-- you: Your rack is empty, so saving starts: a piece on a goal is saved with a die matching that goal’s number — {dbl} it, or drag it to the saved rack. Numbered pieces only on their own goal.
-- other side: The computer’s rack is empty, so it can start saving: a piece on a goal is saved with a die matching that goal’s number, and a numbered piece only on its own goal.
+- you: Your rack is empty, so saving starts: a piece on a goal is saved with a die matching that goal’s number — {dbl} it, or drag it to the saved rack. Blank pieces can be saved from any goal, numbered pieces only from their own goal.
+- other side: The computer’s rack is empty, so it can start saving: a piece on a goal is saved with a die matching that goal’s. Blank pieces can be saved from any goal, numbered pieces only from their own goal.
 
 **First into the endgame**
 - you: Endgame: every piece you have left is on a goal it can be saved from. A blank now also goes out on any die bigger than its goal’s number, as long as you hold no higher goal.
 - other side: The computer is in the endgame: every piece left is on a goal it can be saved from. Now the computer’s blanks also go out on any die bigger than their goal’s number, as long as it holds no higher goal.
 
 **First last piece losing its number**
-- you: Your last piece has lost its number — it is a blank now, so it no longer has to wait for its own number to be saved.
+- you: Your last piece has lost its number — with one piece left, a numbered piece on its goal becomes a blank, so it no longer has to wait for its own number.
 - other side: The computer’s last piece has lost its number — with one piece left, a numbered piece on its goal becomes a blank, so it no longer has to wait for its own number.
 
 **First block-save**
-- by you: You bought a wall down: saving an enemy piece off it costs both dice and gives the computer the point, but leaves only one piece there — which can be captured.
-- by the other side: The computer spent both dice saving one of your pieces for you — that hands over the point to break a wall. The piece left behind stands alone, so it can be captured.
+- by you: You saved an enemy piece off a wall: it costs both dice and gives the computer the point, but thins the wall — a wall of two becomes a single piece, which can be captured.
+- by the other side: The computer spent both dice saving one of your pieces for you — that hands over the point to thin a wall. A wall of two becomes a single piece, which can be captured.
 
 Settings row: `Explain rules as they come up (first game)`
 
@@ -109,7 +109,7 @@ Settings row: `Explain rules as they come up (first game)`
 - Hint: move the marked piece to {goal N / the marked tile}.
 - Hint: move the marked piece to {goal N / the marked tile} — both dice on the one piece.
 - Hint: save the marked piece — {dbl} it, or drag it to your saved rack.
-- Hint: {dbl} the marked enemy piece to save it for them. It costs both dice and hands them a point, but it breaks the wall.
+- Hint: {dbl} the marked enemy piece to save it for them. It costs both dice and hands them a point, but thins the wall — a wall of two becomes a single piece.
 - Hint: you can call a draw — the button is bottom-left.
 - Hint: nothing this roll can usefully do. End your turn with ↷.
 - No hint for a half-finished turn — tap 💡 at the start of a turn instead.
@@ -137,6 +137,7 @@ appear only when the player taps the same tile again with the board unchanged.
 - More than one capture is possible on the way — move one die at a time to choose.  *(auto en-route capture on)*
 
 Double-click-to-goal declines (`sendToGoal`):
+- A captured piece has to come back out first — move it off the home tile before anything else.
 - The first piece on the rack must still enter this turn, so this one can’t use both dice.
 - More than one goal is in reach, so move it by hand to choose.
 - More than one capture is possible on the way — move one die at a time to choose.
@@ -195,7 +196,7 @@ Buttons: **Single game** · **Play a match** · **How to Play** · **Interactive
 
 **Endgame** — When every piece you have left is saved or sitting on a goal it can be saved from, you’re in the endgame: blank pieces can now be saved with a roll <i>higher</i> than their goal’s number, as long as you have nothing waiting on a higher-numbered goal.
 
-**A couple of special moves** — • Break a wall: past the opening and with no captured pieces, {dbl} (or drag from the picker) one piece of an enemy stack to save it for them — it costs both your dice and hands the opponent a piece, but turns the wall into a lone piece.<br>• Last piece: if you start a turn with a single piece left and it’s a numbered one sitting on its goal, it becomes blank (savable by any roll of that goal number or higher).
+**A couple of special moves** — • Break a wall: past the opening and with no captured pieces, {dbl} (or drag from the picker) one piece of an enemy stack to save it for them — it costs both your dice and hands the opponent a piece, but thins the wall: a wall of two becomes a lone piece.<br>• Last piece: if you start a turn with a single piece left and it’s a numbered one sitting on its goal, it becomes blank (savable by any roll of that goal number or higher).
 
 **Stalemate** — If 10 full rounds pass with nobody saving a piece, either player may call a draw. Any save resets the counter.
 
