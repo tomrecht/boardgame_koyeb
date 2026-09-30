@@ -259,6 +259,62 @@ with it in mind.** Assessment and the concrete implications:
 
 ## Current state
 
+- **LEARNING CURVE, ROUND 2, ON `testing` (owner, 2026-09-30).** A new player met
+  "send the front one out" before being told what the game is FOR -- "save all
+  twelve" first appeared in the closing panel. Three changes, owner's picks from a
+  list of eight (the others -- a persistent goal line in the card header, board
+  labels, splitting heavy steps, a first-launch tutorial offer, a "learning"
+  opponent -- were not taken up).
+  **1. A NO-MOVE INTRO STEP, "What you're playing for"** (`intro: true`, now step 1
+  of 12). It plays one white piece's whole life ON A LOOP with the real pieces:
+  rings on both saved racks -> arrow + slide rack -> home -> arrow + slide out to
+  4,6, CAPTURING Black's lone 5 there (sent home with the capture burst) -> goal 5
+  -> saved rack -> reset, ~13.6s a loop. Each clause of the card text is a
+  `data-beat` span lit in step with its leg. Button reads **Start ->**, and the
+  intro LOCKS INPUT (`_inputLocked` returns true for an intro step; every other
+  tutorial step stays exempt) because the demo is moving the pieces a tap would
+  pick up. `_tutDemo.run` is a generation counter: every timer checks it, so
+  `_tutDemoStop` (called from `_tutRender` and `_tutEnd`) is just a bump.
+  **ARROWS START FROM THE PIECE'S RESTING POINT (`piece._tutAt`), NOT piece.x.**
+  Phaser advances tweens by capped frame deltas, so on a slow frame rate a slide is
+  still under way when the next leg begins; measured headless, the home->spoke
+  arrow started back at the RACK. A new slide also snaps any unfinished one.
+  Measured: legs in order (rack/home/4,6 with black 5 home/goal5/saved/reset),
+  clause lit per leg, a tap during the intro selects nothing, **Start pressed
+  MID-DEMO** (piece out, black captured) lays the next step out clean and its move
+  still works (lit 3,10 + 5,6, piece lands on 5,6, one die spent).
+  **2. EVERY STEP'S FIRST SENTENCE SAYS WHY** ("Nothing reaches a goal from the
+  rack, so...", "A capture costs your opponent a whole trip", "Walls are how you
+  slow your opponent down", "A wall doesn't stop you, it makes you pay", ...).
+  Length was paid for by cutting what the intro now shows (the home-then-spoke
+  route in step 2) and tightening the longest steps. **Measured against main's
+  game.js at 5 viewports** (desktop, portrait, portrait + `?safeinset=48,0,56,0`,
+  landscape, landscape + `?safeinset=0,48,24,48`): desktop canvas height
+  IDENTICAL at every step (tallest card unchanged at 227px, nothing scrolls); on
+  phones every existing step's `#tutText` overflow is <= main's, and the three
+  that already scrolled got shorter (Buy the door open 86 -> 43px, The endgame
+  64 -> 21px, Take what's exposed 43 -> 21px in landscape).
+  **3. RULE TIPS FOR THE FIRST REAL GAME** (`_ruleTipTick`, 300ms poll): one
+  notice the first time each rule comes up -- the opening obligation (on the
+  human's first turn), a capture made / suffered, a wall built by you / by the
+  computer, the rack emptying (saving starts), the endgame, the last piece losing
+  its number, and **a block-save made / suffered** (owner's addition). Each id
+  fires once ever (`ruleTipsSeen`); tips queue rather than overwrite each other
+  and wait out the hint nudge.
+  **FIRST GAME ONLY (owner):** the setting turns ITSELF OFF when a game the tips
+  were watching FINISHES; an abandoned game does not count. On for a first-ever
+  visit (seeded with hints) and after the tutorial (`_tutFinish`); Settings row
+  "Explain rules as they come up (first game)".
+  **Detected by polling the position, not by hooks** -- except captures and
+  block-saves, which the board cannot tell apart from an entry or a turn switch,
+  so `capturePiece` and BOTH block-save sites (the human gesture and
+  `applyMovePair`'s branch -- the same pair the recorder needed) append to
+  `game._captureLog` / `game._blockSaveLog`. A baseline is taken the first time a
+  game is seen and nothing fires for what was already true then.
+  **Harness note:** the CodeGPT extension is now **3.24.75** -- update the
+  `createRequire` path. And headless Chrome's canvas lags the DOM by seconds, so a
+  screenshot of an animation must FREEZE it (clear the timers, wait ~2.5s) first.
+
 - **THE TUTORIAL DID NOT START FROM THE END-GAME CARD (owner, 2026-09-29).** From
   Settings over the end card it half-started: the gear vanished, the end card stayed
   up, and a pale band appeared at the bottom.

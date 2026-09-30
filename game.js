@@ -435,7 +435,10 @@ function _currentGame() {
 // and the tutorial, which scripts both sides itself and does not touch the
 // isAI flags -- without this, a stored "White = computer" would freeze it.
 function _inputLocked(g) {
-    if (window.setupMode || window._tutorialActive) return false;
+    if (window.setupMode) return false;
+    // The tutorial scripts both sides, so it is exempt -- except its intro step,
+    // which moves the pieces itself and must not have them picked up mid-demo.
+    if (window._tutorialActive) { const st = _tutStep(); return !!(st && st.intro); }
     return !!(g && g.currentPlayerIsHuman && !g.currentPlayerIsHuman());
 }
 
@@ -2229,6 +2232,8 @@ function createSettingsPanel() {
     toggle(_dblWord(true) + ' sends a piece to its goal', getSumToGoal, 'sumToGoal', true);
     toggle(_dblWord(true) + ' saves a piece in one move', getSumSaveGesture, 'sumSaveGesture', false);
     toggle('Automatic en-route capture', getAutoEnRouteCapture, 'autoEnRoute', true);
+    toggle('Explain rules as they come up (first game)', getRuleTipsEnabled, 'ruleTips', true);
+    { const rows = panel.querySelectorAll('input[type=checkbox]'); rows[rows.length - 1].id = 'settingsRuleTips'; }
 
     // Interactive tutorial launcher
     const tut = mk('button',
@@ -2726,7 +2731,7 @@ function getHintsEnabled() { return _boolSetting('hintsEnabled', false); }
 // makes a returning player look new.
 const _ALL_SETTING_KEYS = ['aiDifficulty', 'blackIsAI', 'whiteIsAI', 'boardTheme', 'sound',
     'fullscreen', 'hintsEnabled', 'seenNudge', 'fxEnabled', 'autoEndTurn',
-    'confirmRiskyEnd', 'sumToGoal', 'sumSaveGesture', 'autoEnRoute'];
+    'confirmRiskyEnd', 'sumToGoal', 'sumSaveGesture', 'autoEnRoute', 'ruleTips', 'ruleTipsSeen'];
 // HINTS ON FOR A BRAND-NEW VISITOR, once, without making them the global default.
 //
 // HOW GOOD IS THE DETECTION? Every key above is written only when the player
@@ -2745,7 +2750,8 @@ function _seedFirstRunDefaults() {
         const seen = _ALL_SETTING_KEYS.some(k => localStorage.getItem(k) !== null);
         if (seen) return;
         localStorage.setItem('hintsEnabled', '1');
-        console.log('[first-run] no stored settings: seeding hints on for a new visitor');
+        localStorage.setItem('ruleTips', '1');
+        console.log('[first-run] no stored settings: seeding hints and rule tips on for a new visitor');
     } catch (e) { /* storage blocked: hints simply stay off */ }
 }
 const _hint = { objs: [], sig: null, busy: false, timer: null };
@@ -2829,6 +2835,149 @@ function _maybeNudgeHint() {
     if (!btn || btn.style.display === 'none') return;   // nothing to point at yet
     _hintNudgePending = false;
     flashNotice('Hints are on for this game — tap Hint, bottom right, for a suggested move whenever you want one.', 8000);
+    _tips.busyUntil = Date.now() + 8400;   // a rule tip must not overwrite it
+}
+
+// ── RULE TIPS: each rule explained ONCE, the first time it happens in real play
+// (owner, 2026-09-30). The tutorial teaches rules in advance; a rule is
+// remembered when it bites, so the first capture, the first wall, the move out of
+// the opening, the endgame and the last-piece rule each get one notice the first
+// time they happen to (or are done by) a human player, and never again.
+//
+// DETECTED BY POLLING THE BOARD, not hooked into each path that can cause them --
+// the same choice as the hint marker: the computer's moves, the human's gestures,
+// the stack picker and undo all converge on the position, so one reader of the
+// position is right for all of them. Captures are the exception: a piece sent
+// home is indistinguishable from a piece being entered, so capturePiece keeps a
+// log (`game._captureLog`) and the poll reads that.
+//
+// A BASELINE IS TAKEN THE FIRST TIME A GAME IS SEEN and nothing fires for what was
+// already true then, so a game restored mid-position does not open with a burst.
+// On for a first-ever visit and after the tutorial, like hints; a Settings row
+// turns them off. `ruleTipsSeen` holds the ids already shown.
+function getRuleTipsEnabled() { return _boolSetting('ruleTips', false); }
+// A block-save moves a piece into its OWNER's saved rack during the OTHER side's
+// turn, which the board alone cannot tell from a turn switch landing between two
+// polls -- so, like captures, the two sites that do it (the human gesture and
+// applyMovePair's branch) log it.
+function _tipNoteBlockSave(game, piece) {
+    if (game) (game._blockSaveLog || (game._blockSaveLog = [])).push({ owner: piece.player, by: game.turn });
+}
+const _tips = { queue: [], busyUntil: 0 };
+function _tipsSeen() {
+    try { const a = JSON.parse(localStorage.getItem('ruleTipsSeen') || '[]'); return Array.isArray(a) ? a : []; }
+    catch (e) { return []; }
+}
+function _ruleTip(id, text) {
+    if (_tipsSeen().includes(id) || _tips.queue.some(t => t.id === id)) return;
+    _tips.queue.push({ id, text });
+}
+function _ruleTipDeliver() {
+    if (!_tips.queue.length || Date.now() < _tips.busyUntil || _hintNudgePending) return;
+    if (_tut.active || _gamePausedByCard() || _preGameCardUp()) return;
+    const t = _tips.queue.shift();
+    try { localStorage.setItem('ruleTipsSeen', JSON.stringify(_tipsSeen().concat(t.id))); } catch (e) {}
+    // Long enough to read at a glance and then again: ~60ms a character.
+    const ms = Math.max(6000, t.text.length * 60);
+    flashNotice(t.text, ms, 'tip');
+    _tips.busyUntil = Date.now() + ms + 500;
+}
+function _tipWalls(g) {
+    const out = { white: false, black: false };
+    g.tiles.forEach(t => {
+        if (t.type !== 'field') return;
+        ['white', 'black'].forEach(c => {
+            if (t.pieces.filter(p => p.player === c).length > 1) out[c] = true;
+        });
+    });
+    return out;
+}
+function _ruleTipTick() {
+    if (!getRuleTipsEnabled()) { _tips.queue = []; return; }
+    const g = _currentGame();
+    // FOR THE FIRST REAL GAME ONLY (owner, 2026-09-30): a rule that never came up
+    // in it is not worth interrupting a later game for. So the setting turns
+    // itself off when a game the tips were watching FINISHES. An abandoned game
+    // does not count, so the next one still gets them.
+    if (g && g.gameOver && g._tipSnap && !_tut.active) {
+        try { localStorage.setItem('ruleTips', '0'); } catch (e) {}
+        _tips.queue = [];
+        const cb = document.getElementById('settingsRuleTips'); if (cb) cb.checked = false;
+        return;
+    }
+    if (g && !_tut.active && !window.setupMode && !_gameFrozen && !g.gameOver && g.players) _ruleTipScan(g);
+    _ruleTipDeliver();
+}
+function _ruleTipScan(g) {
+    const humans = g.players.filter(p => !p.isAI).map(p => p.name);
+    if (!humans.length) return;                         // computer v computer: nobody to teach
+    const solo = humans.length === 1;
+    const human = c => humans.includes(c);
+    const yours = c => solo ? 'your' : _cap(c) + '’s';
+    const them = solo ? 'the computer' : null;
+    const phase = c => { const p = g.players.find(pl => pl.name === c); return p && p.getGamePhase(); };
+    const lastBlank = c => g.pieces.some(p => p.player === c && p.number === TOTAL_PIECES + 1);
+    const now = {
+        phase: { white: phase('white'), black: phase('black') },
+        walls: _tipWalls(g),
+        caps: (g._captureLog || []).length,
+        blocks: (g._blockSaveLog || []).length,
+        last: { white: lastBlank('white'), black: lastBlank('black') },
+    };
+    const was = g._tipSnap;
+    g._tipSnap = now;
+    if (!was) return;                                   // baseline: see above
+
+    // The opening rule, on a human's first turn -- it is the first rule they meet.
+    if (human(g.turn) && phase(g.turn) === 'opening') {
+        _ruleTip('opening', 'Opening: until ' + yours(g.turn) + ' rack is empty, one of the two moves each turn ' +
+            'must bring the front rack piece out. Saving starts once the rack is empty.');
+    }
+    (g._captureLog || []).slice(was.caps).forEach(e => {
+        if (human(e.victim)) {
+            _ruleTip('captured', (solo ? 'Your' : _cap(e.victim) + '’s') + ' piece was captured — a piece alone on a ' +
+                'tile can be landed on. It is back on the home tile, and moving it out comes before anything else.');
+        } else if (human(e.by)) {
+            _ruleTip('capture', 'Capture! Landing on a lone enemy piece sends it back to the home tile, and ' +
+                (them || 'its owner') + ' must bring it out again before doing anything else.');
+        }
+    });
+    (g._blockSaveLog || []).slice(was.blocks).forEach(e => {
+        if (human(e.by)) {
+            _ruleTip('block-save', 'You bought a wall down: saving an enemy piece off it costs both dice and ' +
+                'gives ' + (them || 'its owner') + ' the point, but leaves only one piece there — which can be captured.');
+        } else if (human(e.owner)) {
+            _ruleTip('block-saved', (solo ? 'The computer' : _cap(e.by)) + ' spent both dice saving one of ' +
+                yours(e.owner) + ' pieces for ' + (solo ? 'you' : 'them') + ' — it hands over the point to break a wall. ' +
+                'The piece left behind stands alone, so it can be captured.');
+        }
+    });
+    ['white', 'black'].forEach(c => {
+        if (now.walls[c] && !was.walls[c]) {
+            if (human(c)) {
+                _ruleTip('wall', 'That’s a wall: two or more of ' + yours(c) + ' pieces on one tile. Enemy pieces ' +
+                    'can’t land on it or pass through it.');
+            } else if (solo) {
+                _ruleTip('wall-enemy', 'The computer has built a wall — two pieces on one tile. Your pieces can’t ' +
+                    'land on it or pass through it, so the way round is longer.');
+            }
+        }
+        if (!human(c)) return;
+        if (was.phase[c] === 'opening' && now.phase[c] === 'midgame') {
+            _ruleTip('saving', (solo ? 'Your' : _cap(c) + '’s') + ' rack is empty, so saving starts: a piece on a ' +
+                'goal is saved with a die matching that goal’s number — ' + _dblWord(false) +
+                ' it, or drag it to the saved rack. Numbered pieces only on their own goal.');
+        }
+        if (was.phase[c] !== 'endgame' && now.phase[c] === 'endgame') {
+            _ruleTip('endgame', 'Endgame: every piece ' + (solo ? 'you have' : c + ' has') + ' left is on a goal it ' +
+                'can be saved from. A blank now also goes out on any die bigger than its goal’s number, as long ' +
+                (solo ? 'as you hold no higher goal.' : 'as ' + c + ' holds no higher goal.'));
+        }
+        if (now.last[c] && !was.last[c]) {
+            _ruleTip('last-piece', (solo ? 'Your' : _cap(c) + '’s') + ' last piece has lost its number — it is a ' +
+                'blank now, so it no longer has to wait for its own number to be saved.');
+        }
+    });
 }
 function _hintTick() {
     if (_hintNudgePending) _maybeNudgeHint();
@@ -3468,8 +3617,26 @@ const _TUT_BLACK_MID = [[1, [2, 9]], [2, [3, 10]], [3, [1, 8]], [7, [5, 13]], [1
 
 const _tutSteps = [
     {
+        // A NEW PLAYER MET "send the front one out" BEFORE BEING TOLD WHAT THE GAME
+        // IS FOR (owner, 2026-09-30): "save all twelve" first appeared in the
+        // closing panel. This step makes no moves; it plays one piece's whole life
+        // on a loop (_tutDemoStart), lighting each clause of the text as the board
+        // acts it out, and the player moves on with Start.
+        title: 'What you’re playing for',
+        intro: true,
+        text: '<span data-beat="0">Quahuru is a race: the first to <b>save all twelve</b> pieces wins.</span> ' +
+              '<span data-beat="1">Each piece starts on your rack and comes out through the <b>home tile</b> in the centre,</span> ' +
+              '<span data-beat="2">travels out along a spoke — landing on a lone enemy piece <b>captures</b> it, sending it back home —</span> ' +
+              '<span data-beat="3">reaches a <b>goal</b> on the rim,</span> ' +
+              '<span data-beat="4">and is <b>saved</b> off it into your saved rack.</span>',
+        dice: [3, 4],
+        pos: { white: { rack: [7, 8, 6, 9, 10, 11, 12, 1, 2, 3, 4, 5] },
+               black: { board: [[5, [4, 6]]], rack: [7, 8, 9, 10, 11, 12, 1, 2, 3, 4, 6] } },
+        done: () => false,
+    },
+    {
         title: 'Send two pieces out',
-        text: 'Your pieces wait on the rack. Send the front one out — it steps onto the home tile first, then out along a spoke — and spend the <b>5</b> on the highlighted tile near goal 5. Then bring a second piece out with the <b>3</b>. Pieces 1–6 each have one matching goal; blank pieces can use any.',
+        text: 'Nothing reaches a goal from the rack, so the opening is about getting pieces out. Send the front one out through home and spend the <b>5</b> on the highlighted tile near goal 5. Then bring a second piece out with the <b>3</b>. Pieces 1–6 each have one matching goal; blank pieces can use any.',
         dice: [5, 3],
         pos: { white: { rack: [7, 8, 6, 9, 10, 11, 12, 1, 2, 3, 4, 5] },
                black: { rack: [5, 7, 8, 9, 10, 11, 12, 1, 2, 3, 4, 6] } },
@@ -3479,7 +3646,7 @@ const _tutSteps = [
     },
     {
         title: 'Numbered pieces head for their goal',
-        text: 'Your next piece is the <b>6</b>. A numbered piece can only ever be saved on its own goal, so send it straight there — goal 6 is exactly seven tiles away, and both dice can go on one piece: select the 6, then goal 6 (or drag it there).',
+        text: 'Numbered pieces are the hardest to save — only their own goal will take them — so it pays to send them home early. Your next piece is the <b>6</b>, and goal 6 is exactly seven tiles away. Both dice can go on one piece: select the 6, then goal 6 (or drag it there).',
         dice: [3, 4],
         pos: { white: { board: [[7, [5, 6]], [8, [3, 10]]], rack: [6, 9, 10, 11, 12, 1, 2, 3, 4, 5] },
                black: { board: [[5, [4, 6]]], rack: [7, 8, 9, 10, 11, 12, 1, 2, 3, 4, 6] } },
@@ -3489,7 +3656,7 @@ const _tutSteps = [
     },
     {
         title: 'Take what’s exposed',
-        text: 'A lone piece on a tile is exposed — land on it and it goes back to the home tile to start over. Black has left two. While you still have pieces on the rack, <b>one of your two moves must be that front rack piece</b> — either order. Enter it with the <b>4</b> onto Black’s 5, and use the <b>2</b> to take the other with the piece already on the board. Black will have to move its captured pieces back out before doing anything else.',
+        text: 'A capture costs your opponent a whole trip: a lone piece is exposed, and landing on it sends it back to the home tile to start over. Black has left two. While you still have pieces on the rack, <b>one of your two moves must be that front rack piece</b> — either order. Enter it with the <b>4</b> onto Black’s 5, and use the <b>2</b> to take the other with the piece already on the board.',
         dice: [4, 2],
         pos: { white: { board: [[7, [5, 6]], [8, [3, 10]], [6, [7, 10]]], rack: [9, 10, 11, 12, 1, 2, 3, 4, 5] },
                black: { board: [[5, [4, 6]], [7, [5, 10]]], rack: [8, 9, 10, 11, 12, 1, 2, 3, 4, 6] } },
@@ -3500,7 +3667,7 @@ const _tutSteps = [
     },
     {
         title: 'Build a wall',
-        text: 'Two of your pieces on one tile make a <b>wall</b> — enemy pieces can’t land on it or pass through. Black’s 5 still has to come round to goal 5, and the short way in runs over a tile you already hold. Your dice sum to 5: bring your next piece all the way out to join it and shut that route down.',
+        text: 'Walls are how you slow your opponent down. Two of your pieces on one tile make a <b>wall</b> — enemy pieces can’t land on it or pass through. Black’s 5 must reach goal 5, and its short way in runs over a tile you hold. Your dice sum to 5: bring your next piece out to join it and shut that route.',
         dice: [3, 2],
         pos: { white: { board: [[7, [5, 6]], [8, [5, 10]], [9, [4, 6]], [6, [7, 10]]], rack: [10, 11, 12, 1, 2, 3, 4, 5] },
                black: { board: [[5, [4, 4]], [7, [2, 2]]], rack: [8, 9, 10, 11, 12, 1, 2, 3, 4, 6] } },
@@ -3510,7 +3677,7 @@ const _tutSteps = [
     {
         title: 'Saving',
         fast: true,
-        text: '<b>⏩ A few turns later.</b> Your rack is empty, so you’re out of the opening and can start saving. A piece on a goal goes out on a die matching that goal’s number: your <b>6</b> is on goal 6 — double-click it, or drag it to your saved rack, and the 6 banks it for a point. Then do the same on <b>goal 1</b> with the 1 — a blank piece can be saved on any goal.',
+        text: '<b>⏩ A few turns later.</b> Saving is how you win, and it opens up once your rack is empty — as yours now is. A piece on a goal goes out on a die matching that goal’s number: your <b>6</b> is on goal 6 — double-click it, or drag it to your saved rack, and the 6 banks it for a point. Then do the same on <b>goal 1</b> with the 1 — a blank piece can be saved on any goal.',
         dice: [6, 1],
         pos: { white: { board: [[6, [7, 10]], [10, [7, 12]], [4, [3, 3]], [2, [3, 4]],
                                 [11, [5, 6]], [12, [3, 6]], [1, [3, 12]], [3, [3, 8]]],
@@ -3523,7 +3690,7 @@ const _tutSteps = [
     },
     {
         title: 'The long way in',
-        text: 'Black has walled the tile in front of goal 4. A piece always takes the shortest route to where you send it — and your 4’s shortest route was <b>five</b> tiles, so a single 5 would have done it. Now the only way in is <b>nine</b>: up the far spoke, through goal 2 and round the outer arc. Luckily, your dice sum to 9, so move your 4 to its goal.',
+        text: 'A wall doesn’t stop you, it makes you pay. Black has walled the tile in front of goal 4. A piece always takes the shortest route to where you send it — and your 4’s shortest route was <b>five</b> tiles, so a single 5 would have done it. Now the only way in is <b>nine</b>, round through goal 2 — and your dice sum to 9, so move your 4 to its goal.',
         dice: [3, 6],
         pos: { white: { board: [[4, [3, 3]], [2, [3, 4]], [11, [5, 6]], [12, [3, 6]], [1, [3, 12]], [3, [3, 8]]],
                         saved: [5, 6, 7, 8, 9, 10] },
@@ -3535,7 +3702,7 @@ const _tutSteps = [
     },
     {
         title: 'Buy the door open',
-        text: 'Those two walled tiles are the only ways into goals 2 and 4, so those goals are now sealed — your <b>2</b> has no route home, on any roll, ever. Your dice can’t do anything useful this turn, so spend them on the door: double-click one of the two black pieces on the wall <b>in front of goal 2</b> to <b>save it for Black</b>. It costs both dice and hands Black a point, but the wall drops to a single piece — your 2 has a path again, with something to capture on the way.',
+        text: 'Sometimes the only way past a wall is to buy it down. The two walled tiles are the only ways into goals 2 and 4, so both are sealed — your <b>2</b> has no route home on any roll. Spend your dice on the door: double-click one of the two black pieces on the wall <b>in front of goal 2</b> to <b>save it for Black</b>. It costs both dice and hands Black a point, but the wall drops to a single piece — your 2 has a path again.',
         dice: [3, 5],
         pos: { white: { board: [[4, [7, 2]], [2, [3, 4]], [11, [5, 6]], [12, [3, 6]], [1, [3, 12]], [3, [3, 8]]],
                         saved: [5, 6, 7, 8, 9, 10] },
@@ -3547,7 +3714,7 @@ const _tutSteps = [
     {
         title: 'The endgame',
         fast: true,
-        text: '<b>⏩ Later.</b> Everything you have left is on a goal but one — use the <b>1</b> to step it onto goal 3. Now every piece is on a goal it can be saved from: that’s the <b>endgame</b>, and blank pieces get easier to save — a blank goes out on any die <i>bigger</i> than its goal’s number, as long as you hold no higher goal. Your highest is goal 3, so the <b>5</b> takes a blank straight off it. Numbered pieces never get this; they always need their own number.',
+        text: '<b>⏩ Later.</b> Once every piece is on a goal, saving gets easier. All but one of yours already are — use the <b>1</b> to step it onto goal 3. That’s the <b>endgame</b>: a blank now goes out on any die <i>bigger</i> than its goal’s number, as long as you hold no higher goal. Your highest is goal 3, so the <b>5</b> takes a blank straight off it. Numbered pieces never get this; they always need their own number.',
         dice: [1, 5],
         pos: { white: { board: [[2, [7, 4]], [11, [7, 8]], [12, [6, 8]]],
                         saved: [1, 3, 4, 5, 6, 7, 8, 9, 10] },
@@ -3560,7 +3727,7 @@ const _tutSteps = [
     },
     {
         title: 'Some dice do nothing',
-        text: 'The <b>4</b> takes your last blank off goal 3. Your 2 can’t use the 5 — a numbered piece only ever goes out on its own number, and you haven’t rolled a 2. Nothing else to do, so end your turn yourself: the right-hand arrow above the board (or the Enter key).',
+        text: 'Not every roll can be used, and that’s fine. The <b>4</b> takes your last blank off goal 3. Your 2 can’t use the 5 — a numbered piece only ever goes out on its own number. Nothing else to do, so end your turn yourself: the right-hand arrow above the board (or the Enter key).',
         dice: [4, 5],
         pos: { white: { board: [[2, [7, 4]], [11, [7, 8]]],
                         saved: [1, 3, 4, 5, 6, 7, 8, 9, 10, 12] },
@@ -3573,7 +3740,7 @@ const _tutSteps = [
     },
     {
         title: 'Your last piece',
-        text: 'Your 2 has <b>lost its number</b>. With one piece left at the start of your turn, a numbered piece on its goal becomes blank — so it no longer has to wait for a 2, and any die of 2 or more brings it in. Save it and the game is yours.',
+        text: 'The rules help a straggler: your 2 has <b>lost its number</b>. With one piece left at the start of your turn, a numbered piece on its goal becomes blank — so it no longer has to wait for a 2, and any die of 2 or more brings it in. Save it and the game is yours.',
         dice: [5, 3],
         pos: { white: { board: [[2, [7, 4]]], saved: [1, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12] },
                black: { board: [[1, [6, 4]], [2, [6, 4]], [3, [3, 9]], [7, [2, 10]]],
@@ -3598,6 +3765,126 @@ const _tutSteps = [
         done: () => false,
     },
 ];
+
+// ── step 0's demo ────────────────────────────────────────────────────────────
+// One white piece's whole life, on a loop: out of the rack onto home, out along
+// spoke 6 capturing Black's lone 5 at ring 4, onto goal 5, and into the saved
+// rack. Each leg is an arrow drawn first and a slide after, and the matching
+// clause of the card lights up. It moves the REAL pieces (the step's own position
+// is re-applied to reset the loop, and every later step lays out its own), so the
+// intro step also locks input -- see _inputLocked.
+// `run` is a generation counter: every timer checks it, so stopping is just a
+// bump, and a late timer from a previous loop or step can never act.
+const _tutDemo = { run: 0, objs: [], timers: [], tweens: [] };
+const _TUT_DEMO_BEAT_BG = 'rgba(123,79,224,.17)';   // HINT_COLOR, faint
+function _tutBeat(i) {
+    const b = _tut.bubble; if (!b) return;
+    b.querySelectorAll('[data-beat]').forEach(el => {
+        el.style.cssText = 'border-radius:4px; transition:background .3s;' +
+            '-webkit-box-decoration-break:clone; box-decoration-break:clone;' +
+            'background:' + (+el.dataset.beat === i ? _TUT_DEMO_BEAT_BG : 'transparent') + ';';
+    });
+}
+function _tutDemoStop() {
+    _tutDemo.run++;
+    _tutDemo.timers.forEach(clearTimeout); _tutDemo.timers = [];
+    _tutDemo.tweens.forEach(t => { try { t.stop(); } catch (e) {} }); _tutDemo.tweens = [];
+    _tutDemoClear();
+}
+function _tutDemoClear() {
+    _tutDemo.objs.forEach(o => { try { o.destroy(); } catch (e) {} }); _tutDemo.objs = [];
+}
+// An arrow that GROWS from `from` towards `to`, stopping short of both centres
+// so it reads between the pieces rather than on top of them.
+function _tutArrow(scene, from, to, ms) {
+    const g = scene.add.graphics().setDepth(76);
+    _tutDemo.objs.push(g);
+    const dx = to.x - from.x, dy = to.y - from.y, len = Math.hypot(dx, dy) || 1;
+    const ux = dx / len, uy = dy / len;
+    const s = Math.min(30, len * 0.2), e = Math.min(34, len * 0.25);
+    const p = { t: 0 };
+    const draw = () => {
+        g.clear();
+        const x0 = from.x + ux * s, y0 = from.y + uy * s;
+        const L = Math.max(1, (len - s - e) * p.t);
+        const x1 = x0 + ux * L, y1 = y0 + uy * L;
+        g.lineStyle(8, HINT_COLOR, 0.9);
+        g.lineBetween(x0, y0, x1, y1);
+        const h = 24, w = 15;
+        g.fillStyle(HINT_COLOR, 1);
+        g.fillTriangle(x1 + ux * h * 0.6, y1 + uy * h * 0.6,
+                       x1 - ux * h * 0.4 - uy * w, y1 - uy * h * 0.4 + ux * w,
+                       x1 - ux * h * 0.4 + uy * w, y1 - uy * h * 0.4 - ux * w);
+    };
+    draw();
+    _tutDemo.tweens.push(scene.tweens.add({ targets: p, t: 1, duration: ms, ease: 'Sine.easeOut', onUpdate: draw }));
+}
+function _tutDemoRing(scene, x, y, r) {
+    const g = scene.add.circle(x, y, r, 0, 0).setStrokeStyle(6, HINT_COLOR, 1).setDepth(76);
+    _tutDemo.objs.push(g);
+    _tutDemo.tweens.push(scene.tweens.add({ targets: g, scale: 1.16, alpha: 0.4, duration: 650,
+                                            yoyo: true, repeat: -1, ease: 'Sine.easeInOut' }));
+}
+// Slower than animateFrom's 160ms on purpose -- the point is to be watched -- and
+// not gated on the effects setting, for the same reason.
+// The piece's RESTING point is kept in `_tutAt`, and the next arrow starts there
+// rather than at piece.x: Phaser advances tweens by capped frame deltas, so on a
+// slow device a slide can still be under way when the next leg begins, and an
+// arrow read from the live position started back at the rack (measured headless).
+function _tutSlide(scene, piece, place, ms) {
+    if (piece._tutTween) { piece._tutTween.stop(); piece._tutTween = null; }
+    const ox = piece.x, oy = piece.y;
+    place();
+    const nx = piece.x, ny = piece.y;
+    piece._tutAt = { x: nx, y: ny };
+    const proxy = { x: ox, y: oy };
+    piece.setPosition(ox, oy);
+    _tutDemo.tweens.push(piece._tutTween = scene.tweens.add({
+        targets: proxy, x: nx, y: ny, duration: ms, ease: 'Cubic.easeInOut',
+        onUpdate: () => piece.setPosition(proxy.x, proxy.y),
+        onComplete: () => { if (piece.currentTile) piece.currentTile.updatePositions();
+                            else if (piece.rack) piece.rack.shiftPiecesUp(); },
+    }));
+}
+function _tutDemoStart(game) {
+    const scene = _setupScene(); if (!scene || !scene.add || !scene.tweens) return;
+    const step = _tutStep(); if (!step || !step.intro) return;
+    const run = ++_tutDemo.run;
+    const at = (ms, fn) => _tutDemo.timers.push(setTimeout(() => {
+        if (_tutDemo.run !== run || !_tut.active) return;
+        try { fn(); } catch (e) { console.warn('[TUTORIAL] demo beat failed:', e); }
+    }, ms));
+    const rack = _tutRack(game, 'white', 'unentered'), saved = _tutRack(game, 'white', 'saved');
+    const piece = rack.pieces[0], enemy = _tutPiece(game, 'black', 5);
+    const home = _tutHub(game), mid = _tutTile(game, 4, 6), goal = _tutGoal(game, 5);
+    if (!piece || !enemy || !home || !mid || !goal) return;
+    piece._tutAt = null;
+    const pos = () => piece._tutAt || { x: piece.x, y: piece.y };
+    const leg = (t0, beat, to, place) => {
+        at(t0, () => { _tutDemoClear(); _tutBeat(beat); _tutArrow(scene, pos(), to(), 700); });
+        at(t0 + 850, () => { _tutDemoClear(); _tutSlide(scene, piece, place, 650); });
+    };
+    at(0, () => {
+        _tutBeat(0);
+        [saved, _tutRack(game, 'black', 'saved')].forEach(r =>
+            _tutDemoRing(scene, r.nextX(), r.nextY(), (piece.radius || PIECE_RADIUS_BASE) * 1.6));
+    });
+    leg(2600, 1, () => _hintTileCentre(home), () => _setupPlaceOnTile(piece, home));
+    leg(4900, 2, () => _hintTileCentre(mid), () => _setupPlaceOnTile(piece, mid));
+    at(6500, () => {                                   // the capture
+        fxBurst(scene, enemy.x, enemy.y, 0xff5555);
+        _tutSlide(scene, enemy, () => _setupPlaceOnTile(enemy, home), 550);
+    });
+    leg(7900, 3, () => _hintTileCentre(goal), () => _setupPlaceOnTile(piece, goal));
+    leg(10200, 4, () => ({ x: saved.nextX(), y: saved.nextY() }), () => _setupPlaceInRack(piece, saved, false));
+    at(12600, () => _tutBeat(-1));
+    at(13600, () => {                                  // reset and go round again
+        _tutDemo.tweens.forEach(t => { try { t.stop(); } catch (e) {} }); _tutDemo.tweens = [];
+        _tutDemoClear();
+        _tutApply(game, step.pos);
+        _tutDemoStart(game);
+    });
+}
 
 // ── runner ───────────────────────────────────────────────────────────────────
 const _TUT_BUBBLE_CSS = 'position:fixed; left:50%; bottom:20px; transform:translateX(-50%);' +
@@ -3652,6 +3939,7 @@ function _tutMeasureBubble(width) {
 function _tutRender() {
     const game = _setupGame(); if (!game) return;
     const step = _tutSteps[_tut.step];
+    _tutDemoStop();
     if (step.pos) {
         _tutApply(game, step.pos);
         _tutSetDice(game, step.dice[0], step.dice[1]);
@@ -3679,8 +3967,11 @@ function _tutRender() {
         if (typeof updateTurnStatus === 'function') updateTurnStatus('');   // the game is over
     } else {
         mkBtn('Exit', false, () => _tutEnd(false));
-        mkBtn('Skip →', true, _tutNext);
+        mkBtn(step.intro ? 'Start →' : 'Skip →', true, _tutNext);
     }
+    // After the card exists: the demo lights its clauses. Deferred a frame so the
+    // pieces the step just laid out have their positions before an arrow reads them.
+    if (step.intro) requestAnimationFrame(() => { if (_tutStep() === step) _tutDemoStart(game); });
 }
 function _tutNote(html) {
     const b = _tut.bubble; if (!b) return;
@@ -3793,12 +4084,13 @@ function startTutorial() {
 // first game cannot scroll away and arrives when it is useful.
 function _tutFinish(position) {
     setDifficultySetting(position);
-    try { localStorage.setItem('hintsEnabled', '1'); } catch (e) {}
+    try { localStorage.setItem('hintsEnabled', '1'); localStorage.setItem('ruleTips', '1'); } catch (e) {}
     if (typeof refreshHintButton === 'function') refreshHintButton();
     _hintNudgePending = true;
     _tutEnd(true);
 }
 function _tutEnd(startGame) {
+    _tutDemoStop();
     _tut.active = false; window._tutorialActive = false;
     _tut.busy = false;
     clearInterval(_tut.timer); _tut.timer = null;
@@ -3815,7 +4107,7 @@ function _tutEnd(startGame) {
 // Defer to after the whole script has run (this file `defer`s, so the DOM is
 // ready; setTimeout ensures later `let` globals like matchTracker are initialised
 // before createSettingsPanel -> refreshSettingsMatchState touches them).
-function _initChrome() { _recUnlockFromUrl(); _seedFirstRunDefaults();
+function _initChrome() { _recUnlockFromUrl(); _seedFirstRunDefaults(); setInterval(_ruleTipTick, 300);
                         createSettingsPanel(); createLegendButton(); createHintButton();
                         maybeShowFirstRunNudge(); _armFullscreenOnFirstGesture();
                         _recArmPermissionOnFirstGesture(); _recRefreshRow(); }
@@ -5587,6 +5879,7 @@ class Piece {
 
             this.game.pushUndo();   // snapshot before the block-save
             if (typeof _recMove === 'function') _recMove(this, 0);   // agent format for a block-save
+            _tipNoteBlockSave(this.game, this);
 
             // Peel ONLY the double-clicked piece into its own saved rack; the
             // rest of the block stays (a 2-stack becomes a blot). The attacker
@@ -7844,6 +8137,8 @@ class Game {
         const homeTile = this.tiles.find(tile => tile.type === 'home');
         if (homeTile) {
             fxBurst(this.scene, piece.x, piece.y, 0xff5555);   // capture flash at the spot
+            // read by the rule tips (_ruleTipScan): a capture looks like an entry on the board
+            (this._captureLog || (this._captureLog = [])).push({ victim: piece.player, by: this.turn });
             SFX.capture();
             piece.move(homeTile);
             piece.currentTile = homeTile;
@@ -9969,6 +10264,7 @@ if (movePair.some(m => Array.isArray(m) && m[0] === 1 && m[1] === 1 && m[2] === 
                     // explain. The four sites are: movePiece, Piece.save,
                     // handleDoubleClick's block-save, and this one.
                     if (typeof _recMove === 'function') _recMove(piece, 0);
+                    _tipNoteBlockSave(game, piece);
                     piece.moveToRack(savedRack);   // peel only the named piece; rest of the block stays
                     game.registerSave();   // no-save streak resets immediately
                     game.dice.forEach(die => die.setUsed());
