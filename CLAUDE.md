@@ -259,6 +259,17 @@ with it in mind.** Assessment and the concrete implications:
 
 ## Current state
 
+- **TUTORIAL POLISH (owner, 2026-09-30).** (1) **Desktop text 14.5 -> 16px, title
+  17 -> 18.5px**, phones unchanged -- and the desktop card widened 640 -> 760 so
+  the TALLEST step (which fixes the board's size for all steps) got SHORTER, 227 ->
+  216px: measured at 1280x900 / 1440x900 / 1920x1080 / 1366x768 / 1024x768, the
+  board grew 11px at each and no step's text scrolls. (2) **Step 7's move is
+  animated along its real route** (`routeAnim: true` on the step ->
+  `Game._routeBetween`, a BFS under `_bfsDistances`' own rules, ->
+  `Piece.animateRoute`, 220ms a tile). Measured: 9 steps, 3,3 up spoke 4 into
+  goal 2, round 7,21 / 7,20 / 7,19 into goal 4, passing within 6 world px of goal
+  2's centre. Every other move keeps the plain 160ms slide.
+
 - **THE TUTORIAL SCRIPT IS ORDERED AND ONLY ITS PIECE IS SELECTABLE (owner,
   2026-09-30).** Each step with moves has a `seq`: the exact sequence -- which
   piece, and a `tile` / `save` / `block` / `end` (end turn). The CURRENT item is
@@ -318,7 +329,7 @@ with it in mind.** Assessment and the concrete implications:
   from the new game.py is BYTE-IDENTICAL, and a full self-play game in the browser
   completed (12-9).
 
-- **LEARNING CURVE, ROUND 2, ON `testing` (owner, 2026-09-30).** A new player met
+- **LEARNING CURVE, ROUND 2 (owner, 2026-09-30; on main since the same day).** A new player met
   "send the front one out" before being told what the game is FOR -- "save all
   twelve" first appeared in the closing panel. Three changes, owner's picks from a
   list of eight (the others -- a persistent goal line in the card header, board
@@ -344,6 +355,10 @@ with it in mind.** Assessment and the concrete implications:
   the size the other steps reserve, so nothing jumps at Start (canvas 962x641
   before and after), which on desktop leaves the card's usual band empty during
   step 1. The card's usual placement returns on Start and comes back on Back.
+  **Start appears only after the text has been through once** (owner):
+  hidden-not-absent (`#tutStart`, visibility) so the row does not shift, revealed by
+  the demo at 18.5s (`_tutRevealStart`); `_tut.introSeen` keeps it shown on a later
+  Back, reset by `startTutorial`. Only the button advances step 1 -- no key does.
   Trap hit: `style.padding = ''` DROPS the card's own padding from its cssText; set
   the value. Button reads **Start ->**, and the
   intro LOCKS INPUT (`_inputLocked` returns true for an intro step; every other

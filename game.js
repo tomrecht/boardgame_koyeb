@@ -3748,7 +3748,10 @@ function _tutFitBoardBase() {
     } else {
         // Stacked: board on top, text under it. The pair is centred as a group,
         // so a short board doesn't leave a chasm between the two.
-        const bw = Math.round(Math.min(640, W * 0.92));
+        // 760, not 640: the desktop text went up 14.5 -> 16px (owner, 2026-09-30),
+        // and widening the card by about the same ratio keeps the tallest step --
+        // which fixes the board's size for every step -- about where it was.
+        const bw = Math.round(Math.min(760, W * 0.92));
         b.style.width = bw + 'px';                // explicit: clearing it would
         b.style.right = 'auto';                   // collapse the card to fit-content
         b.style.left = '50%';
@@ -3906,6 +3909,7 @@ const _tutSteps = [
                black: { board: [[8, [6, 2]], [9, [6, 2]], [10, [5, 21]], [11, [5, 22]]].concat(_TUT_BLACK_MID),
                         saved: [4, 5, 6] } },
         seq: [_tutMoveTo(4, g => _tutGoal(g, 4))],
+        routeAnim: true,                 // show the nine-tile route through goal 2
         done: g => _tutPiece(g, 'white', 4).currentTile === _tutGoal(g, 4),
         black: [{ n: 10, to: [6, 4] }, { n: 11, to: [6, 4] }],
     },
@@ -4068,12 +4072,19 @@ function _tutDemoStart(game) {
     });
     leg(12000, 3, () => _setupPlaceOnTile(piece, goal));
     leg(15500, 4, () => _setupPlaceInRack(piece, saved, false));
+    at(18500, _tutRevealStart);                       // the text has been through once
     at(19500, () => {                                  // reset and go round again
         _tutDemo.tweens.forEach(t => { try { t.stop(); } catch (e) {} }); _tutDemo.tweens = [];
         _tutDemoClear();
         _tutApply(game, step.pos);
         _tutDemoStart(game);
     });
+}
+
+function _tutRevealStart() {
+    _tut.introSeen = true;
+    const el = document.getElementById('tutStart');
+    if (el) { el.style.visibility = 'visible'; requestAnimationFrame(() => { el.style.opacity = '1'; }); }
 }
 
 // ── runner ───────────────────────────────────────────────────────────────────
@@ -4105,7 +4116,7 @@ function _tutStepHtml(step, idx) {
     }
     return '<div style="font-size:12px; letter-spacing:.04em; text-transform:uppercase; color:#8b95a3; margin-bottom:3px;">' +
             'Tutorial · Step ' + (idx + 1) + ' of ' + _tutSteps.length + '</div>' +
-        '<div style="font-weight:700; font-size:' + (step.intro ? 20 : 17) + 'px; margin-bottom:5px;">' + step.title + '</div>' +
+        '<div style="font-weight:700; font-size:' + (step.intro ? 20 : _isPhone() ? 17 : 18.5) + 'px; margin-bottom:5px;">' + step.title + '</div>' +
         // The TEXT scrolls, not the card: with the card scrolling as a whole,
         // Exit/Skip sit at the end of the flex column and go below the fold on
         // any step taller than the cap -- which on a portrait phone is all of
@@ -4113,7 +4124,7 @@ function _tutStepHtml(step, idx) {
         (step.intro
             ? '<div id="tutText" style="font-family:' + BODY_FONT + '; font-size:19px; line-height:1.45;' +
                   'color:#28313b; transition:opacity .18s; flex:1 1 auto;">' + step.beats[0] + '</div>'
-            : '<div id="tutText" style="font-family:' + BODY_FONT + '; font-size:14.5px; line-height:1.5;' +
+            : '<div id="tutText" style="font-family:' + BODY_FONT + '; font-size:' + (_isPhone() ? 14.5 : 16) + 'px; line-height:1.5;' +
                   'color:#33404b; overflow-y:auto; min-height:0; flex:1 1 auto;">' + step.text + '</div>') +
         // flex-wrap, for the finish step's two difficulty buttons: on a PHONE IN
         // LANDSCAPE the card is only 180-300px wide (_tut._cardW), which is not
@@ -4192,7 +4203,16 @@ function _tutRender() {
     } else {
         mkBtn('Exit', false, () => _tutEnd(false));
         back();
-        mkBtn(step.intro ? 'Start →' : 'Skip →', true, _tutNext);
+        const fwd = mkBtn(step.intro ? 'Start →' : 'Skip →', true, _tutNext);
+        // STEP 1's Start waits until the text has been through once (owner,
+        // 2026-09-30). Hidden, not absent, so the row does not shift when it
+        // arrives; the demo reveals it (_tutRevealStart) at the end of the first
+        // loop. Once seen, it stays: coming Back to step 1 shows it at once.
+        if (step.intro && !_tut.introSeen) {
+            fwd.id = 'tutStart';
+            fwd.style.visibility = 'hidden'; fwd.style.opacity = '0';
+            fwd.style.transition = 'opacity .4s';
+        }
     }
     // Entering or leaving step 1 moves the card between the board and its band.
     if (step.intro || _tut._introShown) {
@@ -4292,7 +4312,7 @@ function startTutorial() {
         return;
     }
     _tut.active = true; window._tutorialActive = true;
-    _tut.step = 0; _tut.busy = false; _tut.turnEnded = false;
+    _tut.step = 0; _tut.busy = false; _tut.turnEnded = false; _tut.introSeen = false;
     const welcome = document.getElementById('welcomeScreen');
     if (welcome) welcome.remove();     // reachable from the settings panel too
     // The tutorial runs on the welcome screen's held game, but it is a real
@@ -6170,6 +6190,41 @@ class Piece {
     // Slide the piece from (ox,oy) to its current position (a quick move tween).
     // On completion it snaps to the tile/rack's exact layout spot so the visual
     // never drifts from where the piece logically belongs.
+    // Slide from (ox, oy) through the centre of every tile on `route` to where the
+    // piece now rests -- slow enough to follow, and not gated on the effects
+    // setting, since it is there to teach the route.
+    animateRoute(ox, oy, route) {
+        if (!this.scene || !this.scene.tweens) return;
+        const nx = this.x, ny = this.y;
+        const pts = [{ x: ox, y: oy }];
+        route.slice(1, -1).forEach(t => { const c = _hintTileCentre(t); if (c) pts.push(c); });
+        pts.push({ x: nx, y: ny });
+        const seg = [];
+        let total = 0;
+        for (let i = 1; i < pts.length; i++) {
+            const d = Math.hypot(pts[i].x - pts[i - 1].x, pts[i].y - pts[i - 1].y);
+            seg.push(d); total += d;
+        }
+        if (!total) return;
+        if (this._moveTween) { this._moveTween.stop(); this._moveTween = null; }
+        const at = (f) => {
+            let d = f * total, i = 0;
+            while (i < seg.length - 1 && d > seg[i]) { d -= seg[i]; i++; }
+            const u = seg[i] ? Math.min(1, d / seg[i]) : 1;
+            return { x: pts[i].x + (pts[i + 1].x - pts[i].x) * u, y: pts[i].y + (pts[i + 1].y - pts[i].y) * u };
+        };
+        const proxy = { f: 0 };
+        this.setPosition(ox, oy);
+        this._moveTween = this.scene.tweens.add({
+            targets: proxy, f: 1, duration: 220 * (route.length - 1), ease: 'Sine.easeInOut',
+            onUpdate: () => { const q = at(proxy.f); this.setPosition(q.x, q.y); },
+            onComplete: () => {
+                this._moveTween = null;
+                if (this.currentTile) this.currentTile.updatePositions(); else this.setPosition(nx, ny);
+            },
+        });
+    }
+
     animateFrom(ox, oy) {
         if (!getFeedbackEnabled() || !this.scene || !this.scene.tweens) return;
         const nx = this.x, ny = this.y;
@@ -8018,6 +8073,26 @@ class Game {
 
     // Shortest (BFS) distance from startTile to every reachable tile, respecting
     // the same blocked/nogo/home rules as movement.
+    // One shortest route from a to b (inclusive), under the same traversal rules
+    // as _bfsDistances; null if there is none.
+    _routeBetween(a, b) {
+        const prev = new Map([[a, null]]);
+        const queue = [a];
+        while (queue.length) {
+            const t = queue.shift();
+            if (t === b) break;
+            t.neighbors.forEach(n => {
+                if (n.type !== 'nogo' && n.type !== 'home' && !this.isBlocked(n) && !prev.has(n)) {
+                    prev.set(n, t); queue.push(n);
+                }
+            });
+        }
+        if (!prev.has(b)) return null;
+        const path = [];
+        for (let t = b; t; t = prev.get(t)) path.unshift(t);
+        return path;
+    }
+
     _bfsDistances(startTile) {
         const dist = new Map([[startTile, 0]]);
         const queue = [startTile];
@@ -8134,9 +8209,15 @@ class Game {
             }
 
             const _ox = piece.x, _oy = piece.y;   // for the slide animation
+            const _fromTile = piece.currentTile;
             piece.isHovered = false;              // it is not under the pointer any more
             piece.move(targetTile);
-            piece.animateFrom(_ox, _oy);
+            // A tutorial step can ask for the move to be shown along its actual
+            // route (step 7: the long way round, through goal 2).
+            const _st = _tut.active ? _tutStep() : null;
+            const _route = _st && _st.routeAnim && _fromTile ? this._routeBetween(_fromTile, targetTile) : null;
+            if (_route && _route.length > 2) piece.animateRoute(_ox, _oy, _route);
+            else piece.animateFrom(_ox, _oy);
             SFX.move();
 
             const homeTile = this.tiles.find(tile => tile.type === 'home');
