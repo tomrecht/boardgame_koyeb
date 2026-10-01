@@ -10191,10 +10191,18 @@ class EndGameScene extends Phaser.Scene {
         // chatter does not restart the scene under the player.
         const worldKey = () => { const w = _world(); return [w.x, w.y, w.w, w.h].join(','); };
         this._worldKey = worldKey();
-        this.scale.on('resize', () => {
+        // The ScaleManager is GAME-wide and outlives this scene, so the listener
+        // must go when the scene does. Left behind, it fired on the next resize
+        // with no camera, threw -- and when Phaser's own size check ran it inside
+        // the game step, the throw killed the loop for good: a frozen screen after
+        // New Match from the end card on a phone (owner, 2026-10-01).
+        const onResize = () => {
+            if (!this.sys.isActive()) return;
             _fitCameraToWorld(this);
             if (worldKey() !== this._worldKey) this.scene.restart(this._data);
-        });
+        };
+        this.scale.on('resize', onResize);
+        this.events.once('shutdown', () => this.scale.off('resize', onResize));
 
         let message;
         if (this.winner === 'draw') {

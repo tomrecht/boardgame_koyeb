@@ -259,6 +259,17 @@ with it in mind.** Assessment and the concrete implications:
 
 ## Current state
 
+- **FROZEN SCREEN AFTER NEW MATCH FROM THE END CARD, ON A PHONE (owner,
+  2026-10-01).** `EndGameScene.create` added a `this.scale.on('resize')` listener
+  and never removed it; the ScaleManager is game-wide, so after the main scene
+  took over, the next resize (Chrome's URL bar) called it on a stopped scene with
+  no camera and it threw. **When Phaser's own size check runs that emit inside the
+  game step, the throw kills the rAF loop permanently** -- measured: loop frame
+  stuck at 134 forever. Now removed on `shutdown` and guarded by
+  `sys.isActive()`. Measured after: frame keeps advancing, 0 errors over six
+  resizes (was one per resize). **Rule: any `scale.on` / `window` listener added
+  in a scene's `create` needs a matching `off` on `shutdown`.**
+
 - **A MOVE REFUSED BECAUSE ANOTHER PIECE MUST MOVE NOW SAYS WHY (owner,
   2026-10-01).** It used to answer only with the amber pulse on the obliged piece.
   `_refuseForObligation(game, piece)` replaces `_flashMustMove` at all five
