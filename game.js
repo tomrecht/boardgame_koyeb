@@ -632,7 +632,16 @@ function _noticeWhyUnreachable(game, piece, targetTile) {
     // message does not have to enumerate which.
     const makeable = live.slice();
     if (live.length === 2) makeable.push(live[0] + live[1]);
-    if (makeable.includes(d)) return no('the dice can make that distance; another rule refused it', { d: d, live: live });
+    if (makeable.includes(d)) {
+        // The commonest "other rule": another piece is obliged to move -- a
+        // captured piece, or the rack entry that needs a die kept for it (the sum
+        // is withheld from every other piece then). Say that one.
+        if ((game.mustMovePieces || []).length && !game.mustMovePieces.includes(piece)) {
+            _refuseForObligation(game, piece);
+            return true;
+        }
+        return no('the dice can make that distance; another rule refused it', { d: d, live: live });
+    }
     return sayOnRepeat('That tile is ' + d + ' ' + (d === 1 ? 'step' : 'steps') + ' away by the shortest route, so it takes ' +
                _anNumber(d) + ' — a piece always travels the shortest way, whichever path you had in mind.');
 }
@@ -650,6 +659,33 @@ function _anNumber(n) { return (n === 8 || n === 11) ? 'an ' + n : 'a ' + n; }
 // an overlay ring rather than a tween on the piece itself -- a Piece owns three
 // display objects (body, sheen, circle), and a tween interrupted by a move or a
 // scene restart could strand one of them half-faded.
+// A move refused because ANOTHER piece is obliged to move -- a captured piece on
+// home, or the rack entry still owed -- used to answer only with the amber pulse
+// on that piece (owner, 2026-10-01: "is there any text explanation?"). It now
+// says which rule, on the SECOND try at the same piece with the board unchanged
+// (the same "asking twice" rule as the route explanation, _whySig), or on the
+// FIRST try while first-game rule tips are on. Never in the tutorial, which points
+// at its own scripted piece.
+function _refuseForObligation(game, piece) {
+    _flashMustMove(game);
+    if (!game || _tut.active || !piece) return;
+    if (game.currentPlayerIsHuman && !game.currentPlayerIsHuman()) return;
+    let msg = null;
+    if (game.hasCapturedOnHome && game.hasCapturedOnHome()) {
+        msg = 'A captured piece has to come back out first — move it off the home tile before anything else.';
+    } else if (piece.rack && piece.rack.type === 'unentered' && !_isEntrant(piece)) {
+        msg = game.dice.some(d => d.used)
+            ? 'Only the front piece on your rack can come out now.'
+            : 'Rack pieces come out in order, from the front.';
+    } else if ((game.mustMovePieces || []).length) {
+        msg = 'Your front rack piece still has to come out this turn, so keep a die for it.';
+    }
+    if (!msg) return;
+    const now = Date.now(), sig = _whySig(game, piece), prev = game._mustLast;
+    const twice = !!prev && prev.piece === piece && prev.sig === sig && now - prev.at >= WHY_REPEAT_MIN_MS;
+    game._mustLast = { piece, sig, at: now };
+    if (twice || getRuleTipsEnabled()) flashNotice(msg, 5500, 'move');
+}
 const MUST_FLASH_COLOR = 0xffb300;        // the amber that already means "must move"
 function _flashMustMove(game) {
     if (game) _flashPieces(game, game.mustMovePieces || []);
@@ -6038,7 +6074,7 @@ class Piece {
                 return;
             }
             if (!selectable) {         // nothing to hand the selection over to
-                if (this.player === this.game.turn) _flashMustMove(this.game);
+                if (this.player === this.game.turn) _refuseForObligation(this.game, this);
                 return;
             }
 
@@ -6056,12 +6092,12 @@ class Piece {
         }
         // if (this.player !== this.game.turn) return; 
         if (this.rack && this.rack.type === 'unentered' && !_isEntrant(this)) {
-            _flashMustMove(this.game);   // the piece that IS enterable, instead
+            _refuseForObligation(this.game, this);   // flashes the piece that IS enterable
             return;
         }
         if (this.player === this.game.turn && !this.game.canSelectForMove(this)) {
             console.log("Must keep a die for the obligatory piece(s)");
-            _flashMustMove(this.game);
+            _refuseForObligation(this.game, this);
             return false;
         }
 
@@ -8239,7 +8275,7 @@ class Game {
                 // Absolute while a captured piece is on home -- see canSelectForMove.
                 if (this.hasCapturedOnHome()) {
                     console.log('A captured piece must move first');
-                    _flashMustMove(this);
+                    _refuseForObligation(this, piece);
                     return false;
                 }
                 const unused = this.dice.filter(d => !d.used).length;
@@ -8247,7 +8283,7 @@ class Game {
                                  reachableBySecondDie.includes(targetTile)) ? 1 : 2;
                 if (unused - willUse < this.mustMovePieces.length) {
                     console.log('Must keep a die for the obligatory piece(s)');
-                    _flashMustMove(this);
+                    _refuseForObligation(this, piece);
                     return false;
                 }
             }

@@ -259,6 +259,24 @@ with it in mind.** Assessment and the concrete implications:
 
 ## Current state
 
+- **A MOVE REFUSED BECAUSE ANOTHER PIECE MUST MOVE NOW SAYS WHY (owner,
+  2026-10-01).** It used to answer only with the amber pulse on the obliged piece.
+  `_refuseForObligation(game, piece)` replaces `_flashMustMove` at all five
+  refusal sites (three in `Piece.handleClick`, two in `movePiece`) and names the
+  rule: a captured piece first / keep a die for the front rack piece / rack order.
+  **First try while first-game rule tips are on, otherwise the second try at the
+  same piece with the board unchanged** (`_whySig`, the route explanation's rule).
+  Tagged `'move'`, so dismissible. Never in the tutorial; human turns only.
+  **The commonest case was invisible to those five sites:** with the entry owed the
+  game WITHHOLDS the sum from every other piece, so trying to spend both dice on a
+  board piece is not a refusal at all -- the tile is simply unlit and the tap goes
+  to `_noticeWhyUnreachable`, which deliberately stays silent when the dice CAN make
+  the distance. That branch now hands an outstanding obligation to the same helper.
+  Measured, tips on / off: captured piece waiting, tap a board piece -> text on try
+  1 / only on try 2; entry owed, tap a sum destination for a board piece -> same;
+  third rack piece -> same. Control: a legal one-die move in that position moves,
+  spends one die, no notice; the tutorial still plays through.
+
 - **ADVICE NOTICES CAN BE WAVED AWAY, AND GO WHEN YOU ACT (owner, 2026-09-30).**
   A notice tagged `'tip'` (rule tips, the hint nudge) or `'move'` (why a move was
   refused, the hint's suggestion) now takes the pointer and shows an ×: a tap

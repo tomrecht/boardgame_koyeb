@@ -138,6 +138,12 @@ appear only when the player taps the same tile again with the board unchanged.
 - A capture is possible on the way — move one die at a time to choose the route.  *(auto en-route capture off)*
 - More than one capture is possible on the way — move one die at a time to choose.  *(auto en-route capture on)*
 
+Another piece has to move first (`_refuseForObligation`) — on the first try while first-game rule tips are on, otherwise when the same piece is tried again with the board unchanged:
+- A captured piece has to come back out first — move it off the home tile before anything else.
+- Your front rack piece still has to come out this turn, so keep a die for it.
+- Rack pieces come out in order, from the front.  *(both dice unused)*
+- Only the front piece on your rack can come out now.  *(a die already used)*
+
 Double-click-to-goal declines (`sendToGoal`):
 - A captured piece has to come back out first — move it off the home tile before anything else.
 - The first piece on the rack must still enter this turn, so this one can’t use both dice.
