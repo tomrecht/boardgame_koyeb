@@ -2616,6 +2616,34 @@ function _recUndo(game) {
         console.log('[rec] undo dropped', before - _rec.pending.length, 'recorded half-move(s)');
     }
 }
+// WHAT THE COMPUTER MEANT, NOT JUST WHAT HAPPENED (owner, 2026-10-01). `m` is
+// what the board actually played, so a half the board REFUSED leaves no trace --
+// it ends the turn and reads exactly like a pass. On the computer's turns the
+// record also keeps every pair the agent returned (`a`; a second entry is the
+// extra-move re-ask) and any half the board refused (`x`), so "it passed with a
+// save on" can be told apart: the net chose it, or the board dropped it.
+// Agent format, with the die: "7>5.4:3", "7>s:6", "o7>b" (block-save), "-" pass,
+// "draw". Both fields are absent on a turn that has nothing to say.
+function _recAgentMove(mv) {
+    if (!Array.isArray(mv)) return String(mv);
+    const [pc, dest, roll] = mv;
+    if (pc === 0 && dest === 0 && roll === 0) return '-';
+    if (pc === 1 && dest === 1 && roll === 1) return 'draw';
+    if (!Array.isArray(pc)) return JSON.stringify(mv);
+    const g = _currentGame();
+    const tag = (g && pc[0] !== g.turn) ? 'o' : '';
+    if (dest === 0 && roll === 0) return tag + pc[1] + '>b';
+    const d = dest === 'save' ? 's' : Array.isArray(dest) ? dest[0] + '.' + dest[1] : String(dest);
+    return tag + pc[1] + '>' + d + ':' + roll;
+}
+function _recAgentPair(pair) {
+    if (!_rec) return;
+    try { (_rec.agent || (_rec.agent = [])).push(pair.map(_recAgentMove).join(' ')); } catch (e) {}
+}
+function _recAgentFail(mv) {
+    if (!_rec) return;
+    try { (_rec.agentFail || (_rec.agentFail = [])).push(_recAgentMove(mv)); } catch (e) {}
+}
 function _recNoteHint() {
     if (_rec) _rec.hints.push(_rec.turns.length);
 }
@@ -2631,7 +2659,11 @@ function _recTurn(game) {
             m: _rec.pending.map(e => e.m),
             h: _recHash(_recPosString(game)).toString(36),
         });
+        const t = _rec.turns[_rec.turns.length - 1];
+        if (_rec.agent) t.a = _rec.agent;
+        if (_rec.agentFail) t.x = _rec.agentFail;
         _rec.pending = [];
+        _rec.agent = null; _rec.agentFail = null;
     } catch (e) { console.warn('[rec] turn capture failed', e); }
 }
 function _recFinish(winner, score) {
@@ -2645,7 +2677,7 @@ function _recClose(how) {
     if (!r) return;
     if (!r.turns.length) return;          // the frozen welcome game, or a no-op
     r.completed = (how === 'complete');
-    delete r.pending;
+    delete r.pending; delete r.agent; delete r.agentFail;
     const line = JSON.stringify(r);
     _recPersist(line);
 }
@@ -6671,7 +6703,13 @@ class Piece {
         }
     }
 
-    save() {
+    // `preferValue`: the die the AGENT named for this save. The engine marks THAT
+    // die used, and the pair's other half was chosen against what is left -- so
+    // the board's own pick (which, for a blank, avoids a die a numbered piece
+    // "needs") could spend the die the other half relies on, and that half would
+    // then be refused. Honoured whenever it is one of the legal dice; human saves
+    // pass nothing and keep the smart pick.
+    save(preferValue) {
         if (_tut.active && !_tutSaveOK(this)) { _tutNudge(); _clearSelection(this.game); return false; }
         const player = this.color === 0xffffff ? this.game.players[0] : this.game.players[1];
         console.log(`Attempting to save piece ${this.number} for player ${player.name} in phase ${player.getGamePhase()}`);
@@ -6703,7 +6741,8 @@ class Piece {
                     !this.game.numberedPieceNeedsDie(d.value, this.color));
                 const pool = notReserved.length ? notReserved : candidates;
                 // within the pool prefer the exact goal-number die, else the smallest
-                dieToUse = pool.find(d => d.value === saveTileNumber)
+                dieToUse = (preferValue != null && candidates.find(d => d.value === preferValue))
+                        || pool.find(d => d.value === saveTileNumber)
                         || pool.sort((a, b) => a.value - b.value)[0];
             } else {
                 // Numbered piece: only ever its own value. The endgame higher-die
@@ -10610,6 +10649,7 @@ function applyMovePair(movePair) {
         console.error('Invalid move pair format:', movePair);
         return;
     }
+    if (typeof _recAgentPair === 'function') _recAgentPair(movePair);
 
 if (movePair.some(m => Array.isArray(m) && m[0] === 1 && m[1] === 1 && m[2] === 1)) {
     const caller = game.turn; 
@@ -10777,7 +10817,7 @@ if (movePair.some(m => Array.isArray(m) && m[0] === 1 && m[1] === 1 && m[2] === 
             if (targetTile !== 'save') targetTile.highlight();
             later(() => {
                 if (targetTile === 'save') {
-                    piece.save();
+                    if (!piece.save(dieRoll) && typeof _recAgentFail === 'function') _recAgentFail(move);
                     console.log(`Piece ${pieceColorNumber[0]} ${pieceColorNumber[1]} saved`);
 
                     piece.isSelected = false;
@@ -10795,11 +10835,13 @@ if (movePair.some(m => Array.isArray(m) && m[0] === 1 && m[1] === 1 && m[2] === 
                     callback();
                 } else {
                     console.log('Move not valid according to game rules.');
+                    if (typeof _recAgentFail === 'function') _recAgentFail(move);
                     game.switchTurn();
                 }
             }, 1000); // 1 second delay to highlight the piece before moving
         } else {
             console.log('Piece or target tile not found for move:', move);
+            if (typeof _recAgentFail === 'function') _recAgentFail(move);
             game.switchTurn();
         }
     }

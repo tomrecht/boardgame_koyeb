@@ -259,6 +259,29 @@ with it in mind.** Assessment and the concrete implications:
 
 ## Current state
 
+- **THE RECORDER KEEPS WHAT THE COMPUTER MEANT, AND THE BOARD USES THE AGENT'S
+  SAVE DIE (owner, 2026-10-01).** Owner twice saw the computer, at Max, pass its
+  second half with a legal save of a blank on 6 / a 2-to-goal available. Two
+  explanations: the net chose it, or the BOARD refused the half -- a refused tile
+  move in `applyMovePair` ends the turn and reads exactly like a pass, and `m` in
+  the log records only what was played, so the two were indistinguishable. Each
+  computer turn now also carries **`a`** (every pair the agent returned, agent
+  format WITH the die: `"7>5.4:3"`, `"7>s:6"`, `"o7>b"`, `"-"` pass; a second
+  entry is the extra-move re-ask) and **`x`** (any half the board refused). Both
+  absent when empty; `replay_games.py` ignores them.
+  **A real divergence found on the way:** `Piece.save()` picks its own die and,
+  for a blank, avoids one a numbered piece "needs" -- ignoring the die the agent
+  named, which the engine had marked used and chose the other half against. The
+  AI path now passes it (`save(dieRoll)`), honoured when it is a legal die; human
+  saves pass nothing and keep the smart pick. Tile moves have no such gap: a
+  single-die move's die is fixed by the distance.
+  Measured: 2 self-play games in the browser, recorder on -- 105/105 turns carry
+  `a`, 35 of them with a save, 0 refused halves, 0 turns where the agent's pair
+  has more real moves than the board played, and `replay_games.py` 2/2 clean.
+  Self-play is not where owner saw it, so this shows the plumbing works, not that
+  the bug is gone. Still to diagnose: owner's two cases, once a recorded game
+  shows one (look for `x`, or `a` containing a move that `m` lacks).
+
 - **FROZEN SCREEN AFTER NEW MATCH FROM THE END CARD, ON A PHONE (owner,
   2026-10-01).** `EndGameScene.create` added a `this.scale.on('resize')` listener
   and never removed it; the ScaleManager is game-wide, so after the main scene
