@@ -259,6 +259,24 @@ with it in mind.** Assessment and the concrete implications:
 
 ## Current state
 
+- **HOW OFTEN THE NET MAKES TWO SUSPECTED MIDGAME ERRORS (owner's question,
+  measured 2026-10-02).** Deployed champion, 2-ply, full strength, Python reference
+  agent. Positions from games played forward by the net's 1-ply policy; at each
+  midgame turn start all 21 rolls screened by move generation, one qualifying roll
+  per class put to the 2-ply search. 1,002 positions per class (the rolls are drawn
+  uniformly among QUALIFYING rolls, so these are rates per qualifying position, not
+  per game):
+    (a) a blank save is legal, yet a die is left unused while that save was still
+        available for it -> **3 / 1002 (0.3%)**. Rare but real; consistent with
+        owner seeing it twice.
+    (b) one die can save a blank or put a numbered piece on its own goal, and it
+        goes on the blank save with no numbered piece reaching its goal ->
+        **45 / 1002 (4.5%)**: 24 save + another move, 13 TWO saves (arguably
+        defensible), 8 save + pass. The net chose numbered-to-goal in 871 of 1002.
+  A flag is the class definition firing, NOT a proven error -- the deeper search
+  over all 21 replies is what could arbitrate. Script was a scratchpad one-off
+  (`probe_classes.py`), not committed.
+
 - **CERTAIN LOSS NEXT TURN -> BANK THE MOST (owner, 2026-10-01; on `testing`
   ONLY, for owner to try).** Owner saw the computer, unable to win, bring a piece
   onto a goal instead of saving when his last two pieces were blanks on goal 1 --
