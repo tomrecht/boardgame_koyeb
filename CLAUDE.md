@@ -259,6 +259,24 @@ with it in mind.** Assessment and the concrete implications:
 
 ## Current state
 
+- **CERTAIN LOSS NEXT TURN -> BANK THE MOST (owner, 2026-10-01; on `testing`
+  ONLY, for owner to try).** Owner saw the computer, unable to win, bring a piece
+  onto a goal instead of saving when his last two pieces were blanks on goal 1 --
+  any roll banks both, goals cannot be blocked or their pieces captured, so the
+  game is lost and only the margin is in play. **Not a heavy-loss effect** (owner:
+  it happens at ordinary margins). Rule, exactly as owner specified and no wider:
+  opponent's only unsaved pieces are 2 blanks on goal 1, and no pair wins this
+  turn (the search returns a winning pair before scoring, so reaching the scoring
+  step implies it) -> keep only the candidate pairs with the most OWN saves; the
+  net, ties, difficulty, the draw check and hint rankings choose among those.
+  `opponentWinsNextTurnRegardless` / `ownSaves` in agent.js, twins in
+  agent_gnn.py. Every max-save pair is a candidate (save pairs are exempt from the
+  heuristic cull; first moves that enable a save are kept). Measured in node with
+  an adversarial stub net preferring no-save pairs: condition -> chosen pair saves
+  1 of a possible 1, all 7 surviving candidates save 1, and 30 picks at
+  difficulty 0.8 never go below; control (one white blank on goal 2 instead) -> a
+  no-save pair, 47 candidates, unchanged. `agent_test.js` 50/50.
+
 - **THE RECORDER KEEPS WHAT THE COMPUTER MEANT, AND THE BOARD USES THE AGENT'S
   SAVE DIE (owner, 2026-10-01).** Owner twice saw the computer, at Max, pass its
   second half with a legal save of a blank on 6 / a 2-to-goal available. Two

@@ -102,6 +102,29 @@ def _top_indices(values, k):
     return [int(i) for i in idx[np.argsort(-v[idx], kind='stable')]]
 
 
+def _opponent_wins_next_turn_regardless(board, player):
+    """OPPONENT CERTAIN TO WIN NEXT TURN (owner, 2026-10-01). Their last two
+    pieces are blanks on goal 1, so ANY roll banks both, and nothing we do can
+    stop it -- goals cannot be blocked, pieces on them cannot be captured. If we
+    cannot win this turn (a winning pair returns before scoring) the game is lost
+    and only the margin is in play, so the pair banking the most of our own
+    pieces is right whatever the net says. Deliberately narrow, as owner
+    specified. Twin of opponentWinsNextTurnRegardless in agent.js."""
+    opp = 'black' if player == 'white' else 'white'
+    if (board.black_unentered if opp == 'black' else board.white_unentered):
+        return False
+    left = [p for p in board.pieces if p.player == opp and p.tile is not None]
+    if len(left) != 2:
+        return False
+    return all(p.number > 6 and p.tile.type == 'save' and p.tile.number == 1 for p in left)
+
+
+def _own_saves(pair, player):
+    return sum(1 for m in pair
+               if isinstance(m, tuple) and len(m) == 3 and m[1] == 'save'
+               and isinstance(m[0], tuple) and m[0][0] == player)
+
+
 class GNNAgent:
     """
     Drop-in replacement for Agent using the GNN evaluator.
@@ -294,6 +317,7 @@ class GNNAgent:
 
         draw_legal = (1, 1, 1) in moves
         draw_pair  = ((1, 1, 1), (0, 0, 0))
+        loss_certain = _opponent_wins_next_turn_regardless(board, player)
 
         prefilter = self.use_prefilter and self.heuristic is not None
 
@@ -499,6 +523,19 @@ class GNNAgent:
         # --- Single batched forward pass over the (filtered) candidates ---
         scores = self.model(encoded_list)   # [N]
         final_scores = scores * SCORE_SCALE
+
+        # Lost whatever happens: keep only the pairs that bank the most. Twin of
+        # the block in agent.js's selectMovePair; see the helper's docstring.
+        if loss_certain:
+            n = [_own_saves(pr, player) for pr in move_keys]
+            most = max(n)
+            keep = [i for i, c in enumerate(n) if c == most]
+            if len(keep) < len(move_keys):
+                move_keys = [move_keys[i] for i in keep]
+                if len(outcome_keys) == len(n):
+                    outcome_keys = [outcome_keys[i] for i in keep]
+                final_scores = final_scores[keep]
+
         best_idx     = final_scores.argmax().item()
 
         if return_scores:

@@ -128,6 +128,27 @@ function pickMoveIndex(scores, difficulty, rand) {
     return keep[keep.length - 1][1];
 }
 
+/* OPPONENT CERTAIN TO WIN NEXT TURN: BANK AS MANY AS YOU CAN (owner, 2026-10-01).
+   Their last two pieces are blanks on goal 1, so ANY roll banks both (an exact 1
+   or, from the highest goal they hold, anything higher), and nothing we do can
+   stop it: goals cannot be blocked and pieces on them cannot be captured. If we
+   cannot win this turn -- and the search returns a winning pair before it ever
+   gets to scoring -- the game is lost and only the margin is still in play, so
+   the pair that banks the most of our own pieces is right whatever the net says.
+   The net was seen to prefer bringing a piece onto a goal for a turn that never
+   comes. Deliberately narrow, as owner specified; the twin is in agent_gnn.py. */
+function opponentWinsNextTurnRegardless(engine, player) {
+    const opp = player === 'white' ? 'black' : 'white';
+    if (engine.unenteredRack(opp).length) return false;
+    const left = engine.pieces.filter(p => p.player === opp && p.tile >= 0);
+    if (left.length !== 2) return false;
+    return left.every(p => p.number > 6 && engine.graph.types[p.tile] === 'save'
+                                        && engine.graph.numbers[p.tile] === 1);
+}
+function ownSaves(pair, player) {
+    return pair.filter(m => isSave(m) && m.piece[0] === player).length;
+}
+
 /* --- the search ------------------------------------------------------- */
 
 /* Returns the chosen [move1, move2], or the full ranking when returnScores.
@@ -144,6 +165,7 @@ async function selectMovePair(engine, W, moves, player, opts = {}) {
     const score = o.score;
 
     const drawLegal = moves.some(isDraw);
+    const lossCertain = opponentWinsNextTurnRegardless(engine, player);
     const drawPair = [DRAW, PASS];
 
     const moveKeys = [];        // [move1, move2] pairs, GNN-scored
@@ -296,7 +318,22 @@ async function selectMovePair(engine, W, moves, player, opts = {}) {
     if (moveKeys.length === 1 && !drawLegal && !o.returnScores) return dedupeSavePair(moveKeys[0]);
 
     const raw = await score(snapshots);
-    const finalScores = Array.from(raw, v => v * SCORE_SCALE);
+    let finalScores = Array.from(raw, v => v * SCORE_SCALE);
+
+    // Lost whatever happens: keep only the pairs that bank the most (see
+    // opponentWinsNextTurnRegardless). Everything below -- argmax, ties,
+    // difficulty, the draw check, a hint's ranking -- then chooses among those.
+    if (lossCertain) {
+        const n = moveKeys.map(pr => ownSaves(pr, player));
+        const most = Math.max(...n);
+        const keep = n.map((c, i) => c === most ? i : -1).filter(i => i >= 0);
+        if (keep.length < moveKeys.length) {
+            const pick = (arr) => keep.map(i => arr[i]);
+            moveKeys.splice(0, moveKeys.length, ...pick(moveKeys));
+            outcomeKeys.splice(0, outcomeKeys.length, ...pick(outcomeKeys));
+            finalScores = pick(finalScores);
+        }
+    }
 
     if (o.returnScores) {
         const ranked = finalScores.map((s, i) => ({ score: s, pair: moveKeys[i] }));
