@@ -149,6 +149,28 @@ function ownSaves(pair, player) {
     return pair.filter(m => isSave(m) && m.piece[0] === player).length;
 }
 
+/* NEVER LEAVE A DIE UNUSED WHEN A SAVE IS AVAILABLE FOR IT (owner, 2026-10-02).
+   Measured: in 3 of 1,002 midgame positions with a blank save legal, the net
+   played one move and passed a die that could still have saved a piece -- a save
+   given away for nothing (goals cannot be blocked, pieces on them cannot be
+   captured). So a candidate pair that ends with a die unused while a save (blank
+   OR numbered) is legal for it is dropped, whenever any candidate survives.
+   IF A STRONGER MODEL IS EVER TRAINED, TRY IT WITH THIS RULE OFF: it may have
+   learned this itself, and conceivably a piece left unsaved is sometimes worth
+   keeping on the board as a spare capturer. Twin in agent_gnn.py.
+   Call with the engine IN the pair's resulting position. getValidMoves rewrites
+   the mover's stage, which other candidates read, so it is put back. */
+function wastesSave(engine, pair, player) {
+    const played = pair.filter(m => !isPass(m) && !isDraw(m));
+    if (played.length >= 2) return false;
+    if (played.some(m => m.dest === 0 && m.roll === 0)) return false;   // block-save: both dice
+    if (engine.dice.every(d => d.used)) return false;
+    const stage = engine.stages[player];
+    const any = engine.getValidMoves().some(m => isSave(m) && m.piece[0] === player);
+    engine.stages[player] = stage;
+    return any;
+}
+
 /* --- the search ------------------------------------------------------- */
 
 /* Returns the chosen [move1, move2], or the full ranking when returnScores.
@@ -172,6 +194,7 @@ async function selectMovePair(engine, W, moves, player, opts = {}) {
     const snapshots = [];       // the position for each, when not prefiltering
     const outcomeKeys = [];
     const scored = [];          // {score, pair} when prefiltering
+    const wastes = [];          // per moveKeys entry: leaves a die unused with a save on
 
     // Move orders transpose heavily -- about half a midgame turn's pairs reach
     // a position some other pair already reached -- and the heuristic is the
@@ -193,6 +216,7 @@ async function selectMovePair(engine, W, moves, player, opts = {}) {
             moveKeys.push(pair);
             snapshots.push(o.snapshot(engine));
             outcomeKeys.push(pieceLocs(engine));
+            wastes.push(wastesSave(engine, pair, player));
         }
     };
 
@@ -306,6 +330,7 @@ async function selectMovePair(engine, W, moves, player, opts = {}) {
             moveKeys.push(pair);
             snapshots.push(o.snapshot(engine));
             outcomeKeys.push(pieceLocs(engine));
+            wastes.push(wastesSave(engine, pair, player));
             while (engine.moves.length > base) engine.undoLastMove();
         }
     }
@@ -319,6 +344,20 @@ async function selectMovePair(engine, W, moves, player, opts = {}) {
 
     const raw = await score(snapshots);
     let finalScores = Array.from(raw, v => v * SCORE_SCALE);
+    const keepOnly = (keep) => {
+        if (keep.length === moveKeys.length) return;
+        const pick = (arr) => keep.map(i => arr[i]);
+        moveKeys.splice(0, moveKeys.length, ...pick(moveKeys));
+        outcomeKeys.splice(0, outcomeKeys.length, ...pick(outcomeKeys));
+        wastes.splice(0, wastes.length, ...pick(wastes));
+        finalScores = pick(finalScores);
+    };
+
+    // Never pass a die that could still save a piece (see wastesSave).
+    {
+        const keep = wastes.map((w, i) => w ? -1 : i).filter(i => i >= 0);
+        if (keep.length) keepOnly(keep);
+    }
 
     // Lost whatever happens: keep only the pairs that bank the most (see
     // opponentWinsNextTurnRegardless). Everything below -- argmax, ties,
@@ -326,13 +365,7 @@ async function selectMovePair(engine, W, moves, player, opts = {}) {
     if (lossCertain) {
         const n = moveKeys.map(pr => ownSaves(pr, player));
         const most = Math.max(...n);
-        const keep = n.map((c, i) => c === most ? i : -1).filter(i => i >= 0);
-        if (keep.length < moveKeys.length) {
-            const pick = (arr) => keep.map(i => arr[i]);
-            moveKeys.splice(0, moveKeys.length, ...pick(moveKeys));
-            outcomeKeys.splice(0, outcomeKeys.length, ...pick(outcomeKeys));
-            finalScores = pick(finalScores);
-        }
+        keepOnly(n.map((c, i) => c === most ? i : -1).filter(i => i >= 0));
     }
 
     if (o.returnScores) {

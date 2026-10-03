@@ -259,6 +259,27 @@ with it in mind.** Assessment and the concrete implications:
 
 ## Current state
 
+- **NEVER PASS A DIE THAT COULD SAVE A PIECE (owner, 2026-10-02; on `testing`
+  ONLY).** After the probe below found 3 / 1002 clear give-aways (images:
+  `case_a1-3.png` in the repo root), the search drops any candidate pair that ends
+  with a die unused while a save -- blank OR numbered -- is legal for it, whenever
+  any candidate survives. `wastesSave` in agent.js, `_wastes_save` in agent_gnn.py,
+  evaluated where the search already holds each candidate's resulting position;
+  both restore the mover's stage, which `getValidMoves` rewrites and later
+  candidates read. Measured with the REAL model on the three logged positions:
+  rule off reproduces each logged pass exactly; rule on, cases 1 and 2 now save the
+  blank, case 3 saves the 6 and spends the 5 on a field move (allowed -- no die
+  wasted). JS with an adversarial stub preferring no saves: no chosen pair leaves
+  a die idle with a save on. `agent_test.js` 50/50 (the rule never fires in that
+  fixture).
+  **IF A STRONGER MODEL IS EVER TRAINED, TRY IT WITH THIS RULE OFF** (owner): it
+  may have learned this itself, and conceivably a piece left unsaved is sometimes
+  worth keeping on the board as a spare capturer of more important pieces.
+  **KNOWN WEAKNESS OF THE CURRENT CHAMPION, deliberately NOT ruled out (owner):**
+  class (b) below -- spending a die on a blank save when it could put a numbered
+  piece on its goal, 45 / 1002 qualifying positions. Harder to fix by rule (13 of
+  the 45 were two saves, arguably fine); a training target if training resumes.
+
 - **HOW OFTEN THE NET MAKES TWO SUSPECTED MIDGAME ERRORS (owner's question,
   measured 2026-10-02).** Deployed champion, 2-ply, full strength, Python reference
   agent. Positions from games played forward by the net's 1-ply policy; at each

@@ -102,6 +102,30 @@ def _top_indices(values, k):
     return [int(i) for i in idx[np.argsort(-v[idx], kind='stable')]]
 
 
+def _wastes_save(board, pair, player):
+    """NEVER LEAVE A DIE UNUSED WHEN A SAVE IS AVAILABLE FOR IT (owner,
+    2026-10-02). Measured: 3 of 1,002 midgame positions with a blank save legal
+    saw the net play one move and pass a die that could still save a piece. A
+    candidate ending with a die unused while a save (blank OR numbered) is legal
+    for it is dropped, whenever any candidate survives. IF A STRONGER MODEL IS
+    EVER TRAINED, TRY IT WITH THIS RULE OFF: it may have learned this itself, and
+    conceivably an unsaved piece is sometimes worth keeping as a spare capturer.
+    Twin of wastesSave in agent.js. Call with the board IN the pair's resulting
+    position; get_valid_moves rewrites the mover's stage, so it is put back."""
+    played = [m for m in pair if m != (0, 0, 0) and m != (1, 1, 1)]
+    if len(played) >= 2:
+        return False
+    if any(m[1] == 0 and m[2] == 0 for m in played):     # block-save: both dice
+        return False
+    if all(d.used for d in board.dice):
+        return False
+    stage = board.game_stages[player]
+    found = any(isinstance(m[0], tuple) and m[0][0] == player and m[1] == 'save'
+                for m in board.get_valid_moves())
+    board.game_stages[player] = stage
+    return found
+
+
 def _opponent_wins_next_turn_regardless(board, player):
     """OPPONENT CERTAIN TO WIN NEXT TURN (owner, 2026-10-01). Their last two
     pieces are blanks on goal 1, so ANY roll banks both, and nothing we do can
@@ -325,6 +349,7 @@ class GNNAgent:
         encoded_list = []   # corresponding encoded positions (filled when NOT prefiltering)
         outcome_keys = []   # resulting piece placement per candidate, dice ignored
         scored       = []   # (heuristic_score, pair)        (filled when prefiltering)
+        wastes       = []   # per move_keys entry: leaves a die unused with a save on
 
         # Move orders transpose heavily -- about half of a midgame turn's
         # candidate pairs land on a position some other pair already reached --
@@ -345,6 +370,7 @@ class GNNAgent:
                 move_keys.append(pair)
                 encoded_list.append(self.encoder.encode(board, player))
                 outcome_keys.append(_piece_locs(board))
+                wastes.append(_wastes_save(board, pair, player))
 
         # --- Pass move ---
         if (0, 0, 0) in moves:
@@ -496,6 +522,7 @@ class GNNAgent:
                 move_keys.append(pair)
                 encoded_list.append(self.encoder.encode(board, player))
                 outcome_keys.append(_piece_locs(board))
+                wastes.append(_wastes_save(board, pair, player))
                 while len(board.moves) > base:
                     board.undo_last_move()
 
@@ -524,17 +551,27 @@ class GNNAgent:
         scores = self.model(encoded_list)   # [N]
         final_scores = scores * SCORE_SCALE
 
+        def keep_only(keep):
+            nonlocal move_keys, outcome_keys, wastes, final_scores
+            if len(keep) == len(move_keys):
+                return
+            if len(outcome_keys) == len(move_keys):
+                outcome_keys = [outcome_keys[i] for i in keep]
+            wastes = [wastes[i] for i in keep]
+            move_keys = [move_keys[i] for i in keep]
+            final_scores = final_scores[keep]
+
+        # Never pass a die that could still save a piece (see _wastes_save).
+        keep = [i for i, w in enumerate(wastes) if not w]
+        if keep:
+            keep_only(keep)
+
         # Lost whatever happens: keep only the pairs that bank the most. Twin of
         # the block in agent.js's selectMovePair; see the helper's docstring.
         if loss_certain:
             n = [_own_saves(pr, player) for pr in move_keys]
             most = max(n)
-            keep = [i for i, c in enumerate(n) if c == most]
-            if len(keep) < len(move_keys):
-                move_keys = [move_keys[i] for i in keep]
-                if len(outcome_keys) == len(n):
-                    outcome_keys = [outcome_keys[i] for i in keep]
-                final_scores = final_scores[keep]
+            keep_only([i for i, c in enumerate(n) if c == most])
 
         best_idx     = final_scores.argmax().item()
 
