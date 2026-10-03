@@ -40,6 +40,103 @@ An earlier heuristic evolutionary track (`train.py`) reached 90%+ vs.
 baseline but was recognized as fundamentally limited without a neural
 approach and is no longer the active line of work. The heuristic agent is still used to filter top-K moves for the neural network, for speed.
 
+## RUNBOOK: panel-league training (branch `train-panel-league`, 2026-10-03)
+
+Branch from `symmetry-aug-main` with main's `game.py` / `agent_gnn.py` synced in.
+Three changes, all in `league_run.py` (driver), `panel_gate.py`, `explore.py`,
+`game_worker.py`, `td_selfplay_loop.py`:
+1. **Gate** = vs-parent pre-screen, then a fixed panel played in batches with an
+   O'Brien-Fleming group-sequential test on the paired (CRN) margin difference
+   candidate-minus-champion, plus a per-member guard. Replaces the 200-game
+   >=55% vs-parent gate (non-transitivity: ~76% of certified gain did not
+   generalise -- ARCHIVE.md).
+2. **League**: a fraction of generation games vs frozen panel members; only the
+   learner's positions are trained on, and opponent records are dropped BEFORE
+   TD targets (each learner state bootstraps from the next learner state).
+3. **Softmax opening exploration** in generation only; eval/gate asserted greedy.
+Hand-coded play rules (`_wastes_save`, bank-the-most) are OFF in generation and
+gating (`GNNAgent(hand_rules=False)`); the deployed app keeps them on.
+
+**Launch (full run):**
+
+    BOARDGAME_DEVICE=cpu PYTHONHASHSEED=0 N_WORKERS=<cores-1> \
+      nohup python -u league_run.py >> league_run.log 2>&1 &
+
+(mac: prefix `caffeinate -i`). Rerunning the same command resumes from
+`<PREFIX>_live.pt`. Fresh Linux VM: `cloud_setup.sh` (clone, CPU torch, numpy<2,
+scipy, runs the fast tests; `LAUNCH=1` starts the run under nohup).
+**`BOARDGAME_DEVICE=cpu` is required on this iMac**: MPS hard-aborts in training
+(`MPSNDArrayScatter` assertion) -- hit again in the first smoke run.
+
+**Knobs (env vars; defaults):**
+
+    PREFIX=league  WARM_START=symaug_iter6.pt  ITERS=20  GAMES_PER_ITER=300
+    EPOCHS=8  LR=5e-5  LAM=0.9  REPLAY_ITERS=3  SEED_BASE=11000000
+    N_WORKERS=cores-1  SYMAUG=1  HAND_RULES=0
+    gate:    PANEL=symaug6,iter10,iter14 (or `five`, or tag=path,...)
+             PANEL_MAX_PAIRS=100 (cap per member; pair = 2 colour-swapped games)
+             PANEL_BATCH_PAIRS=20 (pairs per member per look)  SEQUENTIAL=1
+             GATE_ALPHA=0.05 (false-promotion rate)  GATE_GUARD=-1.0
+             PRESCREEN_PAIRS=100 (0 = off)  PRESCREEN_BAR=0.0 (mean margin vs parent)
+    league:  LEAGUE_FRAC=0.3  LEAGUE_HEURISTIC=0
+    explore: EXPLORE_T=0.1 (margin points)  EXPLORE_TURNS=4 (per side)
+             EXPLORE_ANNEAL=10 (iterations to reach greedy)
+    SMOKE=1  shrinks everything to one tiny iteration
+
+Panel default drops iter4 (ancestor on the iter10 line) and aux14 (iter14
+fine-tuned) from the five: each near-duplicates a kept lineage and the four are
+arena-inseparable; symaug6 / iter10 / iter14 keep the most style spread.
+
+**Reading the log.** Per iteration: `gen itN: opponents planned/played {...}`
+(league games actually played -- check it is not 0), `softmax-sampled turns`
+(and `sampled on a league opponent's turn 0`, asserted), `league: kept N learner
+positions`, then the gate:
+* `PRE-SCREEN ... -> REJECT` -> action `prescreen_reject`: panel never played,
+  live weights revert to the champion.
+* `look k/K: ... diff d se s t T vs +-B -> continue|promote|reject|cap`, then
+  `PANEL GATE outcome:` **PROMOTE** (crossed the upper boundary, guard ok) /
+  **REJECT** (crossed the lower boundary; revert) / **CAP** (no boundary by the
+  cap; kept iff diff > 0, else revert) / **GUARD_FAIL** (would promote but one
+  member averages below GATE_GUARD; kept iff diff > 0).
+* Per-member table (cand / champ / diff / cand win%) and the paired diff.
+  `<PREFIX>_gate_log.jsonl` has every gate report; `<PREFIX>_panel_cache.json`
+  the cached champion games (exact: play is deterministic per seed).
+
+**Sequential test, simulated** (`test_panel_gate.py`, 20k runs, paired SD 1.8,
+3 members, looks every 20 pairs, cap 100): false promotion **0.050** at edge 0
+(a naive CI re-checked per look inflates); P(promote) / expected panel games
+(of 600 capped): edge -0.5: 0 / 295; -0.3: 0 / 434; 0: 0.05 / 590; +0.3: 0.88 /
+431; +0.5: 1.00 / 296. With 5 members: power 0.98 at +0.3, 603 of 1000 games.
+
+**Cost per iteration (defaults), in games:** generation 300 + pre-screen 200 +
+panel 0 (pre-screen reject) or ~300-600 (candidate; the champion's own panel
+games are played once per champion and cached) => **500 to ~1,100 games**,
+vs 500 under the old 200-game gate and 300+1,000 for an uncapped 5x100-pair
+panel. Plus training (8 epochs over ~3 iterations of positions; not timed here).
+**Measured on this iMac** (i5-7500, **4 cores**, 3 workers, contended): single-
+core seconds per game -- self-play (opening exploration on) 231s (n=5), league
+280s (n=1), gate 194s (n=26, 55 turns/game); throughput 84 s/game on 3 workers.
+**Projection for an 8-worker M3 Pro** at the archive's ~3 s/game throughput:
+500 games = 25 min, 1,100 games = 55 min, plus training -> roughly 0.5-1.2 h
+per iteration, 10-25 h for 20 iterations. A many-core VM scales with workers:
+games/hour ~ N_WORKERS x 3600 / (single-core s/game), e.g. M3-class cores at
+~24 s/game single-core and 31 workers -> ~1 s/game -> ~10-20 min of games per
+iteration. Run `SMOKE=1` on the box first to measure its own s/game.
+
+**Smoke (2026-10-03, real games, this iMac):** 6 generation games -> 5 self +
+1 league (vs iter10) played, 43 opponent positions dropped of 396; 44 softmax
+samples, all in game turns <= 7, 0 on the opponent's turns, 40 at a strictly
+worse score (mean gap 0.18 pts); pre-screen (bar forced to -12) pass, panel 2
+looks -> CAP (diff -0.58 +- 0.33, 6 units), reverted; 12 champion games cached;
+gate games' greedy assertion held. A forced pre-screen (bar +12) gave
+PRESCREEN_REJECT with 0 panel games. Early promote / early reject / guard fail /
+cache reuse shown with a synthetic game runner in `test_panel_gate.py`.
+
+**Open decisions for owner:** EXPLORE_T (opening candidates are FLAT: hundreds
+of pairs within 0.4-1.0 points of the best, so T=0.5 is near-uniform, E[gap]
+0.32; T=0.1 gives E[gap] 0.17); LEAGUE_FRAC; whether to include the heuristic;
+PRESCREEN_BAR; panel 3 vs 5.
+
 ## Current phase: TD(λ) fine-tuning
 
 Supervised fine-tuning on top of self-play was tried and ruled out — it

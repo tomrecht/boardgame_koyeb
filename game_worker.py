@@ -178,6 +178,7 @@ def worker_play(args):
                 'explore_gap':  pos.get('explore_gap', 0.0),
                 'learner':      is_learner(player),
                 'opp':          opp_tag,
+                'game_secs':    time.time() - game_t0,   # single-core cost of the game
             })
         return recs
 
@@ -191,6 +192,7 @@ def worker_play(args):
         explore_rng = random.Random((seed << 20) ^ 0xE5E5E5)
 
     random.seed(seed)
+    game_t0 = time.time()
     board = Board()
     agents = {'white': white_agent, 'black': black_agent}
     positions = []
@@ -396,11 +398,14 @@ def generate_games_parallel(model, opp_state_dict_or_none,
 
     played = {}       # opp_tag -> games actually returned (counted from records)
     learner_wins = {}  # opp_tag -> learner wins (league games only meaningful)
+    secs_by_kind = {}  # 'self' / 'league' -> single-core seconds per game
     for recs, winner, score in _POOL.imap_unordered(worker_play, args_list, chunksize=1):
         if recs:
             records.extend(recs)
             tag = recs[0].get('opp', 'self')
             played[tag] = played.get(tag, 0) + 1
+            kind = 'self' if tag == 'self' else 'league'
+            secs_by_kind.setdefault(kind, []).append(recs[0]['game_secs'])
             if tag != 'self' and winner is not None:
                 lw = any(r['learner'] and r['player'] == winner for r in recs)
                 learner_wins[tag] = learner_wins.get(tag, 0) + int(lw)
@@ -432,8 +437,11 @@ def generate_games_parallel(model, opp_state_dict_or_none,
               f'margin points); latest sampled game turn '
               f'{last}; sampled on a league opponent\'s turn {opp_sampled}')
         assert opp_sampled == 0, 'exploration fired on a panel opponent turn'
+    print(f'  {label}: single-core s/game ' + ', '.join(
+        f'{k} {sum(v) / len(v):.0f}s (n={len(v)})' for k, v in sorted(secs_by_kind.items())))
     generate_games_parallel.last_counts = {'planned': planned, 'played': played,
-                                           'learner_wins': learner_wins}
+                                           'learner_wins': learner_wins,
+                                           'secs': {k: sum(v) / len(v) for k, v in secs_by_kind.items()}}
     return records
 
 
