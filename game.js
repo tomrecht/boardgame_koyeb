@@ -2311,6 +2311,21 @@ function createSettingsPanel() {
     recRow.appendChild(recBtns);
     panel.appendChild(recRow);
 
+    // Position notation (dev only): copy the live position, or paste one in.
+    if (_DEV_CONSOLE) {
+        const prow = mk('div', 'margin-top:12px; padding-top:10px; border-top:1px solid #e6e9ee;');
+        prow.appendChild(mk('div', 'font-weight:600; margin-bottom:6px;', 'Position (dev)'));
+        const pb = mk('div', 'display:flex; gap:6px;');
+        [['Copy', () => _posCopy()], ['Load\u2026', () => _posPrompt()]].forEach(([label, fn]) => {
+            const b = mk('button',
+                'flex:1 1 auto; padding:6px 10px; border-radius:7px; cursor:pointer;' +
+                'font-family:' + HUD_FONT + '; font-weight:600; font-size:12px;' +
+                'background:#fff; color:#5a6473; border:1px solid #cfd6e0;', label);
+            b.onclick = fn; pb.appendChild(b);
+        });
+        prow.appendChild(pb); panel.appendChild(prow);
+    }
+
     toggle('Move & capture effects', getFeedbackEnabled, 'fxEnabled', true);
     toggle('End turn automatically when both dice used', getAutoEndTurn, 'autoEndTurn', true);
     toggle('Confirm ending a turn with a move left', getConfirmRiskyEnd, 'confirmRiskyEnd', false);
@@ -5354,6 +5369,228 @@ function _setupSyncDerived(game) {
     // destinations and the shortest-path anchor.
     game.pieces.forEach(p => { p.reachableTiles = null; p._turnStartTile = p.currentTile || null; });
 }
+
+// ── POSITION NOTATION (dev tool, ?dev=1; owner, 2026-10-02) ──────────────────
+// A FEN-like text form of a position, so one can be written down, shared, loaded
+// into a playable board (?pos=...) or rendered to an image (pos_image.mjs).
+//
+//   w 5'6 | W 4@6.3 6@G6 x@7.31 r:- s:1,2,3,5,x,x,x,x | B 5@G5 x@G1 r:3,x s:... | f:4@5.2~6.3
+//
+//   side      w | b                  -- whose turn
+//   dice      56, a ' after a die marks it USED (5'6), or - to roll fresh
+//   W / B     that side's pieces: <n>@<loc>, n = 1-6 or x for a blank (blanks are
+//             interchangeable); loc = ring.sector, G1-G6 (goal by number), H (home)
+//   r:        unentered rack, FRONT FIRST (entry order matters), or -
+//   s:        saved rack (never affects play; kept for completeness, owner), or -
+//   f:        optional, a turn already under way: f:<n>@<where it started>~<where
+//             it is now> (start H for a rack entry or a captured re-entry), so the
+//             no-doubling-back rule still binds its second die. Which dice are
+//             spent is the ' marks in the dice field.
+// Each side must account for 12 pieces with 1-6 once each -- except that the
+// last-piece rule turns a lone numbered piece blank, so 7 blanks + 5 numbers is
+// accepted and the missing number becomes that blank (number 13, as in play).
+function _posLoc(tile) {
+    if (!tile) return null;
+    if (tile.type === 'home') return 'H';
+    if (tile.type === 'save') return 'G' + tile.number;
+    return tile.ring + '.' + tile.sector;
+}
+function _posTileFor(game, loc) {
+    if (loc === 'H') return game.tiles.find(t => t.type === 'home');
+    let m = /^G([1-6])$/.exec(loc);
+    if (m) return game.tiles.find(t => t.type === 'save' && t.number === +m[1]);
+    m = /^(\d+)\.(\d+)$/.exec(loc);
+    if (m) return game.tiles.find(t => t.ring === +m[1] && t.sector === +m[2] && t.type !== 'nogo');
+    return null;
+}
+const _posTok = (p) => (p.number > 6 ? 'x' : String(p.number));
+function positionToNotation(game) {
+    game = game || _currentGame();
+    if (!game) return null;
+    const side = (pl) => {
+        const C = pl === 'white' ? 'W' : 'B';
+        const board = game.pieces.filter(p => p.player === pl && p.currentTile &&
+                                              !(p.justMovedHome && p.rack))   // a tentative entry is still racked
+            .map(p => _posTok(p) + '@' + _posLoc(p.currentTile)).sort();
+        const list = (rack) => rack.pieces.length ? rack.pieces.map(_posTok).join(',') : '-';
+        const un = _tutRack(game, pl, 'unentered'), sv = _tutRack(game, pl, 'saved');
+        return [C].concat(board, ['r:' + list(un), 's:' + list(sv)]).join(' ');
+    };
+    const dice = game.dice.map(d => d.value + (d.used ? "'" : '')).join('');
+    const parts = [game.turn[0] + ' ' + dice, side('white'), side('black')];
+    const fm = (typeof _turnFirstMove === 'function') ? _turnFirstMove(game) : null;
+    if (fm) {
+        const p = game.pieces.find(q => q.player === fm.color && q.number === fm.number);
+        const from = game.tiles.find(t => t.ring === fm.from.ring && t.sector === fm.from.sector);
+        if (p && from) parts.push('f:' + _posTok(p) + '@' + _posLoc(from) + '~' + _posLoc(p.currentTile));
+    }
+    return parts.join(' | ');
+}
+// Parse into { turn, dice, white:{board,rack,saved}, black, first } or throw.
+function _posParse(str) {
+    const segs = String(str).trim().split('|').map(s => s.trim()).filter(Boolean);
+    if (segs.length < 3) throw new Error('expected "side dice | W ... | B ..."');
+    const head = segs[0].split(/\s+/);
+    const turn = { w: 'white', b: 'black' }[head[0]];
+    if (!turn) throw new Error('side must be w or b, got "' + head[0] + '"');
+    let dice = null;
+    if (head[1] && head[1] !== '-') {
+        const m = /^([1-6])('?)([1-6])('?)$/.exec(head[1]);
+        if (!m) throw new Error('dice must look like 56 or 5\'6, got "' + head[1] + '"');
+        dice = [[+m[1], !!m[2]], [+m[3], !!m[4]]];
+    }
+    const out = { turn, dice, first: null };
+    const tok = (t) => { if (!/^([1-6]|x)$/.test(t)) throw new Error('bad piece "' + t + '"'); return t; };
+    const list = (v) => v === '-' || v === '' ? [] : v.split(',').map(tok);
+    for (const seg of segs.slice(1)) {
+        const w = seg.split(/\s+/);
+        if (w[0] === 'W' || w[0] === 'B') {
+            const s = { board: [], rack: [], saved: [] };
+            for (const t of w.slice(1)) {
+                if (t.startsWith('r:')) s.rack = list(t.slice(2));
+                else if (t.startsWith('s:')) s.saved = list(t.slice(2));
+                else {
+                    const m = /^([1-6]|x)@(H|G[1-6]|\d+\.\d+)$/.exec(t);
+                    if (!m) throw new Error('bad board piece "' + t + '"');
+                    s.board.push([m[1], m[2]]);
+                }
+            }
+            out[w[0] === 'W' ? 'white' : 'black'] = s;
+        } else if (seg.startsWith('f:')) {
+            const m = /^f:([1-6]|x)@(H|G[1-6]|\d+\.\d+)~(H|G[1-6]|\d+\.\d+)$/.exec(seg);
+            if (!m) throw new Error('bad first move "' + seg + '"');
+            out.first = { tok: m[1], from: m[2], at: m[3] };
+        } else throw new Error('unknown segment "' + seg + '"');
+    }
+    if (!out.white || !out.black) throw new Error('need both a W and a B segment');
+    return out;
+}
+// A previous position (or real play) may have left a piece renumbered 13 by the
+// last-piece rule; give it back its missing number so every piece is findable.
+function _posResetNumbers(game) {
+    _tutRestoreNumbers(game);
+    ['white', 'black'].forEach(pl => {
+        const mine = game.pieces.filter(p => p.player === pl);
+        mine.filter(p => p.number > 12).forEach(p => {
+            const used = new Set(mine.map(q => q.number));
+            const n = [1, 2, 3, 4, 5, 6].find(k => !used.has(k));
+            if (n) { p.number = n; if (!p.text && p._makeNumberText) p._makeNumberText(); }
+        });
+    });
+}
+// Load a notation into the live game. Returns { ok, error }.
+function loadPositionNotation(str, game) {
+    game = game || _currentGame();
+    let P;
+    try { P = _posParse(str); } catch (e) { return { ok: false, error: e.message }; }
+    if (!game) return { ok: false, error: 'no game' };
+    // Turn tokens into concrete pieces: numbers are themselves, blanks take 7..12
+    // in order, and a 7th blank is the numbered piece the last-piece rule blanked.
+    const spec = {}, blankMe = [];
+    for (const pl of ['white', 'black']) {
+        const s = P[pl], all = [...s.board.map(b => b[0]), ...s.rack, ...s.saved];
+        if (all.length !== 12) return { ok: false, error: pl + ' has ' + all.length + ' pieces, needs 12' };
+        const nums = all.filter(t => t !== 'x').map(Number);
+        if (new Set(nums).size !== nums.length) return { ok: false, error: pl + ' repeats a numbered piece' };
+        const missing = [1, 2, 3, 4, 5, 6].filter(k => !nums.includes(k));
+        if (missing.length > 1) return { ok: false, error: pl + ' is missing numbered pieces ' + missing.join(',') };
+        const pool = [7, 8, 9, 10, 11, 12].concat(missing);
+        const take = (t) => {
+            if (t !== 'x') return +t;
+            const n = pool.shift();
+            if (n <= 6) blankMe.push([pl, n]);
+            return n;
+        };
+        spec[pl] = { board: s.board.map(([t, loc]) => [take(t), loc]), rack: s.rack.map(take), saved: s.saved.map(take) };
+        for (const [, loc] of spec[pl].board) if (!_posTileFor(game, loc)) return { ok: false, error: 'no tile ' + loc };
+    }
+    _clearSelection && game.selectedPiece && _clearSelection(game);
+    _posResetNumbers(game);
+    // _tutApply takes [ring, sector] pairs; translate G#/H through the tiles.
+    const tspec = {};
+    for (const pl of ['white', 'black']) {
+        tspec[pl] = { board: spec[pl].board.map(([n, loc]) => { const t = _posTileFor(game, loc); return [n, [t.ring, t.sector]]; }),
+                      saved: spec[pl].saved, rack: spec[pl].rack };
+    }
+    _tutApply(game, tspec);
+    for (const [pl, n] of blankMe) {
+        const p = _tutPiece(game, pl, n);
+        if (p) { p._tutNumber = n; p.number = TOTAL_PIECES + 1; if (p.text) { p.text.destroy(); p.text = null; } }
+    }
+    game.turn = P.turn;
+    if (P.dice) game.dice.forEach((d, i) => { d.value = P.dice[i][0]; d.used = P.dice[i][1]; if (d.used && d.setUsed) d.setUsed(); });
+    else game.rollDice();
+    _tutPhases(game);
+    game.gameOver = false;
+    game.undoStack = [];
+    game._pendingPreMove = null;
+    game.pieces.forEach(p => { p.reachableTiles = null; p.justMovedHome = false; p._turnStartTile = p.currentTile || null; });
+    game.movedOnce = game.dice.some(d => d.used);
+    if (P.first) {
+        const at = _posTileFor(game, P.first.at), from = _posTileFor(game, P.first.from);
+        const p = at && at.pieces.find(q => q.player === P.turn && _posTok(q) === P.first.tok);
+        if (!p || !from) return { ok: false, error: 'first move: no ' + P.first.tok + ' of ' + P.turn + ' on ' + P.first.at };
+        p._turnStartTile = from;
+    }
+    game.state = game.captureState();
+    game.updateMovablePieces();
+    game.updateDiceColors();
+    if (typeof updateMustMoveHighlights === 'function') updateMustMoveHighlights(game);
+    if (typeof updateTurnStatus === 'function') updateTurnStatus(game);
+    if (typeof _refreshHitAreas === 'function') _refreshHitAreas();
+    return { ok: true };
+}
+// Settings > Position (dev): copy the live position, or paste one in.
+function _posCopy() {
+    const n = positionToNotation();
+    if (!n) return;
+    try { navigator.clipboard.writeText(n); } catch (e) {}
+    flashNotice('Copied: ' + n, 8000);
+}
+function _posPrompt() {
+    const s = window.prompt('Paste a position:', positionToNotation() || '');
+    if (!s) return;
+    const r = loadPositionNotation(s);
+    flashNotice(r.ok ? 'Position loaded.' : 'Not loaded: ' + r.error, 6000);
+}
+// ?dev=1&pos=<notation> opens straight into that position, both sides human
+// unless &posai=w|b|wb names the computer's side(s). &posshot=1 hides the DOM
+// chrome for a clean picture (pos_image.mjs). The result is put on
+// document.body[data-pos] ("ok" or "error: ...") for harnesses, which cannot read
+// the console (patchright relays none).
+(function _posFromUrl() {
+    if (!_DEV_CONSOLE) return;
+    let q;
+    try { q = new URLSearchParams(location.search); } catch (e) { return; }
+    const pos = q.get('pos');
+    if (!pos) return;
+    const ai = q.get('posai') || '';
+    const t0 = Date.now();
+    const iv = setInterval(() => {
+        const g = (typeof _currentGame === 'function') && _currentGame();
+        if (!g || !g.tiles || g.tiles.length < 94 || !g.pieces || g.pieces.length < 24 || !g.scene) {
+            if (Date.now() - t0 > 20000) { clearInterval(iv); document.body.setAttribute('data-pos', 'error: game never built'); }
+            return;
+        }
+        clearInterval(iv);
+        const w = document.getElementById('welcomeScreen'); if (w) w.remove();
+        const nudge = document.getElementById('firstRunNudge'); if (nudge) nudge.remove();
+        WHITE_IS_AI = ai.includes('w'); BLACK_IS_AI = ai.includes('b');
+        g.players.forEach(p => { p.isAI = p.name === 'white' ? WHITE_IS_AI : BLACK_IS_AI; });
+        _gameFrozen = false;
+        const r = loadPositionNotation(pos, g);
+        document.body.setAttribute('data-pos', r.ok ? 'ok' : 'error: ' + r.error);
+        if (!r.ok) { flashNotice('?pos not loaded: ' + r.error, 8000); return; }
+        if (q.get('posshot') === '1') {
+            const st = document.createElement('style');
+            st.textContent = '#settingsGear,#settingsPanel,#hintBtn,#legendBtn,#flashNotice,#turnStatus{display:none!important}';
+            document.head.appendChild(st);
+        } else if (g.players.find(p => p.name === g.turn).isAI) {
+            g.scene.showThinkingIcon();
+            setTimeout(() => getAgentMoves(getGameState(g)), 600);
+        }
+    }, 200);
+})();
 
 function _setupPlaceOnTile(piece, tile) {
     _setupRemoveFromCurrent(piece);

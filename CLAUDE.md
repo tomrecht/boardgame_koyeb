@@ -259,6 +259,32 @@ with it in mind.** Assessment and the concrete implications:
 
 ## Current state
 
+- **POSITION NOTATION, `?pos=`, AND `pos_image.mjs` (owner, 2026-10-02; dev only,
+  on `testing`).** A FEN-like text form, documented beside `positionToNotation`
+  in game.js:
+  `b 3'3 | W 2@6.6 x@G1 ... r:- s:1,3,5,x | B 1@3.2 ... r:- s:... | f:1@4.12~3.2`
+  -- side, dice (`'` = used, `-` = roll fresh), per side `<n>@<loc>` with n 1-6
+  or `x` (blanks are interchangeable) and loc `ring.sector` / `G1`-`G6` / `H`,
+  `r:` rack front first, `s:` saved (owner wanted it though it never affects
+  play), optional `f:` = first move `<n>@<start>~<now>`. 7 blanks + 5 numbers is
+  accepted (the last-piece rule); the missing number becomes a blank 13.
+  **Tools:** `?dev=1&pos=<notation>` opens a playable board (both sides human;
+  `&posai=w|b|wb` hands sides to the computer; `&posshot=1` hides DOM chrome);
+  Settings > Position (dev) > Copy / Load...; `node pos_image.mjs "<notation>"
+  out.png [--phone] [--caption ...]` renders through the game itself (finds
+  patchright under ~/.vscode/extensions and the system Chrome, so it runs on
+  either machine). Result for harnesses on `body[data-pos]` ("ok" / "error: ...").
+  Without `?dev=1`, `?pos` is ignored and the Settings row is absent.
+  **Measured:** round trip (load -> export -> load -> export) identical, with the
+  recorder fingerprint identical, for case 1 and for a position from 90s of real
+  self-play; a mid-turn export (`f:` + a spent die) reloads with the moved piece's
+  reachable set identical to the live game's (1.3 2.4 3.5 4.4 both); a legal move
+  plays after loading; `posai=b` makes the computer move (it saved blank 9 and put
+  its 1 on goal 1 -- case 1 with the new save rule); the 7-blank form loads and
+  re-exports identically; malformed input is refused with a reason.
+  **Not built: screenshot -> notation.** Claude reads a screenshot directly when
+  given one; an automatic reader would be fragile across devices and themes.
+
 - **NEVER PASS A DIE THAT COULD SAVE A PIECE (owner, 2026-10-02; on `testing`
   ONLY).** After the probe below found 3 / 1002 clear give-aways (images:
   `case_a1-3.png` in the repo root), the search drops any candidate pair that ends
