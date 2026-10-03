@@ -15,6 +15,8 @@ To use in app.py:
     agent = GNNAgent()
 """
 
+import time
+
 import numpy as np
 from gnn_backend import make_backend
 
@@ -24,11 +26,17 @@ NUM_PIECES      = 12       # margin display unit (raw * NUM_PIECES = expected ma
 GNN_WEIGHTS     = 'gnn_weights.pt'
 
 
-def _position_key(board):
-    """Signature of everything the heuristic reads: where every piece sits, plus
-    the dice. board.pieces order is fixed for the whole search, so no sort is
-    needed. Two states differing only by swapping identical blank pieces get
-    different keys -- a missed hit, never a wrong one."""
+def move_keys_would_exist(scored, move_keys):
+    """True once at least one candidate has been recorded, so an early stop can
+    never leave the agent with nothing to choose from."""
+    return bool(scored) or bool(move_keys)
+
+
+def _piece_locs(board):
+    """Where every piece sits: tile index, -2 saved, -1 still on the rack.
+    board.pieces order is fixed for the whole search, so no sort is needed. Two
+    states differing only by swapping identical blank pieces get different keys
+    -- a missed cache hit, never a wrong one."""
     saved = (board.white_saved, board.black_saved)
     locs = []
     for p in board.pieces:
@@ -38,7 +46,52 @@ def _position_key(board):
             locs.append(-2)
         else:
             locs.append(-1)
-    return (tuple(locs), board.dice[0].used, board.dice[1].used)
+    return tuple(locs)
+
+
+def _position_key(board):
+    """Everything the heuristic reads: piece placement plus the dice."""
+    return (_piece_locs(board), board.dice[0].used, board.dice[1].used)
+
+
+def _move_sort_key(move):
+    """A total order on moves that does not depend on Python's hash seed.
+
+    Enumeration runs over `set`s of move tuples, so the ITERATION ORDER varies
+    per process. Wherever a tie is resolved by "whichever came first" -- the
+    argmax, the stable sorts in the prefilter, the fewest-relocations tie-break
+    -- that made the agent's answer a function of the hash seed. Measured over
+    30 pinned positions: 3 gave a different pair under a different PYTHONHASHSEED,
+    every one of them a transposition (same piece, same destination, dice in the
+    other order), i.e. the same end-of-turn position at the same score.
+
+    Ordering the ties by this key instead makes select_move_pair a pure function
+    of the position. It only ever reorders EXACT ties, so it cannot change which
+    line the agent judges best -- verified by scoring the old and new choices.
+    """
+    if not (isinstance(move, tuple) and len(move) == 3):
+        return (3, '', 0, 0, 0)
+    piece_id, destination, roll = move
+    if not isinstance(piece_id, tuple):                 # pass (0,0,0) / draw (1,1,1)
+        return (0, '', int(piece_id), 0, int(roll))
+    player, number = piece_id
+    if destination == 'save':
+        return (1, player, int(number), 0, int(roll))
+    if destination == 0:                                # block-save
+        return (2, player, int(number), 0, int(roll))
+    ring, pos = destination
+    return (3, player, int(number), int(ring) * 1000 + int(pos), int(roll))
+
+
+def _pair_sort_key(pair):
+    return tuple(_move_sort_key(m) for m in pair)
+
+
+def _pair_relocations(pair):
+    """How many of a pair's moves shuffle a piece around the board, as opposed
+    to saving it or passing -- the legibility cost of a line."""
+    return sum(1 for m in pair
+               if isinstance(m, tuple) and len(m) == 3 and m[1] not in ('save', 0))
 
 
 def _top_indices(values, k):
@@ -47,6 +100,53 @@ def _top_indices(values, k):
     k = min(int(k), v.shape[0])
     idx = np.argpartition(-v, k - 1)[:k] if k < v.shape[0] else np.arange(v.shape[0])
     return [int(i) for i in idx[np.argsort(-v[idx], kind='stable')]]
+
+
+def _wastes_save(board, pair, player):
+    """NEVER LEAVE A DIE UNUSED WHEN A SAVE IS AVAILABLE FOR IT (owner,
+    2026-10-02). Measured: 3 of 1,002 midgame positions with a blank save legal
+    saw the net play one move and pass a die that could still save a piece. A
+    candidate ending with a die unused while a save (blank OR numbered) is legal
+    for it is dropped, whenever any candidate survives. IF A STRONGER MODEL IS
+    EVER TRAINED, TRY IT WITH THIS RULE OFF: it may have learned this itself, and
+    conceivably an unsaved piece is sometimes worth keeping as a spare capturer.
+    Twin of wastesSave in agent.js. Call with the board IN the pair's resulting
+    position; get_valid_moves rewrites the mover's stage, so it is put back."""
+    played = [m for m in pair if m != (0, 0, 0) and m != (1, 1, 1)]
+    if len(played) >= 2:
+        return False
+    if any(m[1] == 0 and m[2] == 0 for m in played):     # block-save: both dice
+        return False
+    if all(d.used for d in board.dice):
+        return False
+    stage = board.game_stages[player]
+    found = any(isinstance(m[0], tuple) and m[0][0] == player and m[1] == 'save'
+                for m in board.get_valid_moves())
+    board.game_stages[player] = stage
+    return found
+
+
+def _opponent_wins_next_turn_regardless(board, player):
+    """OPPONENT CERTAIN TO WIN NEXT TURN (owner, 2026-10-01). Their last two
+    pieces are blanks on goal 1, so ANY roll banks both, and nothing we do can
+    stop it -- goals cannot be blocked, pieces on them cannot be captured. If we
+    cannot win this turn (a winning pair returns before scoring) the game is lost
+    and only the margin is in play, so the pair banking the most of our own
+    pieces is right whatever the net says. Deliberately narrow, as owner
+    specified. Twin of opponentWinsNextTurnRegardless in agent.js."""
+    opp = 'black' if player == 'white' else 'white'
+    if (board.black_unentered if opp == 'black' else board.white_unentered):
+        return False
+    left = [p for p in board.pieces if p.player == opp and p.tile is not None]
+    if len(left) != 2:
+        return False
+    return all(p.number > 6 and p.tile.type == 'save' and p.tile.number == 1 for p in left)
+
+
+def _own_saves(pair, player):
+    return sum(1 for m in pair
+               if isinstance(m, tuple) and len(m) == 3 and m[1] == 'save'
+               and isinstance(m[0], tuple) and m[0][0] == player)
 
 
 class GNNAgent:
@@ -59,13 +159,36 @@ class GNNAgent:
 
     def __init__(self, weights_path=GNN_WEIGHTS, model=None,
                  use_prefilter=False, prefilter_top_k=40, heuristic_weights=None,
-                 prefilter_min_k=5, prefilter_frac=None, prefilter_score_alpha=None):
+                 prefilter_min_k=5, prefilter_frac=None, prefilter_score_alpha=None,
+                 first_move_prefilter=0, hand_rules=True):
+        # HAND-CODED PLAY RULES (owner, 2026-10-01/02): `_wastes_save` (never pass
+        # a die that could still save a piece) and the bank-the-most rule when
+        # the opponent's last two blanks sit on goal 1. ON by default because the
+        # deployed agent uses them; the TRAINING pipeline (generation and gating)
+        # passes hand_rules=False so the net is measured on what it learned for
+        # itself (owner wants to know whether a trained net picks these up).
+        # The two can be set separately via the attributes below.
+        self.rule_no_wasted_save = bool(hand_rules)
+        self.rule_bank_most_when_lost = bool(hand_rules)
+        # Branch-reached counters, so a test can prove the switch gates the code
+        # path rather than merely that the outcome was legal.
+        self.rule_stats = {'wastes_save_checked': 0, 'wastes_save_dropped': 0,
+                           'bank_most_fired': 0, 'bank_most_dropped': 0}
         # The backend owns both the net and the encoder that suits it: torch
         # for training/analysis, onnxruntime (numpy, no torch) for deployment.
         # Either way self.model(...) returns numpy scores.
         self.backend = make_backend(weights_path, model=model)
         self.model = self.backend
         self.encoder = self.backend.encoder
+
+        # Two-stage prefilter (0 = off). The one-stage prefilter below scores
+        # every candidate PAIR with the heuristic -- ~10k evaluations on a busy
+        # midgame turn, which is ~94% of the time a move takes. With this set to
+        # F, first moves are scored on their own (~150 evaluations), the best F
+        # are kept, and only those get their second moves enumerated. The risk is
+        # a pair whose first move looks poor alone but is strong in combination;
+        # first moves that save a piece are kept regardless.
+        self.first_move_prefilter = int(first_move_prefilter)
 
         # Optional move-pair pre-filter: rank candidates with the cheap heuristic
         # and only GNN-encode the top ones. Speeds up high-branching turns and
@@ -200,7 +323,8 @@ class GNNAgent:
         choice = int(np.random.choice(k, p=keep))
         return int(order[choice])
 
-    def select_move_pair(self, moves, board, player, return_scores=False, difficulty=None):
+    def select_move_pair(self, moves, board, player, return_scores=False, difficulty=None,
+                         deadline=None):
         """
         2-ply move selection using batched GNN evaluation.
 
@@ -230,12 +354,17 @@ class GNNAgent:
 
         draw_legal = (1, 1, 1) in moves
         draw_pair  = ((1, 1, 1), (0, 0, 0))
+        loss_certain = (self.rule_bank_most_when_lost
+                        and _opponent_wins_next_turn_regardless(board, player))
+        rule_wastes = self.rule_no_wasted_save
 
         prefilter = self.use_prefilter and self.heuristic is not None
 
         move_keys    = []   # list of (move1, move2) pairs
         encoded_list = []   # corresponding encoded positions (filled when NOT prefiltering)
+        outcome_keys = []   # resulting piece placement per candidate, dice ignored
         scored       = []   # (heuristic_score, pair)        (filled when prefiltering)
+        wastes       = []   # per move_keys entry: leaves a die unused with a save on
 
         # Move orders transpose heavily -- about half of a midgame turn's
         # candidate pairs land on a position some other pair already reached --
@@ -255,6 +384,8 @@ class GNNAgent:
             else:
                 move_keys.append(pair)
                 encoded_list.append(self.encoder.encode(board, player))
+                outcome_keys.append(_piece_locs(board))
+                wastes.append(rule_wastes and _wastes_save(board, pair, player))
 
         # --- Pass move ---
         if (0, 0, 0) in moves:
@@ -264,7 +395,73 @@ class GNNAgent:
         moves_set.discard((0, 0, 0))
         moves_set.discard((1, 1, 1))   # draw handled separately, see docstring
 
-        for move in moves_set:
+        # --- Stage 1 (optional): rank first moves on their own ---------------
+        # Every score here is also the score of that move's (move, pass) pair --
+        # a pass changes nothing -- so stage 2 gets these back from eval_cache
+        # for free.
+        # Canonical ENUMERATION order, not just canonical tie-breaks. The
+        # winning-move short-circuits below return the first win they meet, and
+        # a position can have several (the same save with either die) -- so the
+        # order itself has to be deterministic or that return is hash-seed
+        # dependent. Costs one sort of a few hundred moves against thousands of
+        # heuristic evaluations.
+        moves_iter = sorted(moves_set, key=_move_sort_key)
+        if prefilter and self.first_move_prefilter and len(moves_set) > self.first_move_prefilter:
+            first_scored = []
+            for move in moves_iter:
+                base = len(board.moves)
+                board.apply_move(move, switch_turn=False)
+                wgo, _ = board.check_game_over()
+                if wgo == player:
+                    while len(board.moves) > base:
+                        board.undo_last_move()
+                    win = (move, (0, 0, 0))
+                    return [(float('inf'), win)] if return_scores else win
+                key = _position_key(board)
+                sc = eval_cache.get(key)
+                if sc is None:
+                    sc, _ = self.heuristic.evaluate(board, player)
+                    eval_cache[key] = sc
+                # Does a save become available after this move? Exempt it from
+                # the cull if so. Stage 1 ranks first moves ALONE, so "step onto
+                # the goal with one die, save with the other" is judged on the
+                # step -- which can score poorly by itself, culling the pair
+                # before the value head ever sees the save.
+                # get_saving_die reads game_stages, and stage 1 applies moves
+                # without the get_valid_moves call that refreshes them, so
+                # compute the stage fresh and put it back -- leaving it changed
+                # would drift the candidates scored after this one (the bug that
+                # once scored identical candidates 20-80 points apart).
+                prev_stage = board.game_stages[player]
+                board.game_stages[player] = board.get_game_stage(player)
+                enables = any(board.get_saving_die(p) for p in board.pieces
+                              if p.player == player)
+                board.game_stages[player] = prev_stage
+                first_scored.append((sc, move, enables))
+                while len(board.moves) > base:
+                    board.undo_last_move()
+            # Ties broken canonically, not by set-iteration order: which first
+            # moves survive the cut decides which pairs the GNN ever sees.
+            first_scored.sort(key=lambda x: (-x[0], _move_sort_key(x[1])))
+            keep = [m for _, m, _e in first_scored[:self.first_move_prefilter]]
+            kept = set(keep)
+            # A first move that saves a piece is never culled here, for the same
+            # reason save PAIRS are exempt from the top-K cull below -- nor is
+            # one that ENABLES a save as the pair's second half. "Never cull a
+            # save" should hold by construction rather than by luck.
+            keep += [m for _, m, e in first_scored
+                     if m not in kept and ((isinstance(m, tuple) and m[1] == 'save') or e)]
+            moves_iter = keep
+
+        truncated = False
+        for move in moves_iter:
+            # Safety valve for pathological branching: keep whatever candidates
+            # we have rather than let one request run away. Never trips in normal
+            # play -- see MOVE_BUDGET in app.py.
+            if deadline is not None and move_keys_would_exist(scored, move_keys) \
+                    and time.monotonic() > deadline:
+                truncated = True
+                break
             if not isinstance(move, tuple) or len(move) != 3:
                 raise ValueError('Invalid move format.')
 
@@ -301,7 +498,7 @@ class GNNAgent:
             next_moves.discard((0, 0, 0))
             next_moves.discard((1, 1, 1))   # draw is only ever legal as a lone first action
 
-            for next_move in next_moves:
+            for next_move in sorted(next_moves, key=_move_sort_key):
                 if not isinstance(next_move, tuple) or len(next_move) != 3:
                     raise ValueError('Invalid next move format.')
                 board.apply_move(next_move, switch_turn=False)
@@ -339,8 +536,16 @@ class GNNAgent:
                         board.apply_move(m, switch_turn=False)
                 move_keys.append(pair)
                 encoded_list.append(self.encoder.encode(board, player))
+                outcome_keys.append(_piece_locs(board))
+                wastes.append(rule_wastes and _wastes_save(board, pair, player))
                 while len(board.moves) > base:
                     board.undo_last_move()
+
+        if truncated:
+            import logging
+            logging.getLogger('agent_gnn').warning(
+                'move budget hit: scored %d of %d first moves',
+                len(scored) or len(move_keys), len(moves_iter))
 
         if not move_keys:
             if draw_legal:
@@ -360,13 +565,42 @@ class GNNAgent:
         # --- Single batched forward pass over the (filtered) candidates ---
         scores = self.model(encoded_list)   # [N]
         final_scores = scores * SCORE_SCALE
+
+        def keep_only(keep):
+            nonlocal move_keys, outcome_keys, wastes, final_scores
+            if len(keep) == len(move_keys):
+                return
+            if len(outcome_keys) == len(move_keys):
+                outcome_keys = [outcome_keys[i] for i in keep]
+            wastes = [wastes[i] for i in keep]
+            move_keys = [move_keys[i] for i in keep]
+            final_scores = final_scores[keep]
+
+        # Never pass a die that could still save a piece (see _wastes_save).
+        if rule_wastes:
+            self.rule_stats['wastes_save_checked'] += 1
+            keep = [i for i, w in enumerate(wastes) if not w]
+            if keep:
+                self.rule_stats['wastes_save_dropped'] += len(move_keys) - len(keep)
+                keep_only(keep)
+
+        # Lost whatever happens: keep only the pairs that bank the most. Twin of
+        # the block in agent.js's selectMovePair; see the helper's docstring.
+        if loss_certain:
+            n = [_own_saves(pr, player) for pr in move_keys]
+            most = max(n)
+            keep = [i for i, c in enumerate(n) if c == most]
+            self.rule_stats['bank_most_fired'] += 1
+            self.rule_stats['bank_most_dropped'] += len(move_keys) - len(keep)
+            keep_only(keep)
+
         best_idx     = final_scores.argmax().item()
 
         if return_scores:
             ranked = list(zip(final_scores.tolist(), move_keys))
             if draw_legal:
                 ranked.append((0.0, draw_pair))   # exact terminal value, not network-estimated
-            ranked.sort(key=lambda x: x[0], reverse=True)
+            ranked.sort(key=lambda x: (-x[0], _pair_sort_key(x[1])))
             return ranked
 
         # A draw's true value is exactly 0, in the same raw*SCORE_SCALE units
@@ -380,6 +614,31 @@ class GNNAgent:
         # the top candidates (top-p over a scale-invariant softmax) so the agent
         # plays visibly weaker without ever making obviously terrible moves.
         best_idx = self._pick_move_index(final_scores, difficulty)
+
+        # Exact score ties (transpositions reaching the same position score
+        # identically) used to be settled by whichever candidate the set
+        # happened to enumerate first. Settle them canonically instead; this
+        # runs after the difficulty pick, so it makes the tie deterministic
+        # without overriding the sampled choice.
+        top = float(final_scores[best_idx])
+        tied = [i for i, s in enumerate(final_scores) if float(s) == top]
+        if len(tied) > 1:
+            best_idx = min(tied, key=lambda i: _pair_sort_key(move_keys[i]))
+
+        # Among candidates that leave the board in exactly the same state, take
+        # the one that moves the fewest pieces. This costs nothing -- the
+        # position after the turn is identical and a die left unused is worthless
+        # once the turn ends -- and it stops the agent walking a blank piece from
+        # goal 4 round to goal 2 to save it there when it could have saved it
+        # where it stood. (The scores differ only because "both dice used" is an
+        # input feature, which has no consequence at the end of a turn.)
+        if len(outcome_keys) == len(move_keys):
+            key = outcome_keys[best_idx]
+            same = [i for i, k in enumerate(outcome_keys) if k == key]
+            if len(same) > 1:
+                best_idx = min(same, key=lambda i: (_pair_relocations(move_keys[i]),
+                                                    _pair_sort_key(move_keys[i])))
+
         chosen = move_keys[best_idx]
 
         # --- Diagnostic: localize pass-over-save -------------------------------
@@ -581,7 +840,8 @@ class GNNAgent:
         n = len(scored)
         if n == 0:
             return []
-        scored = sorted(scored, key=lambda x: x[0], reverse=True)
+        # Ties by canonical move key, not enumeration order -- see _move_sort_key.
+        scored = sorted(scored, key=lambda x: (-x[0], _pair_sort_key(x[1])))
 
         # 1) adaptive count from the normalized score cutoff
         alpha = self.prefilter_score_alpha

@@ -1,9 +1,14 @@
 import random
+import os
 from collections import deque
 import json
 import itertools
 
 NUM_PIECES = 12
+# Hard ceiling on the per-position caches, in entries. A busy midgame turn adds
+# a few thousand, so this is far above anything one search needs; it exists so a
+# pathological position can't grow the process without bound between resets.
+CACHE_MAX = int(os.environ.get('BOARD_CACHE_MAX', '150000'))
 # After this many two-player turns with no save (once both players are in
 # midgame), either player may call a draw. Easily tunable.
 NO_SAVE_TURNS_FOR_DRAW = 10
@@ -219,10 +224,22 @@ class Board:
         # BUGFIX: this was never invalidated here, so a reused Board (training
         # target/input encoding loops over records, and the Flask app between
         # requests) kept the PREVIOUS state's blocked-tile snapshot -- distance
-        # features were then computed against stale blocking. The bk-keyed
-        # value caches (_distance_cache etc.) stay valid once the key is fresh.
+        # features were then computed against stale blocking.
         self._blocked_key_cache.clear()
         self._blot_key_cache.clear()
+        # The value caches are pure functions of their keys, so keeping them
+        # across positions is CORRECT but unbounded -- and the app reuses one
+        # Board per thread and never calls switch_turn, which is the only other
+        # place they are cleared. Measured on a long game: _blot_cache reached
+        # 90k entries and the worker 174 MB by move 45, still climbing ~2 MB a
+        # move, which is what made moves take 30s and then get OOM-killed on a
+        # 256 MB instance. Every entry retains the frozensets in its key, so the
+        # cost is memory, not entries. Within one search they still do all the
+        # work they were added for; only cross-request reuse is given up, and
+        # that reuse is worthless because each request is a different position.
+        self._distance_cache.clear()
+        self._blot_cache.clear()
+        self._reachable_cache.clear()
         self.clear()
         for die, die_details in zip(self.dice, game_state_details['dice']):
             die.number = die_details['value']
@@ -324,14 +341,37 @@ class Board:
             return None
         return unentered_rack[0]
 
+    def get_enterable_pieces(self):
+        """The rack pieces the ENGINE offers as entries: the front one only.
+
+        The frontend lets a human take the SECOND rack piece out first, but that
+        is a pure reordering within the turn -- the set of end-of-turn positions
+        is provably identical (equiv_test: 242/242), so the engine gains nothing
+        by enumerating the alternative orderings and pays for them: in the
+        opening it doubled the first-move candidates, 21 -> 42 in a measured
+        position, to reach exactly the same positions.
+
+        The agent never has to generate a human's move either -- /select_moves
+        receives the board STATE, not move tuples -- so keeping the reordering
+        out of the engine costs nothing and keeps the search cheap.
+        """
+        rack = self.white_unentered if self.current_player == 'white' else self.black_unentered
+        return rack[:1]
+
     def must_move_unentered(self):
         unentered_rack = self.white_unentered if self.current_player == 'white' else self.black_unentered
         if len(unentered_rack) == 0:
             return False
         if self.home_tile.pieces and any(piece.player == self.current_player for piece in self.home_tile.pieces):
             return False
+        # Met by the turn's first move only if that move WAS the entry (origin None:
+        # the rack) or a re-entry from home. A board piece moved first leaves the
+        # entry still owed. Irrelevant to self-play -- the entry is forced first --
+        # but a mid-turn state (the hint) needs it. Mirrors engine.js.
         if self.firstMove:
-            return False
+            origin = self.firstMove['origin_tile']
+            if origin is None or origin is self.home_tile:
+                return False
         return True
 
     def get_saving_die(self, piece):
@@ -417,14 +457,14 @@ class Board:
                 self.get_reachable_tiles_by_dice(piece)
             self.destinations_by_piece = {piece: piece.reachable_tiles for piece in captured_pieces}
         elif self.must_move_unentered():
-            piece = self.get_unentered_piece()
-            self.get_reachable_tiles_by_dice(piece)
-            self.destinations_by_piece = {piece: piece.reachable_tiles}
+            entrants = self.get_enterable_pieces()
+            for piece in entrants:
+                self.get_reachable_tiles_by_dice(piece)
+            self.destinations_by_piece = {piece: piece.reachable_tiles for piece in entrants}
         else:
             player_pieces = [p for p in self.pieces if p.player == self.current_player and p.tile and p.tile.type in ['field', 'save']]
-            unentered_piece = self.get_unentered_piece()
-            if unentered_piece:
-                player_pieces.append(unentered_piece)
+            entrants = self.get_enterable_pieces()
+            player_pieces.extend(entrants)
 
             # Deduplicate among unnumbered pieces (number > 6) on the same tile since they're interchangeable
             deduped = []
@@ -474,12 +514,14 @@ class Board:
             tuples_list.append((1, 1, 1))   # add calling a draw
         return tuples_list
 
-    def save_move(self, move, origin_tile=None, origin_rack=None, captured_piece=None, firstMove_before=None):
+    def save_move(self, move, origin_tile=None, origin_rack=None, captured_piece=None, firstMove_before=None,
+                  origin_rack_index=None):
         piece_id, destination, roll = move
         move_to_save = dict()
         move_to_save['piece'] = self.piece_lookup.get(piece_id)
         move_to_save['origin_tile'] = origin_tile
         move_to_save['origin_rack'] = origin_rack
+        move_to_save['origin_rack_index'] = origin_rack_index
         move_to_save['destination'] = destination
         move_to_save['captured_piece'] = captured_piece
         move_to_save['roll'] = roll
@@ -541,7 +583,10 @@ class Board:
                 origin_tile.pieces.append(piece)
                 piece.tile = origin_tile
             elif origin_rack is not None:
-                origin_rack.insert(0, piece)
+                # Back to its own slot, not the front: with the second rack
+                # piece now enterable, insert(0) would silently reorder the rack.
+                idx = last_move.get('origin_rack_index')
+                origin_rack.insert(0 if idx is None else min(idx, len(origin_rack)), piece)
                 piece.rack = origin_rack
             if captured_piece:
                 self.home_tile.pieces.remove(captured_piece)
@@ -571,6 +616,7 @@ class Board:
         captured_piece = None
         origin_tile = None
         origin_rack = None
+        origin_rack_index = None
         if move == (0, 0, 0):
             self.firstMove = None
             if switch_turn:
@@ -616,6 +662,7 @@ class Board:
             new_tile = self.get_tile(ring, pos)
             if piece.rack:
                 origin_rack = piece.rack
+                origin_rack_index = origin_rack.index(piece)
                 piece.rack.remove(piece)
                 piece.rack = None
             if piece.tile:
@@ -635,7 +682,7 @@ class Board:
             self.dice[0].used = True
         elif roll == self.dice[1].number and not self.dice[1].used:
             self.dice[1].used = True
-        self.save_move(move, origin_tile, origin_rack, captured_piece, firstMove_before)
+        self.save_move(move, origin_tile, origin_rack, captured_piece, firstMove_before, origin_rack_index)
         if switch_turn and all(die.used for die in self.dice):
             self.switch_turn()
 
@@ -669,6 +716,8 @@ class Board:
                     # this player, so membership == is_blocked (and is O(1))
                     if neighbor.type not in ['nogo', 'home'] and neighbor.index not in blocked_key:
                         queue.append((neighbor, distance + 1))
+        if len(self._distance_cache) > CACHE_MAX:
+            self._distance_cache.clear()
         self._distance_cache[cache_key] = float('inf')
         return float('inf')
 
@@ -789,10 +838,14 @@ class Board:
                         neighbor.pieces[0].player != piece.player):
                         new_blot_count += 1
                     if neighbor.type == 'save' and (piece.number > 6 or piece.number == neighbor.number):
+                        if len(self._blot_cache) > CACHE_MAX:
+                            self._blot_cache.clear()
                         self._blot_cache[cache_key] = new_blot_count
                         return new_blot_count
                     if neighbor.type not in ['nogo', 'home'] and not neighbor.is_blocked(piece.player):
                         queue.append((neighbor, distance + 1, new_blot_count))
+        if len(self._blot_cache) > CACHE_MAX:
+            self._blot_cache.clear()
         self._blot_cache[cache_key] = float('inf')
         return float('inf')
 

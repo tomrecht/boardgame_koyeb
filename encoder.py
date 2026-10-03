@@ -29,6 +29,8 @@ import json
 import os
 import numpy as np
 
+ROW_CACHE_MAX = int(os.environ.get('ROW_CACHE_MAX', '100000'))
+
 # -------------------------
 # CONSTANTS
 # -------------------------
@@ -492,8 +494,10 @@ class BoardEncoder:
 
         # Bound the row cache (keys embed blocked-set frozensets, so entries
         # never go stale -- this is purely a memory cap; one turn's candidate
-        # loop needs only ~1-2K entries).
-        if len(self._row_cache) > 100_000:
+        # loop needs only ~1-2K entries). ROW_CACHE_MAX trades a little speed for
+        # resident memory: the deployed app runs a much smaller cache than
+        # training does, because it shares a small instance with the net.
+        if len(self._row_cache) > ROW_CACHE_MAX:
             self._row_cache.clear()
         piece_feats, all_pieces = encode_piece_features(
             board, self.tile_index, current_player, self._row_cache)
