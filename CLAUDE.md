@@ -260,7 +260,7 @@ with it in mind.** Assessment and the concrete implications:
 ## Current state
 
 - **POSITION NOTATION, `?pos=`, AND `pos_image.mjs` (owner, 2026-10-02; dev only,
-  on `testing`).** A FEN-like text form, documented beside `positionToNotation`
+  on main since 2026-10-03).** A FEN-like text form, documented beside `positionToNotation`
   in game.js:
   `b 3'3 | W 2@6.6 x@G1 ... r:- s:1,3,5,x | B 1@3.2 ... r:- s:... | f:1@4.12~3.2`
   -- side, dice (`'` = used, `-` = roll fresh), per side `<n>@<loc>` with n 1-6
@@ -285,8 +285,8 @@ with it in mind.** Assessment and the concrete implications:
   **Not built: screenshot -> notation.** Claude reads a screenshot directly when
   given one; an automatic reader would be fragile across devices and themes.
 
-- **NEVER PASS A DIE THAT COULD SAVE A PIECE (owner, 2026-10-02; on `testing`
-  ONLY).** After the probe below found 3 / 1002 clear give-aways (images:
+- **NEVER PASS A DIE THAT COULD SAVE A PIECE (owner, 2026-10-02; on main and in
+  versionCode 7 since 2026-10-03).** After the probe below found 3 / 1002 clear give-aways (images:
   `case_a1-3.png` in the repo root), the search drops any candidate pair that ends
   with a die unused while a save -- blank OR numbered -- is legal for it, whenever
   any candidate survives. `wastesSave` in agent.js, `_wastes_save` in agent_gnn.py,
@@ -324,8 +324,8 @@ with it in mind.** Assessment and the concrete implications:
   over all 21 replies is what could arbitrate. Script was a scratchpad one-off
   (`probe_classes.py`), not committed.
 
-- **CERTAIN LOSS NEXT TURN -> BANK THE MOST (owner, 2026-10-01; on `testing`
-  ONLY, for owner to try).** Owner saw the computer, unable to win, bring a piece
+- **CERTAIN LOSS NEXT TURN -> BANK THE MOST (owner, 2026-10-01; on main and in
+  versionCode 7 since 2026-10-03).** Owner saw the computer, unable to win, bring a piece
   onto a goal instead of saving when his last two pieces were blanks on goal 1 --
   any roll banks both, goals cannot be blocked or their pieces captured, so the
   game is lost and only the margin is in play. **Not a heavy-loss effect** (owner:
@@ -1662,8 +1662,21 @@ with it in mind.** Assessment and the concrete implications:
     needed versionCode 2. **A reinstall from Play does NOT pick up a local
     rebuild** — obvious in hindsight, easy to misread as the icon fix having
     failed.
-    **CURRENT PACKAGE: versionCode 6, versionName 1.0.5, 8.7 MB, built
-    2026-09-25** -- the learnability batch: the hint pill and its sum-move
+    **CURRENT PACKAGE: versionCode 7, versionName 1.0.6, 8.7 MB, built
+    2026-10-03** -- everything from 2026-09-26 to 10-02: the two computer rules
+    (never pass a die that could save; bank the most when the opponent's last two
+    blanks sit on goal 1), the AI save using the agent's die, the end-card resize
+    fix, the refusal explanations, dismissible advice notices, the tutorial rework
+    and rule tips, the stack-picker double-tap and the rack-entry engine fix. The
+    recorder and the position tools ship but are DORMANT -- both need a URL
+    parameter (`?rec=` / `?dev=1`) the app never receives. Only `game.js`,
+    `agent.js` and `engine.js` changed among shipped files, all network-first, so
+    `sw.js` keeps `quahuru-v8`. Verified on the BUNDLE: `jar verified`, versionCode
+    7 / 1.0.6 / com.quahuru.game from its manifest, and game.js, agent.js,
+    engine.js, local_agent.js, index.html, sw.js, model.onnx hash-identical to the
+    working tree.
+    Previous: versionCode 6, versionName 1.0.5, 8.7 MB, built
+    2026-09-25 -- the learnability batch: the hint pill and its sum-move
     collapse, the shortest-route explanation, the tutorial's entry point in How to
     Play, the closing difficulty buttons, the difficulty-slider remap onto
     0.8..1.0, the withheld-sum highlight and the match-winner chime. See the
