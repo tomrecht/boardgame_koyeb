@@ -149,7 +149,7 @@ def lambda_returns_white_frame(values_white, z_white, lam, gamma):
 # ---------------------------------------------------------------------------
 
 def compute_td_targets_for_game(recs, z_white, target_model, encoder, board,
-                                lam, gamma):
+                                lam, gamma, predict_fn=None):
     """Compute per-record TD(lambda) targets (in each record's mover frame) for
     one game trajectory.
 
@@ -160,28 +160,34 @@ def compute_td_targets_for_game(recs, z_white, target_model, encoder, board,
 
     Returns (targets, ok). On any encoding/inference failure returns
     (mc_targets, False) so the caller can fall back to MC labels for that game.
-    """
-    import torch
-    from network import collate_batch
 
+    `predict_fn(recs) -> [mover-frame value per record]` replaces the encoder +
+    target-model forward pass (tests only: it lets the frame logic be checked
+    without a network).
+    """
     # MC fallback targets (mover frame) in case anything goes wrong
     mc_targets = [max(-1.0, min(1.0, r['final_score'] / NUM_PIECES)) for r in recs]
 
-    try:
-        encoded = []
-        for r in recs:
-            board.update_state(r['raw_state'])
-            encoded.append(encoder.encode(board, r['player']))
-        batch = collate_batch(encoded)
-        with torch.no_grad():
-            preds = target_model(batch)            # [n], mover frame, on DEVICE
-        preds = preds.detach().cpu().tolist()
-        if not isinstance(preds, list):            # n == 1 safety
-            preds = [preds]
-    except Exception as e:
-        print(f"    TD target encode/infer failed for game "
-              f"{recs[0].get('game_id')}: {e}")
-        return mc_targets, False
+    if predict_fn is not None:
+        preds = list(predict_fn(recs))
+    else:
+        try:
+            import torch
+            from network import collate_batch
+            encoded = []
+            for r in recs:
+                board.update_state(r['raw_state'])
+                encoded.append(encoder.encode(board, r['player']))
+            batch = collate_batch(encoded)
+            with torch.no_grad():
+                preds = target_model(batch)            # [n], mover frame, on DEVICE
+            preds = preds.detach().cpu().tolist()
+            if not isinstance(preds, list):            # n == 1 safety
+                preds = [preds]
+        except Exception as e:
+            print(f"    TD target encode/infer failed for game "
+                  f"{recs[0].get('game_id')}: {e}")
+            return mc_targets, False
 
     # mover frame -> white frame
     values_white = [to_white_frame(v, r['player']) for v, r in zip(preds, recs)]
@@ -193,7 +199,7 @@ def compute_td_targets_for_game(recs, z_white, target_model, encoder, board,
 
 
 def compute_td_targets(records, target_model, encoder, board, lam, gamma,
-                       include_short_as_mc=True, verbose=True):
+                       include_short_as_mc=True, verbose=True, predict_fn=None):
     """Compute TD(lambda) targets for a flat list of records.
 
     Returns a NEW list of records (shallow copies) each with an added
@@ -206,7 +212,8 @@ def compute_td_targets(records, target_model, encoder, board, lam, gamma,
     n_fallback = 0
     for gid, recs, z_white in trajectories:
         targets, ok = compute_td_targets_for_game(
-            recs, z_white, target_model, encoder, board, lam, gamma)
+            recs, z_white, target_model, encoder, board, lam, gamma,
+            predict_fn=predict_fn)
         if not ok:
             n_fallback += 1
         for r, t in zip(recs, targets):
@@ -308,6 +315,78 @@ def _test_grouping():
     print("  [ok] trajectory grouping/sorting/consistency")
 
 
+def _league_game(learner):
+    """A 7-turn game, white to move first, black wins by 5. Records carry the
+    league fields: only `learner`'s colour has learner=True. Stub mover-frame
+    values are keyed by move_index."""
+    recs = []
+    for i in range(7):
+        pl = 'white' if i % 2 == 0 else 'black'
+        recs.append({'game_id': 'lg_1_iter10', 'move_index': i, 'player': pl,
+                     'final_score': -5 if pl == 'white' else 5,
+                     'learner': pl == learner, 'opp': 'iter10'})
+    vals = {0: 0.10, 1: 0.20, 2: -0.30, 3: 0.40, 4: -0.10, 5: 0.55, 6: -0.60}
+    return recs, vals
+
+
+def _test_league_learner_only_chain():
+    """League game: the panel opponent's records are dropped BEFORE targets
+    (td_selfplay_loop.learner_records), so each learner state bootstraps from
+    the NEXT LEARNER state and the terminal margin, all in the learner's own
+    frame. Checked against a recursion written directly in the learner's frame
+    (no white-frame conversion), for a black learner and a white learner."""
+    from td_selfplay_loop import learner_records
+    lam, gamma = 0.7, 1.0
+    for learner in ('black', 'white'):
+        recs, vals = _league_game(learner)
+        kept = learner_records(recs)
+        assert all(r['player'] == learner for r in kept)
+        assert len(kept) == (3 if learner == 'black' else 4)
+        f = lambda rs: [vals[r['move_index']] for r in rs]
+        out = compute_td_targets(kept, None, None, None, lam, gamma,
+                                 verbose=False, predict_fn=f)
+        assert len(out) == len(kept)
+        assert all(r['player'] == learner for r in out), 'opponent position leaked'
+        got = {r['move_index']: r['td_target'] for r in out}
+        # expected, computed in the LEARNER's frame directly
+        idx = [r['move_index'] for r in kept]
+        z = (5 if learner == 'black' else -5) / NUM_PIECES
+        exp = {}
+        nG, nV = z, z
+        for i in reversed(idx):
+            exp[i] = gamma * ((1 - lam) * nV + lam * nG)
+            nG, nV = exp[i], vals[i]
+        for i in idx:
+            assert _approx(got[i], exp[i], 1e-12), (learner, i, got[i], exp[i])
+        # lam=1: every learner target is the learner's own terminal margin
+        out1 = compute_td_targets(kept, None, None, None, 1.0, 1.0,
+                                  verbose=False, predict_fn=f)
+        for r in out1:
+            assert _approx(r['td_target'], z), (learner, r['td_target'], z)
+    print("  [ok] league: learner-only chain, learner frame, both colours")
+
+
+def _test_selfplay_unchanged_by_filter():
+    """Self-play records (all learner=True, or no field at all) pass through
+    the filter untouched, so the legacy targets are bit-identical."""
+    from td_selfplay_loop import learner_records
+    recs, vals = _league_game('white')
+    for r in recs:
+        r['learner'] = True
+    legacy = [{k: v for k, v in r.items() if k not in ('learner', 'opp')}
+              for r in recs]
+    f = lambda rs: [vals[r['move_index']] for r in rs]
+    a = compute_td_targets(learner_records(recs), None, None, None, 0.9, 1.0,
+                           verbose=False, predict_fn=f)
+    b = compute_td_targets(learner_records(legacy), None, None, None, 0.9, 1.0,
+                           verbose=False, predict_fn=f)
+    assert len(a) == len(b) == 7
+    key = lambda r: r['move_index']
+    for x, y in zip(sorted(a, key=key), sorted(b, key=key)):
+        assert x['td_target'] == y['td_target']
+    print("  [ok] self-play targets unchanged by the learner filter")
+
+
 if __name__ == '__main__':
     print("Running td_returns unit tests...")
     _test_signs()
@@ -316,4 +395,6 @@ if __name__ == '__main__':
     _test_lambda_intermediate()
     _test_gamma()
     _test_grouping()
+    _test_league_learner_only_chain()
+    _test_selfplay_unchanged_by_filter()
     print("All td_returns tests passed.")

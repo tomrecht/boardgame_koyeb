@@ -59,6 +59,13 @@ from train_td import (compute_epoch_targets, run_td_epoch, split_by_game,
                       print_data_stats)
 
 
+def learner_records(records):
+    """Keep only positions where the side to move is the network being
+    trained. Self-play records are all learner=True (old records without the
+    field count as learner)."""
+    return [r for r in records if r.get('learner', True)]
+
+
 def _cpu_state_dict(model):
     return {k: v.detach().cpu() for k, v in model.state_dict().items()}
 
@@ -118,7 +125,10 @@ def run_td_selfplay(model,
                     seed_base=10_000,
                     explore_eps_fn=None,
                     revert_fork_sds=None,
-                    augment=None):
+                    augment=None,
+                    gen_cfg_fn=None,
+                    league_cfg_fn=None,
+                    gate_fn=None):
     """Iterative TD(lambda) self-play. `model` is trained in place and is the
     current/live network; `champion_sd` is the promotion baseline (start it at
     iter5). `start_iter` lets a resumed run continue checkpoint numbering
@@ -142,7 +152,21 @@ def run_td_selfplay(model,
     'iter10': older_champ} re-injects an older champion's policy (and its
     sharper on-goal value calibration) into generation without touching the
     promotion gate, which stays `champion_sd`. None -> legacy (always revert to
-    champion). Returns (model, champion_sd, history)."""
+    champion). Returns (model, champion_sd, history).
+
+    Panel-league extensions (all None -> legacy behaviour):
+      gen_cfg_fn(it)    -> per-game generation cfg dict for worker_play
+                           (softmax exploration keys, 'hand_rules'); merged
+                           with the legacy eps entry if both are given.
+      league_cfg_fn(it) -> league_cfg for generate_games_parallel (a fraction
+                           of games vs frozen panel opponents / heuristic).
+      gate_fn(model, champion_sd, it) -> report dict with 'promote', 'keep'
+                           and 'cand_score'; replaces the vs-champion gate
+                           (see panel_gate.PanelGate.evaluate).
+    Only LEARNER positions are trained on (records with learner=False -- the
+    panel opponent's turns in a league game -- are dropped BEFORE TD targets
+    are computed, so each learner state bootstraps from the next learner
+    state; see td_returns' league tests for why)."""
     assert next(model.parameters()).device.type == network.DEVICE.type, \
         f"model must be on {network.DEVICE} (got {next(model.parameters()).device})"
 
@@ -181,6 +205,13 @@ def run_td_selfplay(model,
         eps_it = float(explore_eps_fn(it)) if explore_eps_fn else 0.0
         if eps_it > 0:
             print(f"  exploration: eps={eps_it:.3f} (generation only)")
+        gen_cfg = dict(gen_cfg_fn(it)) if gen_cfg_fn else {}
+        if eps_it > 0:
+            gen_cfg['eps'] = eps_it
+        if gen_cfg.get('softmax_T', 0) > 0:
+            print(f"  exploration: softmax T={gen_cfg['softmax_T']:.3f} for each "
+                  f"side's first {gen_cfg.get('softmax_turns', 0)} turns (generation only)")
+        league_cfg = league_cfg_fn(it) if league_cfg_fn else None
         records = generate_games_parallel(
             gen_sd_holder, None,
             n_games=games_per_iter,
@@ -188,9 +219,15 @@ def run_td_selfplay(model,
             heuristic_weights=heuristic_weights,
             use_heuristic_opp=use_heuristic_opp,
             label=f'gen it{it}',
-            explore_cfg={'eps': eps_it} if eps_it > 0 else None,
+            explore_cfg=gen_cfg or None,
+            league_cfg=league_cfg,
         )
         print_data_stats(records, f'iter {it} generated')
+        n_all = len(records)
+        records = learner_records(records)
+        if len(records) != n_all:
+            print(f"  league: kept {len(records)} learner positions of {n_all} "
+                  f"(dropped {n_all - len(records)} panel-opponent positions)")
 
         if len({r['game_id'] for r in records}) < 4:
             print("  Too few games to train this iteration; skipping.")
@@ -216,33 +253,52 @@ def run_td_selfplay(model,
         # with generation seeds (seed_base + it*games_per_iter) at any
         # games_per_iter setting.
         champ_sd_cpu = {k: v.cpu() for k, v in champion_sd.items()}
-        wr = evaluate_parallel(
-            model, champ_sd_cpu,
-            n_games=eval_games,
-            seed_offset=seed_base + 1_000_000 + it * eval_games,
-            heuristic_weights=heuristic_weights,
-            promote_winrate=promote_winrate,
-            label=f'eval it{it} vs champ')
+        gate_report = None
+        if gate_fn is not None:
+            gate_report = gate_fn(model, champ_sd_cpu, it)
+            wr = gate_report['cand_score']          # panel score (margin points)
+            promoted = bool(gate_report['promote'])
+            keep = bool(gate_report['keep'])
+        else:
+            wr = evaluate_parallel(
+                model, champ_sd_cpu,
+                n_games=eval_games,
+                seed_offset=seed_base + 1_000_000 + it * eval_games,
+                heuristic_weights=heuristic_weights,
+                promote_winrate=promote_winrate,
+                label=f'eval it{it} vs champ')
+            promoted = wr >= promote_winrate
+            keep = wr > revert_below_winrate
+        if gate_report is not None:
+            if gate_report.get('outcome') == 'prescreen_reject':
+                wr_txt = (f"gate outcome PRESCREEN_REJECT: mean margin vs parent "
+                          f"{gate_report['prescreen_mean']:+.3f}, panel not played")
+            else:
+                wr_txt = (f"gate outcome {gate_report.get('outcome', '?').upper()}: "
+                          f"panel score {wr:+.3f}, paired diff vs champion "
+                          f"{gate_report['diff']:+.3f} +- {gate_report['diff_se']:.3f}")
+        else:
+            wr_txt = f"win rate {wr:.1%}"
 
         # 5. Promote on gate; always checkpoint.
         iter_path = f'{save_prefix}_iter{it}.pt'
         torch.save(_cpu_state_dict(model), iter_path)
         fork_label = None            # set only when a random-fork revert fires
-        promoted = wr >= promote_winrate
         if promoted:
             action = 'promoted'
             champion_sd = _cpu_state_dict(model)
             torch.save(champion_sd, f'{save_prefix}_champion.pt')
-            print(f"  PROMOTED (win rate {wr:.1%} >= {promote_winrate:.0%}). "
-                  f"New champion saved.")
-        elif wr > revert_below_winrate:
+            what = (f'panel score {wr:+.3f}' if gate_fn is not None
+                    else f'win rate {wr:.1%} >= {promote_winrate:.0%}')
+            print(f"  PROMOTED ({what}). New champion saved.")
+        elif keep:
             # Not enough to promote, but a genuine improvement over the
             # champion (beats it more often than not) -- keep training from
             # these weights rather than discarding the progress. Optimizer is
             # untouched: no discontinuity in the weights to accommodate.
             action = 'kept'
-            print(f"  Not promoted (win rate {wr:.1%} < {promote_winrate:.0%}) but "
-                  f"> {revert_below_winrate:.0%} -- keeping live model, not reverting.")
+            print(f"  Not promoted ({wr_txt}) but "
+                  f"better than the champion -- keeping live model, not reverting.")
         else:
             # BUGFIX: `model` was previously left as this iteration's (failed)
             # weights unconditionally, so the NEXT iteration's self-play
@@ -258,7 +314,8 @@ def run_td_selfplay(model,
             # training toward the now-discarded weights and would be
             # inconsistent applied to the reverted ones (same accepted
             # cold-restart cost as a resume; see run_full_td.py's docstring).
-            action = 'reverted'
+            action = ('prescreen_reject' if gate_report is not None and
+                      gate_report.get('outcome') == 'prescreen_reject' else 'reverted')
             if revert_fork_sds:
                 # Random fork: restart this update from one of the fork points
                 # (per-iteration deterministic so a resume repeats the choice).
@@ -271,17 +328,19 @@ def run_td_selfplay(model,
                 model.load_state_dict(champion_sd)
                 fork_note = " reverted live model to champion weights."
             optimizer = torch.optim.Adam(model.parameters(), lr=lr)
-            print(f"  Not promoted (win rate {wr:.1%} <= {revert_below_winrate:.0%}). "
+            print(f"  Not promoted ({wr_txt}). "
                   f"Champion unchanged;{fork_note}")
 
         dt = time.time() - t0
         history.append({'iter': it, 'val_loss': best_val, 'winrate': wr,
+                        'gate': gate_report,
+                        'league': getattr(generate_games_parallel, 'last_counts', None),
                         'promoted': promoted, 'action': action, 'seconds': dt,
                         'fork': fork_label,
                         'positions': len(records),
                         'train_positions': len(train_records)})
         print(f"  iter {it} done in {dt:.0f}s | val {best_val:.5f} | "
-              f"wr {wr:.1%} | promoted={promoted} | action={action}")
+              f"{wr_txt} | promoted={promoted} | action={action}")
 
         # LIVE checkpoint: the weights the next iteration will actually
         # continue from (== champion after a revert, == this iteration's

@@ -35,30 +35,56 @@ MAX_TURNS   = 200
 STUCK_LIMIT = 2 * NO_SAVE_TURNS_FOR_DRAW + 10
 
 
+_OPP_CACHE = {}   # per-worker: checkpoint path -> GNNAgent (league opponents)
+
+
+def _league_opponent(path, hand_rules):
+    """Load (once per worker process) a frozen panel member as a GNNAgent."""
+    key = (path, bool(hand_rules))
+    if key not in _OPP_CACHE:
+        from network import BoardGNN
+        from agent_gnn import GNNAgent
+        m = BoardGNN()
+        m.load_state_dict(torch.load(path, map_location='cpu'))
+        m.eval()
+        _OPP_CACHE[key] = GNNAgent(model=m, hand_rules=hand_rules)
+    return _OPP_CACHE[key]
+
+
 def worker_play(args):
     """
     Run one game and return (records, winner, score).
     args: (model_state_dict, heuristic_weights, seed, gnn_is_white,
-           use_heuristic_opp[, explore_cfg])
+           use_heuristic_opp[, cfg])
 
-    explore_cfg: None = exact legacy greedy behavior (default; the 5-tuple
-    form is still accepted so every existing caller is untouched), or
-    {'eps': float} -- with probability eps a turn's move-pair is sampled
-    UNIFORMLY over the legal scored pairs (EXPLORATION_SPEC.md section 1).
-    Rules: the draw call is excluded from sampling (its value is exactly
-    known; randomly ending games teaches nothing), a guaranteed win is
-    never randomized, and exploration decisions use a DEDICATED RNG stream
-    derived from the game seed -- the global `random` dice stream is never
-    touched, so a game's dice are identical with exploration on or off.
-    Exploratory turns are tagged in the records ('explored': True) for
-    diagnostics and possible Watkins-style trace-cutting later.
+    cfg: None = exact legacy greedy self-play (the 5-tuple form is still
+    accepted so every existing caller is untouched), or a dict with any of:
+      'eps'           legacy epsilon-greedy: with probability eps a turn's
+                      pair is sampled UNIFORMLY over the legal scored pairs.
+      'softmax_T'     softmax OPENING exploration (explore.py): for each
+      'softmax_turns' LEARNER side's first softmax_turns turns, sample the pair
+                      from softmax(margin / T) over its 2-ply scores.
+      'opp_path'      LEAGUE game: the opponent is this frozen checkpoint
+      'opp_tag'       instead of the learner itself ('heuristic' as opp_path
+                      means the heuristic agent). Opponent always plays greedy.
+      'hand_rules'    the agent's hand-coded play rules (default False: the
+                      training pipeline measures what the net learned itself).
+    Exploration (either kind) only ever applies to LEARNER turns, uses a
+    DEDICATED RNG derived from the game seed -- the global `random` dice stream
+    is never touched, so a game's dice are identical with exploration on or
+    off -- never samples the draw call and always takes a guaranteed win.
+
+    Every record carries 'learner' (True iff the side to move is the network
+    being trained; both sides in self-play) and 'opp' (the opponent tag, or
+    'self'). Training keeps only learner records -- see td_selfplay_loop.
     """
     if len(args) == 6:
         (model_state_dict, heuristic_weights, seed, gnn_is_white,
-         use_heuristic_opp, explore_cfg) = args
+         use_heuristic_opp, cfg) = args
     else:
         model_state_dict, heuristic_weights, seed, gnn_is_white, use_heuristic_opp = args
-        explore_cfg = None
+        cfg = None
+    cfg = cfg or {}
 
     # Force CPU-only — must be before any CUDA-touching import path
     os.environ["CUDA_VISIBLE_DEVICES"] = ""
@@ -68,24 +94,41 @@ def worker_play(args):
 
     from game import Board
     from agent import Agent
-    from agent_gnn import GNNAgent
+    from agent_gnn import GNNAgent, SCORE_SCALE
     from network import BoardGNN
+    import explore
 
+    hand_rules = bool(cfg.get('hand_rules', False))
     model = BoardGNN()
     model.load_state_dict({k: v.cpu() for k, v in model_state_dict.items()})
     model.eval()
-    gnn_agent = GNNAgent(model=model)
+    gnn_agent = GNNAgent(model=model, hand_rules=hand_rules)
 
-    if use_heuristic_opp:
+    opp_path = cfg.get('opp_path')
+    league = opp_path is not None
+    opp_tag = cfg.get('opp_tag', 'self') if league else ('heuristic' if use_heuristic_opp else 'self')
+    if league and opp_path == 'heuristic':
+        opp_agent = Agent(weights=heuristic_weights)
+    elif league:
+        opp_agent = _league_opponent(opp_path, hand_rules)
+    elif use_heuristic_opp:
         opp_agent = Agent(weights=heuristic_weights)
     else:
         opp_model = BoardGNN()
         opp_model.load_state_dict({k: v.cpu() for k, v in model_state_dict.items()})
         opp_model.eval()
-        opp_agent = GNNAgent(model=opp_model)
+        opp_agent = GNNAgent(model=opp_model, hand_rules=hand_rules)
 
     white_agent = gnn_agent if gnn_is_white else opp_agent
     black_agent = opp_agent if gnn_is_white else gnn_agent
+    learner_color = 'white' if gnn_is_white else 'black'
+
+    def is_learner(player):
+        # Self-play (opponent = the learner's own weights): both sides learn.
+        # League / heuristic games: only the learner's colour.
+        if opp_tag == 'self':
+            return True
+        return player == learner_color
 
     def normalize_chosen(chosen):
         if (isinstance(chosen, tuple) and len(chosen) == 2
@@ -131,15 +174,20 @@ def worker_play(args):
                 'final_score':  final_score,
                 'ply_from_end': ply,
                 'explored':     pos.get('explored', False),
+                'sampled':      pos.get('sampled', False),
+                'explore_gap':  pos.get('explore_gap', 0.0),
+                'learner':      is_learner(player),
+                'opp':          opp_tag,
             })
         return recs
 
     # Exploration RNG: separate stream, derived from (but not equal to) the
     # game seed, so dice (global `random`, seeded below) are unaffected.
-    eps = 0.0
+    eps = float(cfg.get('eps', 0) or 0)
+    soft_T = float(cfg.get('softmax_T', 0) or 0)
+    soft_turns = int(cfg.get('softmax_turns', 0) or 0)
     explore_rng = None
-    if explore_cfg and explore_cfg.get('eps', 0) > 0:
-        eps = float(explore_cfg['eps'])
+    if eps > 0 or (soft_T > 0 and soft_turns > 0):
         explore_rng = random.Random((seed << 20) ^ 0xE5E5E5)
 
     random.seed(seed)
@@ -148,12 +196,17 @@ def worker_play(args):
     positions = []
     last_total_saved = 0
     turns_since_save = 0
+    side_turns = {'white': 0, 'black': 0}   # turns played so far by each side
+
+    # game_id carries the seed (unique per generation call) and the opponent,
+    # so league games can never collide with self-play ones in the replay pool.
+    gid_base = f'sp_{seed}' if opp_tag == 'self' else f'lg_{seed}_{opp_tag}'
 
     for turn in range(MAX_TURNS):
         # 1. Normal win
         winner, score = board.check_game_over()
         if winner:
-            game_id = f'sp_{seed}_{int(time.time())}'
+            game_id = f'{gid_base}_{int(time.time())}'
             return build_records(positions, winner, score, game_id), winner, score
 
         # 2. No-save draw rule (PRIMARY non-win terminator, owned by the Board).
@@ -161,7 +214,7 @@ def worker_play(args):
         # midgame and NO_SAVE_TURNS_FOR_DRAW rounds have passed with no save.
         # The trailing side would always claim it, so end as a draw (score 0).
         if board.draw_callable:
-            game_id = f'sp_{seed}_draw'
+            game_id = f'{gid_base}_draw'
             return build_records(positions, None, 0, game_id), None, 0
 
         # 3. Stuck backstop — only for the rare case the draw gate never armed
@@ -174,7 +227,7 @@ def worker_play(args):
             turns_since_save += 1
 
         if last_total_saved > 0 and turns_since_save >= STUCK_LIMIT:
-            game_id = f'sp_{seed}_stuck'
+            game_id = f'{gid_base}_stuck'
             return build_records(positions, None, 0, game_id), None, 0
 
         # 4. Play one turn
@@ -183,11 +236,26 @@ def worker_play(args):
         game_stage = board.game_stages.get(player, 'unknown')
         moves = board.get_valid_moves()
         explored_turn = False
-        if (explore_rng is not None and explore_rng.random() < eps
-                and (not use_heuristic_opp or agents[player] is gnn_agent)):
-            # epsilon turn: uniform over legal scored pairs. return_scores
-            # costs the same forward pass as the argmax path (it always
-            # scores every pair anyway).
+        sampled_turn = False
+        explore_gap = 0.0
+        learner_turn = is_learner(player)
+        if (explore_rng is not None and learner_turn and soft_T > 0
+                and side_turns[player] < soft_turns):
+            # Softmax opening exploration (explore.py). return_scores costs the
+            # same forward pass as the argmax path.
+            ranked = agents[player].select_move_pair(moves, board, player,
+                                                     return_scores=True)
+            if isinstance(ranked, tuple):            # defensive: bare pair
+                chosen = ranked
+            else:
+                chosen, explore_gap = explore.softmax_pick(
+                    ranked, soft_T, explore_rng, SCORE_SCALE)
+                explored_turn = explore_gap > 1e-6
+                chosen = gnn_agent._dedupe_save_pair(chosen)
+                sampled_turn = True
+        elif (explore_rng is not None and eps > 0 and learner_turn
+              and explore_rng.random() < eps):
+            # legacy epsilon turn: uniform over legal scored pairs.
             ranked = agents[player].select_move_pair(moves, board, player,
                                                      return_scores=True)
             if isinstance(ranked, tuple):            # defensive: bare pair
@@ -208,14 +276,16 @@ def worker_play(args):
         move_list = normalize_chosen(chosen)
         positions.append({'player': player, 'game_stage': game_stage,
                           'move_index': turn, 'raw_state': raw_state,
-                          'explored': explored_turn})
+                          'explored': explored_turn, 'sampled': sampled_turn,
+                          'explore_gap': explore_gap})
+        side_turns[player] += 1
         for move in move_list:
             if move != (0, 0, 0):
                 board.apply_move(move, switch_turn=False)
         board.switch_turn()
 
     # 5. Hard cap reached — unresolved developed position == draw (score 0)
-    game_id = f'sp_{seed}_maxturns'
+    game_id = f'{gid_base}_maxturns'
     return build_records(positions, None, 0, game_id), None, 0
 
 
@@ -282,18 +352,40 @@ def generate_games_parallel(model, opp_state_dict_or_none,
                              use_heuristic_opp=False,
                              n_workers=None,  # ignored if pool already running
                              label='',
-                             explore_cfg=None):
+                             explore_cfg=None,
+                             league_cfg=None):
+    """Generate n_games of training games on the pool.
+
+    explore_cfg: per-game cfg dict passed to worker_play (exploration keys,
+      'hand_rules'); None = legacy greedy self-play.
+    league_cfg: None = all self-play, or
+      {'frac': f, 'opponents': {tag: path_or_'heuristic'}, 'seed': s}
+      -- a fraction f of games is played against an opponent drawn uniformly
+      from `opponents`. Which games are league games, and against whom, is a
+      pure function of (seed, game index), so a resumed iteration reproduces it.
+      The learner's colour alternates by game index exactly as in self-play.
+    Returns the record list; `generate_games_parallel.last_counts` holds
+    {opp_tag: games} for the call (asserted on by the smoke test)."""
     global _POOL
     if _POOL is None:
         init_pool(n_workers or 10)
 
     current_sd = {k: v.cpu() for k, v in model.state_dict().items()}
 
-    args_list = [
-        (current_sd, heuristic_weights, seed_offset + i,
-         i % 2 == 0, use_heuristic_opp, explore_cfg)
-        for i in range(n_games)
-    ]
+    base_cfg = dict(explore_cfg or {})
+    opps = sorted((league_cfg or {}).get('opponents', {}).items())
+    frac = float((league_cfg or {}).get('frac', 0.0)) if opps else 0.0
+    sched_rng = random.Random(((league_cfg or {}).get('seed', 0) << 16) ^ seed_offset)
+    args_list = []
+    planned = {}
+    for i in range(n_games):
+        cfg = dict(base_cfg)
+        if frac > 0 and sched_rng.random() < frac:
+            tag, path = opps[sched_rng.randrange(len(opps))]
+            cfg['opp_tag'], cfg['opp_path'] = tag, path
+        planned[cfg.get('opp_tag', 'self')] = planned.get(cfg.get('opp_tag', 'self'), 0) + 1
+        args_list.append((current_sd, heuristic_weights, seed_offset + i,
+                          i % 2 == 0, use_heuristic_opp, cfg or None))
 
     t0 = time.time()
     records = []
@@ -302,9 +394,16 @@ def generate_games_parallel(model, opp_state_dict_or_none,
     done = 0
     print_every = max(1, n_games // 10)
 
+    played = {}       # opp_tag -> games actually returned (counted from records)
+    learner_wins = {}  # opp_tag -> learner wins (league games only meaningful)
     for recs, winner, score in _POOL.imap_unordered(worker_play, args_list, chunksize=1):
         if recs:
             records.extend(recs)
+            tag = recs[0].get('opp', 'self')
+            played[tag] = played.get(tag, 0) + 1
+            if tag != 'self' and winner is not None:
+                lw = any(r['learner'] and r['player'] == winner for r in recs)
+                learner_wins[tag] = learner_wins.get(tag, 0) + int(lw)
         if winner is None:
             draws += 1
         if recs and recs[0]['game_id'].endswith(('stuck', 'maxturns')):
@@ -318,6 +417,23 @@ def generate_games_parallel(model, opp_state_dict_or_none,
     print(f'  {label}: {n_games} games ({draws} draws, of which {backstop} backstop), '
           f'{len(records)} positions, {elapsed:.0f}s '
           f'({elapsed/n_games:.1f}s/game, {_POOL_WORKERS} workers)')
+    if any(t != 'self' for t in planned):
+        print(f'  {label}: opponents planned {planned} | played {played} | '
+              f'learner wins vs league {learner_wins}')
+    sampled = sum(1 for r in records if r.get('sampled'))
+    if sampled:
+        explored = sum(1 for r in records if r.get('explored'))
+        gaps = [r['explore_gap'] for r in records if r.get('sampled')]
+        last = max(r['move_index'] for r in records if r.get('sampled'))
+        opp_sampled = sum(1 for r in records if r.get('sampled') and not r['learner'])
+        print(f'  {label}: softmax-sampled turns {sampled}, of which '
+              f'{explored} chose a pair the net rates strictly worse than its '
+              f'best (mean gap {sum(gaps) / len(gaps):.3f}, max {max(gaps):.3f} '
+              f'margin points); latest sampled game turn '
+              f'{last}; sampled on a league opponent\'s turn {opp_sampled}')
+        assert opp_sampled == 0, 'exploration fired on a panel opponent turn'
+    generate_games_parallel.last_counts = {'planned': planned, 'played': played,
+                                           'learner_wins': learner_wins}
     return records
 
 
@@ -345,11 +461,14 @@ def worker_eval(args):
     from agent import Agent
     from agent_gnn import GNNAgent
     from network import BoardGNN
+    import explore
+    samples_before = explore.samples()
 
+    # Hand-coded play rules OFF: gating measures the nets, not the rules.
     ch_model = BoardGNN()
     ch_model.load_state_dict({k: v.cpu() for k, v in challenger_sd.items()})
     ch_model.eval()
-    challenger = GNNAgent(model=ch_model)
+    challenger = GNNAgent(model=ch_model, hand_rules=False)
 
     if opponent_sd is None:
         opponent = Agent(weights=heuristic_weights)
@@ -357,7 +476,7 @@ def worker_eval(args):
         op_model = BoardGNN()
         op_model.load_state_dict({k: v.cpu() for k, v in opponent_sd.items()})
         op_model.eval()
-        opponent = GNNAgent(model=op_model)
+        opponent = GNNAgent(model=op_model, hand_rules=False)
 
     white = challenger if challenger_is_white else opponent
     black = opponent if challenger_is_white else challenger
@@ -406,6 +525,8 @@ def worker_eval(args):
         # MAX_TURNS hit without resolution -> draw
         winner = None
 
+    # Evaluation is strictly greedy: no exploration sample may have been drawn.
+    assert explore.samples() == samples_before, 'exploration fired during EVAL'
     if winner is None:
         return (False, True)
     challenger_color = 'white' if challenger_is_white else 'black'

@@ -58,16 +58,28 @@ MAX_TURNS, STUCK_LIMIT = 200, 60
 _CACHE = {}
 
 
-def _agent(path):
-    if path not in _CACHE:
+# The agent's hand-coded play rules (agent_gnn hand_rules) are OFF in the arena
+# by default: it measures the nets. ARENA_HAND_RULES=1 turns them on.
+HAND_RULES = os.environ.get('ARENA_HAND_RULES', '0') == '1'
+
+
+def _agent(path, key=None, hand_rules=None):
+    """Per-process cached agent. `key` distinguishes different weights saved
+    to the same path (the panel gate's candidate file); None = path alone."""
+    hr = HAND_RULES if hand_rules is None else bool(hand_rules)
+    ck = (path, key, hr)
+    if ck not in _CACHE:
+        if key is not None:     # a newer candidate replaces the older one
+            for old in [c for c in _CACHE if c[0] == path and c[1] != key]:
+                del _CACHE[old]
         import torch
         from network import BoardGNN
         from agent_gnn import GNNAgent
         m = BoardGNN()
         m.load_state_dict(torch.load(path, map_location='cpu'), strict=False)
         m.eval()
-        _CACHE[path] = GNNAgent(model=m)
-    return _CACHE[path]
+        _CACHE[ck] = GNNAgent(model=m, hand_rules=hr)
+    return _CACHE[ck]
 
 
 def _worker_init():
@@ -80,13 +92,17 @@ def _worker_init():
     network.DEVICE = torch.device('cpu')
 
 
-def _play(seed, wag, bag):
+def _play(seed, wag, bag, stats=None):
+    """Play one greedy game on dice seed `seed`; returns (winner, score).
+    If `stats` (a dict) is given, stats['turns'] is set to the turns played."""
     from game import Board
     random.seed(seed)
     board = Board()
     agents = {'white': wag, 'black': bag}
     last_saved, since = 0, 0
-    for _ in range(MAX_TURNS):
+    for t in range(MAX_TURNS):
+        if stats is not None:
+            stats['turns'] = t
         winner, score = board.check_game_over()
         if winner:
             return winner, score
