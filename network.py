@@ -326,7 +326,7 @@ def model_from_state(state_dict, strict=True):
     m = BoardGNN(features=features_of_state(sd))
     m.load_state_dict(sd, strict=strict)
     m.eval()
-    return m
+    return m.to(DEVICE)
 
 
 def load_model(path='gnn_weights.pt', **kwargs):

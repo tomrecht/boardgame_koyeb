@@ -38,6 +38,19 @@ STUCK_LIMIT = 2 * NO_SAVE_TURNS_FOR_DRAW + 10
 _OPP_CACHE = {}   # per-worker: checkpoint path -> GNNAgent (league opponents)
 
 
+def _set_worker_device():
+    """The device a worker runs inference on: $WORKER_DEVICE ('cpu' default,
+    'cuda' on a GPU box, 'mps' on a Mac). Training in the main process follows
+    $BOARDGAME_DEVICE separately. Workers stay CUDA-free unless asked."""
+    import torch
+    import network as _net
+    dev = os.environ.get('WORKER_DEVICE', 'cpu')
+    if dev == 'cpu':
+        os.environ["CUDA_VISIBLE_DEVICES"] = ""
+    _net.DEVICE = torch.device(dev)
+    return _net.DEVICE
+
+
 def serialize_board(board):
     """A position in the frontend's state format (Board.update_state reads it)."""
     return {
@@ -112,11 +125,10 @@ def worker_play(args):
         cfg = None
     cfg = cfg or {}
 
-    # Force CPU-only — must be before any CUDA-touching import path
-    os.environ["CUDA_VISIBLE_DEVICES"] = ""
+    # Device from $WORKER_DEVICE (default CPU) -- before any CUDA-touching import
     import torch
     import network as _net
-    _net.DEVICE = torch.device('cpu')
+    _set_worker_device()
 
     from game import Board
     from agent import Agent
@@ -330,8 +342,9 @@ _POOL_WORKERS = None
 
 
 def _pool_worker_init():
-    """Runs once per worker at spawn. Guarantees CUDA-free workers."""
-    os.environ["CUDA_VISIBLE_DEVICES"] = ""
+    """Runs once per worker at spawn. CUDA-free unless $WORKER_DEVICE says so."""
+    if os.environ.get('WORKER_DEVICE', 'cpu') == 'cpu':
+        os.environ["CUDA_VISIBLE_DEVICES"] = ""
     import torch
     torch.set_num_threads(1)
     # Workers only ever run inference (self-play/eval), never training, so
@@ -340,8 +353,7 @@ def _pool_worker_init():
     # runs outside the model's own no_grad blocks and was paying that
     # overhead on all its gather/scatter/view ops.
     torch.set_grad_enabled(False)
-    import network as _net
-    _net.DEVICE = torch.device('cpu')
+    _set_worker_device()
 
 
 def init_pool(n_workers=5):
@@ -517,10 +529,9 @@ def worker_eval(args):
     (challenger_sd, opponent_sd, heuristic_weights,
      seed, challenger_is_white) = args
 
-    os.environ["CUDA_VISIBLE_DEVICES"] = ""
     import torch
     import network as _net
-    _net.DEVICE = torch.device('cpu')
+    _set_worker_device()
     from game import Board
     from agent import Agent
     from agent_gnn import GNNAgent

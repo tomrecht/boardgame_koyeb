@@ -209,6 +209,16 @@ on main's CLAUDE.md, "Next training run". What is here:
 
 Arm A: same with `A` / `symaug6_A.pt` / `PREFIX=fv2A`. Same SEED_BASE for both.
 
+**GPU (2026-10-04).** Measured on one CPU core, an AB move is 69% network
+forward, 30% encoding, 1% everything else -- so a GPU may pay. Two independent
+switches: `BOARDGAME_DEVICE=cuda` for training in the main process (free), and
+`WORKER_DEVICE=cuda` for self-play/gate inference in the pool workers (default
+`cpu`; each worker opens its own CUDA context, ~0.5 GB). Decide by measuring on
+the box FIRST: two `SMOKE=1` runs, `WORKER_DEVICE=cpu` vs `cuda`, compare the
+logged s/game. Plumbing verified here only to the device boundary: CPU unchanged
+(a full game, 280 s), and `WORKER_DEVICE=mps` reaches the GPU and then hits the
+iMac's known MPS scatter assertion -- not testable on this machine.
+
 **Not built yet:** rollout-labelled positions from owner's disagreements as
 fixed training targets; the JS twin of features_v2 (needed before an A/AB net
 can ship).
