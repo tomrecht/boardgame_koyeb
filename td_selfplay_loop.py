@@ -179,7 +179,7 @@ def run_td_selfplay(model,
     except Exception:
         init_pool(10)
 
-    encoder = BoardEncoder()
+    encoder = BoardEncoder(features=getattr(model, "features", "v1"))
     board = Board()
     optimizer = torch.optim.Adam(model.parameters(), lr=lr)
 

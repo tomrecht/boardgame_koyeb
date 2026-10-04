@@ -133,13 +133,17 @@ def main():
 
     ckpt, last_iter = find_latest(P)
     champion_path, live_path = f'{P}_champion.pt', f'{P}_live.pt'
-    model = BoardGNN().to(network.DEVICE)
+    # The checkpoint decides the feature set (features_v2): a v1 warm start
+    # trains a v1 net, a distilled A/AB student (distill_v2.py) an A/AB net.
     if ckpt and os.path.exists(live_path):
         print(f"Resuming: numbering from {ckpt} (iter {last_iter}); live from {live_path}")
-        model.load_state_dict(torch.load(live_path, map_location=network.DEVICE))
+        start_sd = torch.load(live_path, map_location='cpu')
     else:
         print(f"Fresh: warm-starting from {C['WARM_START']}")
-        model.load_state_dict(torch.load(C['WARM_START'], map_location=network.DEVICE))
+        start_sd = torch.load(C['WARM_START'], map_location='cpu')
+    model = network.model_from_state(start_sd).to(network.DEVICE)
+    model.train()
+    print(f"Feature set: {model.features}")
     if os.path.exists(champion_path):
         champion_sd = torch.load(champion_path, map_location='cpu')
         print(f"Champion: {champion_path}")

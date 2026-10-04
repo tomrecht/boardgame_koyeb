@@ -242,14 +242,15 @@ def main():
     uniform_weights = not args.ply_weights
 
     # Model (warm start)
-    model = BoardGNN().to(network.DEVICE)
     if args.load:
-        model.load_state_dict(torch.load(args.load, map_location=network.DEVICE))
-        print(f"Warm-started from {args.load}")
+        model = network.model_from_state(torch.load(args.load, map_location='cpu')).to(network.DEVICE)
+        model.train()
+        print(f"Warm-started from {args.load} (features {model.features})")
     else:
+        model = BoardGNN().to(network.DEVICE)
         print("WARNING: training TD from scratch (no --load); strongly discouraged")
 
-    encoder = BoardEncoder()
+    encoder = BoardEncoder(features=getattr(model, "features", "v1"))
     board = Board()
     optimizer = torch.optim.Adam(model.parameters(), lr=args.lr)
     scheduler = ReduceLROnPlateau(optimizer, mode='min', patience=4, factor=0.5)

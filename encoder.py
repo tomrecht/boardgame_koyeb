@@ -470,13 +470,38 @@ _tile_index = None
 _tile_info  = None
 
 
+def feature_dims(features='v1'):
+    """(tile, piece, global) input widths for a feature set (features_v2)."""
+    import features_v2 as fv
+    if features not in fv.FEATURE_SETS:
+        raise ValueError(f'unknown feature set {features!r}; one of {fv.FEATURE_SETS}')
+    return (TILE_FEAT_DIM + fv.EXTRA_TILE[features],
+            PIECE_FEAT_DIM + fv.EXTRA_PIECE[features],
+            GLOBAL_FEAT_DIM + fv.EXTRA_GLOBAL[features])
+
+
+def features_for_dims(tile_dim, piece_dim, global_dim):
+    """Inverse of feature_dims: which feature set a model's input widths imply."""
+    import features_v2 as fv
+    for f in fv.FEATURE_SETS:
+        if feature_dims(f) == (tile_dim, piece_dim, global_dim):
+            return f
+    raise ValueError(f'no feature set has input widths {(tile_dim, piece_dim, global_dim)}')
+
+
 class BoardEncoder:
     """
     Converts a Board into a dict of tensors.
     Instantiate once; call encode() per position.
+
+    features: 'v1' (the deployed champion's encoding, unchanged), 'A' or 'AB'
+    -- see features_v2.py. The extra columns are APPENDED, so the first
+    TILE/PIECE/GLOBAL_FEAT_DIM columns are always exactly v1.
     """
-    def __init__(self, tile_neighbors_path='tile_neighbors.json'):
+    def __init__(self, tile_neighbors_path='tile_neighbors.json', features='v1'):
         global _tile_index, _tile_info
+        self.features = features
+        feature_dims(features)                      # validates the name
         self.tile_index, self.tile_info, self.tile_edge_index = \
             build_tile_index(tile_neighbors_path)
         _tile_index = self.tile_index
@@ -503,6 +528,11 @@ class BoardEncoder:
             board, self.tile_index, current_player, self._row_cache)
 
         p2t, t2p = encode_piece_tile_edges(all_pieces, self.tile_index)
+        global_feats = encode_global_features(board)
+
+        if self.features != 'v1':
+            tile_feats, piece_feats, global_feats = self._extras(
+                board, current_player, all_pieces, tile_feats, piece_feats, global_feats)
 
         return {
             'tile_feats':      tile_feats,
@@ -510,8 +540,27 @@ class BoardEncoder:
             'tile_edge_index': self.tile_edge_index,
             'piece_to_tile':   p2t,
             'tile_to_piece':   t2p,
-            'global_feats':    encode_global_features(board),
+            'global_feats':    global_feats,
         }
+
+    def _extras(self, board, current_player, all_pieces, tile_feats, piece_feats, global_feats):
+        import features_v2 as fv
+        walls = np.asarray(fv.opp_wall_flags(board, current_player, self.tile_index,
+                                             self.num_tiles), dtype=np.float32)
+        tile_feats = np.concatenate([tile_feats, walls[:, None]], axis=1)
+        cols = [[fv.own_goal_dist(board, p) for p in all_pieces]]
+        if self.features == 'AB':
+            th = fv.threat_features(board)
+            cols.append([th.get(p, (0.0, 0.0))[0] for p in all_pieces])
+            cols.append([th.get(p, (0.0, 0.0))[1] for p in all_pieces])
+        piece_feats = np.concatenate(
+            [piece_feats, np.asarray(cols, dtype=np.float32).T], axis=1)
+        g = fv.global_extras(board, current_player)
+        if self.features == 'AB':
+            g = g + fv.roll_opportunities(board, current_player) \
+                  + fv.roll_opportunities(board, fv._other(current_player))
+        global_feats = np.concatenate([global_feats, np.asarray(g, dtype=np.float32)])
+        return tile_feats, piece_feats, global_feats
 
 
 # -------------------------

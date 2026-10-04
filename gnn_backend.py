@@ -29,12 +29,13 @@ class TorchBackend:
         import torch
         from network import BoardEncoder, load_model
         self._torch = torch
-        self.encoder = BoardEncoder()
         if model is not None:
             self.model = model
         else:
             self.model = load_model(weights_path)
         self.model.eval()
+        # The encoder must match the model's input widths (features_v2).
+        self.encoder = BoardEncoder(features=getattr(self.model, 'features', 'v1'))
 
     def __call__(self, encoded):
         with self._torch.no_grad():

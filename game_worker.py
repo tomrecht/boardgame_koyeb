@@ -42,11 +42,9 @@ def _league_opponent(path, hand_rules):
     """Load (once per worker process) a frozen panel member as a GNNAgent."""
     key = (path, bool(hand_rules))
     if key not in _OPP_CACHE:
-        from network import BoardGNN
+        from network import model_from_state
         from agent_gnn import GNNAgent
-        m = BoardGNN()
-        m.load_state_dict(torch.load(path, map_location='cpu'))
-        m.eval()
+        m = model_from_state(torch.load(path, map_location='cpu'))
         _OPP_CACHE[key] = GNNAgent(model=m, hand_rules=hand_rules)
     return _OPP_CACHE[key]
 
@@ -95,13 +93,11 @@ def worker_play(args):
     from game import Board
     from agent import Agent
     from agent_gnn import GNNAgent, SCORE_SCALE
-    from network import BoardGNN
+    from network import BoardGNN, model_from_state
     import explore
 
     hand_rules = bool(cfg.get('hand_rules', False))
-    model = BoardGNN()
-    model.load_state_dict({k: v.cpu() for k, v in model_state_dict.items()})
-    model.eval()
+    model = model_from_state(model_state_dict)
     gnn_agent = GNNAgent(model=model, hand_rules=hand_rules)
 
     opp_path = cfg.get('opp_path')
@@ -114,9 +110,7 @@ def worker_play(args):
     elif use_heuristic_opp:
         opp_agent = Agent(weights=heuristic_weights)
     else:
-        opp_model = BoardGNN()
-        opp_model.load_state_dict({k: v.cpu() for k, v in model_state_dict.items()})
-        opp_model.eval()
+        opp_model = model_from_state(model_state_dict)
         opp_agent = GNNAgent(model=opp_model, hand_rules=hand_rules)
 
     white_agent = gnn_agent if gnn_is_white else opp_agent
@@ -468,22 +462,18 @@ def worker_eval(args):
     from game import Board
     from agent import Agent
     from agent_gnn import GNNAgent
-    from network import BoardGNN
+    from network import BoardGNN, model_from_state
     import explore
     samples_before = explore.samples()
 
     # Hand-coded play rules OFF: gating measures the nets, not the rules.
-    ch_model = BoardGNN()
-    ch_model.load_state_dict({k: v.cpu() for k, v in challenger_sd.items()})
-    ch_model.eval()
+    ch_model = model_from_state(challenger_sd)
     challenger = GNNAgent(model=ch_model, hand_rules=False)
 
     if opponent_sd is None:
         opponent = Agent(weights=heuristic_weights)
     else:
-        op_model = BoardGNN()
-        op_model.load_state_dict({k: v.cpu() for k, v in opponent_sd.items()})
-        op_model.eval()
+        op_model = model_from_state(opponent_sd)
         opponent = GNNAgent(model=op_model, hand_rules=False)
 
     white = challenger if challenger_is_white else opponent

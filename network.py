@@ -49,10 +49,11 @@ def _to_dev(t):
 
 
 class BoardEncoder(_enc.BoardEncoder):
-    """The numpy encoder, handing back torch tensors (zero-copy on CPU)."""
+    """The numpy encoder, handing back torch tensors (zero-copy on CPU).
+    Pass the MODEL's feature set: BoardEncoder(features=model.features)."""
 
-    def __init__(self, tile_neighbors_path='tile_neighbors.json'):
-        super().__init__(tile_neighbors_path)
+    def __init__(self, tile_neighbors_path='tile_neighbors.json', features='v1'):
+        super().__init__(tile_neighbors_path, features=features)
         self.tile_edge_index = _to_dev(torch.from_numpy(self.tile_edge_index))
 
     def encode(self, board, current_player):
@@ -217,10 +218,21 @@ class BoardGNN(nn.Module):
     def __init__(self,
                  hidden_dim=HIDDEN_DIM,
                  num_mp_layers=NUM_MP_LAYERS,
-                 tile_feat_dim=TILE_FEAT_DIM,
-                 piece_feat_dim=PIECE_FEAT_DIM,
-                 global_feat_dim=GLOBAL_FEAT_DIM):
+                 tile_feat_dim=None,
+                 piece_feat_dim=None,
+                 global_feat_dim=None,
+                 features=None):
+        """`features` ('v1' / 'A' / 'AB', see features_v2.py) sets the input
+        widths; default is $BOARDGAME_FEATURES, else 'v1'. Explicit *_feat_dim
+        arguments still win, for old callers."""
         super().__init__()
+        if features is None:
+            features = os.environ.get('BOARDGAME_FEATURES', 'v1')
+        dt, dp, dg = _enc.feature_dims(features)
+        tile_feat_dim = tile_feat_dim or dt
+        piece_feat_dim = piece_feat_dim or dp
+        global_feat_dim = global_feat_dim or dg
+        self.features = _enc.features_for_dims(tile_feat_dim, piece_feat_dim, global_feat_dim)
         H = hidden_dim
         self.hidden_dim = H
 
@@ -299,9 +311,30 @@ def save_model(model, path='gnn_weights.pt'):
     print(f"Model saved to {path}")
 
 
+def features_of_state(state_dict):
+    """The feature set a checkpoint was trained with, read off its input layers."""
+    return _enc.features_for_dims(state_dict['tile_embed.weight'].shape[1],
+                                  state_dict['piece_embed.weight'].shape[1],
+                                  state_dict['readout.0.weight'].shape[1] - 3 * HIDDEN_DIM)
+
+
+def model_from_state(state_dict, strict=True):
+    """A BoardGNN of the right feature set with these weights loaded (CPU,
+    eval mode). Use this, not BoardGNN() + load_state_dict, wherever the
+    checkpoint might be from any feature set (panel members are v1)."""
+    sd = {k: v.cpu() for k, v in state_dict.items()}
+    m = BoardGNN(features=features_of_state(sd))
+    m.load_state_dict(sd, strict=strict)
+    m.eval()
+    return m
+
+
 def load_model(path='gnn_weights.pt', **kwargs):
+    sd = torch.load(path, map_location='cpu')
+    if 'features' not in kwargs and not any(k.endswith('_feat_dim') for k in kwargs):
+        kwargs['features'] = features_of_state(sd)
     model = BoardGNN(**kwargs)
-    model.load_state_dict(torch.load(path, map_location=DEVICE))
+    model.load_state_dict(sd)
     model.to(DEVICE)
     model.eval()
     print(f"Model loaded from {path} on {DEVICE}")

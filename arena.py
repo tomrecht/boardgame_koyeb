@@ -73,11 +73,9 @@ def _agent(path, key=None, hand_rules=None):
             for old in [c for c in _CACHE if c[0] == path and c[1] != key]:
                 del _CACHE[old]
         import torch
-        from network import BoardGNN
+        from network import model_from_state
         from agent_gnn import GNNAgent
-        m = BoardGNN()
-        m.load_state_dict(torch.load(path, map_location='cpu'), strict=False)
-        m.eval()
+        m = model_from_state(torch.load(path, map_location='cpu'), strict=False)
         _CACHE[ck] = GNNAgent(model=m, hand_rules=hr)
     return _CACHE[ck]
 
