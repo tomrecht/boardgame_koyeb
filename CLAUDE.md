@@ -341,6 +341,11 @@ with it in mind.** Assessment and the concrete implications:
   1 of a possible 1, all 7 surviving candidates save 1, and 30 picks at
   difficulty 0.8 never go below; control (one white blank on goal 2 instead) -> a
   no-save pair, 47 candidates, unchanged. `agent_test.js` 50/50.
+  **WIDENED TO ONE OR TWO BLANKS (2026-10-03).** Owner's recorded game had white's
+  LAST piece, one blank on goal 1, and the rule (exactly 2) did not fire: black
+  (1-5) played 4 -> 6.4 -> 7.2 instead of saving its blank 11 off goal 5, and lost
+  12-10 rather than 12-11. Replayed from the log with the real model: old rule
+  reproduces the logged pair exactly, new rule saves the 11. `agent_test.js` 50/50.
 
 - **THE RECORDER KEEPS WHAT THE COMPUTER MEANT, AND THE BOARD USES THE AGENT'S
   SAVE DIE (owner, 2026-10-01).** Owner twice saw the computer, at Max, pass its

@@ -127,8 +127,8 @@ def _wastes_save(board, pair, player):
 
 
 def _opponent_wins_next_turn_regardless(board, player):
-    """OPPONENT CERTAIN TO WIN NEXT TURN (owner, 2026-10-01). Their last two
-    pieces are blanks on goal 1, so ANY roll banks both, and nothing we do can
+    """OPPONENT CERTAIN TO WIN NEXT TURN (owner, 2026-10-01). Their last one or
+    two pieces are blanks on goal 1, so ANY roll banks them, and nothing we do can
     stop it -- goals cannot be blocked, pieces on them cannot be captured. If we
     cannot win this turn (a winning pair returns before scoring) the game is lost
     and only the margin is in play, so the pair banking the most of our own
@@ -138,7 +138,7 @@ def _opponent_wins_next_turn_regardless(board, player):
     if (board.black_unentered if opp == 'black' else board.white_unentered):
         return False
     left = [p for p in board.pieces if p.player == opp and p.tile is not None]
-    if len(left) != 2:
+    if not 1 <= len(left) <= 2:
         return False
     return all(p.number > 6 and p.tile.type == 'save' and p.tile.number == 1 for p in left)
 

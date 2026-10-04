@@ -129,19 +129,20 @@ function pickMoveIndex(scores, difficulty, rand) {
 }
 
 /* OPPONENT CERTAIN TO WIN NEXT TURN: BANK AS MANY AS YOU CAN (owner, 2026-10-01).
-   Their last two pieces are blanks on goal 1, so ANY roll banks both (an exact 1
-   or, from the highest goal they hold, anything higher), and nothing we do can
+   Their last one or two pieces are blanks on goal 1, so ANY roll banks them (an
+   exact 1 or, from the highest goal they hold, anything higher), and nothing we do can
    stop it: goals cannot be blocked and pieces on them cannot be captured. If we
    cannot win this turn -- and the search returns a winning pair before it ever
    gets to scoring -- the game is lost and only the margin is still in play, so
    the pair that banks the most of our own pieces is right whatever the net says.
    The net was seen to prefer bringing a piece onto a goal for a turn that never
-   comes. Deliberately narrow, as owner specified; the twin is in agent_gnn.py. */
+   comes. The lone-blank case was added 2026-10-03 after the net did it again
+   against one blank. Deliberately narrow otherwise; the twin is in agent_gnn.py. */
 function opponentWinsNextTurnRegardless(engine, player) {
     const opp = player === 'white' ? 'black' : 'white';
     if (engine.unenteredRack(opp).length) return false;
     const left = engine.pieces.filter(p => p.player === opp && p.tile >= 0);
-    if (left.length !== 2) return false;
+    if (left.length < 1 || left.length > 2) return false;
     return left.every(p => p.number > 6 && engine.graph.types[p.tile] === 'save'
                                         && engine.graph.numbers[p.tile] === 1);
 }
