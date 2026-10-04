@@ -38,6 +38,25 @@ STUCK_LIMIT = 2 * NO_SAVE_TURNS_FOR_DRAW + 10
 _OPP_CACHE = {}   # per-worker: checkpoint path -> GNNAgent (league opponents)
 
 
+def serialize_board(board):
+    """A position in the frontend's state format (Board.update_state reads it)."""
+    return {
+        'currentTurn': board.current_player,
+        'dice': [{'value': d.number, 'used': d.used} for d in board.dice],
+        'racks': {
+            'whiteUnentered': [{'color': 'white', 'number': p.number} for p in board.white_unentered],
+            'whiteSaved':     [{'color': 'white', 'number': p.number} for p in board.white_saved],
+            'blackUnentered': [{'color': 'black', 'number': p.number} for p in board.black_unentered],
+            'blackSaved':     [{'color': 'black', 'number': p.number} for p in board.black_saved],
+        },
+        'boardPieces': [
+            {'color': p.player, 'number': p.number,
+             'tile': {'ring': p.tile.ring, 'sector': p.tile.pos}}
+            for p in board.pieces if p.tile is not None
+        ],
+    }
+
+
 def _league_opponent(path, hand_rules):
     """Load (once per worker process) a frozen panel member as a GNNAgent."""
     key = (path, bool(hand_rules))
@@ -67,6 +86,15 @@ def worker_play(args):
                       means the heuristic agent). Opponent always plays greedy.
       'hand_rules'    the agent's hand-coded play rules (default False: the
                       training pipeline measures what the net learned itself).
+      'start_state'   START the game from this position (serialize_board
+                      format) instead of the opening; dice are re-rolled from
+                      the game seed. Opening softmax does not apply in such a
+                      game (its first turns are not the opening).
+      'late_T'        LATE exploration: on a learner turn past its opening
+      'late_p'        window, with probability late_p sample the pair from
+                      softmax(margin / late_T). Records are marked 'explored'
+                      so TD targets can CUT the trace there (TRACE_CUT=1,
+                      td_returns) -- never enable without it.
     Exploration (either kind) only ever applies to LEARNER turns, uses a
     DEDICATED RNG derived from the game seed -- the global `random` dice stream
     is never touched, so a game's dice are identical with exploration on or
@@ -132,22 +160,7 @@ def worker_play(args):
             return [chosen]
         return list(chosen)
 
-    def serialize_state(board):
-        return {
-            'currentTurn': board.current_player,
-            'dice': [{'value': d.number, 'used': d.used} for d in board.dice],
-            'racks': {
-                'whiteUnentered': [{'color': 'white', 'number': p.number} for p in board.white_unentered],
-                'whiteSaved':     [{'color': 'white', 'number': p.number} for p in board.white_saved],
-                'blackUnentered': [{'color': 'black', 'number': p.number} for p in board.black_unentered],
-                'blackSaved':     [{'color': 'black', 'number': p.number} for p in board.black_saved],
-            },
-            'boardPieces': [
-                {'color': p.player, 'number': p.number,
-                 'tile': {'ring': p.tile.ring, 'sector': p.tile.pos}}
-                for p in board.pieces if p.tile is not None
-            ],
-        }
+    serialize_state = serialize_board
 
     def build_records(positions, winner, score, game_id):
         recs = []
@@ -181,13 +194,23 @@ def worker_play(args):
     eps = float(cfg.get('eps', 0) or 0)
     soft_T = float(cfg.get('softmax_T', 0) or 0)
     soft_turns = int(cfg.get('softmax_turns', 0) or 0)
+    late_T = float(cfg.get('late_T', 0) or 0)
+    late_p = float(cfg.get('late_p', 0) or 0)
+    start_state = cfg.get('start_state')
+    if start_state is not None:
+        soft_T = 0.0                      # a mid-game start has no opening
     explore_rng = None
-    if eps > 0 or (soft_T > 0 and soft_turns > 0):
+    if eps > 0 or (soft_T > 0 and soft_turns > 0) or (late_T > 0 and late_p > 0):
         explore_rng = random.Random((seed << 20) ^ 0xE5E5E5)
 
     random.seed(seed)
     game_t0 = time.time()
     board = Board()
+    if start_state is not None:
+        board.update_state(start_state)
+        board.firstMove = None
+        for d in board.dice:              # fresh roll from this game's seed
+            d.roll()
     agents = {'white': white_agent, 'black': black_agent}
     positions = []
     last_total_saved = 0
@@ -197,6 +220,8 @@ def worker_play(args):
     # game_id carries the seed (unique per generation call) and the opponent,
     # so league games can never collide with self-play ones in the replay pool.
     gid_base = f'sp_{seed}' if opp_tag == 'self' else f'lg_{seed}_{opp_tag}'
+    if start_state is not None:
+        gid_base += '_st'
 
     for turn in range(MAX_TURNS):
         # 1. Normal win
@@ -246,6 +271,20 @@ def worker_play(args):
             else:
                 chosen, explore_gap = explore.softmax_pick(
                     ranked, soft_T, explore_rng, SCORE_SCALE)
+                explored_turn = explore_gap > 1e-6
+                chosen = gnn_agent._dedupe_save_pair(chosen)
+                sampled_turn = True
+        elif (explore_rng is not None and late_T > 0 and learner_turn
+              and side_turns[player] >= soft_turns
+              and explore_rng.random() < late_p):
+            # Late exploration (requires TRACE_CUT=1 in training, see docstring).
+            ranked = agents[player].select_move_pair(moves, board, player,
+                                                     return_scores=True)
+            if isinstance(ranked, tuple):            # defensive: bare pair
+                chosen = ranked
+            else:
+                chosen, explore_gap = explore.softmax_pick(
+                    ranked, late_T, explore_rng, SCORE_SCALE)
                 explored_turn = explore_gap > 1e-6
                 chosen = gnn_agent._dedupe_save_pair(chosen)
                 sampled_turn = True
@@ -349,7 +388,8 @@ def generate_games_parallel(model, opp_state_dict_or_none,
                              n_workers=None,  # ignored if pool already running
                              label='',
                              explore_cfg=None,
-                             league_cfg=None):
+                             league_cfg=None,
+                             start_cfg=None):
     """Generate n_games of training games on the pool.
 
     explore_cfg: per-game cfg dict passed to worker_play (exploration keys,
@@ -360,6 +400,11 @@ def generate_games_parallel(model, opp_state_dict_or_none,
       from `opponents`. Which games are league games, and against whom, is a
       pure function of (seed, game index), so a resumed iteration reproduces it.
       The learner's colour alternates by game index exactly as in self-play.
+    start_cfg: None, or {'frac': f, 'pool': [state, ...], 'seed': s,
+      'rotate': bool} -- a fraction f of games START from a position drawn from
+      `pool` (serialize_board format; see build_start_pool.py), optionally
+      rotated by a random one of the board's 3 symmetric images. Drawn on its
+      own RNG stream, so the league schedule is unchanged by it.
     Returns the record list; `generate_games_parallel.last_counts` holds
     {opp_tag: games} for the call (asserted on by the smoke test)."""
     global _POOL
@@ -374,15 +419,32 @@ def generate_games_parallel(model, opp_state_dict_or_none,
     sched_rng = random.Random(((league_cfg or {}).get('seed', 0) << 16) ^ seed_offset)
     args_list = []
     planned = {}
+    pool = (start_cfg or {}).get('pool') or []
+    s_frac = float((start_cfg or {}).get('frac', 0.0)) if pool else 0.0
+    start_rng = random.Random((((start_cfg or {}).get('seed', 0) << 16) ^ seed_offset) ^ 0x5157)
+    sym = None
+    if s_frac > 0 and (start_cfg or {}).get('rotate'):
+        from symmetry import Symmetry
+        sym = Symmetry()
+    n_starts = 0
     for i in range(n_games):
         cfg = dict(base_cfg)
         if frac > 0 and sched_rng.random() < frac:
             tag, path = opps[sched_rng.randrange(len(opps))]
             cfg['opp_tag'], cfg['opp_path'] = tag, path
+        if s_frac > 0 and start_rng.random() < s_frac:
+            st = pool[start_rng.randrange(len(pool))]
+            if sym is not None:
+                st = sym.transform(st, start_rng.randrange(3))
+            cfg['start_state'] = st
+            n_starts += 1
         planned[cfg.get('opp_tag', 'self')] = planned.get(cfg.get('opp_tag', 'self'), 0) + 1
         args_list.append((current_sd, heuristic_weights, seed_offset + i,
                           i % 2 == 0, use_heuristic_opp, cfg or None))
 
+    if s_frac > 0:
+        print(f'  {label}: {n_starts} of {n_games} games start from a pool position '
+              f'(pool {len(pool)}, rotate {sym is not None})')
     t0 = time.time()
     records = []
     backstop = 0   # stuck/maxturns backstop terminations (should be rare)

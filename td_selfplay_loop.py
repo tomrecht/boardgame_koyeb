@@ -128,7 +128,8 @@ def run_td_selfplay(model,
                     augment=None,
                     gen_cfg_fn=None,
                     league_cfg_fn=None,
-                    gate_fn=None):
+                    gate_fn=None,
+                    start_cfg_fn=None):
     """Iterative TD(lambda) self-play. `model` is trained in place and is the
     current/live network; `champion_sd` is the promotion baseline (start it at
     iter5). `start_iter` lets a resumed run continue checkpoint numbering
@@ -160,6 +161,8 @@ def run_td_selfplay(model,
                            with the legacy eps entry if both are given.
       league_cfg_fn(it) -> league_cfg for generate_games_parallel (a fraction
                            of games vs frozen panel opponents / heuristic).
+      start_cfg_fn(it)  -> start_cfg for generate_games_parallel (a fraction
+                           of games begin from pool positions, greedy).
       gate_fn(model, champion_sd, it) -> report dict with 'promote', 'keep'
                            and 'cand_score'; replaces the vs-champion gate
                            (see panel_gate.PanelGate.evaluate).
@@ -221,6 +224,7 @@ def run_td_selfplay(model,
             label=f'gen it{it}',
             explore_cfg=gen_cfg or None,
             league_cfg=league_cfg,
+            start_cfg=start_cfg_fn(it) if start_cfg_fn else None,
         )
         print_data_stats(records, f'iter {it} generated')
         n_all = len(records)

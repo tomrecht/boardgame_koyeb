@@ -119,7 +119,7 @@ def group_trajectories(records, min_len=2, verbose=True):
 # lambda-return recursion (white frame)
 # ---------------------------------------------------------------------------
 
-def lambda_returns_white_frame(values_white, z_white, lam, gamma):
+def lambda_returns_white_frame(values_white, z_white, lam, gamma, cut=None):
     """Backward lambda-return recursion over one trajectory, in white's frame.
 
     values_white : [V(s_0), ..., V(s_{n-1})]  (frozen target model predictions)
@@ -130,6 +130,11 @@ def lambda_returns_white_frame(values_white, z_white, lam, gamma):
         G_t = r_{t+1} + gamma * [ (1 - lam) * V(s_{t+1}) + lam * G_{t+1} ]
     with G at the terminal equal to z_white, and V(s_n) := z_white.
 
+    cut[t] True = the move played FROM s_t was exploratory (off-policy), so
+    nothing after it says what greedy play from s_t or earlier would have
+    reached: earlier states bootstrap fully from V(s_t) -- the trace is cut, as
+    in Watkins' Q(lambda) -- and G[t] itself is meaningless (callers drop s_t).
+
     Returns G[0..n-1] in white's frame.
     """
     n = len(values_white)
@@ -139,7 +144,7 @@ def lambda_returns_white_frame(values_white, z_white, lam, gamma):
     next_V = z_white          # V(s_{t+1}), starts as the terminal value
     for t in range(n - 1, -1, -1):
         G[t] = gamma * ((1.0 - lam) * next_V + lam * next_G)  # r=0
-        next_G = G[t]
+        next_G = values_white[t] if (cut is not None and cut[t]) else G[t]
         next_V = values_white[t]
     return G
 
@@ -149,7 +154,7 @@ def lambda_returns_white_frame(values_white, z_white, lam, gamma):
 # ---------------------------------------------------------------------------
 
 def compute_td_targets_for_game(recs, z_white, target_model, encoder, board,
-                                lam, gamma, predict_fn=None):
+                                lam, gamma, predict_fn=None, trace_cut=False):
     """Compute per-record TD(lambda) targets (in each record's mover frame) for
     one game trajectory.
 
@@ -191,32 +196,47 @@ def compute_td_targets_for_game(recs, z_white, target_model, encoder, board,
 
     # mover frame -> white frame
     values_white = [to_white_frame(v, r['player']) for v, r in zip(preds, recs)]
-    G_white = lambda_returns_white_frame(values_white, z_white, lam, gamma)
-    # white frame -> each record's mover frame, clamp to tanh range
-    targets = [max(-1.0, min(1.0, from_white_frame(g, r['player'])))
-               for g, r in zip(G_white, recs)]
+    cut = [bool(r.get('explored')) for r in recs] if trace_cut else None
+    G_white = lambda_returns_white_frame(values_white, z_white, lam, gamma, cut=cut)
+    # white frame -> each record's mover frame, clamp to tanh range; a cut
+    # (exploratory) state gets None -- its observed future is off-policy.
+    targets = [None if (cut and c) else max(-1.0, min(1.0, from_white_frame(g, r['player'])))
+               for g, r, c in zip(G_white, recs, cut or [False] * len(recs))]
     return targets, True
 
 
 def compute_td_targets(records, target_model, encoder, board, lam, gamma,
-                       include_short_as_mc=True, verbose=True, predict_fn=None):
+                       include_short_as_mc=True, verbose=True, predict_fn=None,
+                       trace_cut=None):
     """Compute TD(lambda) targets for a flat list of records.
+
+    trace_cut (default: $TRACE_CUT == '1'): cut the lambda-return at every
+    record marked 'explored' and drop those records (see
+    lambda_returns_white_frame). Required whenever exploration happens past the
+    opening, where an off-policy move would bias every earlier target.
 
     Returns a NEW list of records (shallow copies) each with an added
     'td_target' field, ready to feed to the trainer. Games too short for a TD
     transition fall back to their MC label (if include_short_as_mc).
     """
+    if trace_cut is None:
+        import os
+        trace_cut = os.environ.get('TRACE_CUT') == '1'
     trajectories, dropped = group_trajectories(records, verbose=verbose)
 
     out = []
     n_fallback = 0
+    n_cut = 0
     for gid, recs, z_white in trajectories:
         targets, ok = compute_td_targets_for_game(
             recs, z_white, target_model, encoder, board, lam, gamma,
-            predict_fn=predict_fn)
+            predict_fn=predict_fn, trace_cut=trace_cut)
         if not ok:
             n_fallback += 1
         for r, t in zip(recs, targets):
+            if t is None:
+                n_cut += 1
+                continue
             r2 = dict(r)
             r2['td_target'] = t
             out.append(r2)
@@ -230,6 +250,8 @@ def compute_td_targets(records, target_model, encoder, board, lam, gamma,
 
     if verbose and n_fallback:
         print(f"  compute_td_targets: {n_fallback} games fell back to MC labels")
+    if verbose and trace_cut:
+        print(f"  compute_td_targets: trace cut at {n_cut} exploratory positions (dropped)")
     return out
 
 
@@ -290,6 +312,33 @@ def _test_lambda_intermediate():
     assert _approx(G[1], 1.0), G[1]
     assert _approx(G[0], 0.3), G[0]
     print("  [ok] intermediate lam hand-check")
+
+
+def _test_trace_cut():
+    """A cut at s_1 (exploratory move from s_1): s_0 bootstraps fully from
+    V(s_1) whatever happened after; states after the cut are unaffected."""
+    vals = [0.2, -0.4, 0.7]
+    z = 1.0
+    lam = 0.8
+    base = lambda_returns_white_frame(vals, z, lam=lam, gamma=1.0)
+    cutG = lambda_returns_white_frame(vals, z, lam=lam, gamma=1.0, cut=[False, True, False])
+    assert _approx(cutG[2], base[2]) and _approx(cutG[1], base[1])     # after/at the cut: same
+    # G0 = (1-lam)*V(s1) + lam*V(s1) = V(s1)
+    assert _approx(cutG[0], vals[1]), cutG[0]
+    assert not _approx(base[0], vals[1])                                # it did change something
+    # lam=1 with a cut: s0 no longer sees z at all
+    G1 = lambda_returns_white_frame(vals, z, lam=1.0, gamma=1.0, cut=[False, True, False])
+    assert _approx(G1[0], vals[1]) and _approx(G1[2], z)
+    # end to end: the cut record is dropped, others keep targets
+    recs = [{'game_id': 'g', 'move_index': i, 'player': 'white' if i % 2 == 0 else 'black',
+             'final_score': 3 if i % 2 == 0 else -3, 'explored': i == 1} for i in range(3)]
+    out = compute_td_targets(recs, None, None, None, lam, 1.0, verbose=False,
+                             predict_fn=lambda rs: [0.1, 0.2, 0.3], trace_cut=True)
+    assert [r['move_index'] for r in out] == [0, 2], [r['move_index'] for r in out]
+    out2 = compute_td_targets(recs, None, None, None, lam, 1.0, verbose=False,
+                              predict_fn=lambda rs: [0.1, 0.2, 0.3], trace_cut=False)
+    assert len(out2) == 3
+    print("  [ok] trace cut at exploratory moves")
 
 
 def _test_gamma():
@@ -394,6 +443,7 @@ if __name__ == '__main__':
     _test_lambda_zero_is_one_step()
     _test_lambda_intermediate()
     _test_gamma()
+    _test_trace_cut()
     _test_grouping()
     _test_league_learner_only_chain()
     _test_selfplay_unchanged_by_filter()

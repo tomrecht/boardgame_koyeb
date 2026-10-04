@@ -84,7 +84,19 @@ CONFIG = {
     'EXPLORE_T':       _env('EXPLORE_T', 0.1, float),          # margin points (see RUNBOOK)
     'EXPLORE_TURNS':   _env('EXPLORE_TURNS', 4, int),          # per side
     'EXPLORE_ANNEAL':  _env('EXPLORE_ANNEAL', 10, int),        # iters to reach greedy
+    # 4. start positions (features_v2 run): a fraction of games begin from a
+    #    pool of real positions (build_start_pool.py), played greedily
+    'START_POOL':      _env('START_POOL', 'start_pool.jsonl' if os.path.exists('start_pool.jsonl') else '', str),
+    'START_FRAC':      _env('START_FRAC', 0.3, float),
+    'START_ROTATE':    _env('START_ROTATE', True, _bool),
+    # 5. late exploration: needs the TD trace CUT at sampled moves (td_returns)
+    'LATE_T':          _env('LATE_T', 0.0, float),          # margin points; 0 = off
+    'LATE_P':          _env('LATE_P', 0.15, float),         # per learner turn past the opening
 }
+if CONFIG['LATE_T'] > 0:
+    # Never explore past the opening without cutting the trace: an off-policy
+    # move would bias every earlier position's lambda-return.
+    os.environ['TRACE_CUT'] = '1'
 
 
 def panel_dict(spec):
@@ -161,7 +173,23 @@ def main():
         cfg = {'hand_rules': C['HAND_RULES']}
         if T > 0 and C['EXPLORE_TURNS'] > 0:
             cfg.update(softmax_T=T, softmax_turns=C['EXPLORE_TURNS'])
+        if C['LATE_T'] > 0 and C['LATE_P'] > 0:
+            cfg.update(late_T=C['LATE_T'], late_p=C['LATE_P'],
+                       softmax_turns=cfg.get('softmax_turns', C['EXPLORE_TURNS']))
         return cfg
+
+    start_pool = []
+    if C['START_POOL'] and C['START_FRAC'] > 0:
+        with open(C['START_POOL']) as fh:
+            start_pool = [json.loads(line)['state'] for line in fh if line.strip()]
+        print(f"Start pool: {len(start_pool)} positions from {C['START_POOL']}, "
+              f"{C['START_FRAC']:.0%} of games, rotate {C['START_ROTATE']}")
+
+    def start_cfg_fn(it):
+        if not start_pool:
+            return None
+        return {'frac': C['START_FRAC'], 'pool': start_pool, 'seed': it,
+                'rotate': C['START_ROTATE']}
 
     league_opps = dict(panel)
     if C['LEAGUE_HEURISTIC']:
@@ -193,6 +221,7 @@ def main():
         save_prefix=P, seed_base=C['SEED_BASE'],
         augment=Symmetry() if C['SYMAUG'] else None,
         gen_cfg_fn=gen_cfg_fn, league_cfg_fn=league_cfg_fn, gate_fn=gate_fn,
+        start_cfg_fn=start_cfg_fn,
     )
     print(f"\nLeague run time: {time.time() - t0:.0f}s")
     for h in history:
