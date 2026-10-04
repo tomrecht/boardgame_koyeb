@@ -160,16 +160,24 @@ on main's CLAUDE.md, "Next training run". What is here:
   moves on 24) until training teaches it the new inputs. Not distillation, not
   from scratch. The widened .pt files are not committed -- regenerate them.
 * **Threats are approximations, validated**: against the exact enumerator
-  (`weakness_probe.threats`, every legal reply over 21 rolls) on 106 numbered
-  pieces: capture EXACT (corr 1.000, MAE 0.000), wall corr 0.971 MAE 0.025, at
-  ~1 ms vs ~770 ms. Turn obligations matter: before modelling them corr was
+  (`weakness_probe.threats`, every legal reply over 21 rolls) on 786 numbered
+  pieces from 30 games: capture EXACT (corr 1.000, MAE 0.000), wall corr 0.981
+  MAE 0.025 bias +0.005 (worst misses over-estimate by ~0.3), at 1.1 ms vs
+  894 ms. Roll opportunities are EXACT against the engine's per-piece
+  reachability (`validate_roll_opps.py`, 2,398 position-sides from 25 games),
+  after fixing a cross-board cache collision (home distances keyed on walls
+  alone: with no walls every board shared one key). Turn obligations matter: before modelling them corr was
   0.94/0.84; a bug where home's distance was never found gave zeros.
   `validate_features_v2.py` reruns this.
 * **Turns to finish**: EXACT from `endgame_table.json` (59,130 states,
   `endgame_table.py`, 226 s; reproduces the lone-blank DP on goals 1-5, goal 6
   1.650 vs 1.644 because the table never steps onto the field) when every
   unsaved piece is on a bankable goal; else travel/7 + bank time, blanks charged
-  the exact-match time outside the endgame (owner). Viewer: "Turns to Bank"
+  the exact-match time outside the endgame (owner). Against the winner's real
+  turns left (714 positions, 30 games): corr 0.90, but mean 18.0 vs 12.9 -- the
+  exact-match charge over-states blanks that will bank in the endgame (before
+  the change: 12.9 vs 14.2; better corr over the last 8 turns, 0.84 vs 0.80).
+  Fix if the level matters: travel + table value at the predicted arrival. Viewer: "Turns to Bank"
   artifact, https://claude.ai/artifact/WqCPaGUZmnv55NFubJ1hRR
 * **Cost**: Python 2-ply search per move, v1 5.6 s / A 6.6 s / AB 8.7 s (+54%).
 * **Start positions** (`START_POOL`, default `start_pool.jsonl` if present;
