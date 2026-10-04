@@ -78,16 +78,24 @@ def own_goal_dist(board, piece):
     return min(d, MAX_DIST) / MAX_DIST
 
 
-def _piece_progress(board, p):
-    """(remaining pips, expected bank turns) for one unsaved piece."""
+def _piece_progress(board, p, endgame_rule=None):
+    """(remaining pips, expected bank turns) for one unsaved piece. A blank
+    banks on a higher die only under the ENDGAME rule (owner): outside it, it
+    needs an exact die like a numbered piece."""
     saved = (board.white_saved, board.black_saved)
     if p.rack is saved[0] or p.rack is saved[1]:
         return 0.0, 0.0
-    bank = NUMBERED_BANK if p.number <= 6 else BLANK_BANK_MEAN
+    if endgame_rule is None:
+        endgame_rule = board.get_game_stage(p.player) == 'endgame'
+    if p.number <= 6 or not endgame_rule:
+        bank = NUMBERED_BANK
+    else:
+        bank = BLANK_BANK.get(p.tile.number, BLANK_BANK_MEAN) if (
+            p.tile is not None and p.tile.type == 'save') else BLANK_BANK_MEAN
     if p.tile is None or p.tile.type == 'home':        # rack or captured
         return float(HOME_TO_GOAL), bank
     if p.can_be_saved():                               # standing on a goal it can bank from
-        return 0.0, (NUMBERED_BANK if p.number <= 6 else BLANK_BANK.get(p.tile.number, BLANK_BANK_MEAN))
+        return 0.0, bank
     if p.number <= 6:
         d = board.shortest_route_to_goal(p)
     else:
@@ -106,17 +114,59 @@ def side_summary(board, player):
     field = sum(1 for p in board.pieces
                 if p.player == player and p.tile is not None and p.tile.type == 'field')
     pips, per_piece = 0.0, []
+    eg = board.get_game_stage(player) == 'endgame'
     for p in board.pieces:
         if p.player != player or p.rack is saved_rack:
             continue
-        d, bank = _piece_progress(board, p)
+        d, bank = _piece_progress(board, p, eg)
         pips += d
         per_piece.append(d / PIPS_PER_TURN + bank)
-    # CRUDE: pieces share two dice a turn, so the side is limited both by its
-    # slowest piece and by the total work spread over two dice. A hint for the
-    # net, not a rule; validate_features_v2 checks it against real turns left.
-    turns = max(max(per_piece, default=0.0), sum(per_piece) / 2.0)
+    exact = endgame_turns(board, player)
+    if exact is not None:
+        turns = exact
+    else:
+        # CRUDE while any piece is still travelling: pieces share two dice a
+        # turn, so the side is limited both by its slowest piece and by the
+        # total work spread over two dice. validate_features_v2 checks it
+        # against the turns the winner really took.
+        turns = max(max(per_piece, default=0.0), sum(per_piece) / 2.0)
     return unentered, field, saved, pips, turns
+
+
+_TABLE = None
+
+
+def endgame_turns(board, player):
+    """EXACT expected turns to bank everything, from endgame_table.json, when
+    every unsaved piece of `player` stands on a goal it can bank from (else
+    None). The table is per side: the opponent cannot block a goal or capture
+    on one, so a side's banking race is independent of the other's."""
+    global _TABLE
+    rack = board.white_unentered if player == 'white' else board.black_unentered
+    if rack:
+        return None
+    saved = board.white_saved if player == 'white' else board.black_saved
+    mask, b = 0, [0] * 6
+    for p in board.pieces:
+        if p.player != player or p.rack is saved:
+            continue
+        t = p.tile
+        if t is None or t.type != 'save' or not p.can_be_saved():
+            return None
+        if p.number <= 6:
+            mask |= 1 << (p.number - 1)
+        else:
+            b[t.number - 1] += 1
+    if mask == 0 and not any(b):
+        return 0.0
+    if sum(b) == 0 and mask & (mask - 1) == 0:          # last-piece rule
+        b[mask.bit_length() - 1] = 1
+        mask = 0
+    if _TABLE is None:
+        import json, os
+        path = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'endgame_table.json')
+        _TABLE = json.load(open(path))
+    return _TABLE.get(f'{mask}:' + ''.join(map(str, b)))
 
 
 def global_extras(board, current_player):
