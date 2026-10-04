@@ -69,6 +69,14 @@ try {
           document.body.setAttribute('data-lat', JSON.stringify(rows));
           return shipped;
         };
+        // The end card's buttons are canvas objects; start the next game directly.
+        setInterval(() => {
+          try {
+            const g = (typeof gameInstance !== 'undefined') ? gameInstance : null;
+            const sm = g && g.scene;
+            if (sm && sm.isActive && sm.isActive('EndGameScene')) startGame(nextCasualStarter());
+          } catch (e) {}
+        }, 3000);
       })();` });
     await page.getByText('Single game', { exact: true }).click();
     const t0 = Date.now();
@@ -77,10 +85,7 @@ try {
         await page.waitForTimeout(15000);
         const s = await page.evaluate(() => document.body.getAttribute('data-lat'));
         const rows = s ? JSON.parse(s) : [];
-        if (rows.length !== n) { n = rows.length; fs.writeFileSync(path.join(ROOT, 'latency_probe.json'), JSON.stringify(rows)); console.log(n, 'moves'); }
-        // a finished game: start another
-        const again = page.getByText(/New Game|Play again/i).first();
-        if (await again.isVisible().catch(() => false)) await again.click().catch(() => {});
+        if (rows.length !== n) { n = rows.length; fs.writeFileSync(path.join(ROOT, process.env.OUT || 'latency_probe.json'), JSON.stringify(rows)); console.log(n, 'moves'); }
     }
 } finally {
     await browser.close();

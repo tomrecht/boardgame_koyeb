@@ -137,6 +137,15 @@ ARCHIVE.md under "Current benchmark".
 - `?dev=1` unlocks debug / eval / setup modes and un-silences `console.log`.
   **Any harness that reads console output must pass it.**
 
+## Prefilter latency, measured 2026-10-04 (`latency_probe.mjs`, 104 moves, desktop Chrome)
+
+Shipped (F=12, K=40): median 301 ms, p90 1.10 s, max 2.4 s. K=80: 1.8x median,
+p90 +16%, move changes 2/104. No prefilter: 10x median, p90 11.9 s, max 56 s --
+not viable. One-stage (F=0) is NOT slower than two-stage in JS (285 ms median),
+unlike Python where two-stage cut the worst move ~3x. Prefilter cost by the net's
+own valuation: misses its best on 10% of turns, ~0.23 pts/game (owner's 83 games);
+the Aug 120-game match bounds a real loss below ~0.27. Leave it as is.
+
 ## Next training run: encoder changes (owner + Claude, 2026-10-04)
 
 Any new input reshapes the input layer, so these need a **from-scratch** run, not
