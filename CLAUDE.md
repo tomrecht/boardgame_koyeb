@@ -154,13 +154,20 @@ numbered-saved per side, highest occupied goal per side, my saveable count.
 - **Opponent wall flag** per tile (only the mover's walls are flagged now).
 - **Opponent saveable count.**
 - **Per-side counts: unentered, on field, saved (total, not just numbered).**
-- **Distance to OWN goal as a raw number.** It exists only as one of six slots in
+- **Distance to OWN goal as a raw number, NUMBERED pieces only** (blanks have no
+  own goal; their six distances already cover them). It exists only as one of six slots in
   goal order, so the net must gate the slot by the piece's number. Owner: distance
   is also a direct proxy for blockability (a piece on ring 1 has far more route to
   wall than one a tile from goal).
 - **Per-piece threats: P(opponent's next roll can capture it), P(it can wall its
-  route).** Exact values are cheap to compute (`weakness_probe.threats`). Two-dice
-  threats are 7-12 tiles away, beyond 6 rounds of tile-to-tile passing.
+  route).** Two-dice threats are 7-12 tiles away, beyond 6 rounds of tile-to-tile
+  passing. The EXACT value (`weakness_probe.threats`, every opponent reply over 21
+  rolls) costs 0.4-0.9 s a position -- far too slow for an input, which is encoded
+  for every search candidate. Use a distance-based approximation instead (capture:
+  an opponent piece at route distance d hits on a die of d or a sum of d with an
+  unwalled midpoint; wall: rolls that land two opponent pieces on a tile every
+  shortest route of mine crosses), est. a few ms, and VALIDATE it against the exact
+  version on logged positions before adopting. Needs a JS twin in encoder.js.
 
 **Evidence so far** (owner's 83 recorded games, `weakness_probe.py`): the
 computer leaves its numbered pieces more blockable than owner does in the OPENING,
