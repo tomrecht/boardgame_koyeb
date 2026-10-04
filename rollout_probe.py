@@ -12,8 +12,15 @@ Target sets:
           (sum over pieces) than the move played. A = played, B = least blockable
           such alternative.
 
-Usage: python3 rollout_probe.py block      (results -> rollout_block.jsonl, resumes)
-       python3 rollout_probe.py analyze block
+  cvg   : every capture-vs-goal position (cvg_breakdown.json: both a capture of
+          an enemy numbered piece and an own numbered piece to its goal were
+          available, no pair did both), owner's and the computer's turns: A = the net's best pair that captures an
+          enemy numbered piece without putting an own numbered piece on its
+          goal, B = its best pair that does the reverse. Also records the net's
+          own preference (A minus B, margin points).
+
+Usage: python3 rollout_probe.py block|cvg   (results -> rollout_<kind>.jsonl, resumes)
+       python3 rollout_probe.py analyze block|cvg
 """
 import copy, json, os, random, sys, time, zlib
 from collections import defaultdict
@@ -45,6 +52,40 @@ def block_targets():
                 if r['exp'][1] - min(a['exp'][1] for a in r['alts']) > 0.25:
                     out.append((g['game'], r['turn']))
     return out
+
+
+def cvg_targets(max_progress=None):
+    """All capture-vs-goal positions (owner's choice, 2026-10-04), shuffled
+    with a fixed seed so partial results are a fair sample. max_progress
+    restricts to positions whose capturable piece had come at most that far
+    (progress = 7 minus its remaining route; a detour can make it <= 0)."""
+    import random
+    out = []
+    for r in json.load(open(os.path.join(REPO, 'cvg_breakdown.json'))):
+        ps = [v for v in r.get('cap_prog', {}).values() if v is not None]
+        if max_progress is None or (ps and max(ps) <= max_progress):
+            out.append((r['game'], r['turn']))
+    random.Random(20261004).shuffle(out)
+    return out
+
+
+def pick_cvg_pairs(b, us):
+    """Best capture-only and best goal-only pair by the pure net's 2-ply score."""
+    ag = W.agent()
+    st = dict(b.game_stages)
+    scored = ag.select_move_pair(list(b.get_valid_moves()), b, us, return_scores=True)
+    b.game_stages.update(st)
+    best_c = best_g = None
+    for sc, pair in scored:                       # sorted best first
+        c, g = W.pair_effects(b, pair, us)
+        b.game_stages.update(st)
+        if c and not g and best_c is None:
+            best_c = (sc, pair)
+        if g and not c and best_g is None:
+            best_g = (sc, pair)
+        if best_c and best_g:
+            break
+    return best_c, best_g
 
 
 def rollout(board, seed):
@@ -102,30 +143,43 @@ def pick_block_pair(b, us, played):
     return W.summed(th_p)[1], choice
 
 
-def job(target):
-    gid, turn = target
+def _play_out(b, us, pair, gid, turn):
+    n0 = len(b.moves)
+    for m in pair:
+        if m not in ((0, 0, 0), (1, 1, 1)):
+            b.apply_move(m, switch_turn=False)
+    margins = []
+    for i in range(N_ROLL):
+        w, s = rollout(b, seed=zlib.crc32(f"{gid}:{turn}:{i}".encode()))
+        margins.append(0 if w is None else (s if w == us else -s))
+    while len(b.moves) > n0:
+        b.undo_last_move()
+    return margins
+
+
+def job(task):
+    kind, gid, turn = task
     rec = _records()[gid]
     for t, b, played, b2 in W.turn_states(rec):
         if t != turn:
             continue
         us = b.current_player
+        if kind == 'cvg':
+            best_c, best_g = pick_cvg_pairs(b, us)
+            if not (best_c and best_g):
+                return {'game': gid, 'turn': turn, 'error': 'class missing on recompute'}
+            pc, pg = W.pair_effects(b, played, us)
+            return {'game': gid, 'turn': turn, 'mover': us,
+                    'played': 'capture' if pc and not pg else ('goal' if pg and not pc else 'other'),
+                    'net_pref_A': round((best_c[0] - best_g[0]) * W.M, 3),
+                    'pair_A': repr(best_c[1]), 'pair_B': repr(best_g[1]),
+                    'A': _play_out(b, us, best_c[1], gid, turn),
+                    'B': _play_out(b, us, best_g[1], gid, turn)}
         exp_a, (exp_b, pair_b, gap_b) = pick_block_pair(b, us, played)
-        res = {}
-        for arm, pair in (('A', played), ('B', pair_b)):
-            n0 = len(b.moves)
-            for m in pair:
-                if m not in ((0, 0, 0), (1, 1, 1)):
-                    b.apply_move(m, switch_turn=False)
-            margins = []
-            for i in range(N_ROLL):
-                w, s = rollout(b, seed=zlib.crc32(f"{gid}:{turn}:{i}".encode()))
-                margins.append(0 if w is None else (s if w == us else -s))
-            while len(b.moves) > n0:
-                b.undo_last_move()
-            res[arm] = margins
         return {'game': gid, 'turn': turn, 'exp_A': exp_a, 'exp_B': exp_b,
                 'net_gap_B': gap_b, 'pair_A': repr(played), 'pair_B': repr(pair_b),
-                'A': res['A'], 'B': res['B']}
+                'A': _play_out(b, us, played, gid, turn),
+                'B': _play_out(b, us, pair_b, gid, turn)}
     return {'game': gid, 'turn': turn, 'error': 'position not reached'}
 
 
@@ -141,7 +195,8 @@ def main():
     done = set()
     if os.path.exists(out):
         done = {(r['game'], r['turn']) for r in map(json.loads, open(out))}
-    targets = [t for t in block_targets() if t not in done]
+    pool_targets = cvg_targets() if kind == 'cvg' else block_targets()
+    targets = [(kind, g, t) for g, t in pool_targets if (g, t) not in done]
     print(f'{len(targets)} positions, {N_ROLL} rollouts per arm', flush=True)
     from multiprocessing import Pool
     with Pool(N_WORKERS, initializer=_init) as pool:
@@ -152,8 +207,9 @@ def main():
                 print(r, flush=True)
             else:
                 d = sum(b - a for a, b in zip(r['A'], r['B'])) / len(r['A'])
-                print(f"{r['game']} t{r['turn']}: exp {r['exp_A']:.2f}->{r['exp_B']:.2f}  "
-                      f"B-A {d:+.2f}", flush=True)
+                tag = (f"net pref capture {r['net_pref_A']:+.2f}" if kind == 'cvg'
+                       else f"exp {r['exp_A']:.2f}->{r['exp_B']:.2f}")
+                print(f"{r['game']} t{r['turn']}: {tag}  B-A {d:+.2f}", flush=True)
 
 
 def analyze(kind):
@@ -165,6 +221,34 @@ def analyze(kind):
     m = sum(diffs) / n
     sd = math.sqrt(sum((d - m) ** 2 for d in diffs) / (n - 1))
     print(f'{n} positions x {len(rows[0]["A"])} paired rollouts')
+    if kind == 'cvg':
+        ci = lambda xs: (sum(xs) / len(xs), 1.96 * math.sqrt(
+            sum((x - sum(xs) / len(xs)) ** 2 for x in xs) / max(1, len(xs) - 1)) / math.sqrt(len(xs)))
+        m_, h_ = ci(diffs)
+        print(f'goal move minus capture move: {m_:+.3f} +- {h_:.3f} pts; '
+              f'goal better in {sum(d > 0 for d in diffs)}, capture better in {sum(d < 0 for d in diffs)}')
+        prefs = [r['net_pref_A'] for r in rows]
+        mp = sum(prefs) / n
+        num = sum((p - mp) * (-d - (-m_)) for p, d in zip(prefs, diffs))
+        den = math.sqrt(sum((p - mp) ** 2 for p in prefs) * sum((d - m_) ** 2 for d in diffs))
+        print(f"net's preference for capture vs the playouts' (capture minus goal): corr {num / den:+.3f}")
+        prog = {}
+        for b in json.load(open(os.path.join(REPO, 'cvg_breakdown.json'))):
+            ps = [v for v in b.get('cap_prog', {}).values() if v is not None]
+            prog[(b['game'], b['turn'])] = (max(ps) if ps else None, b['who'])
+        groups = [('net prefers capture', lambda r: r['net_pref_A'] > 0),
+                  ('net prefers goal', lambda r: r['net_pref_A'] <= 0),
+                  ("computer's turns", lambda r: prog[(r['game'], r['turn'])][1] == 'ai'),
+                  ("owner's turns", lambda r: prog[(r['game'], r['turn'])][1] == 'human'),
+                  ('capturable piece progress <= 1', lambda r: (prog[(r['game'], r['turn'])][0] or 0) <= 1),
+                  ('progress 2-3', lambda r: 2 <= (prog[(r['game'], r['turn'])][0] or 0) <= 3),
+                  ('progress 4+', lambda r: (prog[(r['game'], r['turn'])][0] or 0) >= 4)]
+        for lab, f in groups:
+            sel = [d for r, d in zip(rows, diffs) if f(r)]
+            if sel:
+                a, h = ci(sel)
+                print(f'  {lab:<32} {len(sel):>4} positions: goal minus capture {a:+.3f} +- {h:.3f}')
+        return
     print(f'mean margin, less-blockable move minus move played: {m:+.3f} pts '
           f'(95% CI {m - 1.96 * sd / math.sqrt(n):+.3f} .. {m + 1.96 * sd / math.sqrt(n):+.3f})')
     print(f'B better in {sum(d > 0 for d in diffs)}, worse in {sum(d < 0 for d in diffs)}')

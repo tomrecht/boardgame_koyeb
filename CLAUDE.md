@@ -213,6 +213,18 @@ full loop on AB: clean. Not built: rollout-labelled disagreement targets, the JS
 twin of features_v2. Gate games ran 528 s single-core on the loaded iMac, so
 launch real runs on a quiet machine or a cloud box.
 
+**OPENING BLOCKABILITY IS PROBABLY NOT A REAL WEAKNESS (rollouts, 2026-10-04).**
+In 99 opening positions from owner's games where the computer had a near-equal
+alternative (within 0.25 pts by its own scoring) that left its numbered pieces
+>0.25 less blockable, 24 paired playouts per move (net 1-ply policy both sides,
+common dice) gave the safer move **-0.024 pts (95% CI -0.157..+0.109)**, better
+in 46 / worse in 52, flat across exposure-cut sizes (0.25-0.5 / 0.5-1.0 / >1.0
+all about -0.02). Owner: the net is strong at blocking, so the playouts' opponent
+exploits exposure fine -- the extra exposure just doesn't cost points. Stopped at
+99 of 171 (`rollout_probe.py block`). Arm B keeps the threat features anyway, as
+the general case; capture-vs-goal (`rollout_probe.py cvg`, all 470 positions) is
+the next lead.
+
 **Testing protocol for new features (owner):** validate any approximation against
 the exact computation on logged positions; train with/without in otherwise
 identical runs judged by a fixed-panel gate; then re-run `weakness_probe` /
