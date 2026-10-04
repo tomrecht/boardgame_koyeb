@@ -201,6 +201,18 @@ not fix what self-play never visits: exploration (ARCHIVE.md) and rollout-labell
 positions from the ~1,200 turns where the net disagrees with owner. Gate against a
 fixed panel that includes the deployed champion.
 
+**BUILT (2026-10-04) on branch `train-features-v2`** (off `train-panel-league`);
+its CLAUDE.md has the RUNBOOK. Feature sets v1/A/AB with the checkpoint carrying
+its set; threats validated (capture exact, wall corr 0.98); per-die roll
+opportunities exact vs the engine; turns to finish = dice count (corr 0.957 held
+out) plus the exact endgame table (`endgame_table.json`) as its own input;
+warm starts are the champion WIDENED with zero weights on new inputs (exact copy,
+not distillation); start-position games from owner's 5,828 positions; late
+exploration with a Watkins-style TD trace cut (off by default). Smoke run of the
+full loop on AB: clean. Not built: rollout-labelled disagreement targets, the JS
+twin of features_v2. Gate games ran 528 s single-core on the loaded iMac, so
+launch real runs on a quiet machine or a cloud box.
+
 **Testing protocol for new features (owner):** validate any approximation against
 the exact computation on logged positions; train with/without in otherwise
 identical runs judged by a fixed-panel gate; then re-run `weakness_probe` /
