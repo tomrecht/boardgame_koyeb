@@ -829,6 +829,11 @@ with it in mind.** Assessment and the concrete implications:
   reverted). It is still fully usable for the STATS -- result, margin, difficulty
   and model tag are all sound -- and only the disagreement analysis needs the
   replay. Regression after both fixes: 3/3 self-play games still clean.
+  **THE LAST-PIECE RULE IS APPLIED AT DIFFERENT MOMENTS (found 2026-10-03, 17 of
+  83 of owner's games):** game.py blanks a player's last piece at EVERY turn switch,
+  game.js only at the start of that player's OWN turn, so during the opponent's
+  turn the label differs. Equivalent for play; the checker now mirrors game.js
+  (`shown_numbers`). After it: 82/83 replay, the one left being the undo phantom.
   **BLOCK-SAVES ARE NOT PRODUCED BY SELF-PLAY** (0 in 143 turns, against 220 tile
   moves, 60 saves and 1 pass), so that path was verified on its own: the tutorial's
   "Buy the door open" position, `handleDoubleClick` on the blocked black piece,

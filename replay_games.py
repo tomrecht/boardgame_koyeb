@@ -35,24 +35,32 @@ def fnv1a(s):
     return h
 
 
-def pos_string(board):
+def pos_string(board, shown=None):
     """Must match _recPosString in game.js exactly: whose turn, every piece's
     tile, and the two saved counts. Sorted as strings -- JS's .sort() and Python's
     sorted() agree on ASCII. BLANKS ARE ANONYMOUS (`w*`) because the game treats
     same-colour blanks as interchangeable and game.py dedups them on a shared
     tile, so naming them would call two identical boards different."""
+    # `shown` maps a piece to the number game.js still displays for it. The
+    # LAST-PIECE RULE is applied at different moments: game.py blanks a player's
+    # last piece at EVERY turn switch (both players), game.js only at the start
+    # of that player's OWN turn -- so during the opponent's turn game.js still
+    # shows the number. Equivalent for play (the piece is blank whenever its
+    # owner moves it); only the fingerprint differs. Found 2026-10-03: it was
+    # all 17 final-turn divergences in owner's first 83 recorded games.
+    shown = shown or {}
     on = sorted(
         f'{p.tile.ring}.{p.tile.pos}:{p.player[0]}'
-        + ('*' if p.number > 6 else str(p.number))
+        + ('*' if shown.get(id(p), p.number) > 6 else str(shown.get(id(p), p.number)))
         for p in board.pieces if p.tile is not None
     )
     return (board.current_player[0] + '|' + ','.join(on) + '|'
             + f'{len(board.white_saved)},{len(board.black_saved)}')
 
 
-def fingerprint(board):
+def fingerprint(board, shown=None):
     """base36, because that is what game.js stores (shorter than decimal)."""
-    return _b36(fnv1a(pos_string(board)))
+    return _b36(fnv1a(pos_string(board, shown)))
 
 
 def _b36(n):
@@ -97,8 +105,17 @@ def replay(rec, verbose=False):
         order = {n: i for i, n in enumerate(want)}
         rack.sort(key=lambda p: order.get(p.number, 99))
     board.current_player = rec['starter']
+    orig = {id(p): p.number for p in board.pieces}
+    blanked_seen = set()      # pieces whose owner has had a turn start since blanking
+
+    def shown_numbers():
+        return {id(p): orig[id(p)] for p in board.pieces
+                if p.number > 6 and orig[id(p)] <= 6 and id(p) not in blanked_seen}
 
     for ti, turn in enumerate(rec['turns']):
+        for p in board.pieces:            # game.js blanks at its owner's turn start
+            if p.player == board.current_player and p.number > 6 and orig[id(p)] <= 6:
+                blanked_seen.add(id(p))
         # The recorded dice, both unused -- switch_turn() rolls fresh ones, so
         # they have to be set at the START of each turn, after the switch.
         for die, val in zip(board.dice, turn['d']):
@@ -184,11 +201,11 @@ def replay(rec, verbose=False):
                                f'(dice {[d.number for d in board.dice]}, '
                                f'used {[d.used for d in board.dice]})')
             board.apply_move(((colour, number), dest, roll), switch_turn=False)
-        got = fingerprint(board)
+        got = fingerprint(board, shown_numbers())
         if got != turn['h']:
             return False, (f'turn {ti+1} ({board.current_player}): position differs '
                            f'(recorded {turn["h"]}, replayed {got})'
-                           + (f'\n      replayed: {pos_string(board)}' if verbose else ''))
+                           + (f'\n      replayed: {pos_string(board, shown_numbers())}' if verbose else ''))
         board.switch_turn()
     return True, f'{len(rec["turns"])} turns'
 
