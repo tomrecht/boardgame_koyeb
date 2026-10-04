@@ -168,6 +168,23 @@ numbered-saved per side, highest occupied goal per side, my saveable count.
   unwalled midpoint; wall: rolls that land two opponent pieces on a tile every
   shortest route of mine crosses), est. a few ms, and VALIDATE it against the exact
   version on logged positions before adopting. Needs a JS twin in encoder.js.
+  Compute threats for BOTH sides' pieces (the opponent's exposure is my attack).
+- **Expected turns to finish, per side** (from per-piece turns-to-bank: exact DP
+  values on goals -- blank 1.00-1.64 by goal, numbered 3.27 -- approximated by
+  distance elsewhere). Speaks to the bank-the-most bug and the endgame probe's
+  "deep banks sooner" lean.
+- **Race count per side** (backgammon's pip count): own-goal distance for
+  numbered, nearest goal for blanks, +7 per piece on rack or home.
+- Considered and dropped: a "contact broken" bit -- captures stay possible until
+  every piece is on a goal, which the two stage features already say (owner).
+- **If the features don't close the gap:** die-distance edges (tiles 1-6 steps
+  apart, labelled), so two-dice threats sit within 1-2 hops and the net can learn
+  threats itself. More general, costlier on the phone.
+
+**Testing protocol for new features (owner):** validate any approximation against
+the exact computation on logged positions; train with/without in otherwise
+identical runs judged by a fixed-panel gate; then re-run `weakness_probe` /
+`endgame_probe` on the new net to confirm the gap actually closed.
 
 **Evidence so far** (owner's 83 recorded games, `weakness_probe.py`): the
 computer leaves its numbered pieces more blockable than owner does in the OPENING,
