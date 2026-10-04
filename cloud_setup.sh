@@ -16,9 +16,11 @@ BRANCH="${BRANCH:-train-panel-league}"
 DEST="${DEST:-$HOME/boardgame_koyeb}"
 
 echo "== system packages"
+# Container hosts (vast.ai, RunPod) log you in as root with no sudo installed.
+SUDO=""; [ "$(id -u)" -ne 0 ] && SUDO="sudo"
 if command -v apt-get >/dev/null 2>&1; then
-  sudo apt-get update -y
-  sudo apt-get install -y git python3 python3-venv python3-pip
+  $SUDO apt-get update -y
+  $SUDO apt-get install -y git python3 python3-venv python3-pip
 fi
 
 echo "== clone $BRANCH"
@@ -39,9 +41,19 @@ pip install --upgrade pip
 pip install torch==2.2.2 --index-url https://download.pytorch.org/whl/cpu
 pip install "numpy<2" scipy
 
+# In a container nproc can report the HOST's cores, not the share you rented,
+# so prefer the cgroup CPU quota when there is one; N_WORKERS overrides both.
 CORES="$(nproc)"
-WORKERS=$(( CORES > 1 ? CORES - 1 : 1 ))
-echo "== $CORES cores -> N_WORKERS=$WORKERS (one core left for the main process)"
+if [ -r /sys/fs/cgroup/cpu.max ]; then
+  read -r Q P < /sys/fs/cgroup/cpu.max || true
+  if [ "${Q:-max}" != "max" ] && [ -n "${P:-}" ]; then CORES=$(( Q / P )); fi
+elif [ -r /sys/fs/cgroup/cpu/cpu.cfs_quota_us ]; then
+  Q=$(cat /sys/fs/cgroup/cpu/cpu.cfs_quota_us); P=$(cat /sys/fs/cgroup/cpu/cpu.cfs_period_us)
+  if [ "$Q" -gt 0 ]; then CORES=$(( Q / P )); fi
+fi
+[ "$CORES" -lt 1 ] && CORES=1
+WORKERS="${N_WORKERS:-$(( CORES > 1 ? CORES - 1 : 1 ))}"
+echo "== nproc $(nproc), usable cores $CORES -> N_WORKERS=$WORKERS (one core left for the main process)"
 
 echo "== checks (fast, no games)"
 ls -1 symaug_iter6.pt td_champion_July17_iter4.pt td_champion_July18_iter10.pt \
