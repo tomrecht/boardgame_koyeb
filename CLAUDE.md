@@ -137,6 +137,68 @@ of pairs within 0.4-1.0 points of the best, so T=0.5 is near-uniform, E[gap]
 0.32; T=0.1 gives E[gap] 0.17); LEAGUE_FRAC; whether to include the heuristic;
 PRESCREEN_BAR; panel 3 vs 5.
 
+## RUNBOOK: features v2 (branch `train-features-v2`, 2026-10-04)
+
+Built on `train-panel-league`. The plan and the evidence behind each feature are
+on main's CLAUDE.md, "Next training run". What is here:
+
+* **Feature sets** (`features_v2.py`, `encoder.BoardEncoder(features=...)`):
+  `v1` = the deployed encoding, byte-identical (checked against main's encoder on
+  282 positions). `A` = + opponent wall flag (tile), own-goal distance for
+  numbered pieces (piece), no-save counter, opponent saveable, per-side
+  unentered/field/saved, race count, turns to finish (global, 12). `AB` = A + per
+  piece P(captured next roll), P(walled next roll), and per side x die 1-6 the
+  pieces that die saves / brings onto a bankable goal / captures, numbered vs
+  blank (global, 72). Widths: v1 12/24/11, A 13/25/23, AB 13/27/95.
+* **The checkpoint carries its feature set**: `network.model_from_state(sd)` reads
+  it off the input layers and builds the matching model; `TorchBackend` (so every
+  `GNNAgent`) builds the matching encoder. v1 panel members and an AB learner mix
+  freely in league and gate games -- shown in the smoke run.
+* **Warm start = the champion, widened**: `python3 widen_v2.py symaug_iter6.pt AB
+  symaug6_AB.pt` copies every weight and zero-fills the new input columns, so the
+  student is EXACTLY the champion (max |diff| 6e-8 on 282 positions, identical
+  moves on 24) until training teaches it the new inputs. Not distillation, not
+  from scratch. The widened .pt files are not committed -- regenerate them.
+* **Threats are approximations, validated**: against the exact enumerator
+  (`weakness_probe.threats`, every legal reply over 21 rolls) on 106 numbered
+  pieces: capture EXACT (corr 1.000, MAE 0.000), wall corr 0.971 MAE 0.025, at
+  ~1 ms vs ~770 ms. Turn obligations matter: before modelling them corr was
+  0.94/0.84; a bug where home's distance was never found gave zeros.
+  `validate_features_v2.py` reruns this.
+* **Turns to finish**: EXACT from `endgame_table.json` (59,130 states,
+  `endgame_table.py`, 226 s; reproduces the lone-blank DP on goals 1-5, goal 6
+  1.650 vs 1.644 because the table never steps onto the field) when every
+  unsaved piece is on a bankable goal; else travel/7 + bank time, blanks charged
+  the exact-match time outside the endgame (owner). Viewer: "Turns to Bank"
+  artifact, https://claude.ai/artifact/WqCPaGUZmnv55NFubJ1hRR
+* **Cost**: Python 2-ply search per move, v1 5.6 s / A 6.6 s / AB 8.7 s (+54%).
+* **Start positions** (`START_POOL`, default `start_pool.jsonl` if present;
+  `START_FRAC` 0.3, `START_ROTATE` 1): games begin from owner's real positions
+  (`build_start_pool.py <logs>`; 5,828 from 132 games, turn >= 6), rotated by a
+  random D3 image, dice re-rolled, played GREEDY (opening softmax off in them).
+* **Late exploration** (`LATE_T` margin points, 0 = off; `LATE_P` 0.15): softmax
+  sampling on learner turns past the opening window. `LATE_T>0` forces
+  `TRACE_CUT=1`: every explored record is dropped and earlier lambda-returns
+  bootstrap from V there (Watkins-style), so off-policy moves never bias a
+  target. Off by default until a run shows it helps.
+* **Tests**: `python3 td_returns.py` (incl. the trace cut), `test_starts_late.py`
+  (start games begin exactly at the pool position; late samples only past the
+  opening; the cut drops exactly the explored records), plus the branch's
+  `test_explore.py`, `test_hand_rules.py`, `test_panel_gate.py`.
+
+**Launch (arm B):**
+
+    python3 widen_v2.py symaug_iter6.pt AB symaug6_AB.pt
+    python3 build_start_pool.py quahuru-games-*.jsonl
+    BOARDGAME_DEVICE=cpu PYTHONHASHSEED=0 PREFIX=fv2B WARM_START=symaug6_AB.pt \
+      nohup python -u league_run.py >> fv2B.log 2>&1 &
+
+Arm A: same with `A` / `symaug6_A.pt` / `PREFIX=fv2A`. Same SEED_BASE for both.
+
+**Not built yet:** rollout-labelled positions from owner's disagreements as
+fixed training targets; the JS twin of features_v2 (needed before an A/AB net
+can ship).
+
 ## Current phase: TD(λ) fine-tuning
 
 Supervised fine-tuning on top of self-play was tried and ruled out — it
