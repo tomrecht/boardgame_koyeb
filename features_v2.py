@@ -440,7 +440,10 @@ def _dist_from_home(board, blocked):
                 dist[n] = dist[t] + 1
                 q.append(n)
         return dist
-    return _cached(_DIST_CACHE, ('home', blocked), run)
+    # The key must name THIS board (its home tile): with no walls `blocked` is
+    # an empty frozenset that every board shares, and a dict of another board's
+    # tiles silently finds nothing (caught by validate_roll_opps).
+    return _cached(_DIST_CACHE, ('home', board.home_tile, blocked), run)
 
 
 def _saves_with(die, piece, stage, highest_goal):
