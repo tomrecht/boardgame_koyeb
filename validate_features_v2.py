@@ -13,7 +13,7 @@ import json, math, sys, time
 import features_v2 as F
 import weakness_probe as W
 
-LOGS = ['quahuru-games-apvo2h65.jsonl', 'quahuru-games-f7in6olg.jsonl']
+LOGS = ['quahuru-games-apvo2h65-v2.jsonl', 'quahuru-games-f7in6olg.jsonl']
 
 
 def corr(a, b):
