@@ -9,9 +9,10 @@ Feature sets (CLAUDE.md, "Next training run"):
                    rack and saved pieces; 1.0 = walled off). Near-redundant: for
                    a numbered piece game.py marks the five other goals
                    unreachable, so the min over v1's six slots already is this.
-        global +12 no-save counter, opponent saveable count, per side
-                   unentered / on field / saved, per side race count and
-                   estimated turns to finish
+        global +14 no-save counter, opponent saveable count, per side
+                   unentered / on field / saved, per side race count,
+                   estimated turns to finish (dice count) and the EXACT
+                   endgame-table value (0 unless every piece is on a goal)
   AB  A + per-piece THREATS, distance-based approximations of what
       weakness_probe.threats() enumerates exactly:
         piece  +2  P(captured if its enemy rolled now), P(its route to its own
@@ -30,7 +31,7 @@ from collections import deque
 FEATURE_SETS = ('v1', 'A', 'AB')
 EXTRA_TILE = {'v1': 0, 'A': 1, 'AB': 1}
 EXTRA_PIECE = {'v1': 0, 'A': 1, 'AB': 3}
-EXTRA_GLOBAL = {'v1': 0, 'A': 12, 'AB': 12 + 72}
+EXTRA_GLOBAL = {'v1': 0, 'A': 14, 'AB': 14 + 72}
 
 MAX_DIST = 14.0
 NO_SAVE_TURNS_FOR_DRAW = 10
@@ -121,15 +122,17 @@ def side_summary(board, player):
         d, bank = _piece_progress(board, p, eg)
         pips += d
         per_piece.append(d / PIPS_PER_TURN + bank)
-    exact = endgame_turns(board, player)
-    if exact is not None:
-        turns = exact
-    else:
-        # CRUDE while any piece is still travelling: pieces share two dice a
-        # turn, so the side is limited both by its slowest piece and by the
-        # total work spread over two dice. validate_features_v2 checks it
-        # against the turns the winner really took.
-        turns = max(max(per_piece, default=0.0), sum(per_piece) / 2.0)
+    # DICE COUNT: one die per 3.5 steps still to travel plus one per save,
+    # two dice a turn. Measured on owner's 132 games (3,281 winner positions,
+    # held-out half): corr 0.957 with the turns really left (last 8 turns
+    # 0.891), against 0.916 / 0.872 for travel + per-piece bank time, which
+    # charged waiting for an exact die as if it used dice -- but 80% of saves
+    # happen in the midgame, overlapping other moves (92% of numbered saves).
+    # A fitted linear version gained only 0.007. The exact endgame value is a
+    # SEPARATE input (endgame_turns), since splicing it in here broke the
+    # ranking at the boundary (late corr 0.883 -> 0.818).
+    n_unsaved = len(per_piece)
+    turns = (pips / 3.5 + n_unsaved) / 2.0
     return unentered, field, saved, pips, turns
 
 
@@ -181,7 +184,15 @@ def global_extras(board, current_player):
         them[0] / 12.0, them[1] / 12.0, them[2] / 12.0,
         me[3] / 84.0, them[3] / 84.0,
         min(me[4], 30.0) / 30.0, min(them[4], 30.0) / 30.0,
+        _table_input(board, current_player), _table_input(board, opp),
     ]
+
+
+def _table_input(board, player):
+    """Exact expected turns to bank everything (endgame_table.json) when every
+    unsaved piece is on a bankable goal, scaled; 0 otherwise."""
+    v = endgame_turns(board, player)
+    return 0.0 if v is None else min(v, 12.0) / 12.0
 
 
 # --------------------------------------------------------------------------

@@ -146,10 +146,11 @@ on main's CLAUDE.md, "Next training run". What is here:
   `v1` = the deployed encoding, byte-identical (checked against main's encoder on
   282 positions). `A` = + opponent wall flag (tile), own-goal distance for
   numbered pieces (piece), no-save counter, opponent saveable, per-side
-  unentered/field/saved, race count, turns to finish (global, 12). `AB` = A + per
+  unentered/field/saved, race count, turns to finish, exact endgame-table value
+  (global, 14). `AB` = A + per
   piece P(captured next roll), P(walled next roll), and per side x die 1-6 the
   pieces that die saves / brings onto a bankable goal / captures, numbered vs
-  blank (global, 72). Widths: v1 12/24/11, A 13/25/23, AB 13/27/95.
+  blank (global, 72). Widths: v1 12/24/11, A 13/25/25, AB 13/27/97.
 * **The checkpoint carries its feature set**: `network.model_from_state(sd)` reads
   it off the input layers and builds the matching model; `TorchBackend` (so every
   `GNNAgent`) builds the matching encoder. v1 panel members and an AB learner mix
@@ -169,16 +170,21 @@ on main's CLAUDE.md, "Next training run". What is here:
   alone: with no walls every board shared one key). Turn obligations matter: before modelling them corr was
   0.94/0.84; a bug where home's distance was never found gave zeros.
   `validate_features_v2.py` reruns this.
-* **Turns to finish**: EXACT from `endgame_table.json` (59,130 states,
-  `endgame_table.py`, 226 s; reproduces the lone-blank DP on goals 1-5, goal 6
-  1.650 vs 1.644 because the table never steps onto the field) when every
-  unsaved piece is on a bankable goal; else travel/7 + bank time, blanks charged
-  the exact-match time outside the endgame (owner). Against the winner's real
-  turns left (714 positions, 30 games): corr 0.90, but mean 18.0 vs 12.9 -- the
-  exact-match charge over-states blanks that will bank in the endgame (before
-  the change: 12.9 vs 14.2; better corr over the last 8 turns, 0.84 vs 0.80).
-  Fix if the level matters: travel + table value at the predicted arrival. Viewer: "Turns to Bank"
-  artifact, https://claude.ai/artifact/WqCPaGUZmnv55NFubJ1hRR
+* **Turns to finish = a DICE COUNT**, (distance left / 3.5 + one die per save)
+  / 2, no fitted constants. On owner's 132 games (3,281 winner positions, scored
+  on a held-out half): corr 0.957 with the turns really left, 0.891 over the last
+  8 turns. It replaced travel + per-piece bank time (0.916 / 0.872 with blanks
+  charged an exact match outside the endgame, 0.933 / 0.819 without), which
+  counted WAITING for an exact die as if it used dice: 80% of saves happen in the
+  midgame alongside other moves (92% of numbered saves, 68% of blank saves;
+  owner). A fitted linear version gained only 0.007 (weights: numbered 1.17
+  turns/piece, blank 0.88). The EXACT `endgame_table.json` value (59,130
+  states, `endgame_table.py`, 226 s; reproduces the lone-blank DP on goals 1-5,
+  goal 6 1.650 vs 1.644 as the table never steps onto the field) is a SEPARATE
+  input, 0 unless every piece is on a bankable goal: splicing it into the
+  estimate broke the ranking at the boundary (late corr 0.883 -> 0.818).
+  Viewer: "Turns to Bank" artifact,
+  https://claude.ai/artifact/WqCPaGUZmnv55NFubJ1hRR
 * **Cost**: Python 2-ply search per move, v1 5.6 s / A 6.6 s / AB 8.7 s (+54%).
 * **Start positions** (`START_POOL`, default `start_pool.jsonl` if present;
   `START_FRAC` 0.3, `START_ROTATE` 1): games begin from owner's real positions
