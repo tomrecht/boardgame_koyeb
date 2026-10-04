@@ -137,6 +137,43 @@ ARCHIVE.md under "Current benchmark".
 - `?dev=1` unlocks debug / eval / setup modes and un-silences `console.log`.
   **Any harness that reads console output must pass it.**
 
+## Next training run: encoder changes (owner + Claude, 2026-10-04)
+
+Any new input reshapes the input layer, so these need a **from-scratch** run, not
+a fine-tune. Today's encoder (`encoder.py`; its header list is stale, the
+per-function docstrings are right): tile = type, ring, sector, goal number,
+neighbour count, my/opp piece count, a wall flag for the MOVER's blanks only;
+piece = owner, number, numbered, status (unentered/home/board/saveable/saved),
+rack slot, lone-on-field, fully walled off, own-goal distance band, distances to
+all six goals (raw and banded, in GOAL order); global = dice, both stages,
+numbered-saved per side, highest occupied goal per side, my saveable count.
+6 message-passing rounds over tiles + one global node.
+
+**Add:**
+- **No-save counter** (drives the draw rule; the net is blind to it).
+- **Opponent wall flag** per tile (only the mover's walls are flagged now).
+- **Opponent saveable count.**
+- **Per-side counts: unentered, on field, saved (total, not just numbered).**
+- **Distance to OWN goal as a raw number.** It exists only as one of six slots in
+  goal order, so the net must gate the slot by the piece's number. Owner: distance
+  is also a direct proxy for blockability (a piece on ring 1 has far more route to
+  wall than one a tile from goal).
+- **Per-piece threats: P(opponent's next roll can capture it), P(it can wall its
+  route).** Exact values are cheap to compute (`weakness_probe.threats`). Two-dice
+  threats are 7-12 tiles away, beyond 6 rounds of tile-to-tile passing.
+
+**Evidence so far** (owner's 83 recorded games, `weakness_probe.py`): the
+computer leaves its numbered pieces more blockable than owner does in the OPENING,
+per piece +0.070 (95% CI +0.029..+0.113; 0.290 vs 0.220); midgame and capture
+exposure indistinguishable. Capture-vs-goal: computer captures 20/210 vs owner
+19/260 (p=0.38), but 5/99 vs 1/124 when the capturable piece has barely left home
+(p=0.013) and 9/39 vs 5/55 when its cheapest goal move is its 2 (lead only). The
+net rates owner's moves 2.1 pts/game worse than its own while owner wins 48/83,
+mean +0.25 -- so the positions where they disagree are the richest training
+signal. Endgame horizon (`endgame_probe.py`, 90 self-play games): deep and
+shallow agree MORE as the end nears (disagree 38% at 6 opponent pieces left, 15%
+at 1); no broad endgame weakness beyond the bank-the-most case.
+
 ## Traps that keep biting
 
 Method notes that have each cost a session or more. The full stories are in

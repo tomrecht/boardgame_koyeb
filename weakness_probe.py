@@ -226,8 +226,21 @@ def turn_states(rec):
         R.Board = orig
 
 
-def analyse_game(rec):
-    from agent_gnn import _piece_locs
+def _piece_locs(board):
+    """Position key with BLANKS ANONYMOUS: same-colour blanks are
+    interchangeable, and the engine's dedup may name a different blank than the
+    one the game moved (agent_gnn._piece_locs names them, which made 103 of 2098
+    computer moves look unreproduced)."""
+    saved = (board.white_saved, board.black_saved)
+    out = []
+    for p in board.pieces:
+        loc = p.tile.index if p.tile is not None else (
+            -2 if (p.rack is saved[0] or p.rack is saved[1]) else -1)
+        out.append((p.player, p.number if p.number <= 6 else 99, loc))
+    return tuple(sorted(out))
+
+
+def analyse_game(rec, gaps_only=False):
     ag = agent()
     human = 'white' if not rec['whiteIsAI'] else 'black'
     rows = []
@@ -265,6 +278,12 @@ def analyse_game(rec):
             dep = (dep, (0, 0, 0))
         dk = key(dep)
         d_score = score_of.get(dk)
+        if gaps_only:
+            rows.append({'turn': t, 'who': 'human' if us == human else 'ai',
+                         'gap': None if p_score is None else round((best - p_score) * M, 3),
+                         'dep_is_played': dk == pk,
+                         'dep_gap': None if d_score is None else round((best - d_score) * M, 3)})
+            continue
         # exposure of the played move, and of the net's close alternatives
         # (distinct resulting positions only)
         th_played = threats(b2, us)
@@ -337,7 +356,7 @@ def main():
 
 def _job(r):
     t0 = time.time()
-    return r['id'][:8], analyse_game(r), time.time() - t0
+    return r['id'][:8], analyse_game(r, gaps_only=bool(os.environ.get('GAPS_ONLY'))), time.time() - t0
 
 
 def analyze():
