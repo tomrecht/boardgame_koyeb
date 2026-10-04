@@ -181,6 +181,17 @@ numbered-saved per side, highest occupied goal per side, my saveable count.
   apart, labelled), so two-dice threats sit within 1-2 hops and the net can learn
   threats itself. More general, costlier on the phone.
 
+**Run plan (agreed 2026-10-04): two arms, same seeds and data.** Arm A = the
+exact bookkeeping features together (no-save counter, opp wall flag, opp
+saveable, per-side counts, own-goal distance, race count, turns to finish --
+low-risk, no individual hypothesis, too small to ablate one by one). Arm B = A +
+the threat features (approximate, cost phone time, and carry the one testable
+claim: they close the opening blockability gap). If compute allows only one run,
+run A+B and lean on the probes. In the SAME run, fix coverage too -- features do
+not fix what self-play never visits: exploration (ARCHIVE.md) and rollout-labelled
+positions from the ~1,200 turns where the net disagrees with owner. Gate against a
+fixed panel that includes the deployed champion.
+
 **Testing protocol for new features (owner):** validate any approximation against
 the exact computation on logged positions; train with/without in otherwise
 identical runs judged by a fixed-panel gate; then re-run `weakness_probe` /
