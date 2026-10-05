@@ -208,6 +208,14 @@ on main's CLAUDE.md, "Next training run". What is here:
       nohup python -u league_run.py >> fv2B.log 2>&1 &
 
 Arm A: same with `A` / `symaug6_A.pt` / `PREFIX=fv2A`. Same SEED_BASE for both.
+**Second starting point (owner, 2026-10-05): iter10** (`td_champion_July18_iter10.pt`,
+the best-calibrated net on `calib_bench`: corr +0.186 vs the champion's +0.090).
+`python3 widen_v2.py td_champion_July18_iter10.pt AB iter10_AB.pt` (and `A`),
+then `WARM_START=iter10_AB.pt PREFIX=fv2B10`. Its panel gate still compares
+against the fixed panel, which includes the deployed champion, so the gate
+answers "better than what ships", whichever start it came from. The champion
+is iter10's panel peer, not its parent: the pre-screen compares with the
+iter10-widened parent, as for any warm start.
 
 **GPU (2026-10-04).** Measured on one CPU core, an AB move is 69% network
 forward, 30% encoding, 1% everything else -- so a GPU may pay. Two independent
