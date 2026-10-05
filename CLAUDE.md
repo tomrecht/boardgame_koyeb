@@ -238,6 +238,26 @@ exploits exposure fine -- the extra exposure just doesn't cost points. Stopped a
 the general case; capture-vs-goal (`rollout_probe.py cvg`, all 470 positions) is
 the next lead.
 
+**PREFILTER REFIT: FITTED COMPONENT SCALES (2026-10-05, on `testing` for owner
+to play).** The heuristic's 23 components get per-component scales
+(`prefilter_scales.json` -> Python `GNNAgent`'s prefilter copy only, JS via
+`heuristic_weights.json` 'component_scale'; the plain heuristic player is
+untouched; `PREFILTER_SCALES=0` restores the old ranking in Python). Fitted
+(`prefilter_fit.py`) so the net's own best move survives the cut: keep-rate
+88.5% -> 95.7% (5-fold CV by game, owner's 150 games) and 88.3% -> 96.4% on
+UNSEEN computer-vs-computer positions. The offline replay of the filter matched
+the real agent 45/45 (after using the TUNED weights: `Agent()` with no argument
+loads INITIAL_WEIGHTS, `Agent(weights=None)` loads best_weights.json -- that
+mix-up once looked like a stale-game-stage bug; it was not). JS/Python parity
+50/50 on a regenerated fixture. **Arena, new vs old filter, 1,500 paired games:
++0.020 pts/game (95% CI -0.064..+0.103), 50.1% wins** -- no measurable strength
+change, as expected: the old filter's cost was bounded small, and the net's own
+0.23 estimate shrinks to ~0.07 by its measured 0.3 calibration slope. Shipped
+for fidelity: the agent and the HINT now play the pure net's preferred move in
+~96% of positions instead of ~88%. A 24th component (exact endgame-table
+banking turns of the goal layout) added nothing in CV and was dropped. Later:
+look for patterns in the remaining ~4% of culls.
+
 **THE DIFFICULTY SLIDER IS MIS-SCALED FOR THE APP -- ITS FLOOR IS FAR TOO STRONG
 (measured 2026-10-05, `difficulty_fine.py` on `train-features-v2`, the APP's
 config: ONNX net, prefilter 12/40/5, hand rules on; each level vs d=1.0, 120
