@@ -230,10 +230,14 @@ the next lead.
 gaps for the 67 newer games -> disagreement rollouts (`rollout_probe.py
 disagree`: owner's move vs the net's best, 20 paired playouts; every position
 the net rates >= 0.26 pts worse, then 100 control at 0.01-0.1, then 100 at
-0.1-0.26) -> `overnight_summary.txt`. Interim capture-vs-goal (246 positions):
-goal beats capture by +0.155 +- 0.108 overall, but the net's own preference
-tracks the playouts (corr +0.37; where it prefers capture, capture did better)
--- so no over-capturing so far. **QUEUED for when it finishes** (on
+0.1-0.26) -> `overnight_summary.txt`.
+**CAPTURE-VS-GOAL: NO OVER-CAPTURING (stopped at 330 of 470 positions, owner's
+call).** 16 paired playouts per move, net's best capture-only pair vs its best
+goal-only pair: goal better overall by +0.156 +- 0.094, so owner's instinct holds
+on average -- but the net already knows it: its preference correlates +0.37 with
+the playouts, and in the 57 positions where it prefers the capture, the capture
+really did better (-0.231 +- 0.220). The goal move's edge shrinks as the
+capturable piece's progress grows (+0.21 / +0.15 / +0.05 for <=1 / 2-3 / 4+). **QUEUED for when it finishes** (on
 `train-features-v2`; NOT before -- checking that branch out removes
 `rollout_probe.py`, which the queue's last step re-runs): build a pairs file
 from `rollout_disagree.jsonl`; a pairwise loss in training (the net's value
