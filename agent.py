@@ -237,7 +237,15 @@ class Agent():
             'dice_spread_bonus': dice_spread_bonus,
             'permanent_block_bonus': permanent_block_bonus,
         }
-        total_score = sum(score_components.values())
+        # Per-component scales (weights['component_scale'], prefilter only --
+        # see agent_gnn): fitted 2026-10-05 so the net's favourite move
+        # survives the prefilter (prefilter_fit.py). Absent = plain sum, so
+        # the heuristic as a player is unchanged.
+        scale = self.weights.get('component_scale')
+        if scale:
+            total_score = sum(v * scale.get(k, 1.0) for k, v in score_components.items())
+        else:
+            total_score = sum(score_components.values())
         score_components['_total_score'] = total_score
         score_components['_player'] = player
         score_components['_goal_pieces'] = [(piece.number, piece.player, distances[piece]) for piece in pieces_near_goal]

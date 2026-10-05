@@ -15,6 +15,8 @@ To use in app.py:
     agent = GNNAgent()
 """
 
+import json
+import os
 import time
 
 import numpy as np
@@ -127,8 +129,8 @@ def _wastes_save(board, pair, player):
 
 
 def _opponent_wins_next_turn_regardless(board, player):
-    """OPPONENT CERTAIN TO WIN NEXT TURN (owner, 2026-10-01). Their last two
-    pieces are blanks on goal 1, so ANY roll banks both, and nothing we do can
+    """OPPONENT CERTAIN TO WIN NEXT TURN (owner, 2026-10-01). Their last one or
+    two pieces are blanks on goal 1, so ANY roll banks them, and nothing we do can
     stop it -- goals cannot be blocked, pieces on them cannot be captured. If we
     cannot win this turn (a winning pair returns before scoring) the game is lost
     and only the margin is in play, so the pair banking the most of our own
@@ -138,7 +140,7 @@ def _opponent_wins_next_turn_regardless(board, player):
     if (board.black_unentered if opp == 'black' else board.white_unentered):
         return False
     left = [p for p in board.pieces if p.player == opp and p.tile is not None]
-    if len(left) != 2:
+    if not 1 <= len(left) <= 2:
         return False
     return all(p.number > 6 and p.tile.type == 'save' and p.tile.number == 1 for p in left)
 
@@ -163,7 +165,7 @@ class GNNAgent:
                  first_move_prefilter=0, hand_rules=True):
         # HAND-CODED PLAY RULES (owner, 2026-10-01/02): `_wastes_save` (never pass
         # a die that could still save a piece) and the bank-the-most rule when
-        # the opponent's last two blanks sit on goal 1. ON by default because the
+        # the opponent's last one or two blanks sit on goal 1. ON by default because the
         # deployed agent uses them; the TRAINING pipeline (generation and gating)
         # passes hand_rules=False so the net is measured on what it learned for
         # itself (owner wants to know whether a trained net picks these up).
@@ -235,6 +237,14 @@ class GNNAgent:
             else:
                 w = heuristic_weights          # dict or None (None -> Agent loads defaults)
             self.heuristic = Agent(weights=w)
+            # Prefilter-only component scales (prefilter_fit.py, 2026-10-05):
+            # the net's best move survives the cut ~96% of the time instead of
+            # ~88%. PREFILTER_SCALES=0 restores the old ranking.
+            sc_path = os.path.join(os.path.dirname(os.path.abspath(__file__)),
+                                   'prefilter_scales.json')
+            if os.environ.get('PREFILTER_SCALES', '1') != '0' and os.path.exists(sc_path):
+                with open(sc_path) as f:
+                    self.heuristic.weights['component_scale'] = json.load(f)
 
         if not GNNAgent._printed_ready:
             print(f"GNNAgent ready: {self.backend.describe()}")

@@ -1,0 +1,74 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>State rebuild — LocalAgent vs game.py's update_state</title>
+<body style="font:13px ui-monospace,monospace; padding:16px">
+<pre id="out">running…</pre>
+<!-- Step 7's own proof. The 110/110 trace-diff proved the AGENT, but it fed
+     that agent engine states dumped by Python; nothing had checked the piece
+     that only exists in the app -- turning game.js's board into the engine's.
+     This asserts LocalAgent.engineState against game.py's update_state on the
+     states game.js actually posted, position AND legal moves, including the
+     reachableBySum/firstMove branch self-play never produces.
+     Regenerate the fixture with scratchpad/state_expected.py. -->
+<script src="route.js"></script>
+<script src="encoder.js"></script>
+<script src="engine.js"></script>
+<script src="local_agent.js"></script>
+<script>
+const out = document.getElementById('out');
+// One shape for both sides: Python's jmove always writes `lone` (null for a
+// piece move), the JS engine omits the key entirely. Compare the meaning, not
+// the encoding.
+const canon = (m) => JSON.stringify([m.piece === undefined ? null : m.piece,
+                                     m.piece == null ? m.lone : null,
+                                     m.dest, m.roll]);
+const sortMoves = (ms) => ms.map(canon).sort();
+
+(async () => {
+    const [staticData, fx] = await Promise.all([
+        fetch('encoder_static.json').then(r => r.json()),
+        fetch('state_expected.json').then(r => r.json()),
+    ]);
+    // engineFor() needs the graph and static data that init() normally loads;
+    // this page deliberately does NOT load onnxruntime, since nothing here
+    // scores a position.
+    LocalAgent._seedStatic(staticData);
+
+    let posOK = 0, movesOK = 0, n = 0, fmOK = 0, fmTotal = 0;
+    const diffs = [];
+    for (const c of fx) {
+        n++;
+        let fp, moves;
+        try {
+            const e = LocalAgent.engineFor(c.state);
+            fp = e.fingerprint();
+            moves = e.getValidMoves();
+        } catch (err) {
+            diffs.push({ i: c.i, label: c.label, threw: String(err) });
+            continue;
+        }
+        const want = JSON.stringify(c.fingerprint), got = JSON.stringify(fp);
+        if (want === got) posOK++;
+        else if (diffs.length < 10) diffs.push({ i: c.i, label: c.label, want: c.fingerprint, got: fp });
+
+        const wm = c.moves.map(canon).sort().join('|');
+        const gm = sortMoves(moves).join('|');
+        if (wm === gm) movesOK++;
+        else if (diffs.length < 10) diffs.push({ i: c.i, label: c.label,
+            movesWant: c.moves.length, movesGot: moves.length,
+            onlyPy: c.moves.map(canon).filter(x => !sortMoves(moves).includes(x)).slice(0, 4),
+            onlyJs: sortMoves(moves).filter(x => !c.moves.map(canon).includes(x)).slice(0, 4) });
+
+        if (c.fingerprint.first_move) {
+            fmTotal++;
+            if (JSON.stringify(c.fingerprint.first_move) === JSON.stringify(fp.first_move)) fmOK++;
+        }
+        if (n % 100 === 0) out.textContent = `…${n}/${fx.length}`;
+    }
+
+    window.__result = { cases: n, positions: posOK, moveSets: movesOK,
+                        firstMove: fmOK + '/' + fmTotal, diffs };
+    out.textContent = JSON.stringify(window.__result, null, 1);
+})().catch(e => { window.__result = { error: String(e), stack: e.stack };
+                  out.textContent = 'ERROR ' + e + '\n' + e.stack; });
+</script>

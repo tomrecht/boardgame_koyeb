@@ -1,0 +1,32 @@
+<!doctype html><meta charset="utf-8"><title>inference parity</title>
+<body><pre id="out">running…</pre>
+<script src="ort/ort.wasm.min.js"></script>
+<script src="route.js?v=5"></script>
+<script src="encoder.js?v=5"></script>
+<script src="infer.js?v=5"></script>
+<script>
+window.__result = null;
+(async () => {
+    try {
+        const info = await Infer.init({ ort, modelUrl: 'model.onnx' });
+        const fx = await (await fetch('encoder_fixture.json')).json();
+        let worst = 0, n = 0; const examples = [];
+        for (const c of fx.cases) {
+            const got = await Infer.score(ort, c.snapshot, c.snapshot.current_player);
+            const want = c.expected.score;
+            const d = Math.abs(got - want);
+            if (d > worst) worst = d;
+            if (d > 1e-4 && examples.length < 3) examples.push({ seed: c.seed, got, want });
+            n++;
+        }
+        // and a batch, which is how the search will actually call it
+        const batch = await Infer.score(ort, fx.cases.slice(0, 5).map(c => c.snapshot),
+                                        fx.cases[0].snapshot.current_player);
+        window.__result = { ok: true, inputs: info.inputs, positions: n,
+                            maxAbsDiff: worst, examples, batchLen: batch.length };
+    } catch (e) {
+        window.__result = { ok: false, error: String(e && e.stack || e).slice(0, 400) };
+    }
+    document.getElementById('out').textContent = JSON.stringify(window.__result, null, 1);
+})();
+</script></body>

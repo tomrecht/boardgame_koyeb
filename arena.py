@@ -147,22 +147,50 @@ def load_rows():
         return [json.loads(l) for l in f if l.strip()]
 
 
+def _focus_pairs(rows, all_pairs):
+    """FOCUS=<tag>: while the focus champion has played fewer games than the
+    others, play only its pairings so it catches up; once it is level, go back
+    to the full round-robin. Returns (pairs_for_this_round, catching_up)."""
+    focus = os.environ.get('FOCUS', '').strip()
+    if not focus:
+        return all_pairs, False
+    if focus not in CHAMPIONS:
+        raise SystemExit(f"FOCUS={focus} is not in the roster: {', '.join(CHAMPIONS)}")
+    played = {t: 0 for t in CHAMPIONS}
+    for r in rows:
+        for t in (r['a'], r['b']):
+            if t in played:
+                played[t] += 1
+    others = [n for t, n in played.items() if t != focus]
+    # "similar number of games" = at least as many as the least-played other
+    if others and played[focus] < min(others):
+        return [p for p in all_pairs if focus in p], True
+    return all_pairs, False
+
+
 def run():
     """Play round-robin ROUNDS forever until Ctrl-C. Each round = one paired,
     color-swapped game per champion pair (seed = SEED_BASE + round). After each
     round, recompute + print + save current standings. State lives entirely in
     arena.jsonl, so aborting and rerunning resumes seamlessly (finished rounds
-    are skipped instantly). No round count is fixed in advance."""
-    pairs = list(itertools.combinations(list(CHAMPIONS), 2))
+    are skipped instantly). No round count is fixed in advance.
+
+    FOCUS=<tag> plays only that champion's pairings until its game count has
+    caught up with the rest, then reverts to the full round-robin."""
+    all_pairs = list(itertools.combinations(list(CHAMPIONS), 2))
     rows = load_rows()
+    pairs, catching_up = _focus_pairs(rows, all_pairs)
     done = {(r['a'], r['b'], r['seed'], r['a_white']) for r in rows}
     max_round = max((r['seed'] - SEED_BASE for r in rows), default=-1)
     complete_rounds = sum(
         1 for k in range(max_round + 1)
         if pairs and all((a, b, SEED_BASE + k, aw) in done
                          for a, b in pairs for aw in (True, False)))
+    focus = os.environ.get('FOCUS', '').strip()
     print(f"{len(CHAMPIONS)} champions, {len(pairs)} pairs "
-          f"({2*len(pairs)} games/round). Resuming: {len(rows)} games, "
+          f"({2*len(pairs)} games/round)"
+          + (f" -- FOCUS on {focus} until it catches up" if catching_up else "")
+          + f". Resuming: {len(rows)} games, "
           f"{complete_rounds} full rounds done. Ctrl-C to stop.", flush=True)
     if rows:
         print(standings_str(rows), flush=True)
@@ -173,6 +201,11 @@ def run():
         with ctx.Pool(N_WORKERS, initializer=_worker_init) as pool, \
                 open(RESULTS, 'a') as f:
             while True:                       # unbounded; Ctrl-C to abort
+                pairs, still_catching = _focus_pairs(rows, all_pairs)
+                if focus and catching_up and not still_catching:
+                    print(f"[{focus} has caught up -- back to the full "
+                          f"round-robin]", flush=True)
+                catching_up = still_catching
                 seed = SEED_BASE + round_num
                 tasks = [(a, CHAMPIONS[a], b, CHAMPIONS[b], seed, aw)
                          for a, b in pairs for aw in (True, False)
@@ -200,10 +233,11 @@ def run():
 
 
 # -------------------- ratings --------------------
-def _elo(scored, epochs=400, K=8):
+def _elo(scored, epochs=400, K=8, tags=None):
     """scored: list of (a, b, a_score in [0,1]). Iterative symmetric Elo,
-    mean-anchored at 1500. Returns {tag: rating}."""
-    r = {t: 1500.0 for t in CHAMPIONS}
+    mean-anchored at 1500. Returns {tag: rating}. `tags` seeds the table so
+    champions no longer on the roster (deleted checkpoints) are still rated."""
+    r = {t: 1500.0 for t in (tags if tags is not None else CHAMPIONS)}
     rng = random.Random(0)
     for _ in range(epochs):
         rng.shuffle(scored)
@@ -214,11 +248,23 @@ def _elo(scored, epochs=400, K=8):
     return r
 
 
-def compute_ratings(rows):
-    """Aggregate rows -> (win_elo, marg_elo, wins, games, marg, idx). Only
-    champions currently in CHAMPIONS are rated; unknown tags in the jsonl are
-    ignored (safe when champions are added between runs)."""
+def _roster(rows):
+    """Everyone to rate: the configured champions plus anyone already in the
+    results. Analysis must not depend on which checkpoints still exist on disk
+    -- a contender whose .pt was deleted after it played still belongs in the
+    table, and its games still inform everyone else's rating."""
     tags = list(CHAMPIONS)
+    for r in rows:
+        for t in (r['a'], r['b']):
+            if t not in tags:
+                tags.append(t)
+    return tags
+
+
+def compute_ratings(rows):
+    """Aggregate rows -> (win_elo, marg_elo, wins, games, marg, idx) over
+    _roster(rows), so past contenders keep their standings."""
+    tags = _roster(rows)
     idx = {t: i for i, t in enumerate(tags)}
     n = len(tags)
     wins = [[0] * n for _ in range(n)]
@@ -238,16 +284,16 @@ def compute_ratings(rows):
             wins[ia][ib] += aw; wins[ib][ia] += (1 - aw)
             win_scored.append((a, b, float(aw)))
         marg_scored.append((a, b, min(1.0, max(0.0, 0.5 + m / (2 * MAXM)))))
-    return (_elo(list(win_scored)), _elo(list(marg_scored)),
+    return (_elo(list(win_scored), tags=tags), _elo(list(marg_scored), tags=tags),
             wins, games, marg, idx)
 
 
 def standings_str(rows):
     win_elo, marg_elo, wins, games, marg, idx = compute_ratings(rows)
-    order = sorted(CHAMPIONS, key=lambda t: marg_elo[t], reverse=True)
-    out = [f"{'champ':8}{'margin-Elo':>11}{'win-Elo':>9}{'  W-L-D':>9}"
-           f"{'  avg-marg':>10}   (by margin-Elo)"]
-    n = len(CHAMPIONS)
+    order = sorted(idx, key=lambda t: marg_elo[t], reverse=True)
+    out = [f"{'champ':18}{'margin-Elo':>11}{'win-Elo':>9}{'W-L-D':>14}"
+           f"{'avg-marg':>11}   (by margin-Elo)"]
+    n = len(idx)
     for t in order:
         i = idx[t]
         g = sum(games[i])
@@ -255,37 +301,40 @@ def standings_str(rows):
         losses = sum(wins[j][i] for j in range(n))  # opponents' wins over t
         draws = g - w - losses
         am = sum(marg[i]) / g if g else 0.0
-        out.append(f"{t:8}{marg_elo[t]:11.0f}{win_elo[t]:9.0f}"
-                   f"{f'{w}-{losses}-{draws}':>9}{am:+10.2f}")
+        out.append(f"{t:18}{marg_elo[t]:11.0f}{win_elo[t]:9.0f}"
+                   f"{f'{w}-{losses}-{draws}':>14}{am:+11.2f}")
     return "\n".join(out)
 
 
 def analyze():
     rows = load_rows()
     win_elo, marg_elo, wins, games, marg, idx = compute_ratings(rows)
-    order = sorted(CHAMPIONS, key=lambda t: marg_elo[t], reverse=True)
-    print(f"{len(rows)} games among {len(CHAMPIONS)} champions\n")
+    order = sorted(idx, key=lambda t: marg_elo[t], reverse=True)
+    gone = [t for t in idx if t not in CHAMPIONS]
+    print(f"{len(rows)} games among {len(idx)} champions"
+          + (f" (from the results file, not on the current roster: {', '.join(gone)})" if gone else "")
+          + "\n")
     print(standings_str(rows))
 
     print("\nWIN% matrix (row beats col):")
-    print('       ' + ''.join(f'{t:>8}' for t in order))
+    print(' ' * 12 + ''.join(f'{t:>12}' for t in order))
     for a in order:
         cells = []
         for b in order:
             g = games[idx[a]][idx[b]]
             cells.append('   -   ' if a == b or g == 0
                          else f'{100*wins[idx[a]][idx[b]]/g:6.0f} ')
-        print(f'{a:7}' + ''.join(f'{c:>8}' for c in cells))
+        print(f'{a:12}' + ''.join(f'{c:>12}' for c in cells))
 
     print("\nAVG MARGIN matrix (row's mean signed margin vs col):")
-    print('       ' + ''.join(f'{t:>8}' for t in order))
+    print(' ' * 12 + ''.join(f'{t:>12}' for t in order))
     for a in order:
         cells = []
         for b in order:
             g = games[idx[a]][idx[b]]
             cells.append('   -   ' if a == b or g == 0
                          else f'{marg[idx[a]][idx[b]]/g:+6.2f} ')
-        print(f'{a:7}' + ''.join(f'{c:>8}' for c in cells))
+        print(f'{a:12}' + ''.join(f'{c:>12}' for c in cells))
     print("\nNote: margin-Elo rewards decisive wins; win-Elo is the plain "
           "who-beats-whom. Divergence between them flags a champ that wins "
           "often-but-narrowly (or rarely-but-big).")

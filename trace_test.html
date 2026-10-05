@@ -1,0 +1,58 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>Trace diff — JS agent vs Python</title>
+<body style="font:13px ui-monospace,monospace; padding:16px">
+<pre id="out">running…</pre>
+<script src="ort/ort.wasm.min.js"></script>
+<script src="route.js"></script>
+<script src="encoder.js"></script>
+<script src="infer.js"></script>
+<script src="engine.js"></script>
+<script src="heuristic.js"></script>
+<script src="agent.js"></script>
+<script>
+const out = document.getElementById('out');
+const log = (s) => { out.textContent += '\n' + s; };
+
+const norm = (m) => JSON.stringify([m.piece, m.piece === null ? m.lone : null, m.dest, m.roll]);
+const normPair = (p) => p.map(norm).join(' + ');
+
+(async () => {
+    out.textContent = 'loading…';
+    const [staticData, W, fx] = await Promise.all([
+        fetch('encoder_static.json').then(r => r.json()),
+        fetch('heuristic_weights.json').then(r => r.json()),
+        fetch('trace_fixture.json').then(r => r.json()),
+    ]);
+    await Infer.init({ ort, modelUrl: 'model.onnx', staticUrl: 'encoder_static.json', wasmPath: '/ort/' });
+    out.textContent = 'ready';
+
+    let ok = 0, n = 0, movesOK = 0;
+    const diffs = [];
+    for (const c of fx.cases) {
+        n++;
+        const e = Engine.fromState(staticData, c.state);
+        const moves = e.getValidMoves();
+        if (moves.map(norm).sort().join('|') === c.moves.map(norm).sort().join('|')) movesOK++;
+
+        const pair = await selectMovePair(e, W, moves, c.player, {
+            snapshot: (eng) => eng.snapshot(),
+            // One batched call per turn, as the search intends.
+            score: async (snaps) => Infer.score(ort, snaps, c.player),
+        });
+        const got = normPair(pair), want = normPair(c.chosen);
+        if (got === want) ok++;
+        else diffs.push({ game: c.game, turn: c.turn, js: got, py: want,
+                          margin: c.margin, nMoves: moves.length });
+        if (n % 20 === 0) { out.textContent = `…${n}/${fx.cases.length} (${ok} match)`; }
+    }
+
+    window.__result = {
+        turns: n, moveSets: movesOK, matched: ok,
+        diffs: diffs.slice(0, 12),
+        diffMargins: diffs.map(d => d.margin),
+    };
+    out.textContent = JSON.stringify(window.__result, null, 1);
+})().catch(e => { window.__result = { error: String(e), stack: e.stack };
+                  out.textContent = 'ERROR ' + e + '\n' + e.stack; });
+</script>
