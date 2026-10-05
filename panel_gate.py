@@ -254,7 +254,10 @@ class PanelGate:
             member_hashes = dict(self.panel)
         self.cfg_key = hashlib.sha1(json.dumps(
             {'members': member_hashes, 'seed_base': seed_base,
-             'hand_rules': self.hand_rules}, sort_keys=True).encode()).hexdigest()[:12]
+             'hand_rules': self.hand_rules,
+             # cached champion games are only valid for the same gate player
+             'gate_prefilter': os.environ.get('GATE_PREFILTER', '')},
+            sort_keys=True).encode()).hexdigest()[:12]
         self.cache = {}
         if cache_path and os.path.exists(cache_path):
             with open(cache_path) as f:

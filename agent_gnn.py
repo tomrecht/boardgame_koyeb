@@ -128,6 +128,16 @@ def _wastes_save(board, pair, player):
     return found
 
 
+def prefilter_kwargs(spec):
+    """'F,K,min' (e.g. '12,40,5') -> GNNAgent prefilter kwargs; '' / None / '0'
+    -> {} (every legal pair scored by the net). The app ships 12,40,5."""
+    if not spec or str(spec).strip() in ('', '0', 'off', 'none'):
+        return {}
+    f, k, m = (int(x) for x in str(spec).split(','))
+    return {'use_prefilter': True, 'first_move_prefilter': f,
+            'prefilter_top_k': k, 'prefilter_min_k': m}
+
+
 def _opponent_wins_next_turn_regardless(board, player):
     """OPPONENT CERTAIN TO WIN NEXT TURN (owner, 2026-10-01). Their last one or
     two pieces are blanks on goal 1, so ANY roll banks them, and nothing we do can

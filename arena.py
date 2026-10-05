@@ -67,16 +67,17 @@ def _agent(path, key=None, hand_rules=None):
     """Per-process cached agent. `key` distinguishes different weights saved
     to the same path (the panel gate's candidate file); None = path alone."""
     hr = HAND_RULES if hand_rules is None else bool(hand_rules)
-    ck = (path, key, hr)
+    pf = os.environ.get('GATE_PREFILTER', '')     # 'F,K,min' or '' (league_run sets it)
+    ck = (path, key, hr, pf)
     if ck not in _CACHE:
         if key is not None:     # a newer candidate replaces the older one
             for old in [c for c in _CACHE if c[0] == path and c[1] != key]:
                 del _CACHE[old]
         import torch
         from network import model_from_state
-        from agent_gnn import GNNAgent
+        from agent_gnn import GNNAgent, prefilter_kwargs
         m = model_from_state(torch.load(path, map_location='cpu'), strict=False)
-        _CACHE[ck] = GNNAgent(model=m, hand_rules=hr)
+        _CACHE[ck] = GNNAgent(model=m, hand_rules=hr, **prefilter_kwargs(pf))
     return _CACHE[ck]
 
 

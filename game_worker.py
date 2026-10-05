@@ -70,14 +70,14 @@ def serialize_board(board):
     }
 
 
-def _league_opponent(path, hand_rules):
+def _league_opponent(path, hand_rules, prefilter=''):
     """Load (once per worker process) a frozen panel member as a GNNAgent."""
-    key = (path, bool(hand_rules))
+    key = (path, bool(hand_rules), prefilter or '')
     if key not in _OPP_CACHE:
         from network import model_from_state
-        from agent_gnn import GNNAgent
+        from agent_gnn import GNNAgent, prefilter_kwargs
         m = model_from_state(torch.load(path, map_location='cpu'))
-        _OPP_CACHE[key] = GNNAgent(model=m, hand_rules=hand_rules)
+        _OPP_CACHE[key] = GNNAgent(model=m, hand_rules=hand_rules, **prefilter_kwargs(prefilter))
     return _OPP_CACHE[key]
 
 
@@ -99,6 +99,8 @@ def worker_play(args):
                       means the heuristic agent). Opponent always plays greedy.
       'hand_rules'    the agent's hand-coded play rules (default False: the
                       training pipeline measures what the net learned itself).
+      'prefilter'     'F,K,min' -- play this game with the heuristic prefilter
+                      (both sides), as the app does; absent = every pair scored.
       'start_state'   START the game from this position (serialize_board
                       format) instead of the opening; dice are re-rolled from
                       the game seed. Opening softmax does not apply in such a
@@ -138,7 +140,9 @@ def worker_play(args):
 
     hand_rules = bool(cfg.get('hand_rules', False))
     model = model_from_state(model_state_dict)
-    gnn_agent = GNNAgent(model=model, hand_rules=hand_rules)
+    from agent_gnn import prefilter_kwargs
+    pf = cfg.get('prefilter') or ''
+    gnn_agent = GNNAgent(model=model, hand_rules=hand_rules, **prefilter_kwargs(pf))
 
     opp_path = cfg.get('opp_path')
     league = opp_path is not None
@@ -146,12 +150,12 @@ def worker_play(args):
     if league and opp_path == 'heuristic':
         opp_agent = Agent(weights=heuristic_weights)
     elif league:
-        opp_agent = _league_opponent(opp_path, hand_rules)
+        opp_agent = _league_opponent(opp_path, hand_rules, pf)
     elif use_heuristic_opp:
         opp_agent = Agent(weights=heuristic_weights)
     else:
         opp_model = model_from_state(model_state_dict)
-        opp_agent = GNNAgent(model=opp_model, hand_rules=hand_rules)
+        opp_agent = GNNAgent(model=opp_model, hand_rules=hand_rules, **prefilter_kwargs(pf))
 
     white_agent = gnn_agent if gnn_is_white else opp_agent
     black_agent = opp_agent if gnn_is_white else gnn_agent
@@ -401,7 +405,8 @@ def generate_games_parallel(model, opp_state_dict_or_none,
                              label='',
                              explore_cfg=None,
                              league_cfg=None,
-                             start_cfg=None):
+                             start_cfg=None,
+                             prefilter_cfg=None):
     """Generate n_games of training games on the pool.
 
     explore_cfg: per-game cfg dict passed to worker_play (exploration keys,
@@ -417,6 +422,9 @@ def generate_games_parallel(model, opp_state_dict_or_none,
       `pool` (serialize_board format; see build_start_pool.py), optionally
       rotated by a random one of the board's 3 symmetric images. Drawn on its
       own RNG stream, so the league schedule is unchanged by it.
+    prefilter_cfg: None, or {'spec': 'F,K,min', 'unfiltered': u} -- games are
+      played with the prefilter, except a share u played unfiltered (so moves the
+      heuristic culls still get explored). Own RNG stream.
     Returns the record list; `generate_games_parallel.last_counts` holds
     {opp_tag: games} for the call (asserted on by the smoke test)."""
     global _POOL
@@ -439,8 +447,17 @@ def generate_games_parallel(model, opp_state_dict_or_none,
         from symmetry import Symmetry
         sym = Symmetry()
     n_starts = 0
+    pf_spec = (prefilter_cfg or {}).get('spec') or ''
+    pf_unf = float((prefilter_cfg or {}).get('unfiltered', 0.0))
+    pf_rng = random.Random(seed_offset ^ 0x9F1)
+    n_unfiltered = 0
     for i in range(n_games):
         cfg = dict(base_cfg)
+        if pf_spec:
+            if pf_rng.random() < pf_unf:
+                n_unfiltered += 1
+            else:
+                cfg['prefilter'] = pf_spec
         if frac > 0 and sched_rng.random() < frac:
             tag, path = opps[sched_rng.randrange(len(opps))]
             cfg['opp_tag'], cfg['opp_path'] = tag, path
@@ -454,6 +471,9 @@ def generate_games_parallel(model, opp_state_dict_or_none,
         args_list.append((current_sd, heuristic_weights, seed_offset + i,
                           i % 2 == 0, use_heuristic_opp, cfg or None))
 
+    if pf_spec:
+        print(f'  {label}: prefilter {pf_spec} in {n_games - n_unfiltered} of {n_games} games '
+              f'({n_unfiltered} unfiltered)')
     if s_frac > 0:
         print(f'  {label}: {n_starts} of {n_games} games start from a pool position '
               f'(pool {len(pool)}, rotate {sym is not None})')

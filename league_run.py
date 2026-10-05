@@ -89,10 +89,18 @@ CONFIG = {
     'START_POOL':      _env('START_POOL', 'start_pool.jsonl' if os.path.exists('start_pool.jsonl') else '', str),
     'START_FRAC':      _env('START_FRAC', 0.3, float),
     'START_ROTATE':    _env('START_ROTATE', True, _bool),
+    # 6. prefilter (owner, 2026-10-05): ~10x faster games. Generation uses a
+    #    roomier pair cap and leaves a share of games unfiltered so moves the
+    #    heuristic culls still get explored; the gate plays the SHIPPED player.
+    'GEN_PREFILTER':   _env('GEN_PREFILTER', '12,80,5', str),   # '' = every pair scored
+    'GEN_UNFILTERED':  _env('GEN_UNFILTERED', 0.2, float),
+    'GATE_PREFILTER':  _env('GATE_PREFILTER', '12,40,5', str),
     # 5. late exploration: needs the TD trace CUT at sampled moves (td_returns)
     'LATE_T':          _env('LATE_T', 0.0, float),          # margin points; 0 = off
     'LATE_P':          _env('LATE_P', 0.15, float),         # per learner turn past the opening
 }
+# Pool workers inherit the environment at spawn, so this reaches every gate game.
+os.environ['GATE_PREFILTER'] = CONFIG['GATE_PREFILTER']
 if CONFIG['LATE_T'] > 0:
     # Never explore past the opening without cutting the trace: an off-policy
     # move would bias every earlier position's lambda-return.
@@ -235,6 +243,8 @@ def main():
         augment=Symmetry() if C['SYMAUG'] else None,
         gen_cfg_fn=gen_cfg_fn, league_cfg_fn=league_cfg_fn, gate_fn=gate_fn,
         start_cfg_fn=start_cfg_fn,
+        prefilter_cfg_fn=(lambda it: {'spec': C['GEN_PREFILTER'], 'unfiltered': C['GEN_UNFILTERED']})
+                         if C['GEN_PREFILTER'] else None,
     )
     print(f"\nLeague run time: {time.time() - t0:.0f}s")
     for h in history:
