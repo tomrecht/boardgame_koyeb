@@ -238,6 +238,39 @@ exploits exposure fine -- the extra exposure just doesn't cost points. Stopped a
 the general case; capture-vs-goal (`rollout_probe.py cvg`, all 470 positions) is
 the next lead.
 
+**THE DIFFICULTY SLIDER IS MIS-SCALED FOR THE APP -- ITS FLOOR IS FAR TOO STRONG
+(measured 2026-10-05, `difficulty_fine.py` on `train-features-v2`, the APP's
+config: ONNX net, prefilter 12/40/5, hand rules on; each level vs d=1.0, 120
+games = 60 colour-swapped pairs).**
+
+        d     slider  win% (95% CI)   margin
+        0.99   95%    47.5 (39-56)    -0.23
+        0.97   85%    53.3 (44-62)    +0.04
+        0.95   75%    46.7 (38-56)    -0.23
+        0.92   60%    31.7 (24-40)    -1.05
+        0.90   50%    35.8 (28-45)    -0.78
+        0.85   25%    35.8 (28-45)    -1.22
+        0.80   Easiest 25.8 (19-34)   -1.62
+        0.70   (below) 7.5 (4-14)     -3.12
+        0.60   (below) 0.8 (0-5)      -4.33
+
+The September sweep below (0.80 = 0/94, margin -6.06) used `difficulty_arena.py`,
+which samples among ALL candidate pairs; the app samples only among the ~40 the
+prefilter keeps, so lowering d hurts far less in the app. The remap onto
+0.8..1.0 therefore made "Easiest" nearly full strength, and the top quarter of
+the slider (1.0-0.95) is indistinguishable from Max. Proposed (owner to decide):
+remap onto ~0.60-1.0, spaced by strength (Max 1.0, Strong 0.92, Medium 0.80,
+Gentle 0.70, Easiest 0.60), and re-point the tutorial's "Go easy" button. Rates
+are against full strength, not against a beginner.
+
+**CALIBRATION OF OLDER NETS (`calib_bench.py`, 2026-10-05).** On the 559-position
+benchmark (corr / slope of the net's move gap vs playouts): iter10 +0.186 / 0.42,
+iter14 +0.160 / 0.42, iter4 +0.149 / 0.29, aux14 +0.137 / 0.32, symaug iter11
++0.097 / 0.30, **deployed champion symaug iter6 +0.090 / 0.30**, best_iter5
++0.085 / 0.18. The champion is among the LEAST precise about move differences
+(SE of a corr ~0.04): the symmetry-aug run seems to have bought strength at some
+cost in value precision. Keep iter10/iter14 on the panel; watch this benchmark.
+
 **THE NET'S DISAGREEMENTS WITH OWNER ARE MOSTLY ITS OWN NOISE (overnight
 2026-10-04/05, `rollout_probe.py disagree`, `overnight_summary.txt`).** 559 of
 owner's positions from 150 games, his move vs the net's best, 20 paired playouts
