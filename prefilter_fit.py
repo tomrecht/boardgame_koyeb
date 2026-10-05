@@ -25,7 +25,7 @@ import glob, json, os, random, sys, time
 import numpy as np
 
 REPO = os.path.dirname(os.path.abspath(__file__))
-DATA = os.path.join(REPO, os.environ.get('PREFILTER_DATA', 'prefilter_data2'))
+DATA = os.path.join(REPO, os.environ.get('PREFILTER_DATA', 'prefilter_data'))
 LOGS = ['quahuru-games-apvo2h65-v2.jsonl', 'quahuru-games-f7in6olg.jsonl',
         'quahuru-games-apvo2h65-2026-10-05.jsonl']
 F_FIRST, K_PAIRS, MIN_K = 12, 40, 5
@@ -34,8 +34,10 @@ COMPONENTS = ['saved_pieces', 'saved_bonus', 'goal_pieces', 'goal_bonus', 'captu
               'blocked_pieces', 'blocked_piece_bonus', 'loose_pieces', 'loose_piece_bonus',
               'total_distance', 'unentered_pieces', 'off_goal_penalty', 'far_from_goal_penalty',
               'high_goal_penalty', 'high_goal_proximity_penalty', 'enemy_blot_penalty',
-              'game_stage_bonus', 'dice_spread_bonus', 'permanent_block_bonus',
-              'goal_layout_cost']
+              'game_stage_bonus', 'dice_spread_bonus', 'permanent_block_bonus']
+# A 24th, 'goal_layout_cost' (exact endgame-table banking turns of the pieces on
+# goals), was tried 2026-10-05 and dropped: 5-fold CV keep-rate 0.957 with or
+# without it. Its extraction lives in prefilter_data2/ (column 23).
 NOOP = ((0, 0, 0), (1, 1, 1))
 
 
@@ -51,8 +53,6 @@ def _heur():
         # uses (and what heuristic_weights.json ships). Agent() with no
         # argument loads INITIAL_WEIGHTS, a different, untuned set.
         _H = Agent(weights=None)
-        # record the new component in raw units (turns); its shipped weight is 0
-        _H.weights['goal_layout_cost'] = 1.0
     return _H
 
 
@@ -394,3 +394,69 @@ def crossval(k=5):
 
 if __name__ == '__main__' and len(sys.argv) > 1 and sys.argv[1] == 'cv':
     crossval()
+
+
+# ---------------------------------------------------------------- final fit + out-of-sample check
+def final():
+    games = load()
+    allp = [p for g in games.values() for p in g]
+    w0 = np.ones(len(COMPONENTS))
+    w = _fit_on(allp, w0)
+    print(f'final fit on {len(allp)} positions ({len(games)} games): keep-rate {keep_rate(allp, w):.3f} '
+          f'(today {keep_rate(allp, w0):.3f}, in-sample)')
+    scales = {c: round(float(v), 5) for c, v in zip(COMPONENTS, w)}
+    json.dump(scales, open(os.path.join(REPO, 'prefilter_scales.json'), 'w'), indent=1)
+    for c, v in scales.items():
+        print(f'    {c:<30} x{v}')
+
+
+def _selfplay_game(seed):
+    """One computer-vs-computer game with the SHIPPED agent; returns the
+    serialized turn-start positions (every second turn)."""
+    import random as _r
+    import weakness_probe as W
+    from agent_gnn import GNNAgent
+    from game import Board
+    W.agent()
+    dep = GNNAgent(model=W._MODEL, use_prefilter=True, first_move_prefilter=12,
+                   prefilter_top_k=40, prefilter_min_k=5)
+    _r.seed(seed)
+    b = Board()
+    out = []
+    for turn in range(200):
+        w, _ = b.check_game_over()
+        if w or b.draw_callable:
+            break
+        us = b.current_player
+        moves = list(b.get_valid_moves())
+        if turn % 2 == 0 and len(moves) > 1:
+            st = dict(b.game_stages)
+            d = extract_position(b, us)
+            b.game_stages.update(st)
+            if d is not None:
+                out.append(d)
+        pair = dep.select_move_pair(moves, b, us, difficulty=1.0)
+        if isinstance(pair, tuple) and len(pair) == 3:
+            pair = (pair, (0, 0, 0))
+        for m in pair:
+            if m not in NOOP:
+                b.apply_move(m, switch_turn=False)
+        b.switch_turn()
+    return out
+
+
+def ood(n_games=20, workers=4):
+    from multiprocessing import Pool
+    with Pool(workers) as pool:
+        positions = [p for g in pool.map(_selfplay_game, range(31_000, 31_000 + n_games)) for p in g]
+    w0 = np.ones(len(COMPONENTS))
+    sc = json.load(open(os.path.join(REPO, 'prefilter_scales.json')))
+    w = np.array([sc[c] for c in COMPONENTS])
+    print(f'OUT-OF-SAMPLE (computer vs computer, {n_games} games, {len(positions)} positions): '
+          f'keep-rate today {keep_rate(positions, w0):.3f}, refit {keep_rate(positions, w):.3f}')
+
+
+if __name__ == '__main__' and len(sys.argv) > 1 and sys.argv[1] == 'final':
+    final()
+if __name__ == '__main__' and len(sys.argv) > 1 and sys.argv[1] == 'ood':
+    ood()
