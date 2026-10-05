@@ -146,6 +146,19 @@ unlike Python where two-stage cut the worst move ~3x. Prefilter cost by the net'
 own valuation: misses its best on 10% of turns, ~0.23 pts/game (owner's 83 games);
 the Aug 120-game match bounds a real loss below ~0.27. Leave it as is.
 
+## Later idea: refit the prefilter heuristic for RECALL (owner, 2026-10-04)
+
+The heuristic's weights were grid-searched to make it PLAY well; as the
+prefilter its only job is to keep the net's favourite move among the 12 first
+moves / 40 pairs it passes on. Fit for that directly: on the gaps runs' positions
+(`weakness_gaps.jsonl` has the net's full ranking, ~4,000 positions and growing),
+a logistic ranking fit pushing the net's top move above the alternatives, scored
+by held-out keep-rate at the 12/40 cuts. Add the validated `features_v2`
+quantities (threats, per-die roll counts, dice-count turns) as components. Today
+it misses the net's best on ~10% of the computer's turns (~0.23 pts/game by the
+net's own valuation; the Aug match bounds the real cost < ~0.27). Gain is bounded
+by that, at zero latency cost; an afternoon's work, no retraining.
+
 ## Next training run: encoder changes (owner + Claude, 2026-10-04)
 
 Any new input reshapes the input layer, so these need a **from-scratch** run, not
