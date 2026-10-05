@@ -281,11 +281,19 @@ def fit():
             print(f'  surrogate it{it + 1}: ll {ll:.1f}  keep train {keep_rate(tr, w):.3f}', flush=True)
     # local search on the keep-rate itself (coordinate-wise multiplicative steps)
     best_w, best_k = w.copy(), keep_rate(tr, w)
+    # additive step sizes per component: the score spread a unit of it buys,
+    # so a component that starts at 0 (multiplicative steps cannot leave 0)
+    # can still be switched on, with either sign
+    allF = np.concatenate([p['F2'] for p in tr[:300]])
+    score_sd = np.std(allF @ w0) or 1.0
+    unit = np.array([score_sd / (np.std(allF[:, i]) or 1.0) for i in range(len(w0))])
     for sweep in range(3):
         for i in range(len(w)):
-            for f in (0.0, 0.5, 0.8, 1.25, 2.0):
+            cands = [best_w[i] * f for f in (0.0, 0.5, 0.8, 1.25, 2.0)]
+            cands += [best_w[i] + c * unit[i] for c in (-1.0, -0.3, -0.1, 0.1, 0.3, 1.0)]
+            for v in cands:
                 cand = best_w.copy()
-                cand[i] *= f
+                cand[i] = v
                 k = keep_rate(tr, cand)
                 if k > best_k + 1e-9:
                     best_w, best_k = cand, k
