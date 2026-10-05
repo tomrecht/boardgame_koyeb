@@ -238,30 +238,66 @@ exploits exposure fine -- the extra exposure just doesn't cost points. Stopped a
 the general case; capture-vs-goal (`rollout_probe.py cvg`, all 470 positions) is
 the next lead.
 
-**IN FLIGHT (2026-10-04 evening).** `overnight.sh` (under caffeinate, log
-`overnight.log`): capture-vs-goal rollouts over all 470 positions -> net-vs-owner
-gaps for the 67 newer games -> disagreement rollouts (`rollout_probe.py
-disagree`: owner's move vs the net's best, 20 paired playouts; every position
-the net rates >= 0.26 pts worse, then 100 control at 0.01-0.1, then 100 at
-0.1-0.26) -> `overnight_summary.txt`.
-**CAPTURE-VS-GOAL: NO OVER-CAPTURING (stopped at 330 of 470 positions, owner's
-call).** 16 paired playouts per move, net's best capture-only pair vs its best
-goal-only pair: goal better overall by +0.156 +- 0.094, so owner's instinct holds
-on average -- but the net already knows it: its preference correlates +0.37 with
-the playouts, and in the 57 positions where it prefers the capture, the capture
-really did better (-0.231 +- 0.220). The goal move's edge shrinks as the
-capturable piece's progress grows (+0.21 / +0.15 / +0.05 for <=1 / 2-3 / 4+). **QUEUED for when it finishes** (on
-`train-features-v2`; NOT before -- checking that branch out removes
-`rollout_probe.py`, which the queue's last step re-runs): build a pairs file
-from `rollout_disagree.jsonl`; a pairwise loss in training (the net's value
-difference between the two after-positions should match the playouts'
-difference, weighted by its standard error), accepting owner pairs and later
-self-play pairs; league_run knobs for the pairs file and weight; a held-out
-agreement metric (share of held-out positions where the net prefers the
-playouts' move) printed with each gate. Expect only ~100-200 informative owner
-pairs at first: a targeted nudge, with the held-out metric saying whether it
-generalises; scale with more of owner's games and playout-labelled self-play
-pairs.
+**THE DIFFICULTY SLIDER IS MIS-SCALED FOR THE APP -- ITS FLOOR IS FAR TOO STRONG
+(measured 2026-10-05, `difficulty_fine.py` on `train-features-v2`, the APP's
+config: ONNX net, prefilter 12/40/5, hand rules on; each level vs d=1.0, 120
+games = 60 colour-swapped pairs).**
+
+        d     slider  win% (95% CI)   margin
+        0.99   95%    47.5 (39-56)    -0.23
+        0.97   85%    53.3 (44-62)    +0.04
+        0.95   75%    46.7 (38-56)    -0.23
+        0.92   60%    31.7 (24-40)    -1.05
+        0.90   50%    35.8 (28-45)    -0.78
+        0.85   25%    35.8 (28-45)    -1.22
+        0.80   Easiest 25.8 (19-34)   -1.62
+        0.70   (below) 7.5 (4-14)     -3.12
+        0.60   (below) 0.8 (0-5)      -4.33
+
+The September sweep below (0.80 = 0/94, margin -6.06) used `difficulty_arena.py`,
+which samples among ALL candidate pairs; the app samples only among the ~40 the
+prefilter keeps, so lowering d hurts far less in the app. The remap onto
+0.8..1.0 therefore made "Easiest" nearly full strength, and the top quarter of
+the slider (1.0-0.95) is indistinguishable from Max. Proposed (owner to decide):
+remap onto ~0.60-1.0, spaced by strength (Max 1.0, Strong 0.92, Medium 0.80,
+Gentle 0.70, Easiest 0.60), and re-point the tutorial's "Go easy" button. Rates
+are against full strength, not against a beginner.
+
+**CALIBRATION OF OLDER NETS (`calib_bench.py`, 2026-10-05).** On the 559-position
+benchmark (corr / slope of the net's move gap vs playouts): iter10 +0.186 / 0.42,
+iter14 +0.160 / 0.42, iter4 +0.149 / 0.29, aux14 +0.137 / 0.32, symaug iter11
++0.097 / 0.30, **deployed champion symaug iter6 +0.090 / 0.30**, best_iter5
++0.085 / 0.18. The champion is among the LEAST precise about move differences
+(SE of a corr ~0.04): the symmetry-aug run seems to have bought strength at some
+cost in value precision. Keep iter10/iter14 on the panel; watch this benchmark.
+
+**THE NET'S DISAGREEMENTS WITH OWNER ARE MOSTLY ITS OWN NOISE (overnight
+2026-10-04/05, `rollout_probe.py disagree`, `overnight_summary.txt`).** 559 of
+owner's positions from 150 games, his move vs the net's best, 20 paired playouts
+each (net 1-ply both sides, common dice):
+
+        net's gap band   n    net claims   playouts say      owner/net better
+        >= 0.26         358     +0.42      +0.036 +- 0.069       175 / 171
+        0.1 - 0.26      102     +0.16      +0.029 +- 0.145        46 / 54
+        0.01 - 0.1       99     +0.06      -0.101 +- 0.132        58 / 37
+        all             559     +0.31      +0.011 +- 0.057       279 / 262
+
+Per position the net's gap predicts the playouts at corr +0.09, slope 0.29 -- it
+is ~3x overconfident about how much moves differ. Only 47 of 559 are clear beyond
+2 SE (21 owner, 26 net; chance alone gives ~28); median per-position SE 0.62. So
+the "2.1 pts/game owner gives away" (net-judged) is an artefact of the net
+scoring its own argmax over noisy values; owner's 57% / +0.38 is consistent.
+**Consequences:** (1) the net's weakness is VALUE NOISE between near-equal moves,
+not wrong ideas -- consistent with blockability, capture-vs-goal and endgame all
+flat; (2) these playout labels are too noisy (+-0.6 vs real differences of
+tenths) to train a pairwise loss on -- that plan is SHELVED, and the self-play
+pairs batch with it; (3) keep the 559 as a CALIBRATION BENCHMARK for any new net
+(slope / corr of its gaps vs the playouts); (4) the levers are better value
+estimates: the v2 training run, and cheap noise reduction at play time such as
+averaging over the 3 symmetric rotations (test it against this benchmark).
+Capture-vs-goal (330 positions): goal beats capture +0.160 +- 0.094 overall, but
+the net already knows it (corr +0.37; where it prefers capture, capture did
+better, -0.231 +- 0.220) -- no over-capturing.
 
 **Testing protocol for new features (owner):** validate any approximation against
 the exact computation on logged positions; train with/without in otherwise
