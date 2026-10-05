@@ -42,3 +42,4 @@ android/keystore.properties
 *.jks
 *.keystore
 .jdk/
+prefilter_data/
