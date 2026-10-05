@@ -19,8 +19,14 @@ Target sets:
           goal, B = its best pair that does the reverse. Also records the net's
           own preference (A minus B, margin points).
 
-Usage: python3 rollout_probe.py block|cvg   (results -> rollout_<kind>.jsonl, resumes)
-       python3 rollout_probe.py analyze block|cvg
+  disagree : owner's turns where the net's best pair differs from his
+          (weakness_gaps.jsonl): EVERY turn the net scores >= TOP_GAP pts worse
+          than its best, then CONTROL_N sampled from 0.01-0.1 and MID_N from
+          0.1-TOP_GAP, in that order. A = owner's move, B = the net's best. The
+          playouts double as rollout-labelled training targets.
+
+Usage: python3 rollout_probe.py block|cvg|disagree   (results -> rollout_<kind>.jsonl, resumes)
+       python3 rollout_probe.py analyze block|cvg|disagree
 """
 import copy, json, os, random, sys, time, zlib
 from collections import defaultdict
@@ -31,7 +37,8 @@ REPO = os.path.dirname(os.path.abspath(__file__))
 N_ROLL = int(os.environ.get('N_ROLL', '24'))
 N_WORKERS = int(os.environ.get('N_WORKERS', '4'))
 MAX_TURNS = 200
-LOGS = ['quahuru-games-apvo2h65.jsonl', 'quahuru-games-f7in6olg.jsonl']
+LOGS = ['quahuru-games-apvo2h65-v2.jsonl', 'quahuru-games-f7in6olg.jsonl',
+        'quahuru-games-apvo2h65-2026-10-05.jsonl']
 
 
 def _records():
@@ -67,6 +74,37 @@ def cvg_targets(max_progress=None):
             out.append((r['game'], r['turn']))
     random.Random(20261004).shuffle(out)
     return out
+
+
+TOP_GAP = float(os.environ.get('TOP_GAP', '0.26'))
+CONTROL_N = int(os.environ.get('CONTROL_N', '100'))
+MID_N = int(os.environ.get('MID_N', '100'))
+
+
+def disagree_targets():
+    import random
+    rows = []
+    for line in open(os.path.join(REPO, 'weakness_gaps.jsonl')):
+        g = json.loads(line)
+        for r in g['rows']:
+            if r['who'] == 'human' and r['gap'] is not None:
+                rows.append((g['game'], r['turn'], r['gap']))
+    rng = random.Random(20261005)
+    top = sorted([x for x in rows if x[2] >= TOP_GAP], key=lambda x: -x[2])
+    ctrl = [x for x in rows if 0.01 <= x[2] < 0.1]
+    mid = [x for x in rows if 0.1 <= x[2] < TOP_GAP]
+    rng.shuffle(ctrl)
+    rng.shuffle(mid)
+    out = top + ctrl[:CONTROL_N] + mid[:MID_N]
+    return [(g, t) for g, t, _ in out]
+
+
+def net_best_pair(b, us):
+    ag = W.agent()
+    st = dict(b.game_stages)
+    scored = ag.select_move_pair(list(b.get_valid_moves()), b, us, return_scores=True)
+    b.game_stages.update(st)
+    return scored
 
 
 def pick_cvg_pairs(b, us):
@@ -164,6 +202,31 @@ def job(task):
         if t != turn:
             continue
         us = b.current_player
+        if kind == 'disagree':
+            scored = net_best_pair(b, us)
+            best_sc, best = scored[0]
+            keys = {}
+            for sc, pair in scored:
+                n0 = len(b.moves)
+                for m in pair:
+                    if m not in ((0, 0, 0), (1, 1, 1)):
+                        b.apply_move(m, switch_turn=False)
+                keys.setdefault(W._piece_locs(b), sc)
+                while len(b.moves) > n0:
+                    b.undo_last_move()
+            n0 = len(b.moves)
+            for m in played:
+                if m not in ((0, 0, 0), (1, 1, 1)):
+                    b.apply_move(m, switch_turn=False)
+            pk = W._piece_locs(b)
+            while len(b.moves) > n0:
+                b.undo_last_move()
+            p_sc = keys.get(pk)
+            return {'game': gid, 'turn': turn, 'mover': us,
+                    'net_gap': None if p_sc is None else round((best_sc - p_sc) * W.M, 3),
+                    'pair_A': repr(played), 'pair_B': repr(best),
+                    'A': _play_out(b, us, played, gid, turn),
+                    'B': _play_out(b, us, best, gid, turn)}
         if kind == 'cvg':
             best_c, best_g = pick_cvg_pairs(b, us)
             if not (best_c and best_g):
@@ -195,7 +258,8 @@ def main():
     done = set()
     if os.path.exists(out):
         done = {(r['game'], r['turn']) for r in map(json.loads, open(out))}
-    pool_targets = cvg_targets() if kind == 'cvg' else block_targets()
+    pool_targets = {'cvg': cvg_targets, 'disagree': disagree_targets,
+                    'block': block_targets}[kind]()
     targets = [(kind, g, t) for g, t in pool_targets if (g, t) not in done]
     print(f'{len(targets)} positions, {N_ROLL} rollouts per arm', flush=True)
     from multiprocessing import Pool
@@ -208,6 +272,7 @@ def main():
             else:
                 d = sum(b - a for a, b in zip(r['A'], r['B'])) / len(r['A'])
                 tag = (f"net pref capture {r['net_pref_A']:+.2f}" if kind == 'cvg'
+                       else f"net gap {r['net_gap']}" if kind == 'disagree'
                        else f"exp {r['exp_A']:.2f}->{r['exp_B']:.2f}")
                 print(f"{r['game']} t{r['turn']}: {tag}  B-A {d:+.2f}", flush=True)
 
@@ -221,6 +286,20 @@ def analyze(kind):
     m = sum(diffs) / n
     sd = math.sqrt(sum((d - m) ** 2 for d in diffs) / (n - 1))
     print(f'{n} positions x {len(rows[0]["A"])} paired rollouts')
+    if kind == 'disagree':
+        ci = lambda xs: (sum(xs) / len(xs), 1.96 * math.sqrt(
+            sum((x - sum(xs) / len(xs)) ** 2 for x in xs) / max(1, len(xs) - 1)) / math.sqrt(len(xs)))
+        print("net's best move minus owner's move (positive = the net was right):")
+        for lab, lo, hi in (('net gap >= %.2f' % TOP_GAP, TOP_GAP, 99), ('0.1 - %.2f' % TOP_GAP, 0.1, TOP_GAP),
+                            ('control 0.01 - 0.1', 0.01, 0.1), ('all', -99, 99)):
+            sel = [(r, d) for r, d in zip(rows, diffs) if r['net_gap'] is not None and lo <= r['net_gap'] < hi]
+            if not sel:
+                continue
+            a, h = ci([d for _, d in sel])
+            g = sum(r['net_gap'] for r, _ in sel) / len(sel)
+            print(f'  {lab:<22} {len(sel):>4} positions: net says {g:+.3f}, playouts say {a:+.3f} +- {h:.3f}; '
+                  f'owner better in {sum(d < 0 for _, d in sel)}, net better in {sum(d > 0 for _, d in sel)}')
+        return
     if kind == 'cvg':
         ci = lambda xs: (sum(xs) / len(xs), 1.96 * math.sqrt(
             sum((x - sum(xs) / len(xs)) ** 2 for x in xs) / max(1, len(xs) - 1)) / math.sqrt(len(xs)))
