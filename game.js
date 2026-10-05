@@ -241,7 +241,19 @@ function _mixColor(a, b, t) {
 // So there are now two quantities and they must not be confused:
 //   getDifficultySetting() -- where the SLIDER sits, 0..1, what is persisted
 //   getAIDifficulty()      -- the EFFECTIVE number handed to the agent
-const DIFFICULTY_FLOOR = 0.8;   // what slider-0 means to the agent
+// REMAPPED AGAIN (owner, 2026-10-05) onto 0.65..1.0, after measuring the band in
+// the APP's own configuration (difficulty_fine.py: ONNX net, prefilter 12/40/5,
+// each level vs full strength, 120 games). The sweep above sampled among ALL
+// candidates; the app samples only among the ~40 the prefilter keeps, so lowering
+// d hurts far less here -- measured win rate vs full strength:
+//     d 0.99 47.5%  0.97 53.3%  0.95 46.7%  0.92 31.7%  0.90 35.8%
+//       0.85 35.8%  0.80 25.8%  0.70 7.5%   0.60 0.8%
+// i.e. the old floor 0.8 still won 26%, and 1.0-0.95 was indistinguishable from
+// Max. The slider is now PIECEWISE-LINEAR through knots spaced by that measured
+// strength (roughly equal steps in win rate from ~50% to ~4%), not linear in d.
+const DIFFICULTY_FLOOR = 0.65;  // what slider-0 means to the agent
+const DIFFICULTY_KNOTS = [      // [slider position, effective d]
+    [0.00, 0.65], [0.25, 0.74], [0.50, 0.80], [0.75, 0.93], [1.00, 1.00]];
 // `aiDifficulty` in localStorage is the SLIDER POSITION. It used to be the
 // effective value, so a player who had saved 0.5 is now read as position 0.5 ->
 // effective 0.9, i.e. their opponent gets stronger. That is deliberate and is the
@@ -253,13 +265,16 @@ function getDifficultySetting() {
     return isFinite(v) ? Math.min(1, Math.max(0, v)) : 1.0;
 }
 function getAIDifficulty() {
-    return DIFFICULTY_FLOOR + (1 - DIFFICULTY_FLOOR) * getDifficultySetting();
+    const p = getDifficultySetting();
+    for (let i = 1; i < DIFFICULTY_KNOTS.length; i++) {
+        const [p0, d0] = DIFFICULTY_KNOTS[i - 1], [p1, d1] = DIFFICULTY_KNOTS[i];
+        if (p <= p1) return d0 + (d1 - d0) * (p - p0) / (p1 - p0);
+    }
+    return 1.0;
 }
-// ORDINAL WORDS, AND DELIBERATELY NO PERCENTAGE. A number on this label reads as
-// a win rate, and nobody has measured inside 0.8..1.0 yet -- only the endpoints
-// (0.8 never beats full strength; 1.0 is full strength). The ordering is safe to
-// claim, because both ramps in _pick_move_index move monotonically with the
-// value; a figure is not. Put numbers here once the fine sweep exists.
+// ORDINAL WORDS, AND DELIBERATELY NO PERCENTAGE. The win rates above are against
+// FULL STRENGTH, not against a person, so a figure on the label would still
+// mislead; the ordering is safe to claim.
 function difficultyLabel(pos) {
     if (pos >= 0.99) return 'Max';
     if (pos >= 0.75) return 'Strong';

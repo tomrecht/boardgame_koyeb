@@ -279,9 +279,15 @@ which samples among ALL candidate pairs; the app samples only among the ~40 the
 prefilter keeps, so lowering d hurts far less in the app. The remap onto
 0.8..1.0 therefore made "Easiest" nearly full strength, and the top quarter of
 the slider (1.0-0.95) is indistinguishable from Max. Proposed (owner to decide):
-remap onto ~0.60-1.0, spaced by strength (Max 1.0, Strong 0.92, Medium 0.80,
-Gentle 0.70, Easiest 0.60), and re-point the tutorial's "Go easy" button. Rates
-are against full strength, not against a beginner.
+**DONE (owner chose 0.65-1.0, 2026-10-05):** `getAIDifficulty()` is now
+piecewise-linear through `DIFFICULTY_KNOTS` [pos, d] = [0, 0.65] [0.25, 0.74]
+[0.5, 0.80] [0.75, 0.93] [1, 1.0] -- knots spaced by the measured win rate
+(roughly 4% / 15% / 26% / 37% / 50% vs full strength), so equal slider steps are
+roughly equal strength steps. Verified in the page: saved positions 0 / 0.25 /
+0.5 / 0.75 / 1 give 0.65 / 0.74 / 0.80 / 0.93 / 1.0 and the labels Easiest /
+Gentle / Medium / Strong / Max. The tutorial's "Go easy" (position 0) now means
+0.65. Saved settings are REINTERPRETED (a player at Easiest gets much weaker),
+deliberately. Rates are against full strength, not against a beginner.
 
 **CALIBRATION OF OLDER NETS (`calib_bench.py`, 2026-10-05).** On the 559-position
 benchmark (corr / slope of the net's move gap vs playouts): iter10 +0.186 / 0.42,
