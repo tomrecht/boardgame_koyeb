@@ -225,6 +225,27 @@ exploits exposure fine -- the extra exposure just doesn't cost points. Stopped a
 the general case; capture-vs-goal (`rollout_probe.py cvg`, all 470 positions) is
 the next lead.
 
+**IN FLIGHT (2026-10-04 evening).** `overnight.sh` (under caffeinate, log
+`overnight.log`): capture-vs-goal rollouts over all 470 positions -> net-vs-owner
+gaps for the 67 newer games -> disagreement rollouts (`rollout_probe.py
+disagree`: owner's move vs the net's best, 20 paired playouts; every position
+the net rates >= 0.26 pts worse, then 100 control at 0.01-0.1, then 100 at
+0.1-0.26) -> `overnight_summary.txt`. Interim capture-vs-goal (246 positions):
+goal beats capture by +0.155 +- 0.108 overall, but the net's own preference
+tracks the playouts (corr +0.37; where it prefers capture, capture did better)
+-- so no over-capturing so far. **QUEUED for when it finishes** (on
+`train-features-v2`; NOT before -- checking that branch out removes
+`rollout_probe.py`, which the queue's last step re-runs): build a pairs file
+from `rollout_disagree.jsonl`; a pairwise loss in training (the net's value
+difference between the two after-positions should match the playouts'
+difference, weighted by its standard error), accepting owner pairs and later
+self-play pairs; league_run knobs for the pairs file and weight; a held-out
+agreement metric (share of held-out positions where the net prefers the
+playouts' move) printed with each gate. Expect only ~100-200 informative owner
+pairs at first: a targeted nudge, with the held-out metric saying whether it
+generalises; scale with more of owner's games and playout-labelled self-play
+pairs.
+
 **Testing protocol for new features (owner):** validate any approximation against
 the exact computation on logged positions; train with/without in otherwise
 identical runs judged by a fixed-panel gate; then re-run `weakness_probe` /
