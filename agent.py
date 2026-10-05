@@ -35,6 +35,35 @@ INITIAL_WEIGHTS = {
     'permanent_block_bonus': 13, 
 }
 
+_LAYOUT_TABLE = None
+
+
+def _goal_layout_turns(board, player, save_rack):
+    """Exact expected turns (endgame_table.json) to bank the pieces of
+    `player` that stand on goals they can bank from, as if alone. 0 if none."""
+    global _LAYOUT_TABLE
+    mask, b = 0, [0] * 6
+    for p in board.pieces:
+        if p.player != player or p.rack is save_rack:
+            continue
+        t = p.tile
+        if t is not None and t.type == 'save' and p.can_be_saved():
+            if p.number <= 6:
+                mask |= 1 << (p.number - 1)
+            else:
+                b[t.number - 1] += 1
+    if mask == 0 and not any(b):
+        return 0.0
+    if sum(b) == 0 and mask & (mask - 1) == 0:        # last-piece rule
+        b[mask.bit_length() - 1] = 1
+        mask = 0
+    if _LAYOUT_TABLE is None:
+        path = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'endgame_table.json')
+        with open(path) as f:
+            _LAYOUT_TABLE = json.load(f)
+    return _LAYOUT_TABLE.get(f'{mask}:' + ''.join(map(str, b)), 0.0)
+
+
 def get_weights(weights_file = 'best_weights.json'):
     if os.path.exists(weights_file):
         import json
@@ -212,6 +241,17 @@ class Agent():
                     if len(friendly_pieces) >= 2 and all(p.number > 6 for p in friendly_pieces):
                         permanent_block_bonus += self.weights.get('permanent_block_bonus', 13)
 
+        # Banking cost of the goal layout (2026-10-05): exact expected turns to
+        # bank the pieces this side has standing on bankable goals, from
+        # endgame_table.json, times a weight that defaults to 0 (no change in
+        # play until a fit sets it). The prefilter's misses pointed here: the
+        # net cares WHICH goals hold blanks (stack low, never level), the
+        # heuristic only counted pieces on goals.
+        goal_layout_cost = 0.0
+        w_layout = self.weights.get('goal_layout_cost', 0.0)
+        if w_layout:
+            goal_layout_cost = w_layout * _goal_layout_turns(board, player, save_rack)
+
         score_components = {
             'saved_pieces': saved_pieces * self.weights['saved_piece'],
             'saved_bonus': saved_bonus,
@@ -236,6 +276,7 @@ class Agent():
             'game_stage_bonus': game_stage_bonus,
             'dice_spread_bonus': dice_spread_bonus,
             'permanent_block_bonus': permanent_block_bonus,
+            'goal_layout_cost': goal_layout_cost,
         }
         total_score = sum(score_components.values())
         score_components['_total_score'] = total_score

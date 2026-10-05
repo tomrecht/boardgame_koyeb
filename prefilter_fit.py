@@ -25,7 +25,7 @@ import glob, json, os, random, sys, time
 import numpy as np
 
 REPO = os.path.dirname(os.path.abspath(__file__))
-DATA = os.path.join(REPO, 'prefilter_data')
+DATA = os.path.join(REPO, os.environ.get('PREFILTER_DATA', 'prefilter_data2'))
 LOGS = ['quahuru-games-apvo2h65-v2.jsonl', 'quahuru-games-f7in6olg.jsonl',
         'quahuru-games-apvo2h65-2026-10-05.jsonl']
 F_FIRST, K_PAIRS, MIN_K = 12, 40, 5
@@ -34,7 +34,8 @@ COMPONENTS = ['saved_pieces', 'saved_bonus', 'goal_pieces', 'goal_bonus', 'captu
               'blocked_pieces', 'blocked_piece_bonus', 'loose_pieces', 'loose_piece_bonus',
               'total_distance', 'unentered_pieces', 'off_goal_penalty', 'far_from_goal_penalty',
               'high_goal_penalty', 'high_goal_proximity_penalty', 'enemy_blot_penalty',
-              'game_stage_bonus', 'dice_spread_bonus', 'permanent_block_bonus']
+              'game_stage_bonus', 'dice_spread_bonus', 'permanent_block_bonus',
+              'goal_layout_cost']
 NOOP = ((0, 0, 0), (1, 1, 1))
 
 
@@ -50,6 +51,8 @@ def _heur():
         # uses (and what heuristic_weights.json ships). Agent() with no
         # argument loads INITIAL_WEIGHTS, a different, untuned set.
         _H = Agent(weights=None)
+        # record the new component in raw units (turns); its shipped weight is 0
+        _H.weights['goal_layout_cost'] = 1.0
     return _H
 
 
@@ -262,6 +265,8 @@ def fit():
     tr = [p for g in tr_ids for p in games[g]]
     te = [p for g in te_ids for p in games[g]]
     w0 = np.ones(len(COMPONENTS))
+    if 'goal_layout_cost' in COMPONENTS:
+        w0[COMPONENTS.index('goal_layout_cost')] = 0.0     # today's heuristic
     print(f'{len(tr)} train / {len(te)} test positions ({len(tr_ids)} / {len(te_ids)} games)')
     print(f'today: keep-rate train {keep_rate(tr, w0):.3f}, test {keep_rate(te, w0):.3f}')
     # scale so typical score gaps are O(1) for the softmax
