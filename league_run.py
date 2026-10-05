@@ -200,9 +200,22 @@ def main():
             return None
         return {'frac': C['LEAGUE_FRAC'], 'opponents': league_opps, 'seed': it}
 
+    # Calibration benchmark (calib_bench.py): how well the net's judgement of
+    # two moves tracks playouts, on owner's 559 disagreement positions. The
+    # deployed champion: corr +0.09, slope 0.29 -- higher is better.
+    calib_ok = os.path.exists('calib_bench.json')
+    if calib_ok:
+        import calib_bench
+        c, sl, g, n = calib_bench.score_model(network.model_from_state(champion_sd))
+        print(f"Calibration benchmark, champion: corr {c:+.3f} slope {sl:+.3f} (n {n})")
+
     def gate_fn(model, champ_sd, it):
         sd = {k: v.detach().cpu() for k, v in model.state_dict().items()}
         rep = gate.evaluate(sd, champ_sd, label=f'it{it}')
+        if calib_ok:
+            c, sl, g, n = calib_bench.score_model(network.model_from_state(sd))
+            rep['calib'] = {'corr': round(c, 4), 'slope': round(sl, 4), 'n': n}
+            print(f"  calibration benchmark it{it}: corr {c:+.3f} slope {sl:+.3f}")
         t = gate.timing
         if t['games']:
             print(f"  gate games this run: {t['games']}, "
