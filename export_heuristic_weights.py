@@ -18,6 +18,7 @@ error. Re-run this whenever best_weights.json changes.
     python export_heuristic_weights.py [out.json]
 """
 import json
+import os
 import sys
 
 from agent import Agent, get_weights
@@ -36,6 +37,10 @@ def main(out='heuristic_weights.json'):
         return v
 
     payload = {k: jsonable(v) for k, v in expanded.items()}
+    # The prefilter's component scales (prefilter_fit.py). In the app the
+    # heuristic is ONLY the prefilter, so they ship in the same file.
+    if os.path.exists('prefilter_scales.json'):
+        payload['component_scale'] = json.load(open('prefilter_scales.json'))
     with open(out, 'w') as f:
         json.dump(payload, f, indent=1, sort_keys=True)
 
@@ -43,6 +48,8 @@ def main(out='heuristic_weights.json'):
     back = json.load(open(out))
     fresh = Agent(weights=get_weights(weights_file='best_weights.json')).weights
     bad = []
+    if 'component_scale' in payload and back.get('component_scale') != payload['component_scale']:
+        bad.append('component_scale differs after reload')
     for key, val in fresh.items():
         got = back.get(key)
         if isinstance(val, dict):

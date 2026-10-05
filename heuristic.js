@@ -241,8 +241,13 @@ function evaluatePlayer(engine, W, player, distances) {
     };
     // Python sums dict.values() in insertion order; the key order above is
     // agent.py's, so the float rounding matches term for term.
+    // Prefilter-only component scales (heuristic_weights.json
+    // 'component_scale', fitted by prefilter_fit.py); absent = plain sum.
+    const scale = W.component_scale;
     let total = 0;
-    for (const k of Object.keys(components)) total += components[k];
+    for (const k of Object.keys(components)) {
+        total += scale && scale[k] !== undefined ? components[k] * scale[k] : components[k];
+    }
     return { total, components };
 }
 

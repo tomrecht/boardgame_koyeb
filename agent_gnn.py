@@ -15,6 +15,8 @@ To use in app.py:
     agent = GNNAgent()
 """
 
+import json
+import os
 import time
 
 import numpy as np
@@ -222,6 +224,14 @@ class GNNAgent:
             else:
                 w = heuristic_weights          # dict or None (None -> Agent loads defaults)
             self.heuristic = Agent(weights=w)
+            # Prefilter-only component scales (prefilter_fit.py, 2026-10-05):
+            # the net's best move survives the cut ~96% of the time instead of
+            # ~88%. PREFILTER_SCALES=0 restores the old ranking.
+            sc_path = os.path.join(os.path.dirname(os.path.abspath(__file__)),
+                                   'prefilter_scales.json')
+            if os.environ.get('PREFILTER_SCALES', '1') != '0' and os.path.exists(sc_path):
+                with open(sc_path) as f:
+                    self.heuristic.weights['component_scale'] = json.load(f)
 
         if not GNNAgent._printed_ready:
             print(f"GNNAgent ready: {self.backend.describe()}")
