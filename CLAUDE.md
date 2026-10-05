@@ -238,30 +238,33 @@ exploits exposure fine -- the extra exposure just doesn't cost points. Stopped a
 the general case; capture-vs-goal (`rollout_probe.py cvg`, all 470 positions) is
 the next lead.
 
-**IN FLIGHT (2026-10-04 evening).** `overnight.sh` (under caffeinate, log
-`overnight.log`): capture-vs-goal rollouts over all 470 positions -> net-vs-owner
-gaps for the 67 newer games -> disagreement rollouts (`rollout_probe.py
-disagree`: owner's move vs the net's best, 20 paired playouts; every position
-the net rates >= 0.26 pts worse, then 100 control at 0.01-0.1, then 100 at
-0.1-0.26) -> `overnight_summary.txt`.
-**CAPTURE-VS-GOAL: NO OVER-CAPTURING (stopped at 330 of 470 positions, owner's
-call).** 16 paired playouts per move, net's best capture-only pair vs its best
-goal-only pair: goal better overall by +0.156 +- 0.094, so owner's instinct holds
-on average -- but the net already knows it: its preference correlates +0.37 with
-the playouts, and in the 57 positions where it prefers the capture, the capture
-really did better (-0.231 +- 0.220). The goal move's edge shrinks as the
-capturable piece's progress grows (+0.21 / +0.15 / +0.05 for <=1 / 2-3 / 4+). **QUEUED for when it finishes** (on
-`train-features-v2`; NOT before -- checking that branch out removes
-`rollout_probe.py`, which the queue's last step re-runs): build a pairs file
-from `rollout_disagree.jsonl`; a pairwise loss in training (the net's value
-difference between the two after-positions should match the playouts'
-difference, weighted by its standard error), accepting owner pairs and later
-self-play pairs; league_run knobs for the pairs file and weight; a held-out
-agreement metric (share of held-out positions where the net prefers the
-playouts' move) printed with each gate. Expect only ~100-200 informative owner
-pairs at first: a targeted nudge, with the held-out metric saying whether it
-generalises; scale with more of owner's games and playout-labelled self-play
-pairs.
+**THE NET'S DISAGREEMENTS WITH OWNER ARE MOSTLY ITS OWN NOISE (overnight
+2026-10-04/05, `rollout_probe.py disagree`, `overnight_summary.txt`).** 559 of
+owner's positions from 150 games, his move vs the net's best, 20 paired playouts
+each (net 1-ply both sides, common dice):
+
+        net's gap band   n    net claims   playouts say      owner/net better
+        >= 0.26         358     +0.42      +0.036 +- 0.069       175 / 171
+        0.1 - 0.26      102     +0.16      +0.029 +- 0.145        46 / 54
+        0.01 - 0.1       99     +0.06      -0.101 +- 0.132        58 / 37
+        all             559     +0.31      +0.011 +- 0.057       279 / 262
+
+Per position the net's gap predicts the playouts at corr +0.09, slope 0.29 -- it
+is ~3x overconfident about how much moves differ. Only 47 of 559 are clear beyond
+2 SE (21 owner, 26 net; chance alone gives ~28); median per-position SE 0.62. So
+the "2.1 pts/game owner gives away" (net-judged) is an artefact of the net
+scoring its own argmax over noisy values; owner's 57% / +0.38 is consistent.
+**Consequences:** (1) the net's weakness is VALUE NOISE between near-equal moves,
+not wrong ideas -- consistent with blockability, capture-vs-goal and endgame all
+flat; (2) these playout labels are too noisy (+-0.6 vs real differences of
+tenths) to train a pairwise loss on -- that plan is SHELVED, and the self-play
+pairs batch with it; (3) keep the 559 as a CALIBRATION BENCHMARK for any new net
+(slope / corr of its gaps vs the playouts); (4) the levers are better value
+estimates: the v2 training run, and cheap noise reduction at play time such as
+averaging over the 3 symmetric rotations (test it against this benchmark).
+Capture-vs-goal (330 positions): goal beats capture +0.160 +- 0.094 overall, but
+the net already knows it (corr +0.37; where it prefers capture, capture did
+better, -0.231 +- 0.220) -- no over-capturing.
 
 **Testing protocol for new features (owner):** validate any approximation against
 the exact computation on logged positions; train with/without in otherwise
