@@ -315,3 +315,82 @@ if __name__ == '__main__':
                 int(os.environ.get('N_WORKERS', '2')))
     elif cmd == 'fit':
         fit()
+
+
+# ---------------------------------------------------------------- cross-validation
+def _fit_on(tr, w0, restrained=False, sweeps=3):
+    """The fit above as a function: surrogate ascent, then local search on the
+    keep-rate. restrained=True keeps every scale within [0.25, 4] x today's and
+    uses multiplicative steps only (no switching components on or off)."""
+    sd = np.std(np.concatenate([p['F2'] @ w0 for p in tr[:200]]))
+    tau = max(sd, 1e-6)
+    lo, hi = (0.25 * w0, 4.0 * w0) if restrained else (np.full_like(w0, -1e9), np.full_like(w0, 1e9))
+    w = w0.copy()
+    for it in range(60):
+        ll, g = surrogate_grad(tr, w, tau)
+        w = w + 0.05 * g / (np.linalg.norm(g) + 1e-12) * np.linalg.norm(w0)
+        w = np.clip(w, np.minimum(lo, hi), np.maximum(lo, hi)) if restrained else np.clip(w, -1e6, 1e6)
+    allF = np.concatenate([p['F2'] for p in tr[:300]])
+    score_sd = np.std(allF @ w0) or 1.0
+    unit = np.array([score_sd / (np.std(allF[:, i]) or 1.0) for i in range(len(w0))])
+    best_w, best_k = w.copy(), keep_rate(tr, w)
+    for sweep in range(sweeps):
+        for i in range(len(w)):
+            cands = [best_w[i] * f for f in (0.5, 0.8, 1.25, 2.0)]
+            if not restrained:
+                cands += [0.0] + [best_w[i] + c * unit[i] for c in (-1.0, -0.3, -0.1, 0.1, 0.3, 1.0)]
+            for v in cands:
+                if restrained and not (min(lo[i], hi[i]) - 1e-12 <= v <= max(lo[i], hi[i]) + 1e-12):
+                    continue
+                cand = best_w.copy()
+                cand[i] = v
+                k = keep_rate(tr, cand)
+                if k > best_k + 1e-9:
+                    best_w, best_k = cand, k
+    return best_w
+
+
+def crossval(k=5):
+    games = load()
+    ids = sorted(games)
+    random.Random(7).shuffle(ids)
+    folds = [ids[i::k] for i in range(k)]
+    names = COMPONENTS
+    lay = names.index('goal_layout_cost') if 'goal_layout_cost' in names else None
+    variants = {
+        'today': None,
+        '23 components': dict(drop_layout=True, restrained=False),
+        '24 components': dict(drop_layout=False, restrained=False),
+        '23 restrained (0.25-4x)': dict(drop_layout=True, restrained=True),
+    }
+    res = {v: [] for v in variants}
+    for fi in range(k):
+        te = [p for g in folds[fi] for p in games[g]]
+        tr = [p for j in range(k) if j != fi for g in folds[j] for p in games[g]]
+        for v, cfg in variants.items():
+            w0 = np.ones(len(names))
+            if lay is not None:
+                w0[lay] = 0.0
+            if cfg is None:
+                w = w0
+            else:
+                trv = tr
+                if cfg['drop_layout'] and lay is not None:
+                    # fit without the layout column (keep it at 0)
+                    w = _fit_on([dict(p, F1=np.delete(p['F1'], lay, 1), F2=np.delete(p['F2'], lay, 1)) for p in trv],
+                                np.delete(w0, lay), restrained=cfg['restrained'])
+                    w = np.insert(w, lay, 0.0)
+                else:
+                    if lay is not None:
+                        w0[lay] = 1e-9          # let multiplicative steps work from ~0
+                    w = _fit_on(trv, w0, restrained=cfg['restrained'])
+            res[v].append(keep_rate(te, w))
+        print(f'fold {fi + 1}/{k}: ' + ', '.join(f'{v} {res[v][-1]:.3f}' for v in variants), flush=True)
+    print('\nheld-out keep-rate, mean over folds (min..max):')
+    for v in variants:
+        r = res[v]
+        print(f'  {v:<26} {np.mean(r):.3f}  ({min(r):.3f}..{max(r):.3f})')
+
+
+if __name__ == '__main__' and len(sys.argv) > 1 and sys.argv[1] == 'cv':
+    crossval()
