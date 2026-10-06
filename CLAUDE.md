@@ -207,6 +207,20 @@ numbered-saved per side, highest occupied goal per side, my saveable count.
   shortest route of mine crosses), est. a few ms, and VALIDATE it against the exact
   version on logged positions before adopting. Needs a JS twin in encoder.js.
   Compute threats for BOTH sides' pieces (the opponent's exposure is my attack).
+- **Enemy blots on a numbered piece's shortest route (owner, 2026-10-06; NOT yet
+  in features_v2).** `blot_probe.py <H>`: 219 of owner's games, ~25k observations
+  (numbered field piece, route currently unwalled). Outcome = walled within the
+  next H snapshots (turn ends). Controlling for P(walled) (deciles + quadratic),
+  route length and enemy field count, adding the blot count cut 10-fold
+  grouped-CV log-loss by **3.9% / 3.7% / 3.3% at H = 1 / 3 / 5** (bootstrap-by-game
+  95% CI clear of 0 at every H; AUC 0.807 -> 0.824 at H=5); odds x2.6 per blot at
+  equal P(walled). **It helps even at H=1**, so this is not just horizon: given
+  that the enemy CAN wall, it actually does so far more often when it only has to
+  join a blot (one die, one piece) than when it has to build from scratch. Walled
+  rate within 5: 0 blots 2.6%, 1 blot 19.9%, 2 blots 30.8%. Side facts: every
+  own-goal route of length <= 6 was unique (multiple routes only at 7+, ~9% of
+  observations, mostly detours round walls); P(walled)=0 pieces (36%) were never
+  walled within 5 snapshots.
 - **Expected turns to finish, per side** (from per-piece turns-to-bank: exact DP
   values on goals -- blank 1.00-1.64 by goal, numbered 3.27 -- approximated by
   distance elsewhere). Speaks to the bank-the-most bug and the endgame probe's
