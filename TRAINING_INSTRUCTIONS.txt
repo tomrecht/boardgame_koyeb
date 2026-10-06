@@ -1,0 +1,209 @@
+QUAHURU -- TRAINING RUN ON A MAC (complete instructions)
+Written 2026-10-06. Branch: train-features-v2. Run: AB features, warm start = the new app
+champion (the 4-way blend). Works on any Apple-silicon Mac (M1-M4).
+
+Everything below is typed into Terminal (Applications > Utilities > Terminal).
+Lines starting with # are explanations -- do not type them.
+
+
+==========================================================================================
+WHAT YOU NEED TO BRING FROM HOME
+==========================================================================================
+
+One file: start_pool.jsonl (about 10 MB), in the game folder on the home iMac
+(/Users/tom/Game/BoardGame/start_pool.jsonl). Email it to yourself with these
+instructions, or AirDrop / iCloud / USB. It holds 6,555 positions from your own games;
+it is NOT in git on purpose. Without it the run still works, but every game starts
+from the opening.
+
+
+==========================================================================================
+ONE-TIME SETUP (about 20-30 minutes)
+==========================================================================================
+
+1. Developer tools (gives you git)
+
+       git --version
+
+   If it prints a version, go to step 2. If a box offers to install the "command line
+   developer tools", click Install and wait for it to finish (a few minutes). You can
+   also start it with:
+
+       xcode-select --install
+
+2. Python 3.11
+
+   In a browser go to https://www.python.org/downloads/macos/ , download the
+   "macOS 64-bit universal2 installer" for Python 3.11 (any 3.11.x), run it, accept the
+   defaults. Then CLOSE Terminal, open a NEW Terminal window, and check:
+
+       python3.11 --version
+
+   It should print Python 3.11.something.
+
+3. Get the code
+
+       git clone --branch train-features-v2 https://github.com/tomrecht/boardgame_koyeb.git ~/quahuru-train
+       cd ~/quahuru-train
+
+4. Python packages (a few minutes; torch is the big one)
+
+       cd ~/quahuru-train
+       python3.11 -m venv .venv
+       source .venv/bin/activate
+       pip install --upgrade pip
+       pip install torch "numpy<2" scipy
+
+   After "source .venv/bin/activate" your prompt starts with (.venv).
+   IMPORTANT: in every NEW Terminal window, first run:
+
+       cd ~/quahuru-train && source .venv/bin/activate
+
+5. Put the start pool in place
+
+   Copy start_pool.jsonl (from the email / AirDrop) into the ~/quahuru-train folder.
+   If it landed in Downloads:
+
+       cp ~/Downloads/start_pool.jsonl ~/quahuru-train/
+
+   Check:
+
+       ls -lh ~/quahuru-train/start_pool.jsonl
+
+6. Quick checks (about a minute)
+
+       cd ~/quahuru-train && source .venv/bin/activate
+       python td_returns.py
+       python test_panel_gate.py
+       python -c "import torch; print('GPU (MPS) available:', torch.backends.mps.is_available())"
+
+   Expect "All td_returns tests passed.", "ALL OK", and "GPU (MPS) available: True".
+
+
+==========================================================================================
+SMOKE TEST (about 15-30 minutes -- do this once before the real run)
+==========================================================================================
+
+This runs one tiny iteration to prove everything works on this machine and to measure
+its speed. caffeinate keeps the Mac awake while it runs.
+
+    cd ~/quahuru-train && source .venv/bin/activate
+    mkdir -p smoke
+    caffeinate -i env BOARDGAME_DEVICE=mps PYTHONHASHSEED=0 SMOKE=1 PREFIX=smoke/a \
+        WARM_START=blend_AB.pt PRESCREEN_BAR=-12 python -u league_run.py > smoke/a.log 2>&1
+
+When the prompt comes back:
+
+    grep -E "Feature set|Start pool|Calibration|s/game|PANEL GATE|Traceback|Error" smoke/a.log
+
+GOOD looks like: "Feature set: AB", "Start pool: 6555 positions ...", "Calibration
+benchmark, champion: corr +0.159 ...", a "PANEL GATE ... outcome: CAP" line, a few
+"s/game" lines, and NO "Traceback" or "Error".
+
+IF it died with a line containing "MPSNDArray" (a GPU problem): use the CPU instead --
+in the run command below, change BOARDGAME_DEVICE=mps to BOARDGAME_DEVICE=cpu.
+
+OPTIONAL second smoke test, to see whether the GPU also speeds up the game workers:
+
+    caffeinate -i env BOARDGAME_DEVICE=mps WORKER_DEVICE=mps PYTHONHASHSEED=0 SMOKE=1 \
+        PREFIX=smoke/b WARM_START=blend_AB.pt PRESCREEN_BAR=-12 python -u league_run.py > smoke/b.log 2>&1
+    grep -E "s/game|PANEL GATE|Traceback|Error" smoke/b.log
+
+If its s/game numbers are clearly LOWER than smoke/a's and there is no error, add
+WORKER_DEVICE=mps to the real run below. If in doubt, leave it out.
+
+
+==========================================================================================
+THE REAL RUN
+==========================================================================================
+
+    cd ~/quahuru-train && source .venv/bin/activate
+    git pull
+    mkdir -p runs
+    nohup caffeinate -is env BOARDGAME_DEVICE=mps PYTHONHASHSEED=0 ITERS=200 \
+        PREFIX=runs/fv2B WARM_START=blend_AB.pt python -u league_run.py >> runs/fv2B.log 2>&1 &
+
+(If the smoke test said so: put WORKER_DEVICE=mps right after BOARDGAME_DEVICE=mps.
+If MPS failed: BOARDGAME_DEVICE=cpu.)
+
+It uses all cores but one, keeps the Mac awake, and keeps running after you close
+Terminal. ITERS=200 just means "keep going until I stop it".
+
+What happens on its own:
+  * every iteration: 300 training games, then training, then the gate (candidate vs the
+    champion, then vs a panel of older nets); a clearly better candidate is PROMOTED
+    and becomes the new champion; otherwise the run goes back to the champion;
+  * the opening exploration fades out over the first 10 iterations;
+  * for the first 5 iterations it tests both the raw and the averaged weights, then
+    keeps whichever did better ("HEDGE RESOLVED" in the log).
+
+Expected speed (estimate): roughly 30-45 minutes per iteration on an M4. The first
+iteration is longer (it also plays the champion's own panel games once).
+
+
+==========================================================================================
+WATCHING IT
+==========================================================================================
+
+Follow the log live (Ctrl-C stops the WATCHING, not the run):
+
+    tail -f ~/quahuru-train/runs/fv2B.log
+
+The interesting lines only:
+
+    grep -E "PRE-SCREEN|HEDGE|PANEL GATE|PROMOTED|calibration benchmark|iter .* done" ~/quahuru-train/runs/fv2B.log
+
+How to read them:
+  * "PRE-SCREEN ... -> REJECT": the candidate lost the quick first test; iteration over.
+  * "PANEL GATE [itN] outcome: PROMOTE"  <- the good one: a new, stronger champion.
+    Also "REJECT" (clearly worse), "CAP" (inconclusive).
+  * "calibration benchmark itN: corr ..." -- the starting net scores +0.159; higher means
+    its sense of move differences tracks reality better (a diagnostic, not the goal).
+
+Is it still running?
+
+    pgrep -fl league_run.py
+
+(no output = not running)
+
+
+==========================================================================================
+STOPPING, RESUMING, RESTARTS
+==========================================================================================
+
+STOP:     pkill -f league_run.py
+
+RESUME:   run the "THE REAL RUN" command again, unchanged. It continues from the last
+          finished iteration; at most the iteration in progress is lost.
+
+Locking the screen is fine. Logging out, restarting or shutting down stops the run --
+just resume afterwards. In System Settings > Energy (or Displays > Advanced) turn on
+"Prevent automatic sleeping when the display is off" as a backup.
+
+If the Mac becomes sluggish for other work, you can run with fewer workers by adding
+N_WORKERS=6 (or another number) after PYTHONHASHSEED=0 in the run command.
+
+
+==========================================================================================
+BRINGING RESULTS HOME
+==========================================================================================
+
+Everything is in ~/quahuru-train/runs/. The important files:
+  fv2B.log              the full log
+  fv2B_gate_log.jsonl   every gate decision with numbers
+  fv2B_champion.pt      the best net so far (only differs from the start after a PROMOTE)
+
+Email / AirDrop those three back, or zip the folder:
+
+    cd ~/quahuru-train && zip -r runs.zip runs
+
+
+==========================================================================================
+IF SOMETHING GOES WRONG
+==========================================================================================
+
+  "command not found: python"      -> run: cd ~/quahuru-train && source .venv/bin/activate
+  "No module named torch"          -> same as above (the .venv is not active)
+  log ends with a Traceback        -> copy the last ~30 lines of the log and send them over
+  "MPSNDArray" assertion            -> use BOARDGAME_DEVICE=cpu
+  the Mac ran out of memory         -> add N_WORKERS=6 to the command and resume
