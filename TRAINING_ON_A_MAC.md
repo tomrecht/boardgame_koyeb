@@ -82,18 +82,31 @@ Use `WORKER_DEVICE=mps` in the real run only if its `s/game` is clearly lower an
 it finished without errors. If a run dies with an `MPSNDArray...` assertion, MPS
 is not usable there: use `BOARDGAME_DEVICE=cpu` instead.
 
-## 8. The real run (arm B: AB features, warm start = deployed champion)
+## 8. The real run (AB features, warm start = the winning BLEND)
+
+The warm start is a weight-average ("blend") of the champion with older nets,
+which beat the champion outright (+0.24 pts/game over 1,000 games). The exact
+blend is chosen by a sweep on 2026-10-05; its widened file is committed as
+`blend_AB.pt` (`git pull` first if you cloned before that).
 
     cd ~/quahuru-train && source .venv/bin/activate
+    git pull
     mkdir -p runs
     nohup caffeinate -is env BOARDGAME_DEVICE=mps PYTHONHASHSEED=0 PREFIX=runs/fv2B \
-        WARM_START=symaug6_AB.pt python -u league_run.py >> runs/fv2B.log 2>&1 &
+        WARM_START=blend_AB.pt python -u league_run.py >> runs/fv2B.log 2>&1 &
+
+**The control arm (set up, run later or on the other Mac):** the same pipeline
+WITHOUT the new inputs, from the same blend, so the two runs separate the effect
+of the features from the effect of everything else:
+
+    nohup caffeinate -is env BOARDGAME_DEVICE=mps PYTHONHASHSEED=0 PREFIX=runs/v1ctl \
+        WARM_START=blend.pt python -u league_run.py >> runs/v1ctl.log 2>&1 &
 
 (Add `WORKER_DEVICE=mps` after `BOARDGAME_DEVICE=mps` if step 7 said so.) It
 picks one worker per core minus one automatically. You can close Terminal.
 
-The iter10 arm is the same with `PREFIX=runs/fv2B10 WARM_START=iter10_AB.pt` --
-run the two one after the other, not at the same time (they would share cores).
+Run arms one after the other on one Mac, not at the same time (they would
+share cores) -- or one per Mac.
 
 ## 9. Watching it
 

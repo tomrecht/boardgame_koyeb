@@ -574,6 +574,21 @@ on main's CLAUDE.md, "Next training run". What is here:
       nohup python -u league_run.py >> fv2B.log 2>&1 &
 
 Arm A: same with `A` / `symaug6_A.pt` / `PREFIX=fv2A`. Same SEED_BASE for both.
+**WARM START IS NOW A BLEND (2026-10-05).** Averaging the champion's weights
+with iter10's (50/50) beat the champion by **+0.235 pts/game (95% CI
++0.091..+0.379), 53.4%, 1,000 games** in the app's config, and calibrates better
+(corr +0.159 vs +0.090) -- the champion descends from iter10, so the two share a
+basin. A sweep (75/25, 50/50, 25/75, 3-way + iter14, 4-way + iter11; 300 pairs
+each on the same seeds; `sweep.sh`, `blends/`) picks the winner, then a fresh-seed
+confirmation in the shipped config (winner's curse). Arms (owner): **AB from the
+winning blend** (`blend_AB.pt`, the one run for now) and a **v1 CONTROL** from the
+same blend (`blend.pt`, no new inputs) -- AB vs control separates the features'
+effect from the other nine pipeline changes. Known tensions in this run: the
+prefilter narrows what opening exploration can try (5% unfiltered games are the
+only full exploration); weight averaging halves how fast the zero-initialised
+new-input weights grow (the hedge will show it); the gate plays the shipped
+filter but without the hand rules.
+
 **Second starting point (owner, 2026-10-05): iter10** (`td_champion_July18_iter10.pt`,
 the best-calibrated net on `calib_bench`: corr +0.186 vs the champion's +0.090).
 `python3 widen_v2.py td_champion_July18_iter10.pt AB iter10_AB.pt` (and `A`),
