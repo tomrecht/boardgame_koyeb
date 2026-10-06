@@ -84,10 +84,12 @@ is not usable there: use `BOARDGAME_DEVICE=cpu` instead.
 
 ## 8. The real run (AB features, warm start = the winning BLEND)
 
-The warm start is a weight-average ("blend") of the champion with older nets,
-which beat the champion outright (+0.24 pts/game over 1,000 games). The exact
-blend is chosen by a sweep on 2026-10-05; its widened file is committed as
-`blend_AB.pt` (`git pull` first if you cloned before that).
+The warm start is the new app champion: a plain average ("blend") of four nets'
+weights -- symaug iter6, iter10, iter14, iter11 -- which beat the previous
+champion by +0.158 pts/game over 2,000 fresh games (shipped 2026-10-06).
+`blend.pt` is that net, `blend_AB.pt` the same net widened for the AB inputs
+(an exact copy until training moves it). `git pull` first if you cloned before
+2026-10-06.
 
     cd ~/quahuru-train && source .venv/bin/activate
     git pull

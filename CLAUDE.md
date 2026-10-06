@@ -587,6 +587,9 @@ on main's CLAUDE.md, "Next training run". What is here:
       nohup python -u league_run.py >> fv2B.log 2>&1 &
 
 Arm A: same with `A` / `symaug6_A.pt` / `PREFIX=fv2A`. Same SEED_BASE for both.
+**WARM START = THE 4-WAY BLEND, NOW ALSO THE APP CHAMPION (2026-10-06):**
+`blend.pt` (= `blend4way_Oct6.pt`, v1) and `blend_AB.pt` (widened, exact copy,
+max |diff| 3e-8). See the deployed-model note for the confirmation numbers.
 **WARM START IS NOW A BLEND (2026-10-05).** Averaging the champion's weights
 with iter10's (50/50) beat the champion by **+0.235 pts/game (95% CI
 +0.091..+0.379), 53.4%, 1,000 games** in the app's config, and calibrates better
