@@ -207,8 +207,8 @@ numbered-saved per side, highest occupied goal per side, my saveable count.
   shortest route of mine crosses), est. a few ms, and VALIDATE it against the exact
   version on logged positions before adopting. Needs a JS twin in encoder.js.
   Compute threats for BOTH sides' pieces (the opponent's exposure is my attack).
-- **Enemy blots on a numbered piece's shortest route (owner, 2026-10-06; NOT yet
-  in features_v2).** `blot_probe.py <H>`: 219 of owner's games, ~25k observations
+- **Enemy blots on a piece's shortest route (owner, 2026-10-06; IN the AB set,
+  two per-piece flags >= 1 / >= 2, blanks via their nearest goal).** `blot_probe.py <H>`: 219 of owner's games, ~25k observations
   (numbered field piece, route currently unwalled). Outcome = walled within the
   next H snapshots (turn ends). Controlling for P(walled) (deciles + quadratic),
   route length and enemy field count, adding the blot count cut 10-fold
@@ -221,6 +221,8 @@ numbered-saved per side, highest occupied goal per side, my saveable count.
   own-goal route of length <= 6 was unique (multiple routes only at 7+, ~9% of
   observations, mostly detours round walls); P(walled)=0 pieces (36%) were never
   walled within 5 snapshots.
+  Blanks (nearest goal, no P(walled) to beat): walled within 5 only 1.3%, but
+  0 / 1 / 2 blots 0.7% / 8.8% / 15.8%, AUC 0.81 -> 0.87.
 - **Expected turns to finish, per side** (from per-piece turns-to-bank: exact DP
   values on goals -- blank 1.00-1.64 by goal, numbered 3.27 -- approximated by
   distance elsewhere). Speaks to the bank-the-most bug and the endgame probe's
@@ -544,9 +546,11 @@ on main's CLAUDE.md, "Next training run". What is here:
   numbered pieces (piece), no-save counter, opponent saveable, per-side
   unentered/field/saved, race count, turns to finish, exact endgame-table value
   (global, 14). `AB` = A + per
-  piece P(captured next roll), P(walled next roll), and per side x die 1-6 the
+  piece P(captured next roll), P(walled next roll), enemy blots on its route
+  (flags >= 1, >= 2; numbered: own goal, blank: nearest goal -- added
+  2026-10-06), and per side x die 1-6 the
   pieces that die saves / brings onto a bankable goal / captures, numbered vs
-  blank (global, 72). Widths: v1 12/24/11, A 13/25/25, AB 13/27/97.
+  blank (global, 72). Widths: v1 12/24/11, A 13/25/25, AB 13/29/97.
 * **The checkpoint carries its feature set**: `network.model_from_state(sd)` reads
   it off the input layers and builds the matching model; `TorchBackend` (so every
   `GNNAgent`) builds the matching encoder. v1 panel members and an AB learner mix

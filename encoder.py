@@ -551,8 +551,9 @@ class BoardEncoder:
         cols = [[fv.own_goal_dist(board, p) for p in all_pieces]]
         if self.features == 'AB':
             th = fv.threat_features(board)
-            cols.append([th.get(p, (0.0, 0.0))[0] for p in all_pieces])
-            cols.append([th.get(p, (0.0, 0.0))[1] for p in all_pieces])
+            zero = (0.0, 0.0, 0.0, 0.0)
+            for k in range(4):
+                cols.append([th.get(p, zero)[k] for p in all_pieces])
         piece_feats = np.concatenate(
             [piece_feats, np.asarray(cols, dtype=np.float32).T], axis=1)
         g = fv.global_extras(board, current_player)

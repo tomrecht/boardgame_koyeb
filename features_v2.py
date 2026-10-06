@@ -18,6 +18,12 @@ Feature sets (CLAUDE.md, "Next training run"):
         piece  +2  P(captured if its enemy rolled now), P(its route to its own
                    goal is lengthened by a wall the enemy can build with that
                    roll). Both side-agnostic: "if the other side rolled next".
+        piece  +2  enemy BLOTS (lone enemy pieces) on its shortest route, as
+                   two flags: >= 1, >= 2 (owner, 2026-10-06; blot_probe.py:
+                   predicts walling beyond P(walled), even one roll ahead --
+                   joining a blot is one die, building a wall is two).
+                   Numbered: route to its own goal. Blank: route to its
+                   nearest goal, fewest blots if goals tie.
       and ROLL OPPORTUNITIES (owner, 2026-10-04): for each side and each die
       value 1-6, how many pieces that single die would save, bring onto a goal
       they can bank from, or use to capture -- numbered and blank separately:
@@ -30,7 +36,7 @@ from collections import deque
 
 FEATURE_SETS = ('v1', 'A', 'AB')
 EXTRA_TILE = {'v1': 0, 'A': 1, 'AB': 1}
-EXTRA_PIECE = {'v1': 0, 'A': 1, 'AB': 3}
+EXTRA_PIECE = {'v1': 0, 'A': 1, 'AB': 5}
 EXTRA_GLOBAL = {'v1': 0, 'A': 14, 'AB': 14 + 72}
 
 MAX_DIST = 14.0
@@ -395,9 +401,44 @@ def wall_prob(board, piece):
     return sum(w for a, b, w in ROLLS if walls(a, b))
 
 
+def _route_blots(board, start, goal, blocked, enemy):
+    """Lone enemy pieces on field tiles of the shortest route(s) start -> goal
+    (union if several tie), and the route length. (None, None) = no route."""
+    d_from = _dist_from(board, start, blocked)
+    d_to = _dist_from(board, goal, blocked)
+    if start not in d_to:
+        return None, None
+    base = d_to[start]
+    n = sum(1 for t in board.tiles
+            if t.type == 'field' and t is not start and t in d_from and t in d_to
+            and d_from[t] + d_to[t] == base
+            and len(t.pieces) == 1 and t.pieces[0].player == enemy)
+    return n, base
+
+
+def blots_on_route(board, piece, walled=None, goals=None):
+    """Enemy blots on a field piece's route: own goal for a numbered piece,
+    nearest goal for a blank (fewest blots among equally near goals)."""
+    if piece.tile is None or piece.tile.type != 'field':
+        return 0
+    blocked = walled if walled is not None else _walled_for(board, piece.player)
+    goals = goals or {t.number: t for t in board.tiles if t.type == 'save'}
+    enemy = _other(piece.player)
+    if piece.number <= 6:
+        n, _ = _route_blots(board, piece.tile, goals[piece.number], blocked, enemy)
+        return n or 0
+    best = None
+    for g in goals.values():
+        n, base = _route_blots(board, piece.tile, g, blocked, enemy)
+        if base is not None and (best is None or (base, n) < best):
+            best = (base, n)
+    return best[1] if best else 0
+
+
 def threat_features(board):
-    """{piece: (P_capture, P_wall)} for every piece on a field tile, both
-    sides -- the AB per-piece inputs. Walls and occupancy computed once."""
+    """{piece: (P_capture, P_wall, blots>=1, blots>=2)} for every piece on a
+    field tile, both sides -- the AB per-piece inputs. Walls and occupancy
+    computed once."""
     walled = {pl: _walled_for(board, pl) for pl in ('white', 'black')}
     occ = {pl: frozenset(t for t in board.tiles if t.type == 'field'
                          and any(p.player == pl for p in t.pieces))
@@ -426,7 +467,8 @@ def threat_features(board):
                                 _enemy_movers(board, enemy, w_t, walled[enemy])))
                 wall = sum(w for a, b, w in ROLLS
                            if any(_lands(m, a, b, need) for need, m in per))
-        out[p] = (cap, wall)
+        nb = blots_on_route(board, p, walled[p.player], goals)
+        out[p] = (cap, wall, float(nb >= 1), float(nb >= 2))
     return out
 
 
