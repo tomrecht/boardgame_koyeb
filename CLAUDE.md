@@ -135,8 +135,7 @@ ARCHIVE.md under "Current benchmark".
   Previous: `symaug_champ_July27_iter6.pt`. `REC_MODEL_TAG` = 'blend4way_Oct6'.
   **`sw.js` cache bumped to v9 and `model.onnx` now served `no-cache`** (it was
   cache-first with a week's max-age, so a new net could take a week to reach
-  returning players). The Android package still bundles the OLD net until the
-  next build (would be versionCode 8). Re-export with `BOARDGAME_DEVICE=cpu
+  returning players). The Android package carries it from versionCode 8. Re-export with `BOARDGAME_DEVICE=cpu
   python3 onnx_export.py <ckpt> model.onnx` (self-verifies; on this iMac torch
   must be on CPU).
 - **Inference runs on the device.** `local_agent.js` + the ported stack
@@ -1893,8 +1892,14 @@ with it in mind.** Assessment and the concrete implications:
     needed versionCode 2. **A reinstall from Play does NOT pick up a local
     rebuild** — obvious in hindsight, easy to misread as the icon fix having
     failed.
-    **CURRENT PACKAGE: versionCode 7, versionName 1.0.6, 8.7 MB, built
-    2026-10-03** -- everything from 2026-09-26 to 10-02: the two computer rules
+    **CURRENT PACKAGE: versionCode 8, versionName 1.0.7, 8.7 MB, built
+    2026-10-06** -- the FIRST PRODUCTION RELEASE (Play granted production access
+    2026-10-06). Carries the 4-way blend net (`blend4way_Oct6`), the 0.65-1.0
+    difficulty knots, the fitted prefilter scales and `sw.js` `quahuru-v9`.
+    Verified on the bundle: `jar verified`, versionCode 8 / 1.0.7 /
+    com.quahuru.game, and game.js, agent.js, engine.js, local_agent.js,
+    index.html, sw.js, model.onnx hash-identical to the working tree.
+    Previous: versionCode 7, versionName 1.0.6, 8.7 MB, built 2026-10-03 -- everything from 2026-09-26 to 10-02: the two computer rules
     (never pass a die that could save; bank the most when the opponent's last two
     blanks sit on goal 1), the AI save using the agent's die, the end-card resize
     fix, the refusal explanations, dismissible advice notices, the tutorial rework
