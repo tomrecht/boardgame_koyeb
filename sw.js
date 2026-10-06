@@ -10,7 +10,9 @@
  *
  * Bump CACHE when the shell list changes; activate() drops every other cache.
  */
-const CACHE = 'quahuru-v8';
+// v9 (2026-10-06): new model.onnx (4-way blend) -- the bump makes every
+// installed worker drop its cached copy of the old net.
+const CACHE = 'quahuru-v9';
 
 // The shell is what a cold, offline start needs to render a board.
 const SHELL = [
