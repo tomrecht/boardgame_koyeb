@@ -92,9 +92,21 @@ CONFIG = {
     # 6. prefilter (owner, 2026-10-05): ~10x faster games. Generation uses a
     #    roomier pair cap and leaves a share of games unfiltered so moves the
     #    heuristic culls still get explored; the gate plays the SHIPPED player.
-    'GEN_PREFILTER':   _env('GEN_PREFILTER', '12,80,5', str),   # '' = every pair scored
-    'GEN_UNFILTERED':  _env('GEN_UNFILTERED', 0.2, float),
+    'GEN_PREFILTER':   _env('GEN_PREFILTER', '24,160,5', str),  # '' = every pair scored
+    'GEN_UNFILTERED':  _env('GEN_UNFILTERED', 0.05, float),
     'GATE_PREFILTER':  _env('GATE_PREFILTER', '12,40,5', str),
+    # 7. sequential pre-screen (looks every N seeds, OBF boundaries)
+    'PRESCREEN_SEQ':   _env('PRESCREEN_SEQ', True, _bool),
+    'PRESCREEN_BATCH': _env('PRESCREEN_BATCH', 20, int),
+    'PRESCREEN_ALPHA': _env('PRESCREEN_ALPHA', 0.2, float),   # early-stop boundary (sim: same decisions, 12-44% fewer games)
+    # 8. weight averaging across iterations: avg = BETA*avg + (1-BETA)*trained.
+    #    For the first HEDGE_ITERS iterations BOTH raw and averaged weights
+    #    play the (full) pre-screen on the same seeds; the better one goes to
+    #    the panel. Then the run fixes the mode (higher mean pre-screen margin;
+    #    ties -> averaged) and gates only that. AVG=0 disables it.
+    'AVG':             _env('AVG', True, _bool),
+    'AVG_BETA':        _env('AVG_BETA', 0.5, float),
+    'HEDGE_ITERS':     _env('HEDGE_ITERS', 5, int),
     # 5. late exploration: needs the TD trace CUT at sampled moves (td_returns)
     'LATE_T':          _env('LATE_T', 0.0, float),          # margin points; 0 = off
     'LATE_P':          _env('LATE_P', 0.15, float),         # per learner turn past the opening
@@ -148,6 +160,9 @@ def main():
                      alpha=C['GATE_ALPHA'], guard=C['GATE_GUARD'],
                      prescreen_pairs=C['PRESCREEN_PAIRS'],
                      prescreen_bar=C['PRESCREEN_BAR'],
+                     prescreen_seq=C['PRESCREEN_SEQ'],
+                     prescreen_batch_pairs=C['PRESCREEN_BATCH'],
+                     prescreen_alpha=C['PRESCREEN_ALPHA'],
                      cache_path=f'{P}_panel_cache.json',
                      hand_rules=C['HAND_RULES'], prefix=P)
 
@@ -217,9 +232,55 @@ def main():
         c, sl, g, n = calib_bench.score_model(network.model_from_state(champion_sd))
         print(f"Calibration benchmark, champion: corr {c:+.3f} slope {sl:+.3f} (n {n})")
 
+    hedge_path = f'{P}_hedge.json'
+    hedge = json.load(open(hedge_path)) if os.path.exists(hedge_path) else \
+        {'mode': None, 'diffs': [], 'avg': None, 'prev_reverted': False}
+    avg_state = {'sd': None}
+
+    def _blend(a, b, beta):
+        return {k: (beta * a[k] + (1 - beta) * b[k]) if a[k].dtype.is_floating_point else b[k]
+                for k in b}
+
     def gate_fn(model, champ_sd, it):
         sd = {k: v.detach().cpu() for k, v in model.state_dict().items()}
-        rep = gate.evaluate(sd, champ_sd, label=f'it{it}')
+        if not C['AVG']:
+            rep = gate.evaluate(sd, champ_sd, label=f'it{it}')
+            return _finish(rep, sd, it)
+        # running average of the trained weights; restarts from the champion
+        # whenever the live model was reverted to it
+        prev = avg_state['sd']
+        if prev is None or hedge.get('prev_reverted'):
+            prev = champ_sd
+        avg = _blend(prev, sd, C['AVG_BETA'])
+        avg_state['sd'] = avg
+        mode = hedge.get('mode')
+        if mode is None:
+            r_raw = gate.prescreen(sd, champ_sd, f'it{it} raw', sequential=False)
+            r_avg = gate.prescreen(avg, champ_sd, f'it{it} averaged', sequential=False,
+                                   cand_path=gate.cand_path + '.avg.pt')
+            hedge['diffs'].append(r_avg[1] - r_raw[1])
+            use_avg = r_avg[1] >= r_raw[1]
+            print(f"  HEDGE it{it}: averaged {r_avg[1]:+.3f} vs raw {r_raw[1]:+.3f} -> gate "
+                  f"{'averaged' if use_avg else 'raw'}  ({len(hedge['diffs'])}/{C['HEDGE_ITERS']})")
+            if len(hedge['diffs']) >= C['HEDGE_ITERS']:
+                md = sum(hedge['diffs']) / len(hedge['diffs'])
+                hedge['mode'] = 'avg' if md >= 0 else 'raw'
+                print(f"  HEDGE RESOLVED: mean (averaged - raw) {md:+.3f} -> gate {hedge['mode']} from now on")
+            cand, pres = (avg, r_avg) if use_avg else (sd, r_raw)
+        else:
+            cand, pres = (avg, None) if mode == 'avg' else (sd, None)
+        rep = gate.evaluate(cand, champ_sd, label=f'it{it}', prescreen_result=pres)
+        if cand is avg:
+            rep['promote_sd'] = avg
+            rep['gated'] = 'averaged'
+        else:
+            rep['gated'] = 'raw'
+        hedge['prev_reverted'] = not (rep.get('promote') or rep.get('keep'))
+        with open(hedge_path, 'w') as fh:
+            json.dump({k: v for k, v in hedge.items() if k != 'avg'}, fh)
+        return _finish(rep, cand, it)
+
+    def _finish(rep, sd, it):
         if calib_ok:
             c, sl, g, n = calib_bench.score_model(network.model_from_state(sd))
             rep['calib'] = {'corr': round(c, 4), 'slope': round(sl, 4), 'n': n}
@@ -230,7 +291,7 @@ def main():
                   f"{t['secs'] / t['games']:.1f}s/game single-core, "
                   f"{t['turns'] / t['games']:.0f} turns/game")
         with open(f'{P}_gate_log.jsonl', 'a') as f:
-            f.write(json.dumps({'iter': it, **rep}) + '\n')
+            f.write(json.dumps({'iter': it, **{k: v for k, v in rep.items() if k != 'promote_sd'}}) + '\n')
         return rep
 
     t0 = time.time()

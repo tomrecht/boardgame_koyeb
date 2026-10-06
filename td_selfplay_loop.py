@@ -292,6 +292,13 @@ def run_td_selfplay(model,
         fork_label = None            # set only when a random-fork revert fires
         if promoted:
             action = 'promoted'
+            # The gate may have promoted different weights than the live model
+            # (league_run's weight averaging): it returns them as 'promote_sd',
+            # and the live model continues from them.
+            psd = (gate_report or {}).get('promote_sd')
+            if psd is not None:
+                model.load_state_dict(psd)
+                optimizer = torch.optim.Adam(model.parameters(), lr=lr)
             champion_sd = _cpu_state_dict(model)
             torch.save(champion_sd, f'{save_prefix}_champion.pt')
             what = (f'panel score {wr:+.3f}' if gate_fn is not None

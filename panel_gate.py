@@ -148,6 +148,9 @@ def obf_constant(fracs, alpha, n_sims=200_000, seed=12345):
     return hi_c
 
 
+_OBF_CACHE = {}
+
+
 class SequentialTest:
     """Group-sequential one-sided test on paired differences d."""
 
@@ -156,7 +159,10 @@ class SequentialTest:
         N = self.n_per_look[-1]
         self.fracs = [n / N for n in self.n_per_look]
         self.alpha = alpha
-        self.c = obf_constant(self.fracs, alpha)
+        key = (tuple(round(f, 9) for f in self.fracs), alpha)
+        if key not in _OBF_CACHE:          # deterministic, so cache per schedule
+            _OBF_CACHE[key] = obf_constant(self.fracs, alpha)
+        self.c = _OBF_CACHE[key]
 
     def boundary(self, k, n):
         """t-scale boundary at look k (0-based) with n units."""
@@ -224,7 +230,8 @@ def panel_game(task):
 # -------------------- main-process side --------------------
 class PanelGate:
     def __init__(self, panel=None, max_pairs=100, batch_pairs=20, alpha=0.05,
-                 guard=-1.0, prescreen_pairs=100, prescreen_bar=0.0,
+                 guard=-1.0, prescreen_pairs=100, prescreen_bar=0.0, prescreen_seq=True,
+                 prescreen_batch_pairs=20, prescreen_alpha=0.2,
                  sequential=True, seed_base=PANEL_SEED_BASE,
                  cache_path='panel_cache.json', hand_rules=False, workdir='.',
                  prefix='panel', check_paths=True):
@@ -238,6 +245,9 @@ class PanelGate:
         self.seeds = [seed_base + k for k in range(max_pairs)]
         self.prescreen_seeds = [PRESCREEN_SEED_BASE + k for k in range(prescreen_pairs)]
         self.prescreen_bar = prescreen_bar
+        self.prescreen_seq = prescreen_seq
+        self.prescreen_batch_pairs = prescreen_batch_pairs
+        self.prescreen_alpha = prescreen_alpha
         self.alpha = alpha
         self.guard = guard
         self.cache_path = cache_path
@@ -319,33 +329,64 @@ class PanelGate:
         return [0.5 * (g[f'{tag}|{s}|1'] + g[f'{tag}|{s}|0']) for s in self.seeds[:n_pairs]]
 
     # ---- stage 1 ----
-    def prescreen(self, cand_sd, champ_sd, label):
-        """Candidate vs current champion. Returns (passed, mean, games)."""
+    def prescreen(self, cand_sd, champ_sd, label, sequential=None, cand_path=None):
+        """Candidate vs current champion. Returns (passed, mean, games).
+
+        Sequential (default when self.prescreen_seq): looks every
+        prescreen_batch_pairs seeds with the panel's O'Brien-Fleming boundaries
+        on the per-seed mean margin minus the bar -- stop early to REJECT when
+        clearly behind or to PASS when clearly ahead; at the last look the rule
+        is the fixed one (pass iff mean >= bar). sequential=False plays every
+        seed (the averaging hedge needs both versions on the same seeds)."""
         if not self.prescreen_seeds:
             return True, None, 0
-        self.save_weights(cand_sd, self.cand_path)
+        seq = self.prescreen_seq if sequential is None else sequential
+        cpath = cand_path or self.cand_path
+        self.save_weights(cand_sd, cpath)
         self.save_weights(champ_sd, self.parent_path)
         ch, ph = sd_hash(cand_sd), sd_hash(champ_sd)
-        tasks = [(self.cand_path, ch, 'parent', self.parent_path, s, cw,
-                  self.hand_rules, ph)
-                 for s in self.prescreen_seeds for cw in (True, False)]
+        seeds = list(self.prescreen_seeds)
+        step = self.prescreen_batch_pairs if seq else len(seeds)
+        looks = list(range(step, len(seeds), step)) + [len(seeds)]
+        test = SequentialTest(looks, alpha=self.prescreen_alpha) if seq and len(looks) > 1 else None
         t0 = time.time()
-        res = self.run_tasks(tasks)
+        res, done, per_seed = [], 0, {}
+        decision = None
+        for k, upto in enumerate(looks):
+            tasks = [(cpath, ch, 'parent', self.parent_path, s, cw, self.hand_rules, ph)
+                     for s in seeds[done:upto] for cw in (True, False)]
+            res += self.run_tasks(tasks)
+            done = upto
+            for r in res:
+                per_seed.setdefault(r['seed'], {})[r['cand_white']] = r['margin']
+            d = [sum(v.values()) / 2 - self.prescreen_bar for v in per_seed.values() if len(v) == 2]
+            if test is not None and k < len(looks) - 1:
+                dec, m_, se_, t_, b_ = test.decide(k, d)
+                print(f'    pre-screen look {k + 1}/{len(looks)}: {done} seeds, mean-bar {m_:+.3f} '
+                      f'se {se_:.3f} t {t_:+.2f} vs +-{b_:.2f} -> {dec}')
+                if dec == 'promote':
+                    decision = True
+                    break
+                if dec == 'reject':
+                    decision = False
+                    break
         m = sum(r['margin'] for r in res) / len(res)
         wins = sum(r['margin'] > 0 for r in res)
-        passed = m >= self.prescreen_bar
+        passed = decision if decision is not None else (m >= self.prescreen_bar)
         print(f'  PRE-SCREEN [{label}] vs parent: {len(res)} games ({time.time() - t0:.0f}s), '
               f'mean margin {m:+.3f}, wins {wins}/{len(res)} -> '
-              f'{"pass" if passed else "REJECT"} (bar {self.prescreen_bar:+.2f})')
+              f'{"pass" if passed else "REJECT"} (bar {self.prescreen_bar:+.2f})'
+              + (' [early]' if decision is not None else ''))
         return passed, m, len(res)
 
     # ---- full gate ----
-    def evaluate(self, cand_sd, champ_sd, label='candidate'):
+    def evaluate(self, cand_sd, champ_sd, label='candidate', prescreen_result=None):
         """Gate `cand_sd` relative to `champ_sd`. Returns a report dict;
         report['promote'] is the decision, report['outcome'] one of
         prescreen_reject / promote / guard_fail / reject / cap."""
         ch, hh = sd_hash(cand_sd), sd_hash(champ_sd)
-        passed, pm, pgames = self.prescreen(cand_sd, champ_sd, label)
+        passed, pm, pgames = (prescreen_result if prescreen_result is not None
+                              else self.prescreen(cand_sd, champ_sd, label))
         rep = {'prescreen_mean': pm, 'prescreen_games': pgames,
                'panel_games': 0, 'champ_games_new': 0}
         if not passed:
