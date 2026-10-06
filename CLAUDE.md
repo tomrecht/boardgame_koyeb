@@ -119,10 +119,23 @@ ARCHIVE.md under "Current benchmark".
 
 ## AI and model — current status
 
-- **Deployed model: `model.onnx` = `symaug_champ_July27_iter6.pt`**, the
-  symmetry-aug run's promoted champion; owner reports it as his strongest
-  opponent. Re-export with `onnx_export.py <ckpt> model.onnx`, which
-  self-verifies.
+- **Deployed model: `model.onnx` = `blend4way_Oct6.pt` (shipped 2026-10-06)**,
+  the plain AVERAGE of four nets' weights: symaug iter6 (the previous champion),
+  iter10, iter14 and symaug iter11 (one lineage, so they share a basin).
+  **Confirmed vs the previous champion on fresh seeds in the app's config:
+  +0.158 pts/game (95% CI +0.056..+0.259), 52.3%, 2,000 games.** Sweep (300
+  pairs each vs the old champion, same seeds): 4-way +0.153, 75/25 +0.102,
+  50/50 +0.102, 3-way +0.043, 25/75 (iter10-heavy) -0.160. 4-way vs 50/50 head
+  to head: -0.072 +- 0.143 (level). A play-time ENSEMBLE (champion + iter10
+  values averaged) +0.150 +- 0.187 vs the old champion -- no better than a
+  blend at twice the inference, not pursued. Calibration (calib_bench): +0.159.
+  Previous: `symaug_champ_July27_iter6.pt`. `REC_MODEL_TAG` = 'blend4way_Oct6'.
+  **`sw.js` cache bumped to v9 and `model.onnx` now served `no-cache`** (it was
+  cache-first with a week's max-age, so a new net could take a week to reach
+  returning players). The Android package still bundles the OLD net until the
+  next build (would be versionCode 8). Re-export with `BOARDGAME_DEVICE=cpu
+  python3 onnx_export.py <ckpt> model.onnx` (self-verifies; on this iMac torch
+  must be on CPU).
 - **Inference runs on the device.** `local_agent.js` + the ported stack
   (`route.js`, `encoder.js`, `infer.js`, `engine.js`, `heuristic.js`,
   `agent.js`) answer every move; there is no application server in play. The

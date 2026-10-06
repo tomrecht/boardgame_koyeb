@@ -163,8 +163,10 @@ def build(out):
             "\n"
             "/ort/*\n"
             "  Cache-Control: public, max-age=31536000\n"
+            # no-cache (revalidate) rather than a week's max-age: a new champion
+            # must reach returning players on their next visit (2026-10-06)
             "/model.onnx\n"
-            "  Cache-Control: public, max-age=604800\n"
+            "  Cache-Control: no-cache\n"
             "/phaser.min.js\n"
             "  Cache-Control: public, max-age=31536000\n"
             "/assets/*\n"
