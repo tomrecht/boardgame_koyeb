@@ -590,6 +590,15 @@ on main's CLAUDE.md, "Next training run". What is here:
       nohup python -u league_run.py >> fv2B.log 2>&1 &
 
 Arm A: same with `A` / `symaug6_A.pt` / `PREFIX=fv2A`. Same SEED_BASE for both.
+**FULL-SIZE PRE-FLIGHT (2026-10-06, this iMac, `preflight/fv2B.log`): the whole
+loop works at real sizes** -- 300 generation games (72 min, 42-46 s/game single
+core), 8 epochs on 13,469 positions, hedge pre-screens 200+200 games (raw -0.055,
+averaged +0.055 -> averaged gated), panel REJECT at look 4/5 (paired diff -0.294
++- 0.146; vs symaug6 -0.73, iter10 -0.20, iter14 +0.05), reverted to the
+champion. 4.0 h incl. the one-off 480-game champion cache; gate games 21 s
+single core. **Watch:** this first fine-tuning iteration made the blend WEAKER
+(~-0.3) -- plausibly one iteration of data pulling it off the averaged optimum.
+If the first 4-5 real iterations all reject, lower LR (2e-5) or EPOCHS (4).
 **WARM START = THE 4-WAY BLEND, NOW ALSO THE APP CHAMPION (2026-10-06):**
 `blend.pt` (= `blend4way_Oct6.pt`, v1) and `blend_AB.pt` (widened, exact copy,
 max |diff| 3e-8). See the deployed-model note for the confirmation numbers.

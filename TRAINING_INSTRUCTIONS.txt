@@ -167,6 +167,13 @@ Is it still running?
 (no output = not running)
 
 
+IF THE FIRST 4-5 ITERATIONS ALL SAY REJECT: the fine-tuning is too strong for the
+blend it starts from. Stop the run (pkill -f league_run.py) and resume it with a
+gentler setting -- add LR=2e-5 (and if that is not enough, EPOCHS=4) after
+PYTHONHASHSEED=0 in the run command. (The full-size test on the home iMac rejected
+its first iteration at -0.29 points.)
+
+
 ==========================================================================================
 STOPPING, RESUMING, RESTARTS
 ==========================================================================================
