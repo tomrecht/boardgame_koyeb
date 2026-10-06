@@ -129,6 +129,9 @@ ARCHIVE.md under "Current benchmark".
   to head: -0.072 +- 0.143 (level). A play-time ENSEMBLE (champion + iter10
   values averaged) +0.150 +- 0.187 vs the old champion -- no better than a
   blend at twice the inference, not pursued. Calibration (calib_bench): +0.159.
+  **Round 2 vs the NEW champion (300 pairs each): 6-way (+aux14, iter4) +0.020,
+  champion-heavy 4-way (0.4/0.2/0.2/0.2) +0.010, 5-way (+aux14) -0.007 -- all
+  +-0.19, i.e. the soup gain has saturated at the 4-way; don't repeat it.**
   Previous: `symaug_champ_July27_iter6.pt`. `REC_MODEL_TAG` = 'blend4way_Oct6'.
   **`sw.js` cache bumped to v9 and `model.onnx` now served `no-cache`** (it was
   cache-first with a week's max-age, so a new net could take a week to reach
