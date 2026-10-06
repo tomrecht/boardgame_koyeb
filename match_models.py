@@ -8,6 +8,9 @@ Appends to match_<tag>.jsonl; resumes.
 import json, math, os, random, statistics, sys
 import multiprocessing as mp
 
+# torch nets (ensembles) on CPU: this iMac's Metal backend crashes in the GNN's scatter
+os.environ.setdefault('BOARDGAME_DEVICE', 'cpu')
+
 REPO = os.path.dirname(os.path.abspath(__file__))
 MODEL_A = os.environ.get('MODEL_A', f'{REPO}/blend50.onnx')
 MODEL_B = os.environ.get('MODEL_B', f'{REPO}/model.onnx')
@@ -19,12 +22,35 @@ MAX_TURNS, STUCK_LIMIT = 200, 60
 _AG = {}
 
 
+def _ensemble(spec):
+    """'ens:a.pt+b.pt[+...]' -> a torch module whose value is the MEAN of the
+    nets' values (an ensemble at play time, not a weight blend)."""
+    import torch, network
+    paths = spec[len('ens:'):].split('+')
+    nets = [network.model_from_state(torch.load(p, map_location='cpu')) for p in paths]
+
+    class Ensemble(torch.nn.Module):
+        def __init__(self):
+            super().__init__()
+            self.nets = torch.nn.ModuleList(nets)
+            self.features = nets[0].features
+
+        def forward(self, x):
+            return sum(n(x) for n in self.nets) / len(self.nets)
+    m = Ensemble()
+    m.eval()
+    return m
+
+
 def _agents():
     if not _AG:
         from agent_gnn import GNNAgent
         for k, path in (('A', MODEL_A), ('B', MODEL_B)):
-            _AG[k] = GNNAgent(weights_path=path, use_prefilter=True, prefilter_top_k=40,
-                              prefilter_min_k=5, first_move_prefilter=12)
+            kw = dict(use_prefilter=True, prefilter_top_k=40, prefilter_min_k=5, first_move_prefilter=12)
+            if path.startswith('ens:'):
+                _AG[k] = GNNAgent(model=_ensemble(path), **kw)
+            else:
+                _AG[k] = GNNAgent(weights_path=path, **kw)
     return _AG['A'], _AG['B']
 
 
