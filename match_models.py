@@ -14,7 +14,7 @@ MODEL_B = os.environ.get('MODEL_B', f'{REPO}/model.onnx')
 TAG = os.environ.get('TAG', 'models')
 OUT = os.path.join(REPO, f'match_{TAG}.jsonl')
 N_WORKERS = int(os.environ.get('N_WORKERS', '4'))
-SEED_BASE = 6_600_000
+SEED_BASE = int(os.environ.get('SEED_BASE', '6600000'))
 MAX_TURNS, STUCK_LIMIT = 200, 60
 _AG = {}
 
