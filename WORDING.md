@@ -49,7 +49,7 @@ A wall doesn’t stop you, but it can make you pay. Black has walled the tile in
 Sometimes the only way past a wall is to buy it down. The two walled tiles are the only ways into goals 2 and 4, so both are sealed — your <b>2</b> has no route home on any roll. Spend your dice on the door: double-click one of the two black pieces on the wall <b>in front of goal 2</b> to <b>save it for Black</b>. It costs both dice and hands Black a point, but the wall drops to a single piece — your 2 has a path again.
 
 ### Step 9 — The endgame
-<b>⏩ Later.</b> Once every piece is on a goal, saving gets easier. All but one of yours already are — use the <b>1</b> to step it onto goal 3. That’s the <b>endgame</b>: a blank now goes out on any die <i>bigger</i> than its goal’s number, as long as you hold no higher goal. Your highest is goal 3, so the <b>5</b> takes a blank straight off it. Numbered pieces never get this; they always need their own number.
+<b>⏩ Later.</b> Once every piece is on a goal, saving gets easier. Use the <b>1</b> to step your last one onto goal 3. That’s the <b>endgame</b>, and your saved rack lights up to show it: a blank now goes out on any die <i>bigger</i> than its goal’s number, if you hold no higher goal. Your highest is goal 3, so the <b>5</b> takes a blank off it. Numbered pieces always need their own number.
 
 ### Step 10 — Some dice do nothing
 Not every roll can be used, and that’s fine. The <b>4</b> takes your last blank off goal 3. Your 2 can’t use the 5 — a numbered piece only ever goes out on its own number. Nothing else to do, so end your turn yourself: the right-hand arrow above the board (or the Enter key).

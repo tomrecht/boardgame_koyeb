@@ -3526,6 +3526,25 @@ function _tutApply(game, spec) {
     });
 }
 
+// The endgame mark on the saved racks. DERIVED from each player's phase every
+// frame, so every path that changes the phase (moves, undo, captures, the
+// tutorial and ?pos layouts) is covered without a hook. The pulse fires only on
+// a phase change seen on the SAME game; the first sight of a game, and a layout
+// jump (`_endgameMarkSync`), set the mark silently.
+function _endgameMarkTick(game, pulse = true) {
+    if (!game || !game.players || !game.whiteSavedRack) return;
+    const first = !game._egSeen;
+    game._egSeen = true;
+    [['white', game.whiteSavedRack], ['black', game.blackSavedRack]].forEach(([name, rack]) => {
+        const pl = game.players.find(p => p.name === name);
+        const on = !!(pl && pl.getGamePhase() === 'endgame' && !game.gameOver);
+        if (!!rack._endgame === on) return;
+        rack.setEndgame(on);
+        if (on && pulse && !first) rack.pulseEndgame();
+    });
+}
+function _endgameMarkSync(game) { _endgameMarkTick(game, false); }
+
 // Re-derive both players' phases from the laid-out position, the same way the
 // game does it (canBeSaved() reads the phase, so midgame has to be set first).
 function _tutPhases(game) {
@@ -4093,7 +4112,7 @@ const _tutSteps = [
     {
         title: 'The endgame',
         fast: true,
-        text: '<b>⏩ Later.</b> Once every piece is on a goal, saving gets easier. All but one of yours already are — use the <b>1</b> to step it onto goal 3. That’s the <b>endgame</b>: a blank now goes out on any die <i>bigger</i> than its goal’s number, as long as you hold no higher goal. Your highest is goal 3, so the <b>5</b> takes a blank straight off it. Numbered pieces never get this; they always need their own number.',
+        text: '<b>⏩ Later.</b> Once every piece is on a goal, saving gets easier. Use the <b>1</b> to step your last one onto goal 3. That’s the <b>endgame</b>, and your saved rack lights up to show it: a blank now goes out on any die <i>bigger</i> than its goal’s number, if you hold no higher goal. Your highest is goal 3, so the <b>5</b> takes a blank off it. Numbered pieces always need their own number.',
         dice: [1, 5],
         pos: { white: { board: [[2, [7, 4]], [11, [7, 8]], [12, [6, 8]]],
                         saved: [1, 3, 4, 5, 6, 7, 8, 9, 10] },
@@ -4332,6 +4351,7 @@ function _tutRender() {
         _tutApply(game, step.pos);
         _tutSetDice(game, step.dice[0], step.dice[1]);
         _tutPhases(game);
+        _endgameMarkSync(game);
         _tutRefresh(game);
         if (step.after) { try { step.after(game); } catch (e) { console.warn('[TUTORIAL] after() failed:', e); } }
     }
@@ -5537,6 +5557,7 @@ function loadPositionNotation(str, game) {
     else game.rollDice();
     _tutPhases(game);
     game.gameOver = false;
+    _endgameMarkSync(game);
     game.undoStack = [];
     game._pendingPreMove = null;
     game.pieces.forEach(p => { p.reachableTiles = null; p.justMovedHome = false; p._turnStartTile = p.currentTile || null; });
@@ -7858,6 +7879,31 @@ class Rack {
         if (game.sumSave(piece)) _clearSelection(game);
     }
 
+    setEndgame(on) {
+        if (!!this._endgame === !!on) return;
+        this._endgame = !!on;
+        this.drawBackground();
+    }
+
+    // Two accent outlines swelling off the panel and fading: the moment of
+    // entering the endgame, once, without words.
+    pulseEndgame() {
+        const sc = this.scene, b = this._box;
+        if (!sc || !b || !sc.tweens) return;
+        const g = sc.add.graphics().setDepth(this.background.depth);
+        const st = { t: 0 };
+        sc.tweens.add({
+            targets: st, t: 1, duration: 750, repeat: 1, ease: 'Sine.easeOut',
+            onUpdate: () => {
+                const d = st.t * 16;
+                g.clear();
+                g.lineStyle(3, THEME.accent, 1 - st.t);
+                g.strokeRoundedRect(b.bx - d, b.by - d, b.bw + 2 * d, b.bh + 2 * d, 16 + d);
+            },
+            onComplete: () => g.destroy(),
+        });
+    }
+
     drawBackground() {
         // Clear first: this is redrawn on rotation now, and a Graphics replays
         // its entire command list every frame.
@@ -7871,8 +7917,18 @@ class Rack {
         this.background.fillRoundedRect(bx, by + 5, bw, bh, 16);      // soft drop shadow
         this.background.fillStyle(0xffffff, 1);
         this.background.fillRoundedRect(bx, by, bw, bh, 16);
-        this.background.lineStyle(1.5, 0xdbe1ea, 1);
+        // A saved rack whose owner is in the ENDGAME takes a faint accent ground
+        // and an accent edge (owner, 2026-10-07): the place the pieces are headed
+        // says that saving has got easier. Set by _endgameMarkTick, not here.
+        if (this._endgame) {
+            this.background.fillStyle(THEME.accent, 0.07);
+            this.background.fillRoundedRect(bx, by, bw, bh, 16);
+            this.background.lineStyle(2.5, THEME.accent, 0.9);
+        } else {
+            this.background.lineStyle(1.5, 0xdbe1ea, 1);
+        }
         this.background.strokeRoundedRect(bx, by, bw, bh, 16);
+        this._box = { bx, by, bw, bh };
         if (this.type === 'saved') this._wireSaveTap(bx, by, bw, bh);
         // The unentered panel takes taps as well, for the send-to-goal gesture.
         // The first tap of that double-click moves the piece OFF the rack, so
@@ -10432,7 +10488,7 @@ class MainGameScene extends Phaser.Scene {
     }
 
     update() {
-        // Update logic if needed
+        _endgameMarkTick(this.game);
     }
 
     checkInitialAIReady() {

@@ -479,6 +479,17 @@ with it in mind.** Assessment and the concrete implications:
 
 ## Current state
 
+- **ENDGAME MARK ON THE SAVED RACK (owner, 2026-10-07; on `testing`).** A
+  player in the endgame gets a faint accent ground and accent edge on their SAVED
+  rack, plus a one-off double pulse when they enter it. `_endgameMarkTick` runs in
+  `MainGameScene.update()` and DERIVES the mark from `getGamePhase()` each frame;
+  the pulse fires only on a change seen on the same game, and tutorial / `?pos`
+  layouts call `_endgameMarkSync` (silent). Tutorial step "The endgame" says the
+  rack lights up -- text trimmed so it is no taller than before (desktop 96px
+  same, portrait 174 -> 152, landscape no longer scrolls). Measured: stepping the
+  12 onto goal 3 via the real handlers -> phase endgame, mark on, 1 pulse, at
+  desktop / portrait / portrait+insets / landscape.
+
 - **POSITION NOTATION, `?pos=`, AND `pos_image.mjs` (owner, 2026-10-02; dev only,
   on main since 2026-10-03).** A FEN-like text form, documented beside `positionToNotation`
   in game.js:
