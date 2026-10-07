@@ -10546,6 +10546,11 @@ class EndGameScene extends Phaser.Scene {
 
         if (this.inMatch && matchTracker) {
             const m = matchTracker;
+            // The running score is what the player looks for between games
+            // (owner, 2026-10-07), so it gets its own row in the headline's ink
+            // rather than sharing a small grey line with the game count.
+            const scoreRow = (y) => headline(y,
+                `White ${m.whiteScore} (${m.whiteWins}W)   ·   Black ${m.blackScore} (${m.blackWins}W)`, 30);
             if (this.matchOver) {
                 // The winner's MARGIN, not their running total -- a match is won
                 // on total score, so the interesting number is the gap. It can be
@@ -10555,34 +10560,34 @@ class EndGameScene extends Phaser.Scene {
                 const mres = m.winner === 'draw' ? 'The match is a draw!'
                     : mDiff > 0 ? `${_cap(m.winner)} wins the match by ${mDiff}`
                                 : `${_cap(m.winner)} wins the match on games won`;
-                const top = card(340);
+                const top = card(380);
                 subline(top + P(58), message, 21);
                 headline(top + P(118), mres, 34);
-                subline(top + P(182),
-                    `White ${m.whiteScore} (${m.whiteWins}W)   ·   Black ${m.blackScore} (${m.blackWins}W)   ·   ${m.gamesPlayed} games`, 21);
-                button(CENTER_X - P(105), top + P(262), 'New Match', false,
+                scoreRow(top + P(182));
+                subline(top + P(224), `${m.gamesPlayed} games`, 21);
+                button(CENTER_X - P(105), top + P(302), 'New Match', false,
                     () => { abortAndClear(); matchTracker = null; refreshSettingsMatchState(); showMatchSetup(); });
-                button(CENTER_X + P(105), top + P(262), 'Single Game', true,
+                button(CENTER_X + P(105), top + P(302), 'Single Game', true,
                     () => { matchTracker = null; refreshSettingsMatchState(); startGame('white'); });
             } else {
                 const status = m.mode === 'race' ? `race to ${m.target}`
                     : `game ${m.gamesPlayed + 1} of ${m.target}`;
                 const extended = m.justExtended;
                 m.justExtended = false;
-                const top = card(extended ? 330 : 290);
-                headline(top + P(78), message, 34);
-                subline(top + P(142),
-                    `White ${m.whiteScore} (${m.whiteWins}W)   ·   Black ${m.blackScore} (${m.blackWins}W)   ·   ${status}`, 21);
+                const top = card(extended ? 370 : 330);
+                headline(top + P(74), message, 34);
+                scoreRow(top + P(142));
+                subline(top + P(184), status, 21);
                 if (extended) {
                     // Was 20 against the score line's 21, and in a lighter accent
                     // colour, which read as noticeably smaller than everything
                     // else on the card. Matched to the score line and given the
                     // weight to go with being a one-off announcement.
-                    subline(top + P(186),
+                    subline(top + P(226),
                         `Level after ${m.extendedAt} games — match extended by 2`, 21)
                         .setColor(THEME.accentCss).setFontStyle('bold');
                 }
-                button(CENTER_X, top + P(extended ? 258 : 218), 'Next Game', false,
+                button(CENTER_X, top + P(extended ? 298 : 258), 'Next Game', false,
                     () => startGame(matchStarterForGame(m.gamesPlayed)));
             }
             return;
