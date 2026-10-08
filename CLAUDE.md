@@ -479,28 +479,41 @@ with it in mind.** Assessment and the concrete implications:
 
 ## Current state
 
-- **BACK GUARD: AN ACCIDENTAL BACK SWIPE NO LONGER LEAVES THE GAME (owner,
-  2026-10-07).** The gesture itself cannot be stopped from the page (ARCHIVE.md,
-  2026-08-14; fullscreen is the only suppression), so instead, while a game is in
-  progress (`_gameHasProgress`), a pointerup pushes a dummy history entry
-  (`_armBackGuard`; must be inside a user gesture or Chrome skips the entry). A
-  back pops only that entry: popstate, a notice, the game untouched; the next tap
-  re-arms; a second back really leaves. With no game in progress a pop carries on
-  backwards. Measured headless: no entry before progress, one after a tap, back 1
-  stays on the page with the notice, back 2 reaches the previous page. **Not yet
-  confirmed with the real Android gesture on a device.**
-  **Why fullscreen did not protect owner:** on Android Chrome a back gesture in
-  fullscreen EXITS fullscreen, and the game re-entered it only on the first tap
-  after load -- so the first accidental swipe dropped it silently (the Settings
-  box unticked, the stored pref stayed '1') and the next one navigated away. Now
-  any tap re-enters fullscreen while the setting is on (`_armFullscreenOnFirstGesture`
-  is no longer one-shot).
-  **On owner's phone (fullscreen off) back still LEFT with no notice** -- either
-  Koyeb was stale or Chrome's back-button skip of page-added entries (CDP's
-  goBack, used in the test, does not apply it; the touch path was re-measured and
-  arms fine). Second layer added: `beforeunload` with preventDefault while a game
-  is in progress, i.e. Chrome's own "Leave site?" prompt (also fires on reload).
-
+- **LEAVING A GAME BY ACCIDENT: AUTOSAVE + BACK HANDLING (owner, 2026-10-07).**
+  Owner's phone: a tap near the edge read as a back swipe and left the site,
+  losing the game -- in fullscreen too, because on Android Chrome a back gesture
+  in fullscreen EXITS fullscreen, and the game re-entered it only on the first
+  tap after load, so the next swipe navigated. Four layers:
+  1. **Fullscreen re-enters on any tap** while the setting is on
+     (`_armFullscreenOnFirstGesture` is no longer one-shot).
+  2. **Web back guard** (`_armBackGuard`): while `_gameHasProgress()`, a
+     pointerup pushes a dummy history entry, so back pops it (popstate, notice)
+     and a second back leaves. **Plus `beforeunload`** ("Leave site?").
+     **Owner, on device, fullscreen off: sometimes the notice, sometimes the
+     prompt, sometimes it just leaves.** Chrome may skip page-added entries on
+     its back button and may decline the prompt; neither is visible to the page.
+     That is the browser's anti-hijacking stance, not a bug to chase.
+  3. **AUTOSAVE** (`_savedGameWrite`, key `savedGame`, this browser's
+     localStorage only): written at every TURN START from `switchTurn` (so a
+     half-played turn resumes from its start with the SAME dice), cleared in
+     `endGame` and when a fresh real game is built. Stores the position
+     notation plus each blank's identity (`ids`, so recorded moves still name the
+     right pieces), both isAI flags, starter, the no-save counter, matchTracker
+     and the recorder's open entry (same id, `resumed` count; `merge_games.py`
+     now keeps the duplicate that got furthest). The welcome card offers
+     **Resume game / Resume match**. Measured: 10 self-play turns, reload,
+     Resume -> notation AND every piece's identity identical, recorder 10 turns
+     same id, play continues (10 -> 17 turns).
+     **Known gap:** resuming a MATCH loads into the welcome card's held scene,
+     whose HUD row was built for casual play (New Game shows). Not fixed.
+     Between games of a match nothing is saved.
+  4. **Android app: `@capacitor/app` installed** (8.1.2; `cap sync` wired it into
+     `capacitor.settings.gradle` / `capacitor.build.gradle`; `assembleDebug`
+     builds). Back no longer reaches the WebView history: during a game the first
+     back shows a notice, a second within 2.5 s MINIMISES (not exit); otherwise
+     minimises at once. Without a listener the plugin would make back do nothing
+     at all at the root, so the listener is required. **Ships with the next
+     package (versionCode 8); not yet run on a device.**
 - **ENDGAME MARK ON THE SAVED RACK (owner, 2026-10-07; on `testing`).** A
   player in the endgame gets a faint accent ground and accent edge on their SAVED
   rack, plus a one-off double pulse when they enter it. `_endgameMarkTick` runs in

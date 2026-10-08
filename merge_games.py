@@ -32,6 +32,13 @@ def load(paths):
                     continue
                 if gid in games:
                     dupes += 1
+                    # A resumed game (autosave) is written twice under one id:
+                    # abandoned when the page went away, then again later. Keep
+                    # the copy that got furthest.
+                    old = games[gid]
+                    if (len(g.get('turns', [])), bool(g.get('completed'))) > \
+                       (len(old.get('turns', [])), bool(old.get('completed'))):
+                        games[gid] = g
                     continue
                 games[gid] = g
     return games, dupes, bad

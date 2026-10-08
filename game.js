@@ -1911,8 +1911,31 @@ window.addEventListener('popstate', (ev) => {
     if (!_backGuardOn) return;
     _backGuardOn = false;
     if (!_gameHasProgress()) { history.back(); return; }
-    flashNotice('Back ignored so the game isn\u2019t lost \u2014 go back again to leave.', 3500);
+    flashNotice('Back again to leave \u2014 your game is saved.', 3500);
 });
+// THE ANDROID APP (Capacitor, @capacitor/app): back goes to the app, not the
+// WebView's history, so none of the above applies there -- and with a listener
+// registered the app decides everything. During a game the first back only says
+// so; a second within BACK_EXIT_MS sends the app to the background (minimise,
+// not exit, so the game is still there; autosave covers Android reclaiming it).
+// With no game in progress back minimises straight away, like any app.
+const BACK_EXIT_MS = 2500;
+let _appBackAt = 0;
+(function _appBackButton() {
+    const App = window.Capacitor && window.Capacitor.Plugins && window.Capacitor.Plugins.App;
+    if (!App || !App.addListener) return;
+    App.addListener('backButton', () => {
+        const now = Date.now();
+        if (!_gameHasProgress() || now - _appBackAt < BACK_EXIT_MS) {
+            _appBackAt = 0;
+            (App.minimizeApp ? App.minimizeApp() : App.exitApp());
+            return;
+        }
+        _appBackAt = now;
+        flashNotice('Back again to leave \u2014 your game is saved.', BACK_EXIT_MS);
+    });
+})();
+
 // Second layer, independent of history: the browser's own "Leave site?" prompt.
 // Chrome may skip the dummy entry above on its back button (it skips entries it
 // judges page-added), but it still honours beforeunload once the page has had a
@@ -2930,7 +2953,7 @@ function getHintsEnabled() { return _boolSetting('hintsEnabled', false); }
 // makes a returning player look new.
 const _ALL_SETTING_KEYS = ['aiDifficulty', 'blackIsAI', 'whiteIsAI', 'boardTheme', 'sound',
     'fullscreen', 'hintsEnabled', 'seenNudge', 'fxEnabled', 'autoEndTurn',
-    'confirmRiskyEnd', 'sumToGoal', 'sumSaveGesture', 'autoEnRoute', 'ruleTips', 'ruleTipsSeen'];
+    'confirmRiskyEnd', 'sumToGoal', 'sumSaveGesture', 'autoEnRoute', 'ruleTips', 'ruleTipsSeen', 'savedGame'];
 // HINTS ON FOR A BRAND-NEW VISITOR, once, without making them the global default.
 //
 // HOW GOOD IS THE DETECTION? Every key above is written only when the player
@@ -4909,6 +4932,14 @@ function showWelcome(starter) {
             'background:' + (primary ? THEME.accentCss : '#fff') + '; color:' + (primary ? '#fff' : '#5a6473') + ';';
         el.onclick = fn; holder.appendChild(el);
     };
+    // An unfinished game from an earlier visit (autosave) comes first.
+    const saved = _savedGameRead();
+    if (saved) {
+        mkBtn(saved.match ? 'Resume match' : 'Resume game', true, () => {
+            box.remove();
+            if (!_resumeSavedGame()) showWelcome(starter);
+        });
+    }
     // Single game: reveal the starter with the coin flip, then start a *fresh*
     // game (new dice + rack) for that starter — nothing about the game is
     // committed, and the AI never moves, until this point.
@@ -5555,7 +5586,11 @@ function _posResetNumbers(game) {
     });
 }
 // Load a notation into the live game. Returns { ok, error }.
-function loadPositionNotation(str, game) {
+// `blankIds` (optional, autosave): {white:[n...], black:[n...]}, the identity of
+// each `x` in the order it appears (board, rack, saved), so a resumed game keeps
+// its blanks' numbers and the recorder's moves still name the right pieces. A
+// 13 there is the piece the last-piece rule blanked.
+function loadPositionNotation(str, game, blankIds) {
     game = game || _currentGame();
     let P;
     try { P = _posParse(str); } catch (e) { return { ok: false, error: e.message }; }
@@ -5571,13 +5606,17 @@ function loadPositionNotation(str, game) {
         const missing = [1, 2, 3, 4, 5, 6].filter(k => !nums.includes(k));
         if (missing.length > 1) return { ok: false, error: pl + ' is missing numbered pieces ' + missing.join(',') };
         const pool = [7, 8, 9, 10, 11, 12].concat(missing);
+        const ids = blankIds && blankIds[pl] ? blankIds[pl].slice() : null;
         const take = (t) => {
             if (t !== 'x') return +t;
-            const n = pool.shift();
+            let n = ids ? ids.shift() : pool.shift();
+            if (ids && !(n >= 7 && n <= 12)) n = missing.shift();
             if (n <= 6) blankMe.push([pl, n]);
             return n;
         };
         spec[pl] = { board: s.board.map(([t, loc]) => [take(t), loc]), rack: s.rack.map(take), saved: s.saved.map(take) };
+        const ns = [...spec[pl].board.map(b => b[0]), ...spec[pl].rack, ...spec[pl].saved];
+        if (new Set(ns).size !== 12 || ns.some(n => !(n >= 1 && n <= 12))) return { ok: false, error: pl + ' blank identities do not fit' };
         for (const [, loc] of spec[pl].board) if (!_posTileFor(game, loc)) return { ok: false, error: 'no tile ' + loc };
     }
     _clearSelection && game.selectedPiece && _clearSelection(game);
@@ -5617,6 +5656,90 @@ function loadPositionNotation(str, game) {
     if (typeof _refreshHitAreas === 'function') _refreshHitAreas();
     return { ok: true };
 }
+// ── AUTOSAVE / RESUME (owner, 2026-10-07) ────────────────────────────────────
+// A back swipe, a killed tab or Android reclaiming the backgrounded app used to
+// lose the game; the page cannot reliably stop any of them (see the back guard).
+// So the game is saved to THIS browser's localStorage at every turn start and the
+// welcome card offers to resume it. Nothing leaves the device, like the settings.
+// Saved at the TURN START only: a half-played turn resumes from its start with the
+// same dice, so nothing can be re-rolled by leaving. Cleared when the game ends or
+// a new one starts. The recorder's open entry rides along, so a resumed game
+// keeps recording under the same id (merge_games keeps the longest copy).
+const SAVED_GAME_KEY = 'savedGame';
+function _savedGameRead() {
+    try {
+        const g = JSON.parse(localStorage.getItem(SAVED_GAME_KEY) || 'null');
+        return (g && g.v === 1 && g.pos) ? g : null;
+    } catch (e) { return null; }
+}
+function _savedGameClear() { try { localStorage.removeItem(SAVED_GAME_KEY); } catch (e) {} }
+// The identity of every blank, in the order positionToNotation lists them.
+function _savedBlankIds(game, pos) {
+    const P = _posParse(pos), out = {};
+    for (const pl of ['white', 'black']) {
+        const used = new Set(), ids = [];
+        for (const [t, loc] of P[pl].board) {
+            if (t !== 'x') continue;
+            const tile = _posTileFor(game, loc);
+            const p = tile && tile.pieces.find(q => q.player === pl && q.number > 6 && !used.has(q));
+            if (!p) throw new Error('blank on ' + loc + ' not found');
+            used.add(p); ids.push(p.number);
+        }
+        for (const kind of ['unentered', 'saved'])
+            _tutRack(game, pl, kind).pieces.forEach(p => { if (p.number > 6) ids.push(p.number); });
+        out[pl] = ids;
+    }
+    return out;
+}
+function _savedGameWrite(game) {
+    if (!game || _tut.active || window.setupMode || _gameFrozen || game.gameOver) return;
+    if (!_gameHasProgress()) return;
+    try {
+        const pos = positionToNotation(game);
+        const rec = (typeof _rec !== 'undefined' && _rec) ? Object.assign({}, _rec, { pending: [], agent: null, agentFail: null }) : null;
+        localStorage.setItem(SAVED_GAME_KEY, JSON.stringify({
+            v: 1, at: Date.now(), pos, ids: _savedBlankIds(game, pos),
+            whiteIsAI: !!WHITE_IS_AI, blackIsAI: !!BLACK_IS_AI, starter: game.startingPlayer,
+            noSave: { n: game.noSaveTurns, last: game.lastTotalSaved, half: game._halfTurnsSinceRound },
+            match: matchTracker ? Object.assign({}, matchTracker) : null,
+            rec,
+        }));
+    } catch (e) { console.warn('[autosave] not saved', e); }
+}
+// Put a saved game onto the held (welcome) game. Returns true on success.
+function _resumeSavedGame() {
+    const S = _savedGameRead(), g = _currentGame();
+    if (!S || !g) return false;
+    WHITE_IS_AI = S.whiteIsAI; BLACK_IS_AI = S.blackIsAI;
+    g.players.forEach(p => { p.isAI = p.name === 'white' ? WHITE_IS_AI : BLACK_IS_AI; });
+    _gameFrozen = false;
+    const r = loadPositionNotation(S.pos, g, S.ids);
+    if (!r.ok) {
+        console.warn('[autosave] could not resume:', r.error);
+        _savedGameClear();
+        flashNotice('Sorry, the saved game could not be restored.', 4000);
+        return false;
+    }
+    if (S.starter) { g.startingPlayer = S.starter; _lastGameStarter = S.starter; }
+    g.noSaveTurns = S.noSave.n || 0; g.lastTotalSaved = S.noSave.last || 0; g._halfTurnsSinceRound = S.noSave.half || 0;
+    g.drawCallable = g.noSaveTurns >= NO_SAVE_TURNS_FOR_DRAW;
+    updateNoSaveDisplay();
+    matchTracker = S.match || null;
+    if (typeof refreshSettingsMatchState === 'function') refreshSettingsMatchState();
+    // The held game opened a recorder entry with the welcome racks; swap in the
+    // resumed game's own, keeping its id. Recording is per browser, so only when on.
+    _rec = (S.rec && getRecordingEnabled()) ? Object.assign(S.rec, { pending: [], agent: null, agentFail: null,
+                                                                    instanceId: g.instanceId, resumed: (S.rec.resumed || 0) + 1 }) : null;
+    g.turnStartState = getGameState(g);
+    g.scene.updateScoreText && g.scene.updateScoreText();
+    if (typeof _refreshHitAreas === 'function') _refreshHitAreas();
+    if (g.players.find(p => p.name === g.turn).isAI) {
+        g.scene.showThinkingIcon();
+        setTimeout(() => getAgentMoves(getGameState(g)), 600);
+    }
+    return true;
+}
+
 // Settings > Position (dev): copy the live position, or paste one in.
 function _posCopy() {
     const n = positionToNotation();
@@ -9239,6 +9362,7 @@ switchTurn() {
         this.turnStartState = getGameState(this);
         if (typeof updateMustMoveHighlights === 'function') updateMustMoveHighlights(this);
         if (typeof updateTurnStatus === 'function') updateTurnStatus(this);
+        _savedGameWrite(this);
 
         if (window.showEvals) refreshEvalReadout();
 
@@ -9355,6 +9479,7 @@ endGame(winner, score = null, impasse_caller = null) {
 
     clearMoveRecording();
     if (typeof _recFinish === 'function') _recFinish(winner, score);
+    _savedGameClear();
 
     this.gameOver = true;
     console.log(`${winner} wins with a score of ${score}!`);
@@ -10144,6 +10269,7 @@ class MainGameScene extends Phaser.Scene {
         // On the first-load welcome, hold the game (no AI) until the player hits
         // Play; a real, freshly-rolled game is started then.
         _gameFrozen = !!(this._coinFlipOnStart && !matchTracker);
+        if (!_gameFrozen) _savedGameClear();   // a new game replaces any saved one
         this.game = new Game(this, this.startingPlayer, debugMode);
         // A restart destroys every game object, but this.game keeps pointing at
         // the old Game until create() runs again -- so anything deferred (the
