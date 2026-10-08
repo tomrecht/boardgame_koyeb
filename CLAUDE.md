@@ -489,6 +489,12 @@ with it in mind.** Assessment and the concrete implications:
   backwards. Measured headless: no entry before progress, one after a tap, back 1
   stays on the page with the notice, back 2 reaches the previous page. **Not yet
   confirmed with the real Android gesture on a device.**
+  **Why fullscreen did not protect owner:** on Android Chrome a back gesture in
+  fullscreen EXITS fullscreen, and the game re-entered it only on the first tap
+  after load -- so the first accidental swipe dropped it silently (the Settings
+  box unticked, the stored pref stayed '1') and the next one navigated away. Now
+  any tap re-enters fullscreen while the setting is on (`_armFullscreenOnFirstGesture`
+  is no longer one-shot).
 
 - **ENDGAME MARK ON THE SAVED RACK (owner, 2026-10-07; on `testing`).** A
   player in the endgame gets a faint accent ground and accent edge on their SAVED

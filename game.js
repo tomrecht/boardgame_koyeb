@@ -1870,10 +1870,16 @@ function _exitFullscreen() {
 // On pointerUP, not down: entering fullscreen resizes the viewport, and doing
 // that mid-gesture ate the first drag of a session (measured -- the drag simply
 // did nothing). Waiting for the release lets the first gesture finish first.
+// NOT one-shot (owner, 2026-10-07): on Android Chrome a back gesture in
+// fullscreen EXITS fullscreen rather than navigating, so the first accidental
+// swipe silently dropped it for the rest of the session and the next one left
+// the page. While the setting is on, any tap puts it back. Turning the setting
+// off in Settings writes '0', which this reads on every tap.
 function _armFullscreenOnFirstGesture() {
-    if (!_isPhone() || !getFullscreenPref() || !_fullscreenSupported()) return;
-    const go = () => { _enterFullscreen(); window.removeEventListener('pointerup', go, true); };
-    window.addEventListener('pointerup', go, true);
+    if (!_isPhone() || !_fullscreenSupported()) return;
+    window.addEventListener('pointerup', () => {
+        if (getFullscreenPref() && !document.fullscreenElement) _enterFullscreen();
+    }, true);
 }
 
 // "In progress" = anything has entered or been banked. There is no move history
