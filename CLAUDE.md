@@ -495,6 +495,11 @@ with it in mind.** Assessment and the concrete implications:
   box unticked, the stored pref stayed '1') and the next one navigated away. Now
   any tap re-enters fullscreen while the setting is on (`_armFullscreenOnFirstGesture`
   is no longer one-shot).
+  **On owner's phone (fullscreen off) back still LEFT with no notice** -- either
+  Koyeb was stale or Chrome's back-button skip of page-added entries (CDP's
+  goBack, used in the test, does not apply it; the touch path was re-measured and
+  arms fine). Second layer added: `beforeunload` with preventDefault while a game
+  is in progress, i.e. Chrome's own "Leave site?" prompt (also fires on reload).
 
 - **ENDGAME MARK ON THE SAVED RACK (owner, 2026-10-07; on `testing`).** A
   player in the endgame gets a faint accent ground and accent edge on their SAVED

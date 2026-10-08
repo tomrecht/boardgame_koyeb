@@ -1913,6 +1913,15 @@ window.addEventListener('popstate', (ev) => {
     if (!_gameHasProgress()) { history.back(); return; }
     flashNotice('Back ignored so the game isn\u2019t lost \u2014 go back again to leave.', 3500);
 });
+// Second layer, independent of history: the browser's own "Leave site?" prompt.
+// Chrome may skip the dummy entry above on its back button (it skips entries it
+// judges page-added), but it still honours beforeunload once the page has had a
+// tap. Also asks on reload, which would lose the game just the same.
+window.addEventListener('beforeunload', (ev) => {
+    if (!_gameHasProgress()) return;
+    ev.preventDefault();
+    ev.returnValue = '';
+});
 
 // Segmented pill control -- two or three mutually exclusive choices, sized for
 // a settings row. Returns the element with .value / .setValue / .setDisabled,
