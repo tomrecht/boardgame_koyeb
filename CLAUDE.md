@@ -479,6 +479,17 @@ with it in mind.** Assessment and the concrete implications:
 
 ## Current state
 
+- **BACK GUARD: AN ACCIDENTAL BACK SWIPE NO LONGER LEAVES THE GAME (owner,
+  2026-10-07).** The gesture itself cannot be stopped from the page (ARCHIVE.md,
+  2026-08-14; fullscreen is the only suppression), so instead, while a game is in
+  progress (`_gameHasProgress`), a pointerup pushes a dummy history entry
+  (`_armBackGuard`; must be inside a user gesture or Chrome skips the entry). A
+  back pops only that entry: popstate, a notice, the game untouched; the next tap
+  re-arms; a second back really leaves. With no game in progress a pop carries on
+  backwards. Measured headless: no entry before progress, one after a tap, back 1
+  stays on the page with the notice, back 2 reaches the previous page. **Not yet
+  confirmed with the real Android gesture on a device.**
+
 - **ENDGAME MARK ON THE SAVED RACK (owner, 2026-10-07; on `testing`).** A
   player in the endgame gets a faint accent ground and accent edge on their SAVED
   rack, plus a one-off double pulse when they enter it. `_endgameMarkTick` runs in

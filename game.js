@@ -1876,6 +1876,38 @@ function _armFullscreenOnFirstGesture() {
     window.addEventListener('pointerup', go, true);
 }
 
+// "In progress" = anything has entered or been banked. There is no move history
+// on the frontend Game (that lives on the ported engine), and a freshly dealt
+// board has nothing to lose, so ask the board itself.
+function _gameHasProgress() {
+    const g = _currentGame();
+    return !!(g && !g.gameOver && !_gameFrozen &&
+              (g.pieces.some(p => p.currentTile) ||
+               g.whiteSavedRack.pieces.length || g.blackSavedRack.pieces.length));
+}
+
+// BACK GUARD. Android's gesture-nav back (and iOS Safari's edge swipe) cannot be
+// stopped by the page -- ARCHIVE.md, 2026-08-14 -- and a tap near the edge can
+// read as one, navigating away and losing the game. What the page CAN do is make
+// "back" land on its own history entry: while a game is in progress a dummy
+// entry sits on top, so an accidental back only pops it (popstate, same document)
+// and says so; a second back really leaves. Pushed from a pointerup because
+// Chrome skips history entries added without user activation. If the pop lands
+// when no game is in progress, carry on navigating back as asked.
+let _backGuardOn = !!(history.state && history.state.quahuruGuard);
+function _armBackGuard() {
+    if (_backGuardOn || !_gameHasProgress()) return;
+    try { history.pushState({ quahuruGuard: 1 }, ''); _backGuardOn = true; } catch (e) {}
+}
+window.addEventListener('pointerup', _armBackGuard, true);
+window.addEventListener('popstate', (ev) => {
+    if (ev.state && ev.state.quahuruGuard) { _backGuardOn = true; return; }  // forward onto it
+    if (!_backGuardOn) return;
+    _backGuardOn = false;
+    if (!_gameHasProgress()) { history.back(); return; }
+    flashNotice('Back ignored so the game isn\u2019t lost \u2014 go back again to leave.', 3500);
+});
+
 // Segmented pill control -- two or three mutually exclusive choices, sized for
 // a settings row. Returns the element with .value / .setValue / .setDisabled,
 // so callers treat it like the <select> it replaces.
@@ -5112,13 +5144,7 @@ function showInstructions() {
     // and only when there is actually something to lose.
     const tutBtn = body.querySelector('#htpTutBtn');
     if (tutBtn) tutBtn.onclick = () => {
-        const g = _currentGame();
-        // "In progress" = anything has entered or been banked. There is no move
-        // history on the frontend Game (that lives on the ported engine), and a
-        // freshly dealt board has nothing to lose, so ask the board itself.
-        const live = !!(g && !g.gameOver && !_gameFrozen &&
-                        (g.pieces.some(p => p.currentTile) ||
-                         g.whiteSavedRack.pieces.length || g.blackSavedRack.pieces.length));
+        const live = _gameHasProgress();
         const go = () => { box.remove(); startTutorial(); };
         if (live) showConfirm('Abandon this game and run the tutorial?', go, 'Run tutorial');
         else go();
