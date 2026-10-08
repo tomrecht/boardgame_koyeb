@@ -149,6 +149,25 @@ function opponentWinsNextTurnRegardless(engine, player) {
 function ownSaves(pair, player) {
     return pair.filter(m => isSave(m) && m.piece[0] === player).length;
 }
+/* ...AND NO SHUFFLING (owner, 2026-10-07). With the game lost, moving pieces
+   about the field means nothing, so among the max-save pairs keep those where
+   every half is a pass, an own save, or a tile move onto a goal the piece can
+   bank from (its own goal if numbered, any goal if blank) -- pointless too unless
+   it enables a save, but it looks human. An entry onto home counts as quiet: it
+   is the rack obligation, not a choice. If no pair qualifies (some forced move),
+   the max-save set stands. Twin of _quiet_pair in agent_gnn.py. */
+function quietPair(engine, pair, player) {
+    return pair.every(m => {
+        if (isPass(m)) return true;
+        if (!m.piece || m.piece[0] !== player) return false;
+        if (isSave(m)) return true;
+        if (!Array.isArray(m.dest) || !(m.roll > 0)) return false;   // dest is [ring, pos]
+        const t = engine.graph.indexOf(m.dest[0], m.dest[1]);
+        if (t === engine.home) return true;
+        if (engine.graph.types[t] !== 'save') return false;
+        return m.piece[1] > 6 || engine.graph.numbers[t] === m.piece[1];
+    });
+}
 
 /* NEVER LEAVE A DIE UNUSED WHEN A SAVE IS AVAILABLE FOR IT (owner, 2026-10-02).
    Measured: in 3 of 1,002 midgame positions with a blank save legal, the net
@@ -273,7 +292,8 @@ async function selectMovePair(engine, W, moves, player, opts = {}) {
         // pairs are exempt from the top-K cull below -- nor is one that ENABLES
         // a save as the pair's second half.
         for (const x of firstScored) {
-            if (!kept.has(x.move) && (isSave(x.move) || x.enables)) keep.push(x.move);
+            if (!kept.has(x.move) && (isSave(x.move) || x.enables
+                                      || (lossCertain && quietPair(engine, [x.move], player)))) keep.push(x.move);
         }
         movesIter = keep;
     }
@@ -322,8 +342,11 @@ async function selectMovePair(engine, W, moves, player, opts = {}) {
         // Save pairs are exempt from the heuristic cull: the heuristic can
         // undervalue a save against a flashier non-save, which would drop it
         // before the net ever saw it.
-        const saveScored = scored.filter(x => x.pair.some(isSave));
-        const otherScored = scored.filter(x => !x.pair.some(isSave));
+        // With the game lost, a quiet pair (see quietPair) is exempt too, or
+        // the filter below would have nothing quiet left to choose from.
+        const exempt = (x) => x.pair.some(isSave) || (lossCertain && quietPair(engine, x.pair, player));
+        const saveScored = scored.filter(exempt);
+        const otherScored = scored.filter(x => !exempt(x));
         const topPairs = saveScored.map(x => x.pair).concat(selectFiltered(otherScored, o));
         for (const pair of topPairs) {
             const base = engine.moves.length;
@@ -367,6 +390,8 @@ async function selectMovePair(engine, W, moves, player, opts = {}) {
         const n = moveKeys.map(pr => ownSaves(pr, player));
         const most = Math.max(...n);
         keepOnly(n.map((c, i) => c === most ? i : -1).filter(i => i >= 0));
+        const quiet = moveKeys.map((pr, i) => quietPair(engine, pr, player) ? i : -1).filter(i => i >= 0);
+        if (quiet.length) keepOnly(quiet);
     }
 
     if (o.returnScores) {

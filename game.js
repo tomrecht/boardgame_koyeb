@@ -5669,7 +5669,7 @@ const SAVED_GAME_KEY = 'savedGame';
 function _savedGameRead() {
     try {
         const g = JSON.parse(localStorage.getItem(SAVED_GAME_KEY) || 'null');
-        return (g && g.v === 1 && g.pos) ? g : null;
+        return (g && g.v === 1 && (g.pos || (g.between && g.match))) ? g : null;
     } catch (e) { return null; }
 }
 function _savedGameClear() { try { localStorage.removeItem(SAVED_GAME_KEY); } catch (e) {} }
@@ -5706,13 +5706,37 @@ function _savedGameWrite(game) {
         }));
     } catch (e) { console.warn('[autosave] not saved', e); }
 }
-// Put a saved game onto the held (welcome) game. Returns true on success.
+// Between games of a match only the match is saved; resuming starts its next game.
+function _savedBetweenWrite() {
+    if (!matchTracker || matchTracker.over) return;
+    try {
+        localStorage.setItem(SAVED_GAME_KEY, JSON.stringify({
+            v: 1, at: Date.now(), between: true, match: Object.assign({}, matchTracker),
+            whiteIsAI: !!WHITE_IS_AI, blackIsAI: !!BLACK_IS_AI,
+        }));
+    } catch (e) {}
+}
+// Resume from the welcome card. The scene is REBUILT (as for any new game), so
+// everything built from matchTracker -- the HUD row, the score line -- is right;
+// create() then hands the saved position to _applySavedGame instead of opening.
+let _pendingResume = null;
 function _resumeSavedGame() {
-    const S = _savedGameRead(), g = _currentGame();
-    if (!S || !g) return false;
+    const S = _savedGameRead(), sc = _setupScene();
+    if (!S || !sc || !sc.scene) return false;
     WHITE_IS_AI = S.whiteIsAI; BLACK_IS_AI = S.blackIsAI;
-    g.players.forEach(p => { p.isAI = p.name === 'white' ? WHITE_IS_AI : BLACK_IS_AI; });
-    _gameFrozen = false;
+    matchTracker = S.match || null;
+    if (typeof refreshSettingsMatchState === 'function') refreshSettingsMatchState();
+    clearMoveRecording();
+    if (S.between) {
+        sc.scene.restart({ startingPlayer: matchStarterForGame(matchTracker.gamesPlayed) });
+    } else {
+        _pendingResume = S;
+        sc.scene.restart({ startingPlayer: S.starter || 'white' });
+    }
+    return true;
+}
+// Called from create() on the freshly built game.
+function _applySavedGame(g, S) {
     const r = loadPositionNotation(S.pos, g, S.ids);
     if (!r.ok) {
         console.warn('[autosave] could not resume:', r.error);
@@ -5720,13 +5744,11 @@ function _resumeSavedGame() {
         flashNotice('Sorry, the saved game could not be restored.', 4000);
         return false;
     }
-    if (S.starter) { g.startingPlayer = S.starter; _lastGameStarter = S.starter; }
+    if (S.starter) _lastGameStarter = S.starter;
     g.noSaveTurns = S.noSave.n || 0; g.lastTotalSaved = S.noSave.last || 0; g._halfTurnsSinceRound = S.noSave.half || 0;
     g.drawCallable = g.noSaveTurns >= NO_SAVE_TURNS_FOR_DRAW;
     updateNoSaveDisplay();
-    matchTracker = S.match || null;
-    if (typeof refreshSettingsMatchState === 'function') refreshSettingsMatchState();
-    // The held game opened a recorder entry with the welcome racks; swap in the
+    // The new scene opened a recorder entry with fresh racks; swap in the
     // resumed game's own, keeping its id. Recording is per browser, so only when on.
     _rec = (S.rec && getRecordingEnabled()) ? Object.assign(S.rec, { pending: [], agent: null, agentFail: null,
                                                                     instanceId: g.instanceId, resumed: (S.rec.resumed || 0) + 1 }) : null;
@@ -9500,6 +9522,7 @@ endGame(winner, score = null, impasse_caller = null) {
     if (typeof updateTurnStatus === 'function') updateTurnStatus('');   // hide during end screen
     // Fold this game into the active match (if any) before showing the result.
     const matchOver = matchTracker ? recordMatchGame(winner, score) : false;
+    if (matchTracker && !matchOver) _savedBetweenWrite();   // autosave: the match goes on
     // THE LAST GAME OF A MATCH SOUNDS FOR THE MATCH, NOT THE GAME (owner,
     // 2026-09-20): a match is decided on TOTAL SCORE, so you can lose the final
     // game and still take the match -- and the lose chime there reads as having
@@ -10269,7 +10292,7 @@ class MainGameScene extends Phaser.Scene {
         // On the first-load welcome, hold the game (no AI) until the player hits
         // Play; a real, freshly-rolled game is started then.
         _gameFrozen = !!(this._coinFlipOnStart && !matchTracker);
-        if (!_gameFrozen) _savedGameClear();   // a new game replaces any saved one
+        if (!_gameFrozen && !_pendingResume) _savedGameClear();   // a new game replaces any saved one
         this.game = new Game(this, this.startingPlayer, debugMode);
         // A restart destroys every game object, but this.game keeps pointing at
         // the old Game until create() runs again -- so anything deferred (the
@@ -10426,6 +10449,11 @@ class MainGameScene extends Phaser.Scene {
         if (this._coinFlipOnStart && !matchTracker) {
             this._coinFlipOnStart = false;
             showWelcome(this.startingPlayer);
+        }
+        if (_pendingResume) {
+            const S = _pendingResume;
+            _pendingResume = null;
+            if (!_applySavedGame(this.game, S)) this.checkInitialAIReady();
         }
         if (typeof updateTurnStatus === 'function') updateTurnStatus(this.game);
 
@@ -10660,6 +10688,7 @@ class MainGameScene extends Phaser.Scene {
 
     checkInitialAIReady() {
         if (_gameFrozen) return;   // welcome up: don't let the AI open behind it
+        if (_pendingResume) return;   // a resumed game: _applySavedGame decides who moves
         const isBlackAI = this.startingPlayer === 'black' && BLACK_IS_AI;
         const isWhiteAI = this.startingPlayer === 'white' && WHITE_IS_AI;
 

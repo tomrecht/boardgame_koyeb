@@ -504,9 +504,15 @@ with it in mind.** Assessment and the concrete implications:
      **Resume game / Resume match**. Measured: 10 self-play turns, reload,
      Resume -> notation AND every piece's identity identical, recorder 10 turns
      same id, play continues (10 -> 17 turns).
-     **Known gap:** resuming a MATCH loads into the welcome card's held scene,
-     whose HUD row was built for casual play (New Game shows). Not fixed.
-     Between games of a match nothing is saved.
+     **Resume REBUILDS the scene** (`_pendingResume`, picked up in create() after
+     the HUD is built from the restored matchTracker; `checkInitialAIReady` and the
+     save-clear both stand aside for it), so a match resumes with the match HUD.
+     **Between games of a match** `endGame` writes `{between: true, match}`;
+     Resume match starts the next game with `matchStarterForGame`. Measured:
+     mid-match resume -> position identical, HUD [hidden New Game, New Match, How
+     to Play] same as before; after game 1 ends 12-0, reload -> Resume match ->
+     game 2, gamesPlayed 1, scores 12-0, black (the alternate starter) to move,
+     and it plays.
   4. **Android app: `@capacitor/app` installed** (8.1.2; `cap sync` wired it into
      `capacitor.settings.gradle` / `capacitor.build.gradle`; `assembleDebug`
      builds). Back no longer reaches the WebView history: during a game the first
@@ -589,6 +595,18 @@ with it in mind.** Assessment and the concrete implications:
   A flag is the class definition firing, NOT a proven error -- the deeper search
   over all 21 replies is what could arbitrate. Script was a scratchpad one-off
   (`probe_classes.py`), not committed.
+
+- **CERTAIN LOSS -> NO SHUFFLING (owner, 2026-10-07).** Inside the bank-the-most
+  rule below, among the max-save pairs keep only QUIET ones: every half a pass,
+  an own save, an entry onto home (the rack obligation), or a move onto a goal
+  the piece can bank from (own goal if numbered, any if blank); if none, the
+  max-save set stands. `quietPair` (agent.js) / `_quiet_pair` (agent_gnn.py).
+  **Quiet pairs are also exempt from both prefilter culls** while the loss is
+  certain -- without that the cull had already dropped them (even plain pass),
+  and the rule fired on only 17 of 21 rolls. Measured with the real net on
+  `b - | W x@G1 ... | B 3@G3 6@4.12 x@5.2 x@3.6 x@1.4 ...`, all 21 rolls: quiet
+  pair chosen 11/21 before, **21/21 after, identical in JS and Python**.
+  `agent_test.js` 50/50.
 
 - **CERTAIN LOSS NEXT TURN -> BANK THE MOST (owner, 2026-10-01; on main and in
   versionCode 7 since 2026-10-03).** Owner saw the computer, unable to win, bring a piece

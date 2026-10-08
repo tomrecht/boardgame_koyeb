@@ -151,6 +151,31 @@ def _own_saves(pair, player):
                and isinstance(m[0], tuple) and m[0][0] == player)
 
 
+def _quiet_pair(board, pair, player):
+    """...AND NO SHUFFLING (owner, 2026-10-07). Among the max-save pairs when the
+    game is lost, keep those where every half is a pass, an own save, or a tile
+    move onto a goal the piece can bank from (own goal if numbered, any if blank);
+    an entry onto home counts (the rack obligation). If none qualifies the
+    max-save set stands. Twin of quietPair in agent.js."""
+    for m in pair:
+        if m == (0, 0, 0):
+            continue
+        if not (isinstance(m[0], tuple) and m[0][0] == player):
+            return False
+        if m[1] == 'save':
+            continue
+        if not (isinstance(m[1], tuple) and m[2]):
+            return False
+        if m[1] == (0, 0):
+            continue
+        t = board.get_tile(*m[1])
+        if t is None or t.type != 'save':
+            return False
+        if m[0][1] <= 6 and t.number != m[0][1]:
+            return False
+    return True
+
+
 class GNNAgent:
     """
     Drop-in replacement for Agent using the GNN evaluator.
@@ -445,7 +470,8 @@ class GNNAgent:
             # one that ENABLES a save as the pair's second half. "Never cull a
             # save" should hold by construction rather than by luck.
             keep += [m for _, m, e in first_scored
-                     if m not in kept and ((isinstance(m, tuple) and m[1] == 'save') or e)]
+                     if m not in kept and ((isinstance(m, tuple) and m[1] == 'save') or e
+                                           or (loss_certain and _quiet_pair(board, (m,), player)))]
             moves_iter = keep
 
         truncated = False
@@ -519,8 +545,10 @@ class GNNAgent:
             # can undervalue saves relative to flashier non-save moves, which
             # would otherwise silently drop a legal save before the GNN ever
             # sees it. Always keep save-containing pairs; cull only the rest.
-            save_scored  = [(s, p) for s, p in scored if self._pair_has_save(p)]
-            other_scored = [(s, p) for s, p in scored if not self._pair_has_save(p)]
+            # With the game lost, a quiet pair (_quiet_pair) is exempt too.
+            exempt = lambda p: self._pair_has_save(p) or (loss_certain and _quiet_pair(board, p, player))
+            save_scored  = [(s, p) for s, p in scored if exempt(p)]
+            other_scored = [(s, p) for s, p in scored if not exempt(p)]
             top_pairs = [p for _, p in save_scored] + self._select_filtered(other_scored)
             self.dbg_kept_total += len(top_pairs)
             self.dbg_kept_calls += 1
@@ -582,6 +610,9 @@ class GNNAgent:
             n = [_own_saves(pr, player) for pr in move_keys]
             most = max(n)
             keep_only([i for i, c in enumerate(n) if c == most])
+            quiet = [i for i, pr in enumerate(move_keys) if _quiet_pair(board, pr, player)]
+            if quiet:
+                keep_only(quiet)
 
         best_idx     = final_scores.argmax().item()
 
