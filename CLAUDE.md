@@ -604,7 +604,12 @@ with it in mind.** Assessment and the concrete implications:
   goals is pointless); if none, the max-save set stands. Max saves come first,
   so a goal-to-goal step that ENABLES a save is still played (measured: roll
   4-4, blank G2 -> G4 then banked). Second position (`B 3@G3 6@4.12 x@G2 x@G5
-  x@3.6`): quiet 10/21 before, 20/21 after (the 21st is that 4-4), JS = Python. `quietPair` (agent.js) / `_quiet_pair` (agent_gnn.py).
+  x@3.6`): quiet 10/21 before, 20/21 after (the 21st is that 4-4), JS = Python.
+  **A lone NUMBERED 1 on goal 1 also triggers it (owner, 2026-10-07)** -- the
+  last-piece rule blanks it. Nothing to add: both engines apply that rule to
+  BOTH sides in the endgame when the search's position is built, so the piece
+  already reads as number 13. Measured (`W 1@G1`, same black): 20/21 quiet, JS =
+  Python, vs 10/21 with the rule off. `quietPair` (agent.js) / `_quiet_pair` (agent_gnn.py).
   **Quiet pairs are also exempt from both prefilter culls** while the loss is
   certain -- without that the cull had already dropped them (even plain pass),
   and the rule fired on only 17 of 21 rolls. Measured with the real net on
