@@ -530,6 +530,13 @@ with it in mind.** Assessment and the concrete implications:
   same, portrait 174 -> 152, landscape no longer scrolls). Measured: stepping the
   12 onto goal 3 via the real handlers -> phase endgame, mark on, 1 pulse, at
   desktop / portrait / portrait+insets / landscape.
+  **Radial lines on the phone (owner, Pixel, 2026-10-08):** Phaser 3.55's
+  `strokeRoundedRect` does moveTo(p) then an arc starting at p, and WebGL
+  `batchLine` divides by the segment length unguarded -> NaN vertices at every
+  corner; phone GPUs draw them as slivers to screen centre (swiftshader drops
+  them, so headless never shows it). Always there in the pale grey rack edge;
+  the accent mark made it visible. **Use `strokeRoundRect(g, ...)` (game.js), never
+  `strokeRoundedRect`.** Measured: 60 zero-length segments per 400ms -> 0.
 
 - **POSITION NOTATION, `?pos=`, AND `pos_image.mjs` (owner, 2026-10-02; dev only,
   on main since 2026-10-03).** A FEN-like text form, documented beside `positionToNotation`

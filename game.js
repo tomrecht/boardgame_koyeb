@@ -4699,7 +4699,7 @@ function makeHudButton(scene, cx, cy, label, { ghost = false, k = 1 } = {}) {
         g.fillStyle(0x000000, 0.12); g.fillRoundedRect(b.x, b.y + 2, b.width, b.height, r);
         if (ghost) {
             g.fillStyle(0xffffff, 1); g.fillRoundedRect(b.x, b.y, b.width, b.height, r);
-            g.lineStyle(1, HUD_PANEL_BORDER, 1); g.strokeRoundedRect(b.x, b.y, b.width, b.height, r);
+            g.lineStyle(1, HUD_PANEL_BORDER, 1); strokeRoundRect(g, b.x, b.y, b.width, b.height, r);
         } else {
             g.fillStyle(THEME.accent, 1); g.fillRoundedRect(b.x, b.y, b.width, b.height, r);
         }
@@ -7913,6 +7913,31 @@ class Tile {
     
 }
 
+// Phaser 3.55's strokeRoundedRect is unsafe under WebGL: it does moveTo(p) and
+// then an arc that starts at p, and the stroke pipeline's batchLine divides by
+// the segment length with no zero guard -- so every corner emits NaN vertices.
+// Desktop GPUs and swiftshader drop them; phone GPUs draw them as slivers to the
+// middle of the screen (owner's Pixel, 2026-10-08: lines from the endgame-marked
+// saved racks to the board centre). This strokes the same outline as ONE closed
+// polygon with no repeated points.
+function strokeRoundRect(g, x, y, w, h, r) {
+    r = Math.max(0, Math.min(r, w / 2 - 0.5, h / 2 - 0.5));
+    const pts = [];
+    const n = 6;   // segments per quarter
+    [[x + w - r, y + r, -Math.PI / 2], [x + w - r, y + h - r, 0],
+     [x + r, y + h - r, Math.PI / 2], [x + r, y + r, Math.PI]].forEach(([cx, cy, a0]) => {
+        for (let i = 0; i <= n; i++) {
+            const a = a0 + (Math.PI / 2) * i / n;
+            const px = cx + r * Math.cos(a), py = cy + r * Math.sin(a);
+            const q = pts[pts.length - 1];
+            if (!q || Math.abs(q.x - px) > 0.01 || Math.abs(q.y - py) > 0.01) pts.push({ x: px, y: py });
+        }
+    });
+    const f = pts[0], l = pts[pts.length - 1];
+    if (pts.length > 1 && Math.abs(f.x - l.x) <= 0.01 && Math.abs(f.y - l.y) <= 0.01) pts.pop();
+    g.strokePoints(pts, false, true);   // WebGL closePath appends pts[0] itself
+}
+
 class Rack {
     constructor(scene, x, y, color, type, rows = 4, cols = 3) {
         this.scene = scene;
@@ -8084,7 +8109,7 @@ class Rack {
                 const d = st.t * 16;
                 g.clear();
                 g.lineStyle(3, THEME.accent, 1 - st.t);
-                g.strokeRoundedRect(b.bx - d, b.by - d, b.bw + 2 * d, b.bh + 2 * d, 16 + d);
+                strokeRoundRect(g, b.bx - d, b.by - d, b.bw + 2 * d, b.bh + 2 * d, 16 + d);
             },
             onComplete: () => g.destroy(),
         });
@@ -8113,7 +8138,7 @@ class Rack {
         } else {
             this.background.lineStyle(1.5, 0xdbe1ea, 1);
         }
-        this.background.strokeRoundedRect(bx, by, bw, bh, 16);
+        strokeRoundRect(this.background, bx, by, bw, bh, 16);
         this._box = { bx, by, bw, bh };
         if (this.type === 'saved') this._wireSaveTap(bx, by, bw, bh);
         // The unentered panel takes taps as well, for the send-to-goal gesture.
