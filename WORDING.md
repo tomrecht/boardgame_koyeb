@@ -159,6 +159,9 @@ Double-click-to-goal declines (`sendToGoal`):
 - The computer couldn’t start on this device. Tap ↷ to try again.
 - The on-device computer is switched off for this session.
 - Turn pill: `Your turn` · `Computer thinking…` · `{White/Black}’s turn` · `Computer unavailable`
+- Back again to leave — your game is saved.  *(an accidental back during a game: web back guard, and the Android app's back button)*
+- Sorry, the saved game could not be restored.  *(Resume failed)*
+- Browser's own "Leave site?" prompt during a game — its wording is the browser's, not ours
 
 Confirmations (Cancel / confirm button):
 - End your turn without using both dice?
@@ -173,7 +176,7 @@ Confirmations (Cancel / confirm button):
 **QUAHURU**
 Race your pieces out from the centre to the six goals and bank them all — while walling off your opponent’s routes. Play a single game or a multi-game match. New to it? Try the tutorial first.
 
-Buttons: **Single game** · **Play a match** · **How to Play** · **Interactive tutorial**
+Buttons: **Resume game** or **Resume match** (first, only when an unfinished game or match is saved) · **Single game** · **Play a match** · **How to Play** · **Interactive tutorial**
 
 ---
 
