@@ -154,10 +154,13 @@ def _own_saves(pair, player):
 def _quiet_pair(board, pair, player):
     """...AND NO SHUFFLING (owner, 2026-10-07). Among the max-save pairs when the
     game is lost, keep those where every half is a pass, an own save, or a tile
-    move onto a goal the piece can bank from (own goal if numbered, any if blank);
+    move onto a goal the piece can bank from (own goal if numbered, from anywhere;
+    any goal if blank, but not from another goal -- owner: that is shuffling);
     an entry onto home counts (the rack obligation). If none qualifies the
     max-save set stands. Twin of quietPair in agent.js."""
-    for m in pair:
+    # Call with the board at the TURN START: a half's origin is the piece's tile
+    # there, or the first half's destination if the same piece moved first.
+    for i, m in enumerate(pair):
         if m == (0, 0, 0):
             continue
         if not (isinstance(m[0], tuple) and m[0][0] == player):
@@ -171,7 +174,18 @@ def _quiet_pair(board, pair, player):
         t = board.get_tile(*m[1])
         if t is None or t.type != 'save':
             return False
-        if m[0][1] <= 6 and t.number != m[0][1]:
+        if m[0][1] <= 6:
+            if t.number != m[0][1]:
+                return False
+            continue
+        # A blank: any goal, but not from another goal -- that is shuffling.
+        prev = pair[0] if i == 1 else None
+        if prev is not None and isinstance(prev[0], tuple) and prev[0] == m[0] and isinstance(prev[1], tuple):
+            frm = board.get_tile(*prev[1])
+        else:
+            pc = next((p for p in board.pieces if p.player == m[0][0] and p.number == m[0][1]), None)
+            frm = pc.tile if pc is not None else None
+        if frm is not None and frm.type == 'save':
             return False
     return True
 

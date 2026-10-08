@@ -599,8 +599,12 @@ with it in mind.** Assessment and the concrete implications:
 - **CERTAIN LOSS -> NO SHUFFLING (owner, 2026-10-07).** Inside the bank-the-most
   rule below, among the max-save pairs keep only QUIET ones: every half a pass,
   an own save, an entry onto home (the rack obligation), or a move onto a goal
-  the piece can bank from (own goal if numbered, any if blank); if none, the
-  max-save set stands. `quietPair` (agent.js) / `_quiet_pair` (agent_gnn.py).
+  the piece can bank from (a numbered piece onto its own goal from anywhere; a
+  blank onto any goal but NOT from another goal -- owner: shuffling between
+  goals is pointless); if none, the max-save set stands. Max saves come first,
+  so a goal-to-goal step that ENABLES a save is still played (measured: roll
+  4-4, blank G2 -> G4 then banked). Second position (`B 3@G3 6@4.12 x@G2 x@G5
+  x@3.6`): quiet 10/21 before, 20/21 after (the 21st is that 4-4), JS = Python. `quietPair` (agent.js) / `_quiet_pair` (agent_gnn.py).
   **Quiet pairs are also exempt from both prefilter culls** while the loss is
   certain -- without that the cull had already dropped them (even plain pass),
   and the rule fired on only 17 of 21 rolls. Measured with the real net on

@@ -152,20 +152,31 @@ function ownSaves(pair, player) {
 /* ...AND NO SHUFFLING (owner, 2026-10-07). With the game lost, moving pieces
    about the field means nothing, so among the max-save pairs keep those where
    every half is a pass, an own save, or a tile move onto a goal the piece can
-   bank from (its own goal if numbered, any goal if blank) -- pointless too unless
+   bank from (its own goal if numbered, from anywhere; any goal if blank, but not
+   from another goal -- owner: shuffling between goals) -- pointless too unless
    it enables a save, but it looks human. An entry onto home counts as quiet: it
    is the rack obligation, not a choice. If no pair qualifies (some forced move),
    the max-save set stands. Twin of _quiet_pair in agent_gnn.py. */
 function quietPair(engine, pair, player) {
-    return pair.every(m => {
+    // Call with the engine at the TURN START: a half's origin is the piece's
+    // tile there, or the first half's destination if the same piece moved first.
+    const tileOf = (d) => engine.graph.indexOf(d[0], d[1]);
+    return pair.every((m, i) => {
         if (isPass(m)) return true;
         if (!m.piece || m.piece[0] !== player) return false;
         if (isSave(m)) return true;
         if (!Array.isArray(m.dest) || !(m.roll > 0)) return false;   // dest is [ring, pos]
-        const t = engine.graph.indexOf(m.dest[0], m.dest[1]);
+        const t = tileOf(m.dest);
         if (t === engine.home) return true;
         if (engine.graph.types[t] !== 'save') return false;
-        return m.piece[1] > 6 || engine.graph.numbers[t] === m.piece[1];
+        if (m.piece[1] <= 6) return engine.graph.numbers[t] === m.piece[1];
+        // A blank: any goal, but not from another goal -- that is shuffling.
+        const prev = i === 1 ? pair[0] : null;
+        const from = (prev && prev.piece && prev.piece[0] === m.piece[0] && prev.piece[1] === m.piece[1]
+                      && Array.isArray(prev.dest))
+            ? tileOf(prev.dest)
+            : (engine.pieces.find(p => p.player === m.piece[0] && p.number === m.piece[1]) || {}).tile;
+        return !(from >= 0 && engine.graph.types[from] === 'save');
     });
 }
 
