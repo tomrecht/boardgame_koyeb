@@ -148,6 +148,7 @@ Double-click-to-goal declines (`sendToGoal`):
 - A captured piece has to come back out first — move it off the home tile before anything else.
 - The first piece on the rack must still enter this turn, so this one can’t use both dice.
 - More than one goal is in reach, so move it by hand to choose.
+- The {die} has another use, so it is left for you — double-tap again to bank this piece.
 - More than one capture is possible on the way — move one die at a time to choose.
 
 ---

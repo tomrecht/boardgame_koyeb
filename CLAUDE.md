@@ -529,9 +529,13 @@ with it in mind.** Assessment and the concrete implications:
   goals in reach (any die or the sum, as `sendToGoal` counts). The saved-rack tap
   and drop are explicit "bank THIS piece" and keep the old pick. Measured in the
   browser: owner's position -> nothing moves, notice; old code -> banked off G4;
-  control (only G4 in reach, roll 1-5) -> walks and banks. **Not addressed:** A to
-  goal + bank A, when the other die could put piece B on ITS goal -- one goal in
-  reach, so the gesture still spends both dice on A.
+  control (only G4 in reach, roll 1-5) -> walks and banks. **And when the leftover
+  die is contested** -- after the move it could bank another own piece or bring
+  one onto a goal it can bank from (`_dieHasOtherGoalUse`; goal-to-goal steps do
+  not count) -- the gesture stops on the goal and leaves that die, with a notice;
+  a second double-tap banks. Measured: blank 1 from G4, roll 1-4, another blank 4
+  from G4 -> first piece to G4, the 4 unused; second double-tap banks it; control
+  with the other blank unable to reach a goal on either die -> walks and banks.
 - **ENDGAME MARK ON THE SAVED RACK (owner, 2026-10-07; on `testing`).** A
   player in the endgame gets a faint accent ground and accent edge on their SAVED
   rack, plus a one-off double pulse when they enter it. `_endgameMarkTick` runs in

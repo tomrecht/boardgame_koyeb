@@ -9012,7 +9012,43 @@ class Game {
                 return 'ambiguous';
             }
         }
-        return this.movePiece(piece, target) && piece.save();
+        if (!this.movePiece(piece, target)) return false;
+        // Second half of the same rule (owner, 2026-10-08): if the die left over
+        // could ALSO bank another piece, or put one onto a goal it can bank from,
+        // banking this one is a choice -- so stop on the goal and leave that die.
+        // A second double-tap banks it. Judged on the board AFTER the move, since
+        // the move itself can open the endgame or change the highest goal.
+        const left = this.dice.find(d => !d.used);
+        if (opts.uniqueGoal && left && this._dieHasOtherGoalUse(piece, left)) {
+            if (typeof flashNotice === 'function')
+                flashNotice(`The ${left.value} has another use, so it is left for you — double-tap again to bank this piece.`, 3500, 'move');
+            return 'moved';
+        }
+        return piece.save();
+    }
+
+    // Can `die` (unused) bank another of this side's pieces, or bring one onto a
+    // goal it can bank from (a numbered piece its own, a blank any)? Goal-to-goal
+    // steps do not count: they bank nothing.
+    _dieHasOtherGoalUse(piece, die) {
+        const player = piece.color === 0xffffff ? this.players[0] : this.players[1];
+        const phase = player.getGamePhase();
+        for (const q of this.pieces) {
+            if (q === piece || q.color !== piece.color || !q.currentTile) continue;
+            const t = q.currentTile;
+            if (t.type === 'save') {
+                if (phase !== 'opening' && q.canBeSaved() &&
+                    (die.value === t.number ||
+                     (q.number > 6 && phase === 'endgame' && die.value > t.number &&
+                      !this.isHigherNumberedGoalOccupied(player, t.number)))) return true;
+                continue;
+            }
+            const r = this.getReachableTilesByDice(q);
+            if (!r) continue;
+            const byDie = die === this.dice[0] ? r.reachableByFirstDie : r.reachableBySecondDie;
+            if (byDie.some(g => g.type === 'save' && (q.number > 6 || g.number === q.number))) return true;
+        }
+        return false;
     }
 
     // Optional gesture (settings, off by default): send a piece to a goal it can
