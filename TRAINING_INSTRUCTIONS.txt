@@ -10,9 +10,9 @@ Lines starting with # are explanations -- do not type them.
 WHAT YOU NEED TO BRING FROM HOME
 ==========================================================================================
 
-One file: start_pool.jsonl (about 10 MB), in the game folder on the home iMac
+One file: start_pool.jsonl (about 22 MB), in the game folder on the home iMac
 (/Users/tom/Game/BoardGame/start_pool.jsonl). Email it to yourself with these
-instructions, or AirDrop / iCloud / USB. It holds 6,555 positions from your own games;
+instructions, or AirDrop / iCloud / USB. It holds 14,183 positions from 314 of your games;
 it is NOT in git on purpose. Without it the run still works, but every game starts
 from the opening.
 
@@ -96,7 +96,7 @@ When the prompt comes back:
 
     grep -E "Feature set|Start pool|Calibration|s/game|PANEL GATE|Traceback|Error" smoke/a.log
 
-GOOD looks like: "Feature set: AB", "Start pool: 6555 positions ...", "Calibration
+GOOD looks like: "Feature set: AB", "Start pool: 14183 positions ...", "Calibration
 benchmark, champion: corr +0.159 ...", a "PANEL GATE ... outcome: CAP" line, a few
 "s/game" lines, and NO "Traceback" or "Error".
 
