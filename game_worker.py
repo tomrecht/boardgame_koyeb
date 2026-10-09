@@ -67,6 +67,11 @@ def serialize_board(board):
              'tile': {'ring': p.tile.ring, 'sector': p.tile.pos}}
             for p in board.pieces if p.tile is not None
         ],
+        # The no-save draw counter: features_v2 encodes it, and a rebuilt board
+        # has no other way to know it (it was always 0 in training before
+        # 2026-10-08 while real at play time).
+        'noSaveTurns': board.no_save_turns,
+        'drawCallable': board.draw_callable,
     }
 
 

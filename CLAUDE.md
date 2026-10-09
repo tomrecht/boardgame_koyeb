@@ -540,6 +540,23 @@ PRESCREEN_BAR; panel 3 vs 5.
 Built on `train-panel-league`. The plan and the evidence behind each feature are
 on main's CLAUDE.md, "Next training run". What is here:
 
+* **UPWEIGHTED POSITION CLASSES + THE NO-SAVE COUNTER FIX (owner, 2026-10-08).**
+  `train_td.position_tags` tags each record from its rebuilt board (cached as
+  `rec['_upw']`, so pre-existing records are tagged too) and multiplies its
+  weight by the largest factor that applies: `near_end` (either side <= 2
+  unsaved; `UPW_NEAR_END`, default 3), `save_goal` (one die can save a mover's
+  blank OR put one of its numbered pieces on its own goal; `UPW_SAVE_GOAL`, 2),
+  `near_draw` (no-save counter >= `NEAR_DRAW_FROM`=5 rounds; `UPW_NEAR_DRAW`, 3).
+  Set a factor to 1 to switch a class off; keep them THE SAME IN BOTH ARMS.
+  Each training epoch logs the class shares. Measured on 4 AB games (273
+  records): 4.8% / 1.5% / 0.7%, carrying 17% of the weight.
+  **Bug fixed with it:** `serialize_board` did not store the no-save counter,
+  so every training encode (rebuilt via `update_state`) saw it as 0 while play
+  saw the real value -- the A/AB counter input was untrainable. Records now
+  carry `noSaveTurns` / `drawCallable`, and `update_state` without them resets
+  the counter to 0 instead of keeping the reused board's previous value.
+  Measured: counter 5 -> encoder input 0.5 on a reused board; key absent -> 0.
+
 * **Feature sets** (`features_v2.py`, `encoder.BoardEncoder(features=...)`):
   `v1` = the deployed encoding, byte-identical (checked against main's encoder on
   282 positions). `A` = + opponent wall flag (tile), own-goal distance for

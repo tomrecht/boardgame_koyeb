@@ -28,6 +28,7 @@ labels are all guaranteed to be on the same device (this was the cause of past
 """
 import argparse
 import json
+import os
 import copy
 import random
 
@@ -90,6 +91,84 @@ def compute_weight(rec, uniform=True, floor=0.1):
     return max(floor, 1.0 / max(1, ply))
 
 
+# ---------------------------------------------------------------------------
+# Upweighting rare position classes (owner, 2026-10-08)
+# ---------------------------------------------------------------------------
+# A record in one of these classes gets its sample weight multiplied by the
+# class factor (the largest, if several apply). Factors from the environment;
+# set one to 1 to switch that class off.
+#   near_end   either side has <= 2 unsaved pieces. The opponent may bank out
+#              next turn, and the net valued a piece stepped onto a goal as
+#              nearly saved even then (owner's games, 2026-10-08). Targets here
+#              are near-exact: the terminal margin is a turn or two away.
+#   save_goal  one die can save one of the mover's blanks OR put one of its
+#              numbered pieces on its own goal -- the champion banks the blank
+#              in 4.5% of these (CLAUDE.md, class (b)).
+#   near_draw  the no-save counter is at NEAR_DRAW_FROM rounds or more; rare,
+#              and the counter input is otherwise almost never non-zero.
+UPW = {
+    'near_end':  float(os.environ.get('UPW_NEAR_END', '3')),
+    'save_goal': float(os.environ.get('UPW_SAVE_GOAL', '2')),
+    'near_draw': float(os.environ.get('UPW_NEAR_DRAW', '3')),
+}
+NEAR_DRAW_FROM = int(os.environ.get('NEAR_DRAW_FROM', '5'))
+UPW_STATS = {'n': 0, 'near_end': 0, 'save_goal': 0, 'near_draw': 0, 'w': 0.0, 'w_tagged': 0.0}
+
+
+def position_tags(board, rec):
+    """The classes a record falls in, from the board rebuilt from its raw_state
+    (so old records and start-pool games are tagged too). Cached on the record."""
+    tags = rec.get('_upw')
+    if tags is not None:
+        return tags
+    unsaved = lambda side: 12 - len(board.white_saved if side == 'white' else board.black_saved)
+    tags = []
+    if min(unsaved('white'), unsaved('black')) <= 2:
+        tags.append('near_end')
+    if rec['raw_state'].get('noSaveTurns', 0) >= NEAR_DRAW_FROM:
+        tags.append('near_draw')
+    me = rec['player']
+    if board.current_player == me and not any(d.used for d in board.dice):
+        stage = dict(board.game_stages)
+        blank_save, num_goal = set(), set()
+        for m in board.get_valid_moves():
+            if not (isinstance(m, tuple) and len(m) == 3 and isinstance(m[0], tuple)
+                    and m[0][0] == me):
+                continue
+            if m[1] == 'save':
+                if m[0][1] > 6:
+                    blank_save.add(m[2])
+            elif isinstance(m[1], tuple) and m[0][1] <= 6:
+                t = board.get_tile(*m[1])
+                if t is not None and t.type == 'save' and t.number == m[0][1]:
+                    num_goal.add(m[2])
+        board.game_stages.update(stage)
+        if blank_save & num_goal:
+            tags.append('save_goal')
+    rec['_upw'] = tags
+    return tags
+
+
+def upweight(board, rec):
+    f = 1.0
+    for t in position_tags(board, rec):
+        f = max(f, UPW[t])
+    return f
+
+
+def print_upweight_stats(label=''):
+    """Share of records in each class, and of the total weight they carry."""
+    n = UPW_STATS['n']
+    if not n:
+        return
+    pct = lambda k: 100.0 * UPW_STATS[k] / n
+    print(f"  upweight{label}: near_end {pct('near_end'):.1f}%  save_goal {pct('save_goal'):.1f}%  "
+          f"near_draw {pct('near_draw'):.2f}% of {n} records; "
+          f"they carry {100.0 * UPW_STATS['w_tagged'] / UPW_STATS['w']:.1f}% of the weight")
+    for k in UPW_STATS:
+        UPW_STATS[k] = 0 if k in ('n', 'near_end', 'save_goal', 'near_draw') else 0.0
+
+
 def print_data_stats(records, label=''):
     from collections import defaultdict
     by_stage = defaultdict(int)
@@ -128,9 +207,17 @@ def encode_batch_with_targets(records, encoder, board, uniform_weights=True,
                 rs = augment.transform(rs, random.randint(0, 2))
             board.update_state(rs)
             enc = encoder.encode(board, rec['player'])
+            f = upweight(board, rec)        # after encode: it runs move generation
             encoded.append(enc)
             labels.append(rec['td_target'])
-            weights.append(compute_weight(rec, uniform=uniform_weights))
+            w = compute_weight(rec, uniform=uniform_weights) * f
+            weights.append(w)
+            UPW_STATS['n'] += 1
+            UPW_STATS['w'] += w
+            if f > 1.0:
+                UPW_STATS['w_tagged'] += w
+            for t in rec['_upw']:
+                UPW_STATS[t] += 1
         except Exception:
             failed += 1
     if not encoded:
@@ -201,6 +288,11 @@ def run_td_epoch(model, records_with_targets, encoder, board, optimizer,
             correct_sign += same.sum().item()
             counted += same.numel()
 
+    if training:
+        print_upweight_stats(' (train epoch)')
+    else:
+        for k in UPW_STATS:
+            UPW_STATS[k] = 0 if k in ('n', 'near_end', 'save_goal', 'near_draw') else 0.0
     avg_loss = total_loss / total_weight if total_weight else 0.0
     acc = correct_sign / counted if counted else 0.0
     return avg_loss, acc

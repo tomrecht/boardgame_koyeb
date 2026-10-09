@@ -287,6 +287,13 @@ class Board:
             self.draw_callable = bool(game_state_details.get(
                 'drawCallable', self.no_save_turns >= NO_SAVE_TURNS_FOR_DRAW))
             self._half_turns_since_round = 0
+        else:
+            # A state without the counter (records written before 2026-10-08,
+            # start-pool positions) is a position with no streak -- not the
+            # counter of whatever this reused board held before.
+            self.no_save_turns = 0
+            self.draw_callable = False
+            self._half_turns_since_round = 0
         # keep the saved-count snapshot consistent with the rebuilt board
         self._last_total_saved = self.total_saved()
 
