@@ -6720,7 +6720,7 @@ class Piece {
             // setting covers both or neither. `save()` above is NOT gated -- that
             // is the core save gesture, not a shortcut.
             if (!saved && this.player === this.game.turn && getSumSaveGesture() &&
-                this.game.sumSave(this)) return;
+                this.game.sumSave(this, { uniqueGoal: true })) return;
             // Still on a goal it cannot bank from, and cannot reach-and-bank
             // another either -- but the sum may reach a goal it CAN eventually
             // use (a numbered piece parked on the wrong goal, most usefully).
@@ -6735,7 +6735,7 @@ class Piece {
             this.game._saveGuardUntil = Date.now() + 250;
             _clearSelection(this.game);
         } else if (this.player === this.game.turn && getSumSaveGesture() &&
-                   this.game.sumSave(this)) {
+                   this.game.sumSave(this, { uniqueGoal: true })) {
             // Not on a goal yet, but one die reaches a goal and the other saves it
             // this turn -> do both at once. Opt-in (see getSumSaveGesture): it
             // spends the entire roll off a single gesture, which is a lot to do
@@ -8958,7 +8958,12 @@ class Game {
     // the other goal and the second die saves it there. That is two ordinary
     // moves, so it is a frontend affordance, not a rule change -- the engine has
     // always allowed the sequence and the agent already searches it.
-    sumSave(piece) {
+    // `opts.uniqueGoal` (the double-tap, owner 2026-10-08): if the piece has
+    // more than one goal in reach, do nothing and say so -- which goal it walks
+    // to changes what the other die can bank, so the player picks by hand. The
+    // saved-rack tap and drop are explicit "bank THIS piece" and skip the check.
+    // Returns 'ambiguous' (truthy, so callers stop) when it declines that way.
+    sumSave(piece, opts = {}) {
         if (!piece.currentTile) return false;
         if (piece.player !== this.turn) return false;
         if (this.dice[0].used || this.dice[1].used) return false;   // need both dice
@@ -8985,6 +8990,7 @@ class Game {
                 (player.getGamePhase() === 'endgame' || endgameAfterMove) &&
                 dieVal > goal.number && !this.isHigherNumberedGoalOccupied(player, goal.number);
         };
+        let target = null;
         for (const goal of goals) {
             if (goal === piece.currentTile) continue;   // already here: nothing to walk
             // movePiece consumes die[0] if the goal is reachable by it, else die[1];
@@ -8992,11 +8998,21 @@ class Game {
             const byFirst = r.reachableByFirstDie.includes(goal);
             const bySecond = r.reachableBySecondDie.includes(goal);
             const saveDieVal = byFirst ? this.dice[1].value : (bySecond ? this.dice[0].value : null);
-            if (saveDieVal !== null && canSaveFrom(goal, saveDieVal)) {
-                if (this.movePiece(piece, goal) && piece.save()) return true;
+            if (saveDieVal !== null && canSaveFrom(goal, saveDieVal)) { target = goal; break; }
+        }
+        if (!target) return false;
+        if (opts.uniqueGoal) {
+            // Every route counts, as in sendToGoal: a goal on one die and another
+            // on the sum is still a choice.
+            const inReach = new Set([...r.reachableByFirstDie, ...r.reachableBySecondDie, ...r.reachableBySum]
+                .filter(t => goals.includes(t) && t !== piece.currentTile));
+            if (inReach.size > 1) {
+                if (typeof flashNotice === 'function')
+                    flashNotice('More than one goal is in reach, so move it by hand to choose.', 3500, 'move');
+                return 'ambiguous';
             }
         }
-        return false;
+        return this.movePiece(piece, target) && piece.save();
     }
 
     // Optional gesture (settings, off by default): send a piece to a goal it can

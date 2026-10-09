@@ -520,6 +520,18 @@ with it in mind.** Assessment and the concrete implications:
      minimises at once. Without a listener the plugin would make back do nothing
      at all at the root, so the listener is required. **Ships with the next
      package (versionCode 8); not yet run on a device.**
+- **DOUBLE-TAP SUM-SAVE DECLINES WHEN MORE THAN ONE GOAL IS IN REACH (owner,
+  2026-10-08).** Owner: blanks x2 on G4, a blank 5 from both G1 and G4, roll 5-6;
+  the gesture walked it to G4 and banked it (layout G4+G4, 2.13 turns by the
+  endgame table) where G1 + bank a G4 blank with the 6 was right (G1+G4, 1.30).
+  `sumSave(piece, {uniqueGoal: true})` from `handleDoubleClick` now does nothing
+  and says "More than one goal is in reach..." when the piece has 2+ eligible
+  goals in reach (any die or the sum, as `sendToGoal` counts). The saved-rack tap
+  and drop are explicit "bank THIS piece" and keep the old pick. Measured in the
+  browser: owner's position -> nothing moves, notice; old code -> banked off G4;
+  control (only G4 in reach, roll 1-5) -> walks and banks. **Not addressed:** A to
+  goal + bank A, when the other die could put piece B on ITS goal -- one goal in
+  reach, so the gesture still spends both dice on A.
 - **ENDGAME MARK ON THE SAVED RACK (owner, 2026-10-07; on `testing`).** A
   player in the endgame gets a faint accent ground and accent edge on their SAVED
   rack, plus a one-off double pulse when they enter it. `_endgameMarkTick` runs in
