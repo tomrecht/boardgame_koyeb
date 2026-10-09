@@ -532,7 +532,7 @@ with it in mind.** Assessment and the concrete implications:
   control (only G4 in reach, roll 1-5) -> walks and banks. **And when the leftover
   die is contested** -- after the move it could bank another own piece or bring
   one onto a goal it can bank from (`_dieHasOtherGoalUse`; goal-to-goal steps do
-  not count) -- the gesture stops on the goal and leaves that die, with a notice;
+  not count) -- the gesture stops on the goal and leaves that die, silently;
   a second double-tap banks. Measured: blank 1 from G4, roll 1-4, another blank 4
   from G4 -> first piece to G4, the 4 unused; second double-tap banks it; control
   with the other blank unable to reach a goal on either die -> walks and banks.

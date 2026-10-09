@@ -9019,11 +9019,7 @@ class Game {
         // A second double-tap banks it. Judged on the board AFTER the move, since
         // the move itself can open the endgame or change the highest goal.
         const left = this.dice.find(d => !d.used);
-        if (opts.uniqueGoal && left && this._dieHasOtherGoalUse(piece, left)) {
-            if (typeof flashNotice === 'function')
-                flashNotice(`The ${left.value} has another use, so it is left for you — double-tap again to bank this piece.`, 3500, 'move');
-            return 'moved';
-        }
+        if (opts.uniqueGoal && left && this._dieHasOtherGoalUse(piece, left)) return 'moved';
         return piece.save();
     }
 
