@@ -479,6 +479,35 @@ with it in mind.** Assessment and the concrete implications:
 
 ## Current state
 
+- **ENDGAME LOOKAHEAD (owner, 2026-10-08; on `testing`).** Owner saw the net, at
+  a near-certain loss (his last piece a blank on goal 3), step a piece onto a goal
+  instead of saving -- the certain-loss rule's cousin, not fixable by rule. When
+  the opponent has <= 2 unsaved pieces, every candidate the shallow search keeps is
+  rescored as `P(finish) * exact final margin + (1 - P(finish)) * net value`,
+  P(finish) = share of the opponent's 21 rolls on which they can bank out from the
+  position after the candidate (so a capture or wall that stops them counts). A
+  finish is EXACT: they win by our unsaved count however they do it. Move
+  generation only, no extra net calls. Ties (P = 1) fall back to the net's score.
+  `selectWithLookahead` / `oppFinishProb` in agent.js (`lookahead: true` default),
+  `_select_with_lookahead` / `_opp_finish_prob` in agent_gnn.py (OFF by default,
+  `endgame_lookahead = True`, so arenas and training are unchanged).
+  **Measured.** Owner's 166 games vs the current blend, 176 computer turns with
+  owner at <= 2 pieces (`owner_lookahead.py`): changes the move on 8; the three
+  goal-instead-of-save cases fixed at +1.00 / +0.31 / +0.75 pts (16 paired
+  playouts each), two -0.25 where it kept a piece back to slow owner's route
+  (noise level), three level; +0.20 per change (95% CI -0.12..+0.51), ~+0.01
+  pts/game. Self-play, 210 games (`lookahead_probe.py`): 4% of trigger turns
+  change, +0.06 per change (CI -0.15..+0.27). So it fixes a visible blunder, not
+  measurable strength. **Latency** added on trigger turns (~1-3 a game): node on
+  the iMac median 50 ms, p90 143 ms, max 335 ms (Python 0.41 / 1.2 / 3.1 s).
+  **Parity:** `lookahead_fixture.py` (owner's 176 positions, stub net) -> JS
+  176/176, the lookahead changing the stub's choice in 34 of them;
+  `agent_fixture.json` regenerated with the lookahead on, 50/50. In the browser,
+  real net, `b 56 | W 2@3.3 ... | B 2@G2 x@6.4 5@6.4 ...` (game 15619a3e t45): the
+  computer banks the 5 (recorded game: 5 to goal 5, blank to goal 1, no save).
+  A full deep search over the opponent's replies was tried first and cost 13-100 s
+  a turn in Python -- the per-roll reply search is what P(finish) replaces.
+
 - **LEAVING A GAME BY ACCIDENT: AUTOSAVE + BACK HANDLING (owner, 2026-10-07).**
   Owner's phone: a tap near the edge read as a back swipe and left the site,
   losing the game -- in fullscreen too, because on Android Chrome a back gesture

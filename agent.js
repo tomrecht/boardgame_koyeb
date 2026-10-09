@@ -202,6 +202,150 @@ function wastesSave(engine, pair, player) {
     return any;
 }
 
+/* ENDGAME LOOKAHEAD (owner, 2026-10-08). The opponent has at most two unsaved
+   pieces, so their next turn may end the game -- and on a roll that does, the
+   result is EXACT: they win by our unsaved count, however they do it. The net
+   valued a piece stepped onto a goal as nearly a saved piece even then. Twin of
+   _opponent_near_finish / _select_with_lookahead in agent_gnn.py. */
+const LOOKAHEAD_PIECES = 12;
+function opponentNearFinish(engine, player) {
+    const opp = player === 'white' ? 'black' : 'white';
+    return LOOKAHEAD_PIECES - engine.savedRack(opp).length <= 2;
+}
+
+const ROLLS_21 = [];
+for (let a = 1; a <= 6; a++) for (let b = a; b <= 6; b++) ROLLS_21.push([a, b, (a === b ? 1 : 2) / 36]);
+
+/* Can `opp`, to move, bank everything on the dice as set? Board left as found. */
+function canFinish(engine, opp, base) {
+    for (const m of engine.getValidMoves()) {
+        if (isPass(m) || isDraw(m)) continue;
+        engine.applyMove(m, false);
+        let won = engine.checkGameOver()[0] === opp;
+        if (!won && !engine.dice.every(d => d.used)) {
+            const mid = engine.moves.length;
+            for (const m2 of engine.getValidMoves()) {
+                if (isPass(m2) || isDraw(m2)) continue;
+                engine.applyMove(m2, false);
+                won = engine.checkGameOver()[0] === opp;
+                while (engine.moves.length > mid) engine.undoLastMove();
+                if (won) break;
+            }
+        }
+        while (engine.moves.length > base) engine.undoLastMove();
+        if (won) return true;
+    }
+    return false;
+}
+
+/* P(`opp`, moving next from here -- our pair applied, turn not yet switched --
+   can bank out on the roll they get). Enters their turn the way switchTurn
+   does, without rolling, and undoes it exactly, including the last-piece
+   rule's renumbering (agent_gnn._enter_opponent_turn_deterministic). */
+function oppFinishProb(engine, opp) {
+    const saved = {
+        player: engine.currentPlayer,
+        dice: engine.dice.map(d => [d.value, d.used]),
+        firstMove: engine.firstMove,
+        stages: Object.assign({}, engine.stages),
+    };
+    engine.firstMove = null;
+    engine.currentPlayer = opp;
+    const before = new Map(engine.pieces.filter(p => p.number <= 6).map(p => [p, p.number]));
+    engine.applyLastPieceRule();
+    const renumbered = [...before].filter(([p, n]) => p.number !== n);
+    const base = engine.moves.length;
+    let prob = 0;
+    try {
+        for (const [d1, d2, w] of ROLLS_21) {
+            engine.dice[0].value = d1; engine.dice[0].used = false;
+            engine.dice[1].value = d2; engine.dice[1].used = false;
+            if (canFinish(engine, opp, base)) prob += w;
+        }
+    } finally {
+        while (engine.moves.length > base) engine.undoLastMove();
+        for (const [p, n] of renumbered) {
+            if (engine.lookup.get(p.player + ',' + p.number) === p) engine.lookup.delete(p.player + ',' + p.number);
+            p.number = n;
+            engine.lookup.set(p.player + ',' + n, p);
+        }
+        engine.currentPlayer = saved.player;
+        engine.dice.forEach((d, i) => { d.value = saved.dice[i][0]; d.used = saved.dice[i][1]; });
+        engine.firstMove = saved.firstMove;
+        Object.assign(engine.stages, saved.stages);
+    }
+    return prob;
+}
+
+/* Every candidate the shallow search keeps (same prefilter, same rules),
+   rescored as P(finish) * exact final margin + (1 - P(finish)) * net value.
+   Move generation only; no extra net evaluations. */
+async function selectWithLookahead(engine, W, moves, player, o) {
+    const stages0 = Object.assign({}, engine.stages);
+    let ranked;
+    try {
+        ranked = await selectMovePair(engine, W, moves, player,
+                                      Object.assign({}, o, { returnScores: true, _inLookahead: true }));
+    } finally {
+        Object.assign(engine.stages, stages0);
+    }
+    if (!ranked.length || ranked[0].pair === undefined) return ranked;     // a bare pair: nothing to score
+    if (ranked[0].score === Infinity) return o.returnScores ? ranked : ranked[0].pair;
+    const drawPair = [DRAW, PASS];
+    const drawLegal = ranked.some(r => isDraw(r.pair[0]));
+    const scored = ranked.filter(r => !isDraw(r.pair[0]));
+    if (!scored.length) return o.returnScores ? ranked : (drawLegal ? drawPair : [PASS, PASS]);
+
+    const opp = player === 'white' ? 'black' : 'white';
+    const root = engine.moves.length;
+    const vals = [], cands = [], outcomes = [], shallow = [], memo = new Map();
+    try {
+        for (const r of scored) {
+            for (const m of r.pair) if (!isPass(m)) engine.applyMove(m, false);
+            const key = pieceLocs(engine);
+            if (!memo.has(key)) {
+                memo.set(key, [oppFinishProb(engine, opp),
+                               -(LOOKAHEAD_PIECES - engine.savedRack(player).length) / LOOKAHEAD_PIECES * SCORE_SCALE]);
+            }
+            while (engine.moves.length > root) engine.undoLastMove();
+            const [p, vFin] = memo.get(key);
+            vals.push(p * vFin + (1 - p) * r.score);
+            shallow.push(r.score);
+            cands.push(r.pair);
+            outcomes.push(key);
+        }
+    } finally {
+        Object.assign(engine.stages, stages0);
+    }
+
+    if (o.returnScores) {
+        const out = vals.map((v, i) => ({ score: v, pair: cands[i] }));
+        if (drawLegal) out.push({ score: 0.0, pair: drawPair });
+        out.sort((a, b) => (b.score - a.score) || cmpPairKey(a.pair, b.pair));
+        return out;
+    }
+    if (cands.length === 1 && !drawLegal) return dedupeSavePair(cands[0]);
+    if (drawLegal && 0.0 >= Math.max(...vals)) return drawPair;
+    let best = pickMoveIndex(vals, o.difficulty, o.rand);
+    const top = vals[best];
+    const tied = [];
+    for (let i = 0; i < vals.length; i++) if (vals[i] === top) tied.push(i);
+    if (tied.length > 1) {
+        // Certain to be over (P(finish) = 1) ties every pair with the same saves;
+        // the net's own score then decides, as without the lookahead.
+        tied.sort((a, b) => (shallow[b] - shallow[a]) || cmpPairKey(cands[a], cands[b]));
+        best = tied[0];
+    }
+    const same = [];
+    for (let i = 0; i < outcomes.length; i++) if (outcomes[i] === outcomes[best]) same.push(i);
+    if (same.length > 1) {
+        same.sort((a, b) => (pairRelocations(cands[a]) - pairRelocations(cands[b]))
+                            || cmpPairKey(cands[a], cands[b]));
+        best = same[0];
+    }
+    return dedupeSavePair(cands[best]);
+}
+
 /* --- the search ------------------------------------------------------- */
 
 /* Returns the chosen [move1, move2], or the full ranking when returnScores.
@@ -214,8 +358,12 @@ async function selectMovePair(engine, W, moves, player, opts = {}) {
         prefilter: true, firstMovePrefilter: 12, prefilterTopK: 40, prefilterMinK: 5,
         prefilterFrac: null, prefilterScoreAlpha: null,
         difficulty: null, returnScores: false, rand: null,
+        lookahead: true, _inLookahead: false,
     }, opts);
     const score = o.score;
+
+    if (o.lookahead && !o._inLookahead && opponentNearFinish(engine, player))
+        return selectWithLookahead(engine, W, moves, player, o);
 
     const drawLegal = moves.some(isDraw);
     const lossCertain = opponentWinsNextTurnRegardless(engine, player);
@@ -447,7 +595,7 @@ async function selectMovePair(engine, W, moves, player, opts = {}) {
 }
 
 (function () {
-    const api = { selectMovePair, selectFiltered, pickMoveIndex, dedupeSavePair,
+    const api = { selectMovePair, selectFiltered, oppFinishProb, opponentNearFinish, pickMoveIndex, dedupeSavePair,
                   pieceLocs, positionKey, pairRelocations, cmpPairKey,
                   PASS, DRAW, isPass, isDraw, isSave, SCORE_SCALE };
     if (typeof module !== 'undefined' && module.exports) module.exports = api;

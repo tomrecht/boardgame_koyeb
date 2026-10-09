@@ -145,6 +145,16 @@ def _opponent_wins_next_turn_regardless(board, player):
     return all(p.number > 6 and p.tile.type == 'save' and p.tile.number == 1 for p in left)
 
 
+def _opponent_near_finish(board, player):
+    """ENDGAME LOOKAHEAD TRIGGER (owner, 2026-10-08): the opponent has at most
+    two unsaved pieces, so their next turn may end the game (two dice bank at
+    most two). Only then does a ply over their 21 rolls reach exact terminal
+    margins, which is what makes it worth its cost. Twin of
+    opponentNearFinish in agent.js."""
+    opp_saved = board.black_saved if player == 'white' else board.white_saved
+    return NUM_PIECES - len(opp_saved) <= 2
+
+
 def _own_saves(pair, player):
     return sum(1 for m in pair
                if isinstance(m, tuple) and len(m) == 3 and m[1] == 'save'
@@ -250,6 +260,10 @@ class GNNAgent:
         # -save dedupe (a hard game invariant) stays on regardless. Set
         # enable_never_good=True to re-enable the heuristic corrections.
         self.enable_never_good = False
+        # Endgame lookahead (see _opponent_near_finish / _select_with_lookahead).
+        # Off by default here so training and arena code are unchanged.
+        self.endgame_lookahead = False
+        self._in_lookahead = False
         # Diagnostic: when True, log whenever the chosen pair saves nothing yet a
         # save was legally available, distinguishing a value-head error (save
         # scored but not chosen) from a candidate drop (save never reached the
@@ -387,6 +401,11 @@ class GNNAgent:
         """
         if not isinstance(moves, (list, set)) or not all(isinstance(m, tuple) for m in moves):
             raise ValueError('Invalid moves format: expected a list or set of tuples.')
+
+        if (self.endgame_lookahead and not self._in_lookahead
+                and _opponent_near_finish(board, player)):
+            return self._select_with_lookahead(moves, board, player, return_scores,
+                                               difficulty, deadline)
 
         draw_legal = (1, 1, 1) in moves
         draw_pair  = ((1, 1, 1), (0, 0, 0))
@@ -712,6 +731,131 @@ class GNNAgent:
         if self.enable_never_good:
             chosen = self._fix_never_good(chosen, board, player)
         return self._dedupe_save_pair(chosen)
+
+    def _select_with_lookahead(self, moves, board, player, return_scores=False,
+                               difficulty=None, deadline=None):
+        """ENDGAME LOOKAHEAD (owner, 2026-10-08). With the opponent near the
+        finish the net valued a piece stepped onto a goal as nearly a saved
+        piece, even when the opponent banks out next turn and it then counts
+        for nothing. On a roll that finishes them the result is EXACT -- they
+        win by our unsaved count, however they do it -- so each candidate the
+        shallow search keeps (same prefilter, same rules) is rescored as
+
+            P(finish) * exact final margin + (1 - P(finish)) * net value
+
+        with P(finish) the share of the opponent's 21 rolls that let them bank
+        out from the position after the candidate (so a capture or a wall that
+        stops them counts). Move generation only; no extra net evaluations.
+        Scores stay in the shallow search's units (raw * SCORE_SCALE)."""
+        stages0 = dict(board.game_stages)
+        self._in_lookahead = True
+        try:
+            ranked = self.select_move_pair(moves, board, player, return_scores=True,
+                                           deadline=deadline)
+        finally:
+            self._in_lookahead = False
+            board.game_stages.update(stages0)
+        if not isinstance(ranked, list):
+            return ranked
+        if ranked and ranked[0][0] == float('inf'):
+            return ranked if return_scores else ranked[0][1]
+        draw_pair = ((1, 1, 1), (0, 0, 0))
+        draw_legal = any(p == draw_pair for _, p in ranked)
+        scored = [(v, p) for v, p in ranked if p != draw_pair]
+        if not scored:
+            if return_scores:
+                return ranked
+            return draw_pair if draw_legal else ((0, 0, 0), (0, 0, 0))
+
+        opp = 'white' if player == 'black' else 'black'
+        my_saved = board.white_saved if player == 'white' else board.black_saved
+        root_len = len(board.moves)
+        vals, cands, outcomes, shallow, memo = [], [], [], [], {}
+        try:
+            for v, pair in scored:
+                for m in pair:
+                    if m != (0, 0, 0):
+                        board.apply_move(m, switch_turn=False)
+                key = _piece_locs(board)
+                if key not in memo:
+                    memo[key] = (self._opp_finish_prob(board, opp),
+                                 -(NUM_PIECES - len(my_saved)) / NUM_PIECES * SCORE_SCALE)
+                while len(board.moves) > root_len:
+                    board.undo_last_move()
+                p_fin, v_fin = memo[key]
+                vals.append(p_fin * v_fin + (1.0 - p_fin) * v)
+                shallow.append(v)
+                cands.append(pair)
+                outcomes.append(key)
+        finally:
+            board.game_stages.update(stages0)
+
+        if return_scores:
+            out = list(zip(vals, cands))
+            if draw_legal:
+                out.append((0.0, draw_pair))
+            out.sort(key=lambda x: (-x[0], _pair_sort_key(x[1])))
+            return out
+        if len(cands) == 1 and not draw_legal:
+            return self._dedupe_save_pair(cands[0])
+        scores = np.asarray(vals, dtype=np.float64)
+        if draw_legal and 0.0 >= scores.max():
+            return draw_pair
+        best = self._pick_move_index(scores, difficulty)
+        top = float(scores[best])
+        tied = [i for i, v in enumerate(vals) if v == top]
+        if len(tied) > 1:
+            # Certain to be over (P(finish) = 1) ties every pair with the same
+            # saves; the net's own score then decides, as without the lookahead.
+            best = min(tied, key=lambda i: (-shallow[i], _pair_sort_key(cands[i])))
+        same = [i for i, k in enumerate(outcomes) if k == outcomes[best]]
+        if len(same) > 1:
+            best = min(same, key=lambda i: (_pair_relocations(cands[i]),
+                                            _pair_sort_key(cands[i])))
+        return self._dedupe_save_pair(cands[best])
+
+    def _opp_finish_prob(self, board, opp):
+        """Probability that `opp`, moving next from this position (our pair
+        applied, turn not yet switched), can bank all their pieces on the roll
+        they get. Board is left exactly as found."""
+        saved = self._enter_opponent_turn_deterministic(board)
+        base = len(board.moves)
+        dice = board.dice
+        p = 0.0
+        try:
+            for d1, d2, w in self._DICE_ROLLS_21:
+                dice[0].number, dice[0].used = d1, False
+                dice[1].number, dice[1].used = d2, False
+                if self._can_finish(board, opp, base):
+                    p += w
+        finally:
+            while len(board.moves) > base:
+                board.undo_last_move()
+            self._restore_turn_state(board, saved)
+        return p
+
+    def _can_finish(self, board, opp, base):
+        for m in board.get_valid_moves():
+            if m in ((0, 0, 0), (1, 1, 1)) or not (isinstance(m, tuple) and len(m) == 3):
+                continue
+            board.apply_move(m, switch_turn=False)
+            won = board.check_game_over()[0] == opp
+            if not won and not all(d.used for d in board.dice):
+                mid = len(board.moves)
+                for m2 in board.get_valid_moves():
+                    if m2 in ((0, 0, 0), (1, 1, 1)) or not (isinstance(m2, tuple) and len(m2) == 3):
+                        continue
+                    board.apply_move(m2, switch_turn=False)
+                    won = board.check_game_over()[0] == opp
+                    while len(board.moves) > mid:
+                        board.undo_last_move()
+                    if won:
+                        break
+            while len(board.moves) > base:
+                board.undo_last_move()
+            if won:
+                return True
+        return False
 
     @staticmethod
     def _pair_has_save(pair):
@@ -1382,7 +1526,8 @@ class GNNAgent:
         [3]=die2_used, so a variant shares every expensive tensor
         (tile/piece features, edges) by reference and clones only the
         11-float global vector."""
-        g = enc['global_feats'].clone()
+        g = enc['global_feats']
+        g = g.clone() if hasattr(g, 'clone') else g.copy()   # torch or numpy
         g[0] = d1 / 6.0
         g[1] = d2 / 6.0
         g[2] = u1

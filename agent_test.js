@@ -26,7 +26,7 @@ const A = require(path.join(ROOT, 'agent.js'));
 
 const staticData = JSON.parse(fs.readFileSync(path.join(ROOT, 'encoder_static.json'), 'utf8'));
 const W = JSON.parse(fs.readFileSync(path.join(ROOT, 'heuristic_weights.json'), 'utf8'));
-const fx = JSON.parse(fs.readFileSync(path.join(ROOT, 'agent_fixture.json'), 'utf8'));
+const fx = JSON.parse(fs.readFileSync(path.join(ROOT, process.argv[2] || 'agent_fixture.json'), 'utf8'));
 
 // The same stub: FNV-1a over the position key, into [-1, 1).
 function stubScore(key) {
