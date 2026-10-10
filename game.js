@@ -9002,15 +9002,27 @@ class Game {
             return saveDieVal !== null && canSaveFrom(goal, saveDieVal);
         });
         if (!bankable.length) return false;
-        // The double-tap declines only when the piece could be BANKED via more
-        // than one goal (owner, 2026-10-09): a goal in reach that it cannot bank
-        // from this turn is no choice the gesture is making.
-        if (opts.uniqueGoal && bankable.length > 1) {
+        // The double-tap declines only when the GOAL CHOSEN MATTERS (owner,
+        // 2026-10-09). A goal it cannot bank from this turn is no choice; and if
+        // it can bank via several, walking to any of them and banking leaves the
+        // same position (both dice spent, nothing captured on a goal) -- unless
+        // the die left after the walk has another use from one of them, which is
+        // then a real choice (2026-10-08's G1-vs-G4 case). Entering the endgame
+        // makes the higher-die rule bank via most goals, so without this the
+        // gesture declined almost every time it started the endgame.
+        const leftUse = (goal) => {
+            const byFirst = r.reachableByFirstDie.includes(goal);
+            return this._dieHasOtherGoalUse(piece, this.dice[byFirst ? 1 : 0],
+                                             endgameAfterMove ? 'endgame' : null);
+        };
+        if (opts.uniqueGoal && bankable.length > 1 && bankable.some(leftUse)) {
             if (typeof flashNotice === 'function')
                 flashNotice('More than one goal is in reach, so move it by hand to choose.', 3500, 'move');
             return 'ambiguous';
         }
-        const target = bankable[0];
+        // Prefer a goal that leaves the other die no other use, so the gesture
+        // banks rather than stopping when it can.
+        const target = bankable.find(g => !leftUse(g)) || bankable[0];
         if (!this.movePiece(piece, target)) return false;
         // Second half of the same rule (owner, 2026-10-08): if the die left over
         // could ALSO bank another piece, or put one onto a goal it can bank from,
@@ -9025,9 +9037,9 @@ class Game {
     // Can `die` (unused) bank another of this side's pieces, or bring one onto a
     // goal it can bank from (a numbered piece its own, a blank any)? Goal-to-goal
     // steps do not count: they bank nothing.
-    _dieHasOtherGoalUse(piece, die) {
+    _dieHasOtherGoalUse(piece, die, phaseOverride) {
         const player = piece.color === 0xffffff ? this.players[0] : this.players[1];
-        const phase = player.getGamePhase();
+        const phase = phaseOverride || player.getGamePhase();
         for (const q of this.pieces) {
             if (q === piece || q.color !== piece.color || !q.currentTile) continue;
             const t = q.currentTile;

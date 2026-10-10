@@ -563,7 +563,16 @@ with it in mind.** Assessment and the concrete implications:
   (walked to on one die, banked with the other); a goal merely in reach is no
   choice. Measured, 219 midgame positions with 2+ goals in reach (lone white blank
   + a numbered 6): 32 now walk and bank, 3 still decline (two bankable goals), 4
-  stop on the goal for the 6, 180 have no bankable goal and fall through. **And when the leftover
+  stop on the goal for the 6, 180 have no bankable goal and fall through.
+  **And several bankable goals decline only if the CHOICE MATTERS (owner,
+  2026-10-09: "doesn't trigger when the first move enters the endgame").** Entering
+  the endgame turns on the higher-die rule, so most goals become bankable, yet
+  banking via any of them leaves the same position. Now: decline only if, from
+  some bankable goal, the leftover die has another use (`_dieHasOtherGoalUse`
+  judged at the post-move phase); otherwise walk to a goal with no such use and
+  bank. 1,395 scanned positions (companions 2@G2 / x@G3 / x@G4 x2): 333 bank, 99
+  stop on the goal, 34 decline -- each checked case a real choice (e.g. G4+bank
+  the blank vs G2+bank the numbered 2). **And when the leftover
   die is contested** -- after the move it could bank another own piece or bring
   one onto a goal it can bank from (`_dieHasOtherGoalUse`; goal-to-goal steps do
   not count) -- the gesture stops on the goal and leaves that die, silently;
