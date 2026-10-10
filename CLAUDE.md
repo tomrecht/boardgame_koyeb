@@ -2031,6 +2031,13 @@ with it in mind.** Assessment and the concrete implications:
     needed versionCode 2. **A reinstall from Play does NOT pick up a local
     rebuild** — obvious in hindsight, easy to misread as the icon fix having
     failed.
+    **PLAY CONSOLE ADVISORIES ON versionCode 8, BOTH DELIBERATELY IGNORED (owner,
+    2026-10-09):** "edge-to-edge may not display" (a static check for
+    `EdgeToEdge.enable()` in MainActivity; Android 15+ is already handled by the
+    safe-area fix, the call would only make <=14 edge-to-edge too -- cosmetic,
+    needs a device check) and "enable R8" (the Java side is a Capacitor stub;
+    the size is web assets R8 cannot touch, and stripping risks the plugins'
+    reflection). Revisit only if Play makes either a requirement.
     **CURRENT PACKAGE: versionCode 8, versionName 1.0.7, 8.7 MB, built
     2026-10-06** -- the FIRST PRODUCTION RELEASE (Play granted production access
     2026-10-06). Carries the 4-way blend net (`blend4way_Oct6`), the 0.65-1.0
