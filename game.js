@@ -8959,7 +8959,7 @@ class Game {
     // moves, so it is a frontend affordance, not a rule change -- the engine has
     // always allowed the sequence and the agent already searches it.
     // `opts.uniqueGoal` (the double-tap, owner 2026-10-08): if the piece has
-    // more than one goal in reach, do nothing and say so -- which goal it walks
+    // more than one goal it could be BANKED via this turn, do nothing and say so -- which goal it walks
     // to changes what the other die can bank, so the player picks by hand. The
     // saved-rack tap and drop are explicit "bank THIS piece" and skip the check.
     // Returns 'ambiguous' (truthy, so callers stop) when it declines that way.
@@ -8990,28 +8990,27 @@ class Game {
                 (player.getGamePhase() === 'endgame' || endgameAfterMove) &&
                 dieVal > goal.number && !this.isHigherNumberedGoalOccupied(player, goal.number);
         };
-        let target = null;
-        for (const goal of goals) {
-            if (goal === piece.currentTile) continue;   // already here: nothing to walk
+        // Goals this piece can be walked to with one die AND banked from with the
+        // other, this turn.
+        const bankable = goals.filter(goal => {
+            if (goal === piece.currentTile) return false;   // already here: nothing to walk
             // movePiece consumes die[0] if the goal is reachable by it, else die[1];
             // the *other* die must then be able to save from the goal.
             const byFirst = r.reachableByFirstDie.includes(goal);
             const bySecond = r.reachableBySecondDie.includes(goal);
             const saveDieVal = byFirst ? this.dice[1].value : (bySecond ? this.dice[0].value : null);
-            if (saveDieVal !== null && canSaveFrom(goal, saveDieVal)) { target = goal; break; }
+            return saveDieVal !== null && canSaveFrom(goal, saveDieVal);
+        });
+        if (!bankable.length) return false;
+        // The double-tap declines only when the piece could be BANKED via more
+        // than one goal (owner, 2026-10-09): a goal in reach that it cannot bank
+        // from this turn is no choice the gesture is making.
+        if (opts.uniqueGoal && bankable.length > 1) {
+            if (typeof flashNotice === 'function')
+                flashNotice('More than one goal is in reach, so move it by hand to choose.', 3500, 'move');
+            return 'ambiguous';
         }
-        if (!target) return false;
-        if (opts.uniqueGoal) {
-            // Every route counts, as in sendToGoal: a goal on one die and another
-            // on the sum is still a choice.
-            const inReach = new Set([...r.reachableByFirstDie, ...r.reachableBySecondDie, ...r.reachableBySum]
-                .filter(t => goals.includes(t) && t !== piece.currentTile));
-            if (inReach.size > 1) {
-                if (typeof flashNotice === 'function')
-                    flashNotice('More than one goal is in reach, so move it by hand to choose.', 3500, 'move');
-                return 'ambiguous';
-            }
-        }
+        const target = bankable[0];
         if (!this.movePiece(piece, target)) return false;
         // Second half of the same rule (owner, 2026-10-08): if the die left over
         // could ALSO bank another piece, or put one onto a goal it can bank from,

@@ -558,7 +558,12 @@ with it in mind.** Assessment and the concrete implications:
   goals in reach (any die or the sum, as `sendToGoal` counts). The saved-rack tap
   and drop are explicit "bank THIS piece" and keep the old pick. Measured in the
   browser: owner's position -> nothing moves, notice; old code -> banked off G4;
-  control (only G4 in reach, roll 1-5) -> walks and banks. **And when the leftover
+  control (only G4 in reach, roll 1-5) -> walks and banks.
+  **Narrowed (owner, 2026-10-09): only goals it can be BANKED via THIS TURN count**
+  (walked to on one die, banked with the other); a goal merely in reach is no
+  choice. Measured, 219 midgame positions with 2+ goals in reach (lone white blank
+  + a numbered 6): 32 now walk and bank, 3 still decline (two bankable goals), 4
+  stop on the goal for the 6, 180 have no bankable goal and fall through. **And when the leftover
   die is contested** -- after the move it could bank another own piece or bring
   one onto a goal it can bank from (`_dieHasOtherGoalUse`; goal-to-goal steps do
   not count) -- the gesture stops on the goal and leaves that die, silently;
