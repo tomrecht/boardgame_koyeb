@@ -579,6 +579,11 @@ with it in mind.** Assessment and the concrete implications:
   a second double-tap banks. Measured: blank 1 from G4, roll 1-4, another blank 4
   from G4 -> first piece to G4, the 4 unused; second double-tap banks it; control
   with the other blank unable to reach a goal on either die -> walks and banks.
+  **A blank sharing the goal is no alternative (owner, 2026-10-09):** blank on
+  G1, blank 5 from it, roll 5-6 -> it stopped on G1 because the 6 "could bank"
+  the other blank; banking either is the same position. `_dieHasOtherGoalUse`
+  now skips a blank on the landing goal when the mover is a blank. Measured:
+  old code stops on G1 with the 6 unused, new code banks.
 - **ENDGAME MARK ON THE SAVED RACK (owner, 2026-10-07; on `testing`).** A
   player in the endgame gets a faint accent ground and accent edge on their SAVED
   rack, plus a one-off double pulse when they enter it. `_endgameMarkTick` runs in

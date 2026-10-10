@@ -9013,7 +9013,7 @@ class Game {
         const leftUse = (goal) => {
             const byFirst = r.reachableByFirstDie.includes(goal);
             return this._dieHasOtherGoalUse(piece, this.dice[byFirst ? 1 : 0],
-                                             endgameAfterMove ? 'endgame' : null);
+                                             endgameAfterMove ? 'endgame' : null, goal);
         };
         if (opts.uniqueGoal && bankable.length > 1 && bankable.some(leftUse)) {
             if (typeof flashNotice === 'function')
@@ -9036,13 +9036,17 @@ class Game {
 
     // Can `die` (unused) bank another of this side's pieces, or bring one onto a
     // goal it can bank from (a numbered piece its own, a blank any)? Goal-to-goal
-    // steps do not count: they bank nothing.
-    _dieHasOtherGoalUse(piece, die, phaseOverride) {
+    // steps do not count: they bank nothing. `at` is the goal `piece` stands on
+    // (or will, after the walk): a blank sharing it with a blank `piece` is no
+    // alternative -- banking either leaves the same position (owner, 2026-10-09:
+    // blank on G1, blank 5 from it, roll 5-6, the gesture stopped on G1).
+    _dieHasOtherGoalUse(piece, die, phaseOverride, at = piece.currentTile) {
         const player = piece.color === 0xffffff ? this.players[0] : this.players[1];
         const phase = phaseOverride || player.getGamePhase();
         for (const q of this.pieces) {
             if (q === piece || q.color !== piece.color || !q.currentTile) continue;
             const t = q.currentTile;
+            if (piece.number > 6 && q.number > 6 && t === at) continue;
             if (t.type === 'save') {
                 if (phase !== 'opening' && q.canBeSaved() &&
                     (die.value === t.number ||
