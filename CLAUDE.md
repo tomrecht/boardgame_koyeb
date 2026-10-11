@@ -102,9 +102,20 @@ ARCHIVE.md under "Current benchmark".
   its own goal, the same for every number** — the endgame higher-die rule is
   blank-only, so it needs an exact match (11/36 a turn). Numbered pieces are the
   endgame bottleneck.
-- **Stack low and extras ride out free; stack level and they queue.** A blank on
-  goal 1 under a numbered-2 on goal 2 costs nothing (3.273 either way); the same
-  blank *on* goal 2 costs 0.059, and two of them 0.353.
+- **Where to put blanks beside a numbered piece (exact DP, 2026-10-10;
+  supersedes "stack low and extras ride out free", which ignored the
+  last-piece rule).** `endgame_table.py` (train-features-v2) extended to a
+  finite horizon: expected pieces still unbanked after k turns, k = 1..8, for
+  one numbered piece N on its goal + 2-3 blanks on goals, play optimal for
+  that horizon. Numbered 2 + one blank: blank on G2 finishes in 1.79 turns,
+  on G1 in 2.11 (the bank-the-blank-first line makes the 2 a lone blank).
+  Best layout by N, and it barely changes with k (race vs score is NOT the
+  driver): N=1-2 blanks LEVEL on its goal (2 blanks under a 2 = both on G1:
+  finish 3.05 vs 2.25 level); N=3 mixed ~ level; N=4 MIX (G1 + G4, 2.96 vs
+  3.10-3.44); N=5-6 all UNDER on distinct low goals (N=6, 3 blanks: G1/G2/G3
+  3.46, all on G1 3.85, all on G6 6.08). Rule: blanks on DISTINCT LOW goals,
+  and with a 1 or 2 on the same goal as it. Not covered: 2+ numbered pieces,
+  4+ blanks, the cost of getting the blanks there.
 - **A goal tile can never be blocked** (`is_blocked` requires `type == 'field'`)
   — only the routes to it. Sealing a goal from home takes 2 walls (4 pieces),
   and those same 2 walls seal its whole 4-apart pair.
