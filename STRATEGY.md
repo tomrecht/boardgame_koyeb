@@ -15,8 +15,9 @@ where they support or qualify a tip.
    is often the first step of a wall there.
 3. **Park numbered pieces behind a wall** so they can't be captured.
    - **Always save a numbered piece rather than a blank** when you can do
-     either (owner): the numbered piece needs an exact roll, the blank has
-     more ways out later.
+     either, **especially a high-numbered one** (owner): while it sits on a
+     high goal, that goal is your highest occupied one, so in the endgame your
+     blanks on lower goals lose the higher-die rule and need exact rolls.
 
 ### Every roll should count
 4. **Aim for a position where every number 1-6 does something useful** --
