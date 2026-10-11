@@ -14,6 +14,9 @@ where they support or qualify a tip.
 2. **Don't leave numbered blots.** A lone BLANK on an outer ring is fine: it
    is often the first step of a wall there.
 3. **Park numbered pieces behind a wall** so they can't be captured.
+   - **Always save a numbered piece rather than a blank** when you can do
+     either (owner): the numbered piece needs an exact roll, the blank has
+     more ways out later.
 
 ### Every roll should count
 4. **Aim for a position where every number 1-6 does something useful** --
@@ -42,6 +45,9 @@ where they support or qualify a tip.
 9. **A goal usually beats a capture**: over 330 positions taking the goal did
    +0.16 pts better on average. Capture when it's cheap, or to hold a pair
    block (tip 5).
+
+### Closing note (owner)
+It's largely a game of chance: you can play perfectly and still lose.
 
 Rejected: "keep a numbered piece for last" -- with a numbered piece and a
 blank on the same goal, banking either leaves the same position (the
