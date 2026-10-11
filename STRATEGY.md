@@ -22,6 +22,18 @@ where they support or qualify a tip.
 8. **Walls on rings 5 and 6 are best**, especially 5: those tiles are more of
    a hub.
 
+9. **Use a 4 to drop a blank from a high goal to its low partner** (6->1,
+   5->3, 4->2 are 4 steps apart), where it banks more cheaply. (Claude,
+   accepted by owner.)
+10. **A goal usually beats a capture**: over 330 positions taking the goal
+    did +0.16 pts better on average. Capture when it's cheap, or to protect a
+    wall (tip 7). (Claude, accepted by owner.)
+
+Rejected: "keep a numbered piece for last" -- with a numbered piece and a
+blank on the same goal, banking either leaves the same position (the
+last-piece rule makes the lone survivor a blank), so save the numbered piece
+whenever you can.
+
 ## What the measurements say about them
 
 - **(2) Numbered pieces are the endgame bottleneck:** 3.27 turns to bank from
@@ -41,8 +53,6 @@ where they support or qualify a tip.
   entirely on the radial spoke to its goal, rising outward (+0.12 ... +0.40
   turns). Against a blank, 28 of 63 field tiles make a wall
   counterproductive — wall against numbered pieces.
-- **Captures vs goals:** over 330 positions, taking the goal beat the capture
-  by +0.16 pts on average — capture when it's cheap, not instead of progress.
 - **Opening exposure** cost less than expected in rollouts (-0.02 pts, CI
   -0.16..+0.11) — tip (1) may matter more later in the game than in the
   opening. Worth testing.
