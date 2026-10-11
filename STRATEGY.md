@@ -15,28 +15,33 @@ where they support or qualify a tip.
    is often the first step of a wall there.
 3. **Park numbered pieces behind a wall** so they can't be captured.
 
+### Every roll should count
+4. **Aim for a position where every number 1-6 does something useful** --
+   saves a piece, brings one to its goal, builds a wall, captures. Spread your
+   pieces so that no roll is wasted.
+
 ### Walls
-4. **Block goal pairs.**
+5. **Block goal pairs.**
    - **With a pair blocked, capture an opponent piece every turn you can**: a
      captured piece must re-enter first, so they can't spend the dice on
      block-saving your wall.
    - **When they have walled a pair against your numbered piece, don't
      block-save it while your dice have anything else useful to do.** They
      will eventually run out of moves and have to dissolve the wall or pass.
-5. **Where to wall: rings 5 and 6 are best**, especially 5 (those tiles are
+6. **Where to wall: rings 5 and 6 are best**, especially 5 (those tiles are
    more of a hub), **then ring 3.**
-6. **All-blank walls beat walls containing a numbered piece.** If you have to
+7. **All-blank walls beat walls containing a numbered piece.** If you have to
    build a wall with a numbered piece, try to swap it out for a blank later.
 
 ### Endgame
-7. **Spread blanks among the goals, favouring the lower goals**, and **use a
+8. **Spread blanks among the goals, favouring the lower goals**, and **use a
    4 to drop a blank from a high goal to its low partner** (6->1, 5->3, 4->2
    are 4 steps apart), where it banks more cheaply.
 
 ### Captures
-8. **A goal usually beats a capture**: over 330 positions taking the goal did
+9. **A goal usually beats a capture**: over 330 positions taking the goal did
    +0.16 pts better on average. Capture when it's cheap, or to hold a pair
-   block (tip 4).
+   block (tip 5).
 
 Rejected: "keep a numbered piece for last" -- with a numbered piece and a
 blank on the same goal, banking either leaves the same position (the
@@ -47,9 +52,9 @@ whenever you can.
 
 Rendered with `pos_image.mjs` from positions in the game's notation; owner
 vets a contact sheet before anything ships: a numbered piece parked behind a
-wall (3), a goal-pair block (4), waiting out a wall (4), the good wall rings
-5 / 6 / 3 (5), blank spreading plus the 4-step hop (7). Tips 1, 2, 6, 8 as
-text.
+wall (3), a position where every roll does something (4), a goal-pair block
+and waiting out a wall (5), the good wall rings 5 / 6 / 3 (6), blank
+spreading plus the 4-step hop (8). Tips 1, 2, 7, 9 as text.
 
 ## What the measurements say about them
 
@@ -57,17 +62,17 @@ text.
   their own goal (exact match, 11/36 a turn) against 1.00-1.64 for a blank.
   The net puts a numbered piece on its goal over a blank save in 871 of 1,002
   positions.
-- **(4) Two walls seal a whole 4-apart pair** (6&1, 5&3, 4&2): the pair shares
+- **(5) Two walls seal a whole 4-apart pair** (6&1, 5&3, 4&2): the pair shares
   its approach corridors, so denying a pair costs no more than denying one
   goal. Sealing all six would take 12 pieces.
-- **(5) Mostly consistent with the blocking DP** (one lone piece, no
+- **(6) Mostly consistent with the blocking DP** (one lone piece, no
   captures): the best single walls are on the outer rings in the approach
   corridors; against a numbered piece the value is entirely on the radial
   spoke to its goal, rising outward (+0.12 ... +0.40 turns). Against a blank,
   28 of 63 field tiles make a wall counterproductive — wall against numbered
   pieces. The DP does not model a wall's effect on several pieces at once or
   its hub value, which is owner's case for rings 5 and 3.
-- **(7) Confirmed by exact DP (2026-10-10):** blanks on DISTINCT LOW goals;
+- **(8) Confirmed by exact DP (2026-10-10):** blanks on DISTINCT LOW goals;
   with a numbered 1 or 2, put blanks on its goal; with a 4, a mix (G1 + G4);
   with a 5 or 6, all under it. E.g. a numbered 6 + 3 blanks: G1/G2/G3 banks
   out in 3.46 turns, all on G1 3.85, all on G6 6.08. Details in CLAUDE.md.
@@ -80,7 +85,7 @@ text.
 ## Untested, could be measured
 
 - (2) blot cost by ring and piece type, from self-play.
-- (4) capture-while-blocking: block-save frequency with vs without a capture
+- (5) capture-while-blocking: block-save frequency with vs without a capture
   in the previous turn, from self-play logs.
-- (6) all-blank vs mixed walls: how much more often the mixed wall is broken
+- (7) all-blank vs mixed walls: how much more often the mixed wall is broken
   or its numbered piece stranded.
