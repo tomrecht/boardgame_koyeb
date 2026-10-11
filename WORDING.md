@@ -244,7 +244,7 @@ Button in How to Play, under the tutorial button: **Strategy tips**. Panel title
 **Don’t leave a numbered piece alone where it can be captured.** A lone blank is fine — it’s often the first piece of a wall.
 
 **Park numbered pieces behind a wall.**
-*[park.webp]* White’s 3 sits behind its own wall on ring 5. Black can only reach it the long way round, through goal 3 — 12 steps.
+*[park.webp]* White’s 3 sits behind its own wall on ring 5, so Black can’t get at it.
 
 ### Make every roll count
 **Aim for a position where every number does something** — saves a piece, brings one to its goal, builds a wall or captures.
@@ -263,7 +263,7 @@ Button in How to Play, under the tutorial button: **Strategy tips**. Panel title
 **Walls of blanks are best.** If you have to build one with a numbered piece, swap a blank in later.
 
 ### Endgame
-**Spread your blanks over different goals, favouring the low ones.** In the endgame your highest blank banks on its own number or anything higher, and the others need their exact number. So the lower your blanks sit, the more rolls bank them, and on different goals they use different numbers.
+**Spread your blanks over different goals, favouring the low ones.** In the endgame a blank on your highest occupied goal banks on that number or anything higher; every other piece needs its exact number. So the lower your blanks sit, the more rolls bank them, and on different goals they use different numbers.
 
 **Use a 4 to drop a blank to a lower goal.** A 4 moves a blank from a high goal to its partner: 6→1, 5→3, 4→2.
 *[hop.webp]* A 4 takes the blank on goal 5 to goal 3, where any roll of 3 or more banks it.

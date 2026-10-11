@@ -5239,7 +5239,7 @@ function showStrategy() {
          '<p><b>Save a numbered piece before a blank</b>, especially a high one. While it sits on a high goal, your blanks on lower goals can’t bank with a higher die in the endgame — they need exact rolls.</p>' +
          '<p><b>Don’t leave a numbered piece alone where it can be captured.</b> A lone blank is fine — it’s often the first piece of a wall.</p>' +
          '<p><b>Park numbered pieces behind a wall.</b></p>' +
-         fig('park.webp', 'White’s 3 sits behind its own wall on ring 5. Black can only reach it the long way round, through goal 3 — 12 steps.')],
+         fig('park.webp', 'White’s 3 sits behind its own wall on ring 5, so Black can’t get at it.')],
         ['Make every roll count',
          '<p><b>Aim for a position where every number does something</b> — saves a piece, brings one to its goal, builds a wall or captures.</p>' +
          fig('every-roll.webp', '1 saves the blank on goal 1 · 2 saves the 2 · 3 takes the 3 to its goal · 4 and 5 bring blanks onto goals 4 and 5 · 6 captures.')],
@@ -5251,7 +5251,7 @@ function showStrategy() {
          '<p><b>Where to wall: rings 5 and 6 are best</b>, especially 5, where routes meet — <b>then ring 3.</b></p>' +
          '<p><b>Walls of blanks are best.</b> If you have to build one with a numbered piece, swap a blank in later.</p>'],
         ['Endgame',
-         '<p><b>Spread your blanks over different goals, favouring the low ones.</b> In the endgame your highest blank banks on its own number or anything higher, and the others need their exact number. So the lower your blanks sit, the more rolls bank them, and on different goals they use different numbers.</p>' +
+         '<p><b>Spread your blanks over different goals, favouring the low ones.</b> In the endgame a blank on your highest occupied goal banks on that number or anything higher; every other piece needs its exact number. So the lower your blanks sit, the more rolls bank them, and on different goals they use different numbers.</p>' +
          '<p><b>Use a 4 to drop a blank to a lower goal.</b> A 4 moves a blank from a high goal to its partner: 6→1, 5→3, 4→2.</p>' +
          fig('hop.webp', 'A 4 takes the blank on goal 5 to goal 3, where any roll of 3 or more banks it.')],
         ['Captures',
