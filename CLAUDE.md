@@ -129,7 +129,15 @@ ARCHIVE.md under "Current benchmark".
   standing beside it).
 
 **`STRATEGY.md`** collects owner's strategy tips and the measurements behind
-them, as raw material for a player guide (not shipped).
+them. **They ship as the STRATEGY panel (`showStrategy`, 2026-10-10, on
+`testing`)**, opened by "Strategy tips" under the tutorial button in How to
+Play; its overlay reuses the id `howToPlay` so the pause / dice / hint-lamp
+checks cover it. Four pictures in `assets/strategy/*.webp`, rendered by
+`pos_image.mjs` (now with `--fill`, `--ring`, `--labels`) from the positions in
+STRATEGY.md and cropped to the board; `/assets/*` is cache-first with a week's
+max-age, so a CHANGED picture needs a NEW file name. Text mirrored in
+WORDING.md section 10. Measured headless, desktop + phone: 4/4 images load, no
+sideways scroll, game paused, back returns to How to Play.
 
 ## AI and model — current status
 

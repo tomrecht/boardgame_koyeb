@@ -46,6 +46,16 @@ ASSETS = [
     'assets/thinking.png',
 ]
 
+# Strategy tips pictures (showStrategy). Not precached by sw.js: they are only
+# needed when the panel is opened, and cache-first after that. Served with a
+# week's max-age, so a changed picture needs a new file name.
+STRATEGY = [
+    'assets/strategy/park.webp',
+    'assets/strategy/every-roll.webp',
+    'assets/strategy/pair-block.webp',
+    'assets/strategy/hop.webp',
+]
+
 ICONS = [
     'icon-192.png',
     'icon-512.png',
@@ -76,7 +86,7 @@ RUNTIME = [
     'model.onnx',
 ]
 
-BUNDLE = SHELL + ASSETS + ICONS + PORT + RUNTIME
+BUNDLE = SHELL + ASSETS + STRATEGY + ICONS + PORT + RUNTIME
 
 
 def sw_precache_list():

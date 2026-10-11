@@ -55,13 +55,22 @@ blank on the same goal, banking either leaves the same position (the
 last-piece rule makes the lone survivor a blank), so save the numbered piece
 whenever you can.
 
-## Illustrations planned
+## Shipped as the Strategy panel (2026-10-10)
 
-Rendered with `pos_image.mjs` from positions in the game's notation; owner
-vets a contact sheet before anything ships: a numbered piece parked behind a
-wall (3), a position where every roll does something (4), a goal-pair block
-and waiting out a wall (5), the good wall rings 5 / 6 / 3 (6), blank
-spreading plus the 4-step hop (8). Tips 1, 2, 7, 9 as text.
+`showStrategy` in game.js, wording in WORDING.md section 10. Pictures in
+`assets/strategy/`, from these positions (`node pos_image.mjs "<pos>" out.png
+<flags>`, then cropped to the board, 240,40,1040,832, and resized to 600 wide):
+
+- park.webp: `b 44 | W 3@6.8 x@5.8 x@5.8 x@3.2 5@4.6 r:6,x,x s:1,2,4,x | B x@4.8 x@3.9 x@5.30 r:1,2,x,x s:3,4,5,6,x` `--ring 6.8 --fill 5.8:#e0b040`
+- every-roll.webp: `w 36 | W x@G1 2@G2 3@4.8 x@5.13 x@2.6 r:- s:1,4,5,6,x,x,x | B x@3.11 r:3,4,5,6,x,x,x s:1,2,x,x` `--ring G1,G2,G3,G4,G5,3.11`
+- pair-block.webp: `w 52 | W 2@3.4 4@4.2 x@3.8 x@2.10 r:1,3,x,x s:5,6,x,x | B x@5.2 x@5.2 x@5.4 x@5.4 6@G6 r:1,x,x s:2,3,4,5` `--fill 5.2,5.4:#e0b040 --ring G2,G4`
+- hop.webp: `w 41 | W x@G1 x@G2 x@G5 r:- s:1,2,3,4,5,6,x,x,x | B x@G4 5@6.6 2@5.4 r:- s:1,3,4,6,x,x,x,x,x` `--ring G5,G3`
+
+Claims in the captions were checked against the tile graph
+(tile_neighbors.json), not the engine. Endgame table, blanks only: G1+G2+G5
+banks out in 2.20 turns, G1+G2+G3 in 2.03 -- but all three on G1 takes 2.00,
+so with NO numbered piece left, spreading buys nothing; it pays when a
+numbered piece is still out (numbered 6: 3.46 spread vs 3.85 all on G1).
 
 ## What the measurements say about them
 

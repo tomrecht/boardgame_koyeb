@@ -231,3 +231,44 @@ automatically when both dice used · Confirm ending a turn with a move left ·
 {Double-click} sends a piece to its goal · {Double-click} saves a piece in one move ·
 Automatic en-route capture · Explain rules as they come up (first game) ·
 **Interactive tutorial**
+
+## 10. Strategy tips (`showStrategy`, opened by "Strategy tips" in How to Play)
+
+Button in How to Play, under the tutorial button: **Strategy tips**. Panel title **Strategy**, back link **← How to Play**.
+
+### Numbered pieces
+**Get your numbered pieces home early.** A blank can use any goal; a numbered piece needs its own, then an exact roll to bank. Get each one onto its goal, or within one die of it — unless it’s holding a wall, especially against a higher-numbered piece.
+
+**Save a numbered piece before a blank**, especially a high one. While it sits on a high goal, your blanks on lower goals can’t bank with a higher die in the endgame — they need exact rolls.
+
+**Don’t leave a numbered piece alone where it can be captured.** A lone blank is fine — it’s often the first piece of a wall.
+
+**Park numbered pieces behind a wall.**
+*[park.webp]* White’s 3 sits behind its own wall on ring 5. Black can only reach it the long way round, through goal 3 — 12 steps.
+
+### Make every roll count
+**Aim for a position where every number does something** — saves a piece, brings one to its goal, builds a wall or captures.
+*[every-roll.webp]* 1 saves the blank on goal 1 · 2 saves the 2 · 3 takes the 3 to its goal · 4 and 5 bring blanks onto goals 4 and 5 · 6 captures.
+
+### Walls
+**Block goal pairs.** Goals 2 & 4, 1 & 6 and 3 & 5 share their approaches, so two walls shut both.
+*[pair-block.webp]* Black’s two walls on ring 5 seal goals 2 and 4. White’s 2 and 4 are stuck until a wall opens.
+
+**When you’re blocking a pair of goals, capture whenever you can.** A captured piece has to come back in first, so they can’t spend their dice breaking your wall.
+
+**If they’re blocking you, don’t break the wall while your dice have anything else useful to do.** Sooner or later they run out of moves and have to open it or pass.
+
+**Where to wall: rings 5 and 6 are best**, especially 5, where routes meet — **then ring 3.**
+
+**Walls of blanks are best.** If you have to build one with a numbered piece, swap a blank in later.
+
+### Endgame
+**Spread your blanks over different goals, favouring the low ones.** In the endgame your highest blank banks on its own number or anything higher, and the others need their exact number. So the lower your blanks sit, the more rolls bank them, and on different goals they use different numbers.
+
+**Use a 4 to drop a blank to a lower goal.** A 4 moves a blank from a high goal to its partner: 6→1, 5→3, 4→2.
+*[hop.webp]* A 4 takes the blank on goal 5 to goal 3, where any roll of 3 or more banks it.
+
+### Captures
+**Bringing a piece to goal usually beats a capture.** Capture when it’s cheap, or to prevent the opponent from breaking your wall.
+
+*And remember: it’s mostly dice. You can play every move right and still lose — that’s what the next game is for.*
