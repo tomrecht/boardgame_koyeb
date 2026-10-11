@@ -128,6 +128,9 @@ ARCHIVE.md under "Current benchmark".
   sometimes leaves 4-6 (where standing on goal 6 is worth 0.039 turns more than
   standing beside it).
 
+**`STRATEGY.md`** collects owner's strategy tips and the measurements behind
+them, as raw material for a player guide (not shipped).
+
 ## AI and model — current status
 
 - **Deployed model: `model.onnx` = `blend4way_Oct6.pt` (shipped 2026-10-06)**,
