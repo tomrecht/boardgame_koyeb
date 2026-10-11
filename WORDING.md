@@ -239,7 +239,7 @@ Button in How to Play, under the tutorial button: **Strategy tips**. Panel title
 ### Numbered pieces
 **Get your numbered pieces home early.** A blank can use any goal; a numbered piece needs its own, then an exact roll to bank. Get each one onto its goal, or within one die of it — unless it’s holding a wall, especially against a higher-numbered piece.
 
-**Save a numbered piece before a blank**, especially a high one. While it sits on a high goal, your blanks on lower goals can’t bank with a higher die in the endgame — they need exact rolls.
+**Save a numbered piece before a blank**, especially a high one. While it sits on a high goal, your blanks on lower goals can’t bank with a higher die in the endgame: they need exact rolls.
 
 **Don’t leave a numbered piece alone where it can be captured.** A lone blank is fine — it’s often the first piece of a wall.
 
@@ -247,7 +247,7 @@ Button in How to Play, under the tutorial button: **Strategy tips**. Panel title
 *[park.webp]* White’s 3 sits behind its own wall on ring 5, so Black can’t get at it.
 
 ### Make every roll count
-**Aim for a position where every number does something** — saves a piece, brings one to its goal, builds a wall or captures.
+**Aim for a position where every number does something**: saves a piece, brings one to its goal, builds a wall or captures.
 *[every-roll.webp]* 1 saves the blank on goal 1 · 2 saves the 2 · 3 takes the 3 to its goal · 4 and 5 bring blanks onto goals 4 and 5 · 6 captures.
 
 ### Walls
@@ -256,9 +256,9 @@ Button in How to Play, under the tutorial button: **Strategy tips**. Panel title
 
 **When you’re blocking a pair of goals, capture whenever you can.** A captured piece has to come back in first, so they can’t spend their dice breaking your wall.
 
-**If they’re blocking you, don’t break the wall while your dice have anything else useful to do.** Sooner or later they run out of moves and have to open it or pass.
+**If they’re blocking you, don’t spend your dice on breaking the wall while they have anything else useful to do.** Sooner or later they run out of moves and have to open it or pass.
 
-**Where to wall: rings 5 and 6 are best**, especially 5, where routes meet — **then ring 3.**
+**Where to wall:** rings 5 and 6 are best, especially 5, where routes meet — then ring 3.
 
 **Walls of blanks are best.** If you have to build one with a numbered piece, swap a blank in later.
 

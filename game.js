@@ -5236,19 +5236,19 @@ function showStrategy() {
     const sections = [
         ['Numbered pieces',
          '<p><b>Get your numbered pieces home early.</b> A blank can use any goal; a numbered piece needs its own, then an exact roll to bank. Get each one onto its goal, or within one die of it — unless it’s holding a wall, especially against a higher-numbered piece.</p>' +
-         '<p><b>Save a numbered piece before a blank</b>, especially a high one. While it sits on a high goal, your blanks on lower goals can’t bank with a higher die in the endgame — they need exact rolls.</p>' +
+         '<p><b>Save a numbered piece before a blank</b>, especially a high one. While it sits on a high goal, your blanks on lower goals can’t bank with a higher die in the endgame: they need exact rolls.</p>' +
          '<p><b>Don’t leave a numbered piece alone where it can be captured.</b> A lone blank is fine — it’s often the first piece of a wall.</p>' +
          '<p><b>Park numbered pieces behind a wall.</b></p>' +
          fig('park.webp', 'White’s 3 sits behind its own wall on ring 5, so Black can’t get at it.')],
         ['Make every roll count',
-         '<p><b>Aim for a position where every number does something</b> — saves a piece, brings one to its goal, builds a wall or captures.</p>' +
+         '<p><b>Aim for a position where every number does something</b>: saves a piece, brings one to its goal, builds a wall or captures.</p>' +
          fig('every-roll.webp', '1 saves the blank on goal 1 · 2 saves the 2 · 3 takes the 3 to its goal · 4 and 5 bring blanks onto goals 4 and 5 · 6 captures.')],
         ['Walls',
          '<p><b>Block goal pairs.</b> Goals 2 &amp; 4, 1 &amp; 6 and 3 &amp; 5 share their approaches, so two walls shut both.</p>' +
          fig('pair-block.webp', 'Black’s two walls on ring 5 seal goals 2 and 4. White’s 2 and 4 are stuck until a wall opens.') +
          '<p><b>When you’re blocking a pair of goals, capture whenever you can.</b> A captured piece has to come back in first, so they can’t spend their dice breaking your wall.</p>' +
-         '<p><b>If they’re blocking you, don’t break the wall while your dice have anything else useful to do.</b> Sooner or later they run out of moves and have to open it or pass.</p>' +
-         '<p><b>Where to wall: rings 5 and 6 are best</b>, especially 5, where routes meet — <b>then ring 3.</b></p>' +
+         '<p><b>If they’re blocking you, don’t spend your dice on breaking the wall while they have anything else useful to do.</b> Sooner or later they run out of moves and have to open it or pass.</p>' +
+         '<p><b>Where to wall:</b> rings 5 and 6 are best, especially 5, where routes meet — then ring 3.</p>' +
          '<p><b>Walls of blanks are best.</b> If you have to build one with a numbered piece, swap a blank in later.</p>'],
         ['Endgame',
          '<p><b>Spread your blanks over different goals, favouring the low ones.</b> In the endgame a blank on your highest occupied goal banks on that number or anything higher; every other piece needs its exact number. So the lower your blanks sit, the more rolls bank them, and on different goals they use different numbers.</p>' +
