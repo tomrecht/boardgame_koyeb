@@ -9124,13 +9124,24 @@ class Game {
     // (or will, after the walk): a blank sharing it with a blank `piece` is no
     // alternative -- banking either leaves the same position (owner, 2026-10-09:
     // blank on G1, blank 5 from it, roll 5-6, the gesture stopped on G1).
+    // Nor is a blank on a LOWER goal (owner, 2026-10-12: blanks on G1/G3, a field
+    // blank walking to G5 or G6, roll 5-6, it declined): banking it instead of
+    // the mover leaves the mover on the higher goal, which banks no sooner and
+    // can block the higher-die rule for the goals below it.
     _dieHasOtherGoalUse(piece, die, phaseOverride, at = piece.currentTile) {
         const player = piece.color === 0xffffff ? this.players[0] : this.players[1];
         const phase = phaseOverride || player.getGamePhase();
         for (const q of this.pieces) {
             if (q === piece || q.color !== piece.color || !q.currentTile) continue;
             const t = q.currentTile;
-            if (piece.number > 6 && q.number > 6 && t === at) continue;
+            if (piece.number > 6 && q.number > 6 && at && at.type === 'save' &&
+                t.type === 'save' && t.number <= at.number) continue;
+            // And a NUMBERED mover beats any blank (owner, 2026-10-12: the 2
+            // walked onto G2 with the 6 and stopped because the 2 could bank the
+            // blank there; the 4 stopped on G4 because the 4 could bring a blank
+            // onto a goal): a numbered piece on its goal takes 3.27 turns to
+            // bank, a blank on any goal at most 1.64. Save numbered over blank.
+            if (piece.number <= 6 && q.number > 6) continue;
             if (t.type === 'save') {
                 if (phase !== 'opening' && q.canBeSaved() &&
                     (die.value === t.number ||

@@ -606,6 +606,16 @@ with it in mind.** Assessment and the concrete implications:
   the other blank; banking either is the same position. `_dieHasOtherGoalUse`
   now skips a blank on the landing goal when the mover is a blank. Measured:
   old code stops on G1 with the 6 unused, new code banks.
+  **Nor are dominated alternatives (owner, 2026-10-12, three positions):** a blank
+  mover ignores blanks on goals at or BELOW its landing goal (banking one leaves
+  the mover higher; and a blank on a HIGHER goal can never be the alternative,
+  since it blocks the higher-die bank from the lower goal anyway). A NUMBERED
+  mover ignores blanks entirely (3.27 turns vs <= 1.64: save numbered over
+  blank). Another numbered piece reaching its goal still counts. Measured, old
+  -> new: blank 5.8 to G5/G6 with blanks on G1/G3 (roll 5-6) declined -> banks;
+  numbered 2 to G2 beside a blank on G2 (6-2) stopped -> banks; numbered 4 to G4
+  while the 4 could move a blank onto a goal (4-1) stopped -> banks. Control:
+  same 4-1 with the white 2 on 5.22 (4 from G2) still stops on G4, both versions.
 - **ENDGAME MARK ON THE SAVED RACK (owner, 2026-10-07; on `testing`).** A
   player in the endgame gets a faint accent ground and accent edge on their SAVED
   rack, plus a one-off double pulse when they enter it. `_endgameMarkTick` runs in
