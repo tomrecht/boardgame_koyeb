@@ -202,6 +202,26 @@ function wastesSave(engine, pair, player) {
     return any;
 }
 
+/* KEEP A LAST NUMBERED PIECE ON ITS GOAL (owner, 2026-10-12). Drop a pair that
+   leaves the mover one unsaved piece, numbered, which began the turn on its own
+   goal and is now off it, unless the pair captured. Twin of _strands_last_piece
+   in agent_gnn.py, which says why. Call with the engine IN the pair's resulting
+   position, the pair's moves being the last entries of engine.moves. */
+function strandsLastPiece(engine, pair, player) {
+    const k = pair.filter(m => !isPass(m) && !isDraw(m)).length;
+    if (!k) return false;
+    const left = engine.pieces.filter(p => p.player === player && p.rack !== 'saved');
+    if (left.length !== 1 || left[0].number > 6) return false;
+    const piece = left[0];
+    const g = engine.graph;
+    const onOwnGoal = (t) => t >= 0 && g.types[t] === 'save' && g.numbers[t] === piece.number;
+    if (onOwnGoal(piece.tile)) return false;
+    const done = engine.moves.slice(-k);
+    if (done.some(mv => mv.capturedPiece)) return false;
+    const own = done.find(mv => mv.piece === piece);
+    return !!own && onOwnGoal(own.originTile);
+}
+
 /* ENDGAME LOOKAHEAD (owner, 2026-10-08). The opponent has at most two unsaved
    pieces, so their next turn may end the game -- and on a roll that does, the
    result is EXACT: they win by our unsaved count, however they do it. The net
@@ -374,6 +394,7 @@ async function selectMovePair(engine, W, moves, player, opts = {}) {
     const outcomeKeys = [];
     const scored = [];          // {score, pair} when prefiltering
     const wastes = [];          // per moveKeys entry: leaves a die unused with a save on
+    const strands = [];         // per moveKeys entry: steps a last numbered piece off its goal
 
     // Move orders transpose heavily -- about half a midgame turn's pairs reach
     // a position some other pair already reached -- and the heuristic is the
@@ -396,6 +417,7 @@ async function selectMovePair(engine, W, moves, player, opts = {}) {
             snapshots.push(o.snapshot(engine));
             outcomeKeys.push(pieceLocs(engine));
             wastes.push(wastesSave(engine, pair, player));
+            strands.push(strandsLastPiece(engine, pair, player));
         }
     };
 
@@ -514,6 +536,7 @@ async function selectMovePair(engine, W, moves, player, opts = {}) {
             snapshots.push(o.snapshot(engine));
             outcomeKeys.push(pieceLocs(engine));
             wastes.push(wastesSave(engine, pair, player));
+            strands.push(strandsLastPiece(engine, pair, player));
             while (engine.moves.length > base) engine.undoLastMove();
         }
     }
@@ -533,12 +556,19 @@ async function selectMovePair(engine, W, moves, player, opts = {}) {
         moveKeys.splice(0, moveKeys.length, ...pick(moveKeys));
         outcomeKeys.splice(0, outcomeKeys.length, ...pick(outcomeKeys));
         wastes.splice(0, wastes.length, ...pick(wastes));
+        strands.splice(0, strands.length, ...pick(strands));
         finalScores = pick(finalScores);
     };
 
     // Never pass a die that could still save a piece (see wastesSave).
     {
         const keep = wastes.map((w, i) => w ? -1 : i).filter(i => i >= 0);
+        if (keep.length) keepOnly(keep);
+    }
+
+    // Never step a last numbered piece off its own goal (see strandsLastPiece).
+    {
+        const keep = strands.map((x, i) => x ? -1 : i).filter(i => i >= 0);
         if (keep.length) keepOnly(keep);
     }
 

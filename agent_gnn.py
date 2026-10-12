@@ -128,6 +128,38 @@ def _wastes_save(board, pair, player):
     return found
 
 
+def _strands_last_piece(board, pair, player):
+    """KEEP A LAST NUMBERED PIECE ON ITS GOAL (owner, 2026-10-12). On its own
+    goal it turns blank at our next turn start (the last-piece rule) and banks in
+    1.0-1.64 turns; stepped off, it stays numbered and needs its goal AND an exact
+    die (3.27 turns from the goal). Owner's game 19831a60 t49: the net, trained
+    while game.py wrongly blanked such a piece anyway, scored stepping the last 6
+    off goal 6 level with staying. A candidate that leaves the mover with one
+    unsaved piece, numbered, which began the turn on its own goal and is now off
+    it, is dropped unless the pair captured, whenever any candidate survives.
+    RE-CHECK ON ANY NET TRAINED AFTER THE FIX (2c8a0f7): it may not need this.
+    Twin of strandsLastPiece in agent.js. Call with the board IN the pair's
+    resulting position, the pair's moves being the last entries of board.moves."""
+    k = sum(1 for m in pair if m != (0, 0, 0) and m != (1, 1, 1))
+    if not k:
+        return False
+    save_rack = board.get_save_rack(player)
+    left = [p for p in board.pieces if p.player == player and p.rack is not save_rack]
+    if len(left) != 1 or left[0].number > 6:
+        return False
+    piece = left[0]
+    if piece.tile is not None and piece.tile.type == 'save' and piece.tile.number == piece.number:
+        return False
+    done = board.moves[-k:]
+    if any(mv['captured_piece'] is not None for mv in done):
+        return False
+    own = [mv for mv in done if mv['piece'] is piece]
+    if not own:
+        return False
+    t = own[0]['origin_tile']
+    return t is not None and t.type == 'save' and t.number == piece.number
+
+
 def _opponent_wins_next_turn_regardless(board, player):
     """OPPONENT CERTAIN TO WIN NEXT TURN (owner, 2026-10-01). Their last one or
     two pieces are blanks on goal 1, so ANY roll banks them, and nothing we do can
@@ -418,6 +450,7 @@ class GNNAgent:
         outcome_keys = []   # resulting piece placement per candidate, dice ignored
         scored       = []   # (heuristic_score, pair)        (filled when prefiltering)
         wastes       = []   # per move_keys entry: leaves a die unused with a save on
+        strands      = []   # per move_keys entry: steps a last numbered piece off its goal
 
         # Move orders transpose heavily -- about half of a midgame turn's
         # candidate pairs land on a position some other pair already reached --
@@ -439,6 +472,7 @@ class GNNAgent:
                 encoded_list.append(self.encoder.encode(board, player))
                 outcome_keys.append(_piece_locs(board))
                 wastes.append(_wastes_save(board, pair, player))
+                strands.append(_strands_last_piece(board, pair, player))
 
         # --- Pass move ---
         if (0, 0, 0) in moves:
@@ -594,6 +628,7 @@ class GNNAgent:
                 encoded_list.append(self.encoder.encode(board, player))
                 outcome_keys.append(_piece_locs(board))
                 wastes.append(_wastes_save(board, pair, player))
+                strands.append(_strands_last_piece(board, pair, player))
                 while len(board.moves) > base:
                     board.undo_last_move()
 
@@ -623,17 +658,23 @@ class GNNAgent:
         final_scores = scores * SCORE_SCALE
 
         def keep_only(keep):
-            nonlocal move_keys, outcome_keys, wastes, final_scores
+            nonlocal move_keys, outcome_keys, wastes, strands, final_scores
             if len(keep) == len(move_keys):
                 return
             if len(outcome_keys) == len(move_keys):
                 outcome_keys = [outcome_keys[i] for i in keep]
             wastes = [wastes[i] for i in keep]
+            strands = [strands[i] for i in keep]
             move_keys = [move_keys[i] for i in keep]
             final_scores = final_scores[keep]
 
         # Never pass a die that could still save a piece (see _wastes_save).
         keep = [i for i, w in enumerate(wastes) if not w]
+        if keep:
+            keep_only(keep)
+
+        # Never step a last numbered piece off its own goal (see _strands_last_piece).
+        keep = [i for i, x in enumerate(strands) if not x]
         if keep:
             keep_only(keep)
 

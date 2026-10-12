@@ -514,10 +514,25 @@ with it in mind.** Assessment and the concrete implications:
   Measured: replay of owner's logs through game.py 288/295 -> 293/295 (the 5 fixed
   divergences were all this; the 2 left are pre-existing white-save ones);
   `agent_test.js` 50/50; lookahead fixture regenerated, JS 176/176 (3 choices changed).
-  **The fix does NOT change the t49 move:** with true rules the net still scores
-  stepping off -36.74 vs staying -37.27 (shallow, no lookahead) -- it rates a numbered 6
-  off goal ~ a blank on G6, plausibly learned under the bug (self-play ran on game.py).
-  A search rule for it is the open question.
+  **The fix did NOT change the t49 move:** with true rules the net still scored
+  stepping off -36.74 vs staying -37.27 (shallow) -- it rates a numbered 6 off goal
+  ~ a blank on G6, plausibly learned under the bug (all self-play ran on game.py;
+  owner's run at work too -- pull 2c8a0f7 before its next start).
+  **So a SEARCH RULE (owner, same day): `_strands_last_piece` / `strandsLastPiece`
+  drop a pair leaving the mover one unsaved piece, numbered, that began the turn on
+  its own goal and is now off it, unless the pair captured** (a capture can stop
+  the opponent finishing). **RE-CHECK IT ON ANY NET TRAINED AFTER THE FIX** (owner):
+  run the real15-style probe with the rule off. Measured: real net (Python) on the
+  15 positions in owner's logs where it removes a candidate: changes the move in
+  2 (t49 here, and d3ebf897 t62 -- the same blunder, 6 stepped off with a spare 1),
+  leaves 13 as they were (all already banked and kept the piece). Stub-net fixture of 177 owner endgame
+  positions: JS = Python 177/177 with it on, 175/177 with the JS rule disabled
+  (the gate is live). `agent_test.js` 50/50, lookahead 176/176. In the browser the
+  t49 position keeps the 6 on with old AND new code -- a near-tie (~0.003 raw) that
+  ORT-web and Python break differently, so it cannot show the gate.
+  **replay_games.py now picks a blank save's die the way game.js does** (avoiding
+  one an own numbered piece on its goal needs): the 2 white-save "divergences" were
+  the checker, not the engines. Owner's logs now replay 220/220 + 76/76.
 
 - **ENDGAME LOOKAHEAD (owner, 2026-10-08; on `testing`).** Owner saw the net, at
   a near-certain loss (his last piece a blank on goal 3), step a piece onto a goal
