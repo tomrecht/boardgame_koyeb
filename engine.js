@@ -443,7 +443,9 @@ class Engine {
        which changes its lookup key. */
     applyLastPieceRule() {
         for (const player of ['white', 'black']) {
-            if (this.stages[player] !== 'endgame') continue;
+            // Stage computed FRESH (game.py's twin says why): `stages` is not
+            // refreshed by a tile move, so it could blank a piece off its goal.
+            if (this.getGameStage(player) !== 'endgame') continue;
             const unsaved = this.pieces.filter(p => p.player === player && p.rack !== 'saved');
             if (unsaved.length === 1 && unsaved[0].number <= 6) {
                 const p = unsaved[0];

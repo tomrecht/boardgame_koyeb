@@ -504,6 +504,21 @@ with it in mind.** Assessment and the concrete implications:
 
 ## Current state
 
+- **LAST-PIECE RULE READ A STALE STAGE IN THE AGENT'S ENGINES (owner, 2026-10-12;
+  fixed in engine.js + game.py).** Owner's game 19831a60 t49: black's last two
+  pieces 6@G6 + blank@G3, roll 1-3 -> banked the blank, stepped the 6 off to 6.10;
+  it stayed a numbered 6 off its goal and black lost 11-12. `apply_last_piece_rule`
+  read the stored `stages`, which a tile move does not refresh, so a last numbered
+  piece stepped OFF its goal still read 'endgame' and was blanked on a field tile;
+  game.js (phase reverts) never did that. Now the stage is computed fresh in both.
+  Measured: replay of owner's logs through game.py 288/295 -> 293/295 (the 5 fixed
+  divergences were all this; the 2 left are pre-existing white-save ones);
+  `agent_test.js` 50/50; lookahead fixture regenerated, JS 176/176 (3 choices changed).
+  **The fix does NOT change the t49 move:** with true rules the net still scores
+  stepping off -36.74 vs staying -37.27 (shallow, no lookahead) -- it rates a numbered 6
+  off goal ~ a blank on G6, plausibly learned under the bug (self-play ran on game.py).
+  A search rule for it is the open question.
+
 - **ENDGAME LOOKAHEAD (owner, 2026-10-08; on `testing`).** Owner saw the net, at
   a near-certain loss (his last piece a blank on goal 3), step a piece onto a goal
   instead of saving -- the certain-loss rule's cousin, not fixable by rule. When
