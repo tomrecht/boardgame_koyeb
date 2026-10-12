@@ -36,7 +36,10 @@ nothing on a chime.
 
 **`testing` IS THE STAGING BRANCH (owner, 2026-09-25).** New features land on
 `testing`, which KOYEB builds for owner to play; once he is happy they reach
-`main`, which Cloudflare builds as quahuru.com, by a fast-forward merge. The old
+`main`, which Cloudflare builds as quahuru.com, by a fast-forward merge.
+**FOR NOW (owner, 2026-10-12): all but MAJOR changes go straight to `main`**
+(then fast-forward `testing`) -- nobody else is playing yet, so owner tests on
+quahuru.com. Major features still stage on `testing`. The old
 cherry-pick-to-both rule is GONE — the branches share one history now. See
 "`testing` IS A STAGING BRANCH" below.
 
