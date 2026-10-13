@@ -526,7 +526,9 @@ with it in mind.** Assessment and the concrete implications:
   `sw.js` precaches model.json and features_v2.js.
   **Measured:** `features_v2_test.js` vs the training branch's `dump_v2_fixture.py`
   (owner's pool positions, random end-of-turn boards, 80 played-into last-piece
-  positions): **680/680 identical in v1, A, AB and AB-afterstate**; a control
+  positions): **680/680 identical in v1, A, AB and AB-afterstate**
+  (since 2026-10-13 also A2 / AB2 / AB2-afterstate, which add numbered pieces on
+  their own goal per side; zeroing those two JS columns fails 382/680); a control
   with afterstate off mismatches all 680; the new inputs are non-zero in 649
   (threats) / 680 (roll opps) / 114 (table) / 266 (opp walls) / 246 (no-save) of
   680. Agent fixtures unchanged: 50/50, lookahead 176/176, last-piece 177/177.
