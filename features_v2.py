@@ -13,6 +13,10 @@ Feature sets (CLAUDE.md, "Next training run"):
                    unentered / on field / saved, per side race count,
                    estimated turns to finish (dice count) and the EXACT
                    endgame-table value (0 unless every piece is on a goal)
+  A2  A + global +2: per side, NUMBERED pieces standing on their own goal
+      (owner, 2026-10-13). v1's saveable count lumps them with blanks, but a
+      numbered piece there takes 3.27 turns to bank against <= 1.64 for a
+      blank. A separate set, not a change to A, so A/AB checkpoints still load.
   AB  A + per-piece THREATS, distance-based approximations of what
       weakness_probe.threats() enumerates exactly:
         piece  +2  P(captured if its enemy rolled now), P(its route to its own
@@ -29,15 +33,20 @@ Feature sets (CLAUDE.md, "Next training run"):
       they can bank from, or use to capture -- numbered and blank separately:
         global +72 (2 sides x 6 dice x 6 counts, each /6 capped at 1)
 
+  AB2 AB + A2's two columns (placed right after A's 14 globals, before the
+      roll opportunities).
+
 Everything here is pure Python over game.py's Board, so encoder.js needs a twin
 before any AB net can ship.
 """
 from collections import deque
 
-FEATURE_SETS = ('v1', 'A', 'AB')
-EXTRA_TILE = {'v1': 0, 'A': 1, 'AB': 1}
-EXTRA_PIECE = {'v1': 0, 'A': 1, 'AB': 5}
-EXTRA_GLOBAL = {'v1': 0, 'A': 14, 'AB': 14 + 72}
+FEATURE_SETS = ('v1', 'A', 'AB', 'A2', 'AB2')
+EXTRA_TILE = {'v1': 0, 'A': 1, 'AB': 1, 'A2': 1, 'AB2': 1}
+EXTRA_PIECE = {'v1': 0, 'A': 1, 'AB': 5, 'A2': 1, 'AB2': 5}
+EXTRA_GLOBAL = {'v1': 0, 'A': 14, 'AB': 14 + 72, 'A2': 16, 'AB2': 16 + 72}
+HAS_THREATS = ('AB', 'AB2')              # per-piece threats + roll opportunities
+HAS_NUMBERED_SAVEABLE = ('A2', 'AB2')
 
 MAX_DIST = 14.0
 NO_SAVE_TURNS_FOR_DRAW = 10
@@ -192,6 +201,16 @@ def global_extras(board, current_player):
         min(me[4], 30.0) / 30.0, min(them[4], 30.0) / 30.0,
         _table_input(board, current_player), _table_input(board, opp),
     ]
+
+
+def numbered_saveable(board, current_player):
+    """[mine, theirs]: unsaved NUMBERED pieces standing on their own goal, /6."""
+    out = []
+    for pl in (current_player, _other(current_player)):
+        n = sum(1 for p in board.pieces if p.player == pl and p.number <= 6
+                and p.can_be_saved(already_saved_counts_as_saveable=False))
+        out.append(n / 6.0)
+    return out
 
 
 def _table_input(board, player):

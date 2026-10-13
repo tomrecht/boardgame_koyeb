@@ -651,6 +651,15 @@ on main's CLAUDE.md, "Next training run". What is here:
   2026-10-06), and per side x die 1-6 the
   pieces that die saves / brings onto a bankable goal / captures, numbered vs
   blank (global, 72). Widths: v1 12/24/11, A 13/25/25, AB 13/29/97.
+  **`A2` / `AB2` (owner, 2026-10-13) = A / AB + 2 globals: per side, NUMBERED
+  pieces on their own goal (/6)** -- the saveable count lumps them with blanks,
+  but they bank in 3.27 turns vs <= 1.64. Placed right after A's 14, before the
+  roll opportunities. Widths A2 13/25/27, AB2 13/29/99. **Separate sets, not a
+  change to A/AB, so the October AB run's checkpoints still load.** Use AB2 for
+  the next (afterstate) run; no AB2 warm start is committed yet (owner: wait for
+  the AB run's result). Checked on the 680-position fixture: A2/AB2 = A/AB plus
+  exactly those columns, which match a count off the piece rows (non-zero 346 /
+  306); `widen_v2.py blend.pt AB2` exact (3.7e-8).
 * **The checkpoint carries its feature set**: `network.model_from_state(sd)` reads
   it off the input layers and builds the matching model; `TorchBackend` (so every
   `GNNAgent`) builds the matching encoder. v1 panel members and an AB learner mix

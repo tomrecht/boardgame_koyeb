@@ -494,7 +494,8 @@ class BoardEncoder:
     Converts a Board into a dict of tensors.
     Instantiate once; call encode() per position.
 
-    features: 'v1' (the deployed champion's encoding, unchanged), 'A' or 'AB'
+    features: 'v1' (the deployed champion's encoding, unchanged), 'A', 'AB',
+    'A2' or 'AB2'
     -- see features_v2.py. The extra columns are APPENDED, so the first
     TILE/PIECE/GLOBAL_FEAT_DIM columns are always exactly v1.
     """
@@ -557,7 +558,7 @@ class BoardEncoder:
                                              self.num_tiles), dtype=np.float32)
         tile_feats = np.concatenate([tile_feats, walls[:, None]], axis=1)
         cols = [[fv.own_goal_dist(board, p) for p in all_pieces]]
-        if self.features == 'AB':
+        if self.features in fv.HAS_THREATS:
             th = fv.threat_features(board)
             zero = (0.0, 0.0, 0.0, 0.0)
             for k in range(4):
@@ -565,7 +566,9 @@ class BoardEncoder:
         piece_feats = np.concatenate(
             [piece_feats, np.asarray(cols, dtype=np.float32).T], axis=1)
         g = fv.global_extras(board, current_player)
-        if self.features == 'AB':
+        if self.features in fv.HAS_NUMBERED_SAVEABLE:
+            g = g + fv.numbered_saveable(board, current_player)
+        if self.features in fv.HAS_THREATS:
             g = g + fv.roll_opportunities(board, current_player) \
                   + fv.roll_opportunities(board, fv._other(current_player))
         global_feats = np.concatenate([global_feats, np.asarray(g, dtype=np.float32)])

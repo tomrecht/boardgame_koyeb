@@ -227,7 +227,7 @@ class BoardGNN(nn.Module):
                  piece_feat_dim=None,
                  global_feat_dim=None,
                  features=None):
-        """`features` ('v1' / 'A' / 'AB', see features_v2.py) sets the input
+        """`features` ('v1' / 'A' / 'AB' / 'A2' / 'AB2', see features_v2.py) sets the input
         widths; default is $BOARDGAME_FEATURES, else 'v1'. Explicit *_feat_dim
         arguments still win, for old callers."""
         super().__init__()

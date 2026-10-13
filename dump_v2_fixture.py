@@ -1,7 +1,8 @@
 """Fixture for features_v2.js / encoder.js (the JS twin of features_v2.py).
 
 Each case: a JS `snapshot` (dump_encoder_fixture.snapshot + the no-save counter)
-and what encoder.py produces for it under v1, A, AB, and AB in AFTERSTATE mode.
+and what encoder.py produces for it under v1, A, AB, A2, AB2, and AB / AB2 in
+AFTERSTATE mode.
 
 Two kinds of position:
   pool   owner's positions (start_pool.jsonl), rebuilt with update_state --
@@ -42,8 +43,8 @@ def enc_arrays(enc, b, player):
 
 
 def main(n_pool=300, n_live=300, out='features_v2_fixture.json'):
-    encs = {k: E.BoardEncoder(features=k) for k in ('v1', 'A', 'AB')}
-    enc_as = E.BoardEncoder(features='AB', afterstate=True)
+    encs = {k: E.BoardEncoder(features=k) for k in ('v1', 'A', 'AB', 'A2', 'AB2')}
+    afters = {k + '_after': E.BoardEncoder(features=k, afterstate=True) for k in ('AB', 'AB2')}
     cases = []
     b = Board()
     pool = [json.loads(l) for l in open('start_pool.jsonl')]
@@ -76,7 +77,7 @@ def main(n_pool=300, n_live=300, out='features_v2_fixture.json'):
         p = b.current_player
         exp = {k: enc_arrays(e, b, p) for k, e in encs.items()}
         b2.update_state(serialize_board(b))
-        exp['AB_after'] = enc_arrays(enc_as, b2, p)
+        exp.update({k: enc_arrays(e, b2, p) for k, e in afters.items()})
         cases.append({'kind': 'live', 'player': p, 'snapshot': snap(b), 'expected': exp})
     # LAST-PIECE cases, played into: a side holds numbered N on goal N plus one
     # blank on goal g; it banks the blank mid-turn, leaving N as its lone piece
@@ -112,14 +113,14 @@ def main(n_pool=300, n_live=300, out='features_v2_fixture.json'):
         p = side
         exp = {kk: enc_arrays(e, b, p) for kk, e in encs.items()}
         b2.update_state(serialize_board(b))
-        exp['AB_after'] = enc_arrays(enc_as, b2, p)
+        exp.update({k: enc_arrays(e, b2, p) for k, e in afters.items()})
         cases.append({'kind': 'last', 'player': p, 'snapshot': snap(b), 'expected': exp})
         n_last += 1
     # pool cases get an afterstate expectation too (their board is already rebuilt)
     for c in cases:
         if c['kind'] == 'pool':
             b.update_state(_raw_from_snapshot(c['snapshot']))
-            c['expected']['AB_after'] = enc_arrays(enc_as, b, c['player'])
+            c['expected'].update({k: enc_arrays(e, b, c['player']) for k, e in afters.items()})
     json.dump({'cases': cases}, open(out, 'w'))
     blanked = sum(1 for c in cases if c['kind'] in ('live', 'last') and
                   c['expected']['AB_after']['piece_order'] != c['expected']['AB']['piece_order'])
