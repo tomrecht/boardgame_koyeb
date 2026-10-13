@@ -202,7 +202,7 @@ by that, at zero latency cost; an afternoon's work, no retraining.
 ## Next training run: encoder changes (owner + Claude, 2026-10-04)
 
 Any new input reshapes the input layer, so these need a **from-scratch** run, not
-a fine-tune. Today's encoder (`encoder.py`; its header list is stale, the
+a fine-tune. Today's encoder (`encoder.py`; header list rewritten 2026-10-13, the
 per-function docstrings are right): tile = type, ring, sector, goal number,
 neighbour count, my/opp piece count, a wall flag for the MOVER's blanks only;
 piece = owner, number, numbered, status (unentered/home/board/saveable/saved),
@@ -698,6 +698,13 @@ on main's CLAUDE.md, "Next training run". What is here:
   student is EXACTLY the champion (max |diff| 6e-8 on 282 positions, identical
   moves on 24) until training teaches it the new inputs. Not distillation, not
   from scratch. The widened .pt files are not committed -- regenerate them.
+  **Since 2026-10-13 it widens ANY set into a superset** (v1/A/AB -> AB2 etc.),
+  mapping columns BY BLOCK: A2/AB2's two globals sit between A's 14 and the 72
+  roll opportunities, so AB -> AB2 is not an append (an append-only widen of an AB
+  net with non-zero new weights is off by 0.163; the block map 6e-8). It carries
+  the afterstate flag and refuses a non-superset (AB -> A2). fv2C plan
+  (TRAINING_INSTRUCTIONS.txt): `widen_v2.py <fv2B champion | blend.pt> AB2
+  fv2C_start.pt`, fresh run, afterstate on by default.
 * **Threats are approximations, validated**: against the exact enumerator
   (`weakness_probe.threats`, every legal reply over 21 rolls) on 786 numbered
   pieces from 30 games: capture EXACT (corr 1.000, MAE 0.000), wall corr 0.981

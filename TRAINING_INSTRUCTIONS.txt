@@ -7,6 +7,66 @@ Lines starting with # are explanations -- do not type them.
 
 
 ==========================================================================================
+UPDATE 2026-10-13 -- THE NEXT RUN (fv2C): AB2 features, AFTERSTATE frame
+==========================================================================================
+
+The run described further down (fv2B) is the CURRENT one. Do this once it has been
+judged. Setup is already done on the work Mac; skip to step 1.
+
+What is new in fv2C:
+  * AB2 = AB + two inputs: per side, numbered pieces standing on their own goal.
+  * AFTERSTATE: the net learns the end-of-turn position, which is what the search
+    scores (the t49 cause). This is ON by default for a fresh run.
+  * correct last-piece rule (game.py computes the stage fresh).
+
+1. Stop the old run and bring its results home first (see BRINGING RESULTS HOME):
+
+       pkill -f league_run.py
+       cd ~/quahuru-train && zip -r runs_fv2B.zip runs
+
+2. Update the code:
+
+       cd ~/quahuru-train && source .venv/bin/activate
+       git pull
+
+3. Make the warm start. Pick ONE (decide with Claude once fv2B is judged):
+
+   (a) fv2B PROMOTED a champion and it holds up:
+       python widen_v2.py runs/fv2B_champion.pt AB2 fv2C_start.pt
+
+   (b) otherwise, start from the app's champion (the 4-way blend):
+       python widen_v2.py blend.pt AB2 fv2C_start.pt
+
+   GOOD looks like: "AB2 student vs ... teacher on 282 positions: max |diff| ...e-08"
+   (anything up to 1e-05), then "saved fv2C_start.pt (AB2)".
+
+4. Smoke test (15-30 minutes):
+
+       mkdir -p smoke
+       caffeinate -i env BOARDGAME_DEVICE=mps PYTHONHASHSEED=0 SMOKE=1 PREFIX=smoke/c \
+           WARM_START=fv2C_start.pt PRESCREEN_BAR=-12 python -u league_run.py > smoke/c.log 2>&1
+       grep -E "Feature set|Start pool|PANEL GATE|Traceback|Error" smoke/c.log
+
+   GOOD looks like: "Feature set: AB2; frame: AFTERSTATE (end of turn)", the start pool
+   line, a "PANEL GATE" line, and NO "Traceback" or "Error". If the frame says
+   "turn start", stop and send the log over.
+
+5. The real run (use the same WORKER_DEVICE / cpu choice as fv2B):
+
+       mkdir -p runs
+       nohup caffeinate -is env BOARDGAME_DEVICE=mps PYTHONHASHSEED=0 ITERS=200 \
+           PREFIX=runs/fv2C WARM_START=fv2C_start.pt python -u league_run.py >> runs/fv2C.log 2>&1 &
+
+   Watching, stopping, resuming: exactly as below, with fv2C in place of fv2B. To
+   RESUME, run the step 5 command again (no git pull needed). The run remembers its
+   frame, so a resume stays afterstate.
+
+   Changing the frame shifts what the net is asked to predict, so early REJECTs are more
+   likely than in fv2B. The LR=2e-5 fallback below applies here too.
+
+
+
+==========================================================================================
 WHAT YOU NEED TO BRING FROM HOME
 ==========================================================================================
 

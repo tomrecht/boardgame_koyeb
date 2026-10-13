@@ -1,16 +1,20 @@
-"""Widen a v1 checkpoint into an A / AB net that computes EXACTLY the same value.
+"""Widen a checkpoint into a larger feature set (v1 -> A / AB / A2 / AB2, A -> A2 /
+AB / AB2, AB -> AB2) whose net computes EXACTLY the same value.
 
-features_v2's extra inputs are appended columns, so the three input-facing
-weight matrices just grow: the copied columns keep the champion's weights and
-the new ones start at zero, so the new inputs contribute nothing until training
+The three input-facing weight matrices grow: each source column is copied to
+where its input sits in the target set (columns are mapped by BLOCK, because
+A2/AB2's two globals sit BETWEEN A's and AB's roll opportunities, so AB -> AB2
+is not an append), and the new columns start at zero, so the new inputs contribute nothing until training
 moves them (their gradients are not zero -- d(loss)/dW = upstream * input). Every
 other parameter is copied unchanged. The result is a warm start for
 league_run.py (WARM_START=<out>) that begins exactly at the champion's strength.
 
     python3 widen_v2.py symaug_iter6.pt AB symaug6_AB.pt
+    python3 widen_v2.py runs/fv2B_champion.pt AB2 fv2B_AB2.pt
 
 Verifies on positions from owner's logged games that the widened net, fed the
-AB encoding, scores every position identically to the champion fed v1.
+target encoding, scores every position identically to the source fed its own.
+The afterstate flag is carried over; league_run.py sets it on a fresh start.
 """
 import json, sys
 
@@ -20,19 +24,57 @@ import torch
 import network
 from network import BoardGNN, BoardEncoder
 
-GROWN = ('tile_embed.weight', 'piece_embed.weight', 'readout.0.weight')
+import encoder
+import features_v2 as fv
+
+# Input blocks per set, in column order (features_v2.py / encoder._extras).
+BLOCKS = {
+    'tile':   {'v1': ['base'], 'A': ['base', 'wall'], 'AB': ['base', 'wall'],
+               'A2': ['base', 'wall'], 'AB2': ['base', 'wall']},
+    'piece':  {'v1': ['base'], 'A': ['base', 'own'], 'AB': ['base', 'own', 'threat'],
+               'A2': ['base', 'own'], 'AB2': ['base', 'own', 'threat']},
+    'global': {'v1': ['base'], 'A': ['base', 'A'], 'AB': ['base', 'A', 'roll'],
+               'A2': ['base', 'A', 'ns'], 'AB2': ['base', 'A', 'ns', 'roll']},
+}
+SIZE = {
+    'tile':   {'base': encoder.TILE_FEAT_DIM, 'wall': 1},
+    'piece':  {'base': encoder.PIECE_FEAT_DIM, 'own': 1, 'threat': 4},
+    'global': {'base': encoder.GLOBAL_FEAT_DIM, 'A': 14, 'ns': 2, 'roll': 72},
+}
+# weight matrix -> (which inputs, column offset of the first input)
+GROWN = {'tile_embed.weight': ('tile', 0), 'piece_embed.weight': ('piece', 0),
+         'readout.0.weight': ('global', 3 * network.HIDDEN_DIM)}
 
 
-def widen(v1_sd, features):
+def column_map(kind, src, dst):
+    """[(src_col, dst_col, width)] for every block of src, located in dst."""
+    if not set(BLOCKS[kind][src]) <= set(BLOCKS[kind][dst]):
+        raise SystemExit(f'cannot widen {src} -> {dst}: {kind} inputs are not a superset')
+    def starts(f):
+        out, at = {}, 0
+        for b in BLOCKS[kind][f]:
+            out[b] = at
+            at += SIZE[kind][b]
+        assert at == encoder.feature_dims(f)[('tile', 'piece', 'global').index(kind)]
+        return out
+    s0, d0 = starts(src), starts(dst)
+    return [(s0[b], d0[b], SIZE[kind][b]) for b in BLOCKS[kind][src]]
+
+
+def widen(src_sd, features):
+    src = network.features_of_state(src_sd)
     student = BoardGNN(features=features)
     sd = student.state_dict()
-    for k, v in v1_sd.items():
+    for k, v in src_sd.items():
         if k not in sd:
             raise KeyError(f'{k} not in a {features} BoardGNN')
         if k in GROWN:
+            kind, off = GROWN[k]
             w = torch.zeros_like(sd[k])
-            w[:, :v.shape[1]] = v           # appended columns stay zero
-            sd[k] = w
+            w[:, :off] = v[:, :off]          # readout's hidden inputs
+            for a, b, n in column_map(kind, src, features):
+                w[:, off + b:off + b + n] = v[:, off + a:off + a + n]
+            sd[k] = w                        # new columns stay zero
         else:
             if sd[k].shape != v.shape:
                 raise ValueError(f'{k}: {tuple(v.shape)} vs {tuple(sd[k].shape)}')
@@ -44,7 +86,7 @@ def widen(v1_sd, features):
 
 def verify(teacher, student, n_games=3):
     import weakness_probe as W
-    e1 = BoardEncoder(features='v1')
+    e1 = BoardEncoder(features=teacher.features)
     e2 = BoardEncoder(features=student.features)
     recs = [json.loads(l) for l in open('quahuru-games-apvo2h65.jsonl')][5:5 + n_games]
     worst, n = 0.0, 0
@@ -62,13 +104,13 @@ def verify(teacher, student, n_games=3):
 def main():
     src, features, out = sys.argv[1], sys.argv[2], sys.argv[3]
     network.DEVICE = torch.device('cpu')
-    v1_sd = torch.load(src, map_location='cpu')
-    if network.features_of_state(v1_sd) != 'v1':
-        raise SystemExit(f'{src} is not a v1 checkpoint')
-    teacher = network.model_from_state(v1_sd)
-    student = widen(v1_sd, features)
+    src_sd = torch.load(src, map_location='cpu')
+    teacher = network.model_from_state(src_sd)
+    teacher.eval()
+    student = widen(src_sd, features)
     n, worst = verify(teacher, student)
-    print(f'{features} student vs v1 teacher on {n} positions: max |diff| {worst:.2e}')
+    print(f'{features} student vs {teacher.features} teacher on {n} positions: '
+          f'max |diff| {worst:.2e} (afterstate flag {student.afterstate})')
     if worst > 1e-5:
         raise SystemExit('widened net does not reproduce the teacher; not saved')
     torch.save(student.state_dict(), out)
