@@ -202,7 +202,7 @@ by that, at zero latency cost; an afternoon's work, no retraining.
 ## Next training run: encoder changes (owner + Claude, 2026-10-04)
 
 Any new input reshapes the input layer, so these need a **from-scratch** run, not
-a fine-tune. Today's encoder (`encoder.py`; its header list is stale, the
+a fine-tune. Today's encoder (`encoder.py`; header list rewritten 2026-10-13, the
 per-function docstrings are right): tile = type, ring, sector, goal number,
 neighbour count, my/opp piece count, a wall flag for the MOVER's blanks only;
 piece = owner, number, numbered, status (unentered/home/board/saveable/saved),
@@ -529,7 +529,12 @@ with it in mind.** Assessment and the concrete implications:
   -E_rolls[V_opp(turn start)] -- NOT built (21x inference; needs an arena and a
   phone latency check); (2) AFTERSTATE TRAINING -- BUILT on `train-features-v2`
   (default on for fresh runs) with its JS side on `js-features-v2`; see those
-  branches. Pull 2c8a0f7 into training branches anyway (correct rules).
+  branches. 2c8a0f7 merged into `train-features-v2` 2026-10-13.
+  **Fix (1) is PARKED (owner, 2026-10-13)** -- afterstate nets should make it
+  unnecessary; revisit only if one does not close the gap. The next run (fv2C:
+  AB2 features + afterstate, AB2 = AB + numbered pieces on their own goal per
+  side) is prepared in that branch's TRAINING_INSTRUCTIONS.txt; smoke-tested on
+  the iMac 2026-10-13 (one iteration, clean).
   **HOW MUCH THE MISMATCH COSTS TODAY'S NET (`frame_probe.py`, 2026-10-12/13,
   deployed blend, Python reference agent, prefilter 12/40/5, lookahead off;
   "trained frame" = the same net scoring each candidate as the opponent's turn

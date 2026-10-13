@@ -16,13 +16,19 @@ Architecture:
 Encoding: always from current player's perspective.
   Current player pieces -> player_id=0, opponent -> player_id=1.
 
-Features:
-  Tile:   neighbor_count, has_permanent_block, my_piece_count, opp_piece_count
-  Piece:  is_numbered, is_blot, is_completely_blocked, distance_category,
-          goal_distances_raw (6 values, normalized), goal_distances_binned (6 values)
-  Global: my_game_stage, opponent_game_stage, my_numbered_saved_count,
-          opp_numbered_saved_count, my_highest_occupied_goal,
-          opp_highest_occupied_goal, my_saveable_count
+Features (the per-function docstrings give the exact column order):
+  Tile (12):   is_home, is_field, is_goal, traversable, ring/7, sector/45,
+               goal number/6, neighbour count/6, mover's wall (2+ of the
+               mover's blanks), reserved (0), my piece count, opp piece count
+  Piece (24):  owner (0 = mover), number/12, is_numbered, status one-hot
+               (unentered / on home / on board / saveable / saved), rack slot
+               (unentered only), lone on a field tile, completely walled off,
+               own-goal distance band, distance to each goal 1-6 (raw /14 and
+               banded)
+  Global (11): die values, die-used flags, stage per side, numbered saved per
+               side, highest occupied goal per side, my saveable count
+  Where a piece stands is not a column: it is a piece->tile EDGE
+  (encode_piece_tile_edges); rack and saved pieces have none.
 """
 
 import json
