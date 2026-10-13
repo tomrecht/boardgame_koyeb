@@ -605,6 +605,14 @@ on main's CLAUDE.md, "Next training run". What is here:
   model.onnx` (writes model.json too) -> copy model.onnx + model.json (and
   endgame_table.json for A/AB) onto the JS branch / main -> update
   `REC_MODEL_TAG` -> bump sw.js's cache.
+  **THE NET FROM OWNER'S CURRENT WORK RUN (started before 2026-10-12)** is a
+  TURN-START net (no flag; its checkpoint loads as afterstate 0). Export it with
+  THIS branch's `onnx_export.py` (pull first: the old one builds a v1 encoder and
+  writes no sidecar) -> model.json `{"features": "AB", "afterstate": false}` ->
+  branch `js-features-v2` runs it as AB turn-start (parity tested). Before
+  shipping, compare it with the deployed blend in the app's config (the panel
+  gate does not run the hand rules or the endgame lookahead), and keep main's
+  `_strands_last_piece` rule ON for it -- it was trained with the stale-stage bug.
   **HOW MUCH THE MISMATCH COSTS THE CURRENT NET (frame_probe.py on main,
   2026-10-12):** on the 559-position calibration benchmark the same deployed net
   scored in its TRAINED frame (opponent's turn start, 21 rolls averaged,
