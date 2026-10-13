@@ -525,11 +525,26 @@ with it in mind.** Assessment and the concrete implications:
   exists at a turn start (the last-piece rule blanks it first), so it was scored
   as an untrained input. In the TRAINED frame (opponent to move, 21 rolls averaged,
   negated) the net is right: G6-now-blank -19 vs numbered 6 on 6.10 -60 (exact
-  race DP: -30 vs -74; P(black wins) 32% vs 6%). **Two candidate fixes, both
-  unmeasured:** (1) search scores -E_rolls[V_opp(turn start)] (21x inference;
-  arena first, phone latency); (2) training also records end-of-turn positions
-  with TD targets (cheap; owner's next run). Pull 2c8a0f7 into training branches
-  anyway (correct rules).
+  race DP: -30 vs -74; P(black wins) 32% vs 6%). **Fixes:** (1) search scores
+  -E_rolls[V_opp(turn start)] -- NOT built (21x inference; needs an arena and a
+  phone latency check); (2) AFTERSTATE TRAINING -- BUILT on `train-features-v2`
+  (default on for fresh runs) with its JS side on `js-features-v2`; see those
+  branches. Pull 2c8a0f7 into training branches anyway (correct rules).
+  **HOW MUCH THE MISMATCH COSTS TODAY'S NET (`frame_probe.py`, 2026-10-12/13,
+  deployed blend, Python reference agent, prefilter 12/40/5, lookahead off;
+  "trained frame" = the same net scoring each candidate as the opponent's turn
+  start averaged over the 21 rolls, negated):**
+  (a) calibration benchmark (559 owner positions with playout labels): corr /
+  slope of the move gap vs the playouts **+0.159 / 0.50 as searched today ->
+  +0.238 / 0.65 in the trained frame**, +0.079 (95% bootstrap +0.009..+0.150);
+  the frames disagree on which move is better in 103/559.
+  (b) 1,500 of the computer's turns in owner's games: the trained frame picks a
+  different END POSITION on **26.1% +- 2.2%** (opening/midgame 353/1288, late
+  39/212) -- mostly near-ties: where they differ it says the current pick gives
+  up median 0.04 pts (mean 0.07). Net-judged cost **0.51 pts/game**; shrunk by
+  the trained frame's calibration slope (0.65) that is **~0.3 pts/game** -- the
+  size of the 4-way blend's whole gain (+0.16), so worth an arena before
+  dismissing fix (1) for today's net. Not yet measured by games.
   **So a SEARCH RULE (owner, same day): `_strands_last_piece` / `strandsLastPiece`
   drop a pair leaving the mover one unsaved piece, numbered, that began the turn on
   its own goal and is now off it, unless the pair captured** (a capture can stop
