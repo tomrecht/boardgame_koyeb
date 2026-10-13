@@ -198,18 +198,58 @@ function pieceTileEdges(allPieces) {
     return { piece_to_tile: [psrc, tdst], tile_to_piece: [tdst, psrc] };
 }
 
-/* The encoder's whole input for one position. */
-function encode(staticData, snapshot, currentPlayer) {
+/* AFTERSTATE mode (training branch, 2026-10-12): the net was trained on the
+   position at the END of the mover's turn, rebuilt by game.py's update_state --
+   which applies the last-piece rule to both sides at their fresh stage. Do the
+   same to the snapshot (a copy) before encoding: a side in the endgame whose one
+   unsaved piece is numbered gets that piece as blank 13. */
+function afterstateSnapshot(graph, snapshot) {
+    let pieces = null;
+    for (const side of ['white', 'black']) {
+        if ((snapshot.racks[side + '_unentered'] || []).length) continue;     // opening
+        const mine = snapshot.pieces.filter(p => p.player === side);
+        const onSaveable = (p) => p.kind === 'saved' || (p.kind === 'tile'
+            && _R.isSaveableOn(graph, graph.indexOf(p.ring, p.pos), p.number));
+        if (!mine.every(onSaveable)) continue;                                  // not endgame
+        const left = mine.filter(p => p.kind !== 'saved');
+        if (left.length !== 1 || left[0].number > 6) continue;
+        pieces = pieces || snapshot.pieces.slice();
+        pieces[snapshot.pieces.indexOf(left[0])] = Object.assign({}, left[0], { number: NUM_PIECES + 1 });
+    }
+    return pieces ? Object.assign({}, snapshot, { pieces }) : snapshot;
+}
+
+/* The encoder's whole input for one position.
+   opts (from the model's sidecar, see infer.js; all optional, so a call with
+   none is exactly the shipped v1 turn-start encoding):
+     features   'v1' | 'A' | 'AB' -- appends features_v2.js's columns
+     afterstate true for a net trained on end-of-turn positions
+     table      endgame_table.json's object (A / AB only) */
+function encode(staticData, snapshot, currentPlayer, opts) {
+    const o = opts || {};
     const graph = _R.buildGraph(staticData);
+    if (o.afterstate) snapshot = afterstateSnapshot(graph, snapshot);
     const pieces = _R.piecesFromSnapshot(graph, snapshot);
     const player = currentPlayer || snapshot.current_player;
     const { rows, allPieces } = pieceFeatures(graph, snapshot, pieces, player);
     const edges = pieceTileEdges(allPieces);
+    let tile = tileFeatures(graph, staticData.base_tile_feats, pieces, player);
+    let piece = rows;
+    let glob = globalFeatures(graph, snapshot, pieces, player);
+    if (o.afterstate) glob.splice(0, 4, 0.0, 0.0, 1.0, 1.0);   // the spent dice say nothing
+    if (o.features && o.features !== 'v1') {
+        const _F = (typeof require !== 'undefined') ? require('./features_v2.js')
+            : (typeof window !== 'undefined' ? window : self).FV2;
+        const ex = _F.extras(graph, snapshot, pieces, allPieces, player, o.features, o.table);
+        tile = tile.map((r, i) => r.concat([ex.tile[i]]));
+        piece = piece.map((r, i) => r.concat(ex.piece[i]));
+        glob = glob.concat(ex.global);
+    }
     return {
-        tile_feats: tileFeatures(graph, staticData.base_tile_feats, pieces, player),
-        piece_feats: rows,
+        tile_feats: tile,
+        piece_feats: piece,
         piece_order: allPieces.map(p => [p.player, p.number]),
-        global_feats: globalFeatures(graph, snapshot, pieces, player),
+        global_feats: glob,
         piece_to_tile: edges.piece_to_tile,
         tile_to_piece: edges.tile_to_piece,
         tile_edge_index: staticData.tile_edge_index,
@@ -224,7 +264,7 @@ function encode(staticData, snapshot, currentPlayer) {
     const api = { buildGraph: _R.buildGraph, blockedTiles: _R.blockedTiles, shortestRouteToGoal: _R.shortestRouteToGoal, allGoalDistances: _R.allGoalDistances,
                    isSaveableOn: _R.isSaveableOn, piecesFromSnapshot: _R.piecesFromSnapshot, tileFeatures, pieceFeatures,
                    pieceStatus, distBin, distanceCategory, globalFeatures,
-                   gameStage, highestOccupiedGoal, pieceTileEdges, encode,
+                   gameStage, highestOccupiedGoal, pieceTileEdges, encode, afterstateSnapshot,
                    TILE_FEAT_DIM, PIECE_FEAT_DIM };
     if (typeof module !== 'undefined' && module.exports) module.exports = api;
     else Object.assign(typeof window !== 'undefined' ? window : self, api);

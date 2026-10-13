@@ -86,6 +86,10 @@ class Engine {
         e.stages = Object.assign({}, st.stages);
         e.drawCalled = !!st.draw_called;
         e.drawCallable = !!st.draw_callable;
+        // The no-save counter, as the frontend reports it. Nothing in the engine
+        // reads it; it rides into snapshot() for the A/AB encoder (features_v2),
+        // unchanged through a search exactly as game.py's is until switch_turn.
+        e.noSaveTurns = st.no_save_turns || 0;
         // reindex() BEFORE resolving first_move: it is what builds `lookup`, and
         // find() against an empty lookup returned null, so firstMove.piece was
         // always null. That is silent -- `firstMove.piece === piece` simply never
@@ -472,6 +476,7 @@ class Engine {
         return {
             current_player: this.currentPlayer,
             dice: this.dice.map(d => ({ value: d.value, used: !!d.used })),
+            no_save_turns: this.noSaveTurns || 0,
             game_stages: Object.assign({}, this.stages),
             pieces,
             racks: {
