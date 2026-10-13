@@ -128,7 +128,10 @@ def position_tags(board, rec):
     if rec['raw_state'].get('noSaveTurns', 0) >= NEAR_DRAW_FROM:
         tags.append('near_draw')
     me = rec['player']
-    if board.current_player == me and not any(d.used for d in board.dice):
+    if rec.get('afterstate'):
+        if rec.get('save_goal_turn'):       # judged at the turn start, in the worker
+            tags.append('save_goal')
+    elif board.current_player == me and not any(d.used for d in board.dice):
         stage = dict(board.game_stages)
         blank_save, num_goal = set(), set()
         for m in board.get_valid_moves():
@@ -342,7 +345,8 @@ def main():
         model = BoardGNN().to(network.DEVICE)
         print("WARNING: training TD from scratch (no --load); strongly discouraged")
 
-    encoder = BoardEncoder(features=getattr(model, "features", "v1"))
+    encoder = BoardEncoder(features=getattr(model, "features", "v1"),
+                           afterstate=getattr(model, "afterstate", False))
     board = Board()
     optimizer = torch.optim.Adam(model.parameters(), lr=args.lr)
     scheduler = ReduceLROnPlateau(optimizer, mode='min', patience=4, factor=0.5)

@@ -52,8 +52,9 @@ class BoardEncoder(_enc.BoardEncoder):
     """The numpy encoder, handing back torch tensors (zero-copy on CPU).
     Pass the MODEL's feature set: BoardEncoder(features=model.features)."""
 
-    def __init__(self, tile_neighbors_path='tile_neighbors.json', features='v1'):
-        super().__init__(tile_neighbors_path, features=features)
+    def __init__(self, tile_neighbors_path='tile_neighbors.json', features='v1',
+                 afterstate=False):
+        super().__init__(tile_neighbors_path, features=features, afterstate=afterstate)
         self.tile_edge_index = _to_dev(torch.from_numpy(self.tile_edge_index))
 
     def encode(self, board, current_player):
@@ -211,6 +212,10 @@ class MessagePassingLayer(nn.Module):
 # FULL NETWORK
 # -------------------------
 
+def _default_afterstate_flag(state_dict, prefix, *args, **kwargs):
+    state_dict.setdefault(prefix + 'afterstate_flag', torch.zeros(()))
+
+
 class BoardGNN(nn.Module):
     """
     Heterogeneous GNN with global node and residual connections.
@@ -255,6 +260,22 @@ class BoardGNN(nn.Module):
             nn.Linear(32, 1),
             nn.Tanh(),
         )
+
+        # Which frame the net is trained in, saved WITH the weights:
+        # 0 = turn start (mover to move, dice rolled; every net before
+        # 2026-10-12), 1 = AFTERSTATE (end of the mover's turn; see
+        # encoder.BoardEncoder). Not used by forward(). A checkpoint without the
+        # key loads as 0, so every existing checkpoint still loads strictly.
+        self.register_buffer('afterstate_flag', torch.zeros(()))
+        self._register_load_state_dict_pre_hook(_default_afterstate_flag)
+
+    @property
+    def afterstate(self):
+        return bool(self.afterstate_flag.item())
+
+    @afterstate.setter
+    def afterstate(self, on):
+        self.afterstate_flag.fill_(1.0 if on else 0.0)
 
     def _forward_batch(self, batch):
         B   = batch['B']

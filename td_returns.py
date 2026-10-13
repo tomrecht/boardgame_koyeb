@@ -197,6 +197,16 @@ def compute_td_targets_for_game(recs, z_white, target_model, encoder, board,
     # mover frame -> white frame
     values_white = [to_white_frame(v, r['player']) for v, r in zip(preds, recs)]
     cut = [bool(r.get('explored')) for r in recs] if trace_cut else None
+    if recs[0].get('afterstate'):
+        # AFTERSTATE records (end of each turn). A game that ended ON a move
+        # ends on a terminal afterstate whose value is exactly z, not the net's
+        # guess. And an exploratory move PRODUCES record t, so it is the
+        # PREVIOUS record whose observed future is off-policy: shift the cut
+        # back one (record t itself is a real position with an on-policy future).
+        if recs[-1].get('terminal'):
+            values_white[-1] = z_white
+        if cut is not None:
+            cut = cut[1:] + [False]
     G_white = lambda_returns_white_frame(values_white, z_white, lam, gamma, cut=cut)
     # white frame -> each record's mover frame, clamp to tanh range; a cut
     # (exploratory) state gets None -- its observed future is off-policy.
@@ -312,6 +322,24 @@ def _test_lambda_intermediate():
     assert _approx(G[1], 1.0), G[1]
     assert _approx(G[0], 0.3), G[0]
     print("  [ok] intermediate lam hand-check")
+
+
+def _test_afterstate():
+    # 3 afterstates, the last terminal: its target is z exactly and the record
+    # before it bootstraps from z, not from the net's value of the terminal.
+    recs = [{'game_id': 'g', 'player': 'white' if i % 2 == 0 else 'black', 'move_index': i,
+             'final_score': 3 if i % 2 == 0 else -3, 'afterstate': True,
+             'terminal': i == 2, 'explored': i == 2} for i in range(3)]
+    z = 3 / NUM_PIECES
+    t, ok = compute_td_targets_for_game(recs, z, None, None, None, lam=0.0, gamma=1.0,
+                                        predict_fn=lambda rs: [0.1, 0.2, 0.9])
+    assert ok and abs(t[2] - z) < 1e-9 and abs(t[1] - (-z)) < 1e-9, t
+    # exploration produced record 2: record 1 is cut (dropped), record 2 kept,
+    # record 0 bootstraps fully from V(record 1) = -0.2 in black's frame.
+    t, ok = compute_td_targets_for_game(recs, z, None, None, None, lam=1.0, gamma=1.0,
+                                        predict_fn=lambda rs: [0.1, 0.2, 0.9], trace_cut=True)
+    assert t[1] is None and abs(t[2] - z) < 1e-9 and abs(t[0] - (-0.2)) < 1e-9, t
+    print('  afterstate: terminal = z, cut shifted back one -- ok')
 
 
 def _test_trace_cut():
@@ -444,6 +472,7 @@ if __name__ == '__main__':
     _test_lambda_intermediate()
     _test_gamma()
     _test_trace_cut()
+    _test_afterstate()
     _test_grouping()
     _test_league_learner_only_chain()
     _test_selfplay_unchanged_by_filter()

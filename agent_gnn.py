@@ -192,6 +192,11 @@ class GNNAgent:
         self.backend = make_backend(weights_path, model=model)
         self.model = self.backend
         self.encoder = self.backend.encoder
+        # An AFTERSTATE net (network.BoardGNN.afterstate) is trained on the
+        # position at the END of the mover's turn -- the very thing the search
+        # scores -- so candidates go through _encode_after. A turn-start net
+        # (every net before 2026-10-12) keeps the old encoding unchanged.
+        self.afterstate = bool(getattr(self.encoder, 'afterstate', False))
 
         # Two-stage prefilter (0 = off). The one-stage prefilter below scores
         # every candidate PAIR with the heuristic -- ~10k evaluations on a busy
@@ -403,7 +408,7 @@ class GNNAgent:
                 scored.append((s, pair))
             else:
                 move_keys.append(pair)
-                encoded_list.append(self.encoder.encode(board, player))
+                encoded_list.append(self._encode_after(board, player))
                 outcome_keys.append(_piece_locs(board))
                 wastes.append(rule_wastes and _wastes_save(board, pair, player))
 
@@ -555,7 +560,7 @@ class GNNAgent:
                     if m != (0, 0, 0):
                         board.apply_move(m, switch_turn=False)
                 move_keys.append(pair)
-                encoded_list.append(self.encoder.encode(board, player))
+                encoded_list.append(self._encode_after(board, player))
                 outcome_keys.append(_piece_locs(board))
                 wastes.append(rule_wastes and _wastes_save(board, pair, player))
                 while len(board.moves) > base:
@@ -932,7 +937,7 @@ class GNNAgent:
                     board.undo_last_move()
                 return (move, (0, 0, 0))
             first_move_keys.append(move)
-            first_encoded_list.append(self.encoder.encode(board, player))
+            first_encoded_list.append(self._encode_after(board, player))
             while len(board.moves) > initial:
                 board.undo_last_move()
 
@@ -989,7 +994,7 @@ class GNNAgent:
                     board.undo_last_move()
                 return (best_first, nm)
             second_move_keys.append(nm)
-            second_encoded_list.append(self.encoder.encode(board, player))
+            second_encoded_list.append(self._encode_after(board, player))
             while len(board.moves) > nm_initial:
                 board.undo_last_move()
 
@@ -1030,7 +1035,7 @@ class GNNAgent:
                 while len(board.moves) > initial_len:
                     board.undo_last_move()
                 return (m1, (0, 0, 0))
-            enc = self.encoder.encode(board, player)
+            enc = self._encode_after(board, player)
             first_states.append(enc)
             first_meta.append(m1)
             while len(board.moves) > initial_len:
@@ -1098,7 +1103,7 @@ class GNNAgent:
                     while len(board.moves) > initial_len:
                         board.undo_last_move()
                     return (m1, m2)
-                enc = self.encoder.encode(board, player)
+                enc = self._encode_after(board, player)
                 second_states.append(enc)
                 second_meta.append(m2)
                 while len(board.moves) > mid_len:
@@ -1166,9 +1171,40 @@ class GNNAgent:
     _DICE_ROLLS_21 = [(d1, d2, (1.0 if d1 == d2 else 2.0) / 36.0)
                       for d1 in range(1, 7) for d2 in range(d1, 7)]
 
+    def _encode_after(self, board, player):
+        """Encode a candidate's resulting position (pair applied, turn not
+        switched) the way an afterstate net was trained on it: training rebuilds
+        each record with Board.update_state, which applies the last-piece rule
+        to both sides at their fresh stage, so do the same here -- reversibly --
+        before encoding. A turn-start net gets the plain encoding."""
+        if not self.afterstate:
+            return self.encoder.encode(board, player)
+        renumbered = []
+        for side in ('white', 'black'):
+            if board.get_game_stage(side) != 'endgame':
+                continue
+            rack = board.get_save_rack(side)
+            left = [p for p in board.pieces if p.player == side and p.rack is not rack]
+            if len(left) == 1 and left[0].number <= 6:
+                p = left[0]
+                renumbered.append((p, p.number))
+                board.piece_lookup.pop((p.player, p.number), None)
+                p.number = NUM_PIECES + 1
+                board.piece_lookup[(p.player, p.number)] = p
+        try:
+            return self.encoder.encode(board, player)
+        finally:
+            for p, n in renumbered:
+                board.piece_lookup.pop((p.player, p.number), None)
+                p.number = n
+                board.piece_lookup[(p.player, n)] = p
+
     def _raw_value(self, board, player):
         """Net value of the current position in raw units from `player`'s
         frame (no SCORE_SCALE)."""
+        if self.afterstate:
+            raise NotImplementedError('deep search scores TURN-START positions; '
+                                      'not valid for an afterstate net')
         return float(self.model(self.encoder.encode(board, player)))
     def _enter_opponent_turn_deterministic(self, board):
         """Reproduce switch_turn's side effects reversibly and WITHOUT
@@ -1260,6 +1296,9 @@ class GNNAgent:
           net. (An earlier version computed stand-pat once for all 21
           rolls on the wrong assumption that only the used-flags are
           encoded.)"""
+        if self.afterstate:
+            raise NotImplementedError('deep search scores TURN-START positions; '
+                                      'not valid for an afterstate net')
         base_len = len(board.moves)
         moves = board.get_valid_moves()
         draw_legal = (1, 1, 1) in moves
@@ -1403,6 +1442,9 @@ class GNNAgent:
 
         Caller must have the opponent's turn entered (current_player ==
         opp). Dice are left dirty; _restore_turn_state puts them back."""
+        if self.afterstate:
+            raise NotImplementedError('deep search scores TURN-START positions; '
+                                      'not valid for an afterstate net')
         base_len = len(board.moves)
         dice = board.dice
 
@@ -1578,6 +1620,9 @@ class GNNAgent:
 
         Intended for PLAY/EVAL ONLY -- generation keeps the shallow path.
         """
+        if self.afterstate:
+            raise NotImplementedError('deep search scores TURN-START positions; '
+                                      'not valid for an afterstate net')
         # game_stages hygiene: undo_last_move recomputes a player's stage
         # only when undoing save/rack moves, so unwinding a mixed pair (e.g.
         # field-move + save) can leave a slot reflecting an INTERMEDIATE

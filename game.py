@@ -880,8 +880,12 @@ class Board:
         return score
 
     def apply_last_piece_rule(self):
+        # The stage is computed FRESH, not read from game_stages: a tile move does
+        # not refresh it, so a last numbered piece stepped off its goal still read
+        # 'endgame' and was blanked on a field tile. game.js never did that (its
+        # phase reverts), and the agent planned around the phantom (2026-10-12).
         for player in ['white', 'black']:
-            if self.game_stages[player] != 'endgame':
+            if self.get_game_stage(player) != 'endgame':
                 continue
             save_rack = self.get_save_rack(player)
             unsaved = [p for p in self.pieces if p.player == player and p.rack != save_rack]

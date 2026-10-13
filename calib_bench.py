@@ -84,7 +84,8 @@ def score_model(model, features=None):
     from game import Board
     if _ITEMS is None:
         _ITEMS = json.load(open(BENCH))
-    enc = network.BoardEncoder(features=features or getattr(model, 'features', 'v1'))
+    enc = network.BoardEncoder(features=features or getattr(model, 'features', 'v1'),
+                               afterstate=getattr(model, 'afterstate', False))
     board = Board()
     gaps, diffs = [], []
     model.eval()

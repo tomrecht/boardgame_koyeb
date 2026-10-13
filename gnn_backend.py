@@ -35,7 +35,8 @@ class TorchBackend:
             self.model = load_model(weights_path)
         self.model.eval()
         # The encoder must match the model's input widths (features_v2).
-        self.encoder = BoardEncoder(features=getattr(self.model, 'features', 'v1'))
+        self.encoder = BoardEncoder(features=getattr(self.model, 'features', 'v1'),
+                                    afterstate=getattr(self.model, 'afterstate', False))
 
     def __call__(self, encoded):
         with self._torch.no_grad():

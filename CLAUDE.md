@@ -540,6 +540,50 @@ PRESCREEN_BAR; panel 3 vs 5.
 Built on `train-panel-league`. The plan and the evidence behind each feature are
 on main's CLAUDE.md, "Next training run". What is here:
 
+* **AFTERSTATE TRAINING: THE NET LEARNS THE POSITION THE SEARCH SCORES (owner +
+  Claude, 2026-10-12). ON BY DEFAULT for a fresh run (`AFTERSTATE=0` to train
+  the old way).** Every net before this was trained on TURN-START positions
+  (mover to move, dice rolled) while the 2-ply search scores each candidate at
+  the END of the mover's turn, before the switch -- which the net reads as "to
+  move again with the spent dice" (the die-used flags had zero effect; the spent
+  dice values swung a lone blank on G6 from -7 to +102). Found on owner's game
+  19831a60 t49 (main's CLAUDE.md): "stay" was a numbered 6 as last piece on its
+  goal, which never exists at a turn start, so it was scored blind.
+  **What changed:** `BoardGNN.afterstate` (a buffer saved WITH the weights;
+  old checkpoints load as turn-start, strictly); `BoardEncoder(afterstate=True)`
+  sets the four dice inputs to a constant (0, 0, used, used); `GNNAgent` scores
+  candidates through `_encode_after`, which applies the last-piece rule first
+  exactly as `update_state` does in training, and restores it; the deep search
+  and `_raw_value` REFUSE an afterstate net (they score turn starts);
+  `game_worker` records the end of each turn (`afterstate`, `terminal` = the game
+  ended on that move, `save_goal_turn` judged at the turn start for the upweight
+  class); `td_returns` gives a terminal afterstate exactly z and shifts the trace
+  cut back one record (an exploratory move PRODUCES record t, so record t-1's
+  future is off-policy). `league_run` sets the flag on a fresh start; a resume
+  keeps the live checkpoint's frame. Also ported here: main's last-piece fix
+  (stage computed fresh, 2c8a0f7).
+  **Measured:** search encoding vs training encoding of the same position
+  (`_encode_after` on the live board vs `update_state(serialize_board)` +
+  encode) **703/703 identical over 12 self-play games, the last-piece rule
+  firing in 5**; end-to-end (2 worker games with opening + late exploration ->
+  TD targets -> upweight tags -> encode -> one optimiser step) clean, every
+  record end-of-turn, the last one terminal; td_returns unit test for terminal
+  z and the shifted cut; test_explore / test_hand_rules / test_panel_gate pass.
+  **No record conversion needed:** the replay buffer is in memory only, and the
+  start pool is only used to START games.
+  **Warm start:** the champion widened, flag set -- at iteration 0 it scores
+  candidates exactly as the shipped agent does (same frame mismatch), and
+  training moves it to the right frame. Watch the first gates: the targets'
+  meaning changed, so an early dip is possible.
+  **NOT DONE -- needed before an afterstate net can ship:** the JS side.
+  `encoder.js` must take the same flag (dice inputs constant), `agent.js` must
+  apply the last-piece rule before encoding a candidate (as `_encode_after`), and
+  the ONNX export must carry the flag (e.g. a sidecar JSON next to model.onnx,
+  read by local_agent.js) -- together with the features_v2 JS twin, which is
+  not built either. `OnnxBackend` in Python also reads no flag yet.
+  **Re-check main's `_strands_last_piece` rule on the first afterstate net**
+  (owner): it should no longer be needed.
+
 * **UPWEIGHTED POSITION CLASSES + THE NO-SAVE COUNTER FIX (owner, 2026-10-08).**
   `train_td.position_tags` tags each record from its rebuilt board (cached as
   `rec['_upw']`, so pre-existing records are tagged too) and multiplies its

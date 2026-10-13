@@ -68,6 +68,10 @@ CONFIG = {
     'N_WORKERS':       _env('N_WORKERS', max(1, (os.cpu_count() or 2) - 1), int),
     'SYMAUG':          _env('SYMAUG', True, _bool),
     'HAND_RULES':      _env('HAND_RULES', False, _bool),
+    # Train an AFTERSTATE net (end-of-turn positions, the frame the search
+    # scores -- CLAUDE.md, 2026-10-12). Applies to a FRESH start; a resumed run
+    # keeps whatever frame its live checkpoint carries.
+    'AFTERSTATE':      _env('AFTERSTATE', True, _bool),
     # 1. panel gate
     'PANEL':           _env('PANEL', ','.join(PANEL_DEFAULT), str),   # or 'five'
     'PANEL_MAX_PAIRS': _env('PANEL_MAX_PAIRS', 2 if SMOKE else 100, int),   # cap per member
@@ -177,8 +181,11 @@ def main():
         print(f"Fresh: warm-starting from {C['WARM_START']}")
         start_sd = torch.load(C['WARM_START'], map_location='cpu')
     model = network.model_from_state(start_sd).to(network.DEVICE)
+    if not (ckpt and os.path.exists(live_path)):
+        model.afterstate = C['AFTERSTATE']
     model.train()
-    print(f"Feature set: {model.features}")
+    print(f"Feature set: {model.features}; frame: "
+          f"{'AFTERSTATE (end of turn)' if model.afterstate else 'turn start'}")
     if os.path.exists(champion_path):
         champion_sd = torch.load(champion_path, map_location='cpu')
         print(f"Champion: {champion_path}")

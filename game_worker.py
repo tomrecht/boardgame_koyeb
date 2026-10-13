@@ -75,6 +75,25 @@ def serialize_board(board):
     }
 
 
+def _save_goal_choice(board, moves, me):
+    """train_td.position_tags' 'save_goal' class, judged at the turn START from
+    its move list: one die can save a blank OR put a numbered piece on its own
+    goal. Recorded on afterstate records, whose dice are spent."""
+    blank_save, num_goal = set(), set()
+    for m in moves:
+        if not (isinstance(m, tuple) and len(m) == 3 and isinstance(m[0], tuple)
+                and m[0][0] == me):
+            continue
+        if m[1] == 'save':
+            if m[0][1] > 6:
+                blank_save.add(m[2])
+        elif isinstance(m[1], tuple) and m[0][1] <= 6:
+            t = board.get_tile(*m[1])
+            if t is not None and t.type == 'save' and t.number == m[0][1]:
+                num_goal.add(m[2])
+    return bool(blank_save & num_goal)
+
+
 def _league_opponent(path, hand_rules, prefilter=''):
     """Load (once per worker process) a frozen panel member as a GNNAgent."""
     key = (path, bool(hand_rules), prefilter or '')
@@ -207,6 +226,13 @@ def worker_play(args):
                 'learner':      is_learner(player),
                 'opp':          opp_tag,
                 'game_secs':    time.time() - game_t0,   # single-core cost of the game
+                # AFTERSTATE records (2026-10-12): raw_state is the END of this
+                # player's turn; terminal = the game ended on that move;
+                # save_goal_turn = the turn START was a save-vs-goal choice
+                # (train_td.position_tags reads it, the dice being spent).
+                'afterstate':     pos.get('afterstate', False),
+                'terminal':       pos.get('terminal', False),
+                'save_goal_turn': pos.get('save_goal_turn', False),
             })
         return recs
 
@@ -233,6 +259,9 @@ def worker_play(args):
         for d in board.dice:              # fresh roll from this game's seed
             d.roll()
     agents = {'white': white_agent, 'black': black_agent}
+    # The learner's frame decides what is recorded: an afterstate net learns
+    # END-of-turn positions, a turn-start net (all before 2026-10-12) turn starts.
+    afterstate = bool(getattr(gnn_agent, 'afterstate', False))
     positions = []
     last_total_saved = 0
     turns_since_save = 0
@@ -330,14 +359,26 @@ def worker_play(args):
             chosen = agents[player].select_move_pair(moves, board, player)
 
         move_list = normalize_chosen(chosen)
-        positions.append({'player': player, 'game_stage': game_stage,
-                          'move_index': turn, 'raw_state': raw_state,
-                          'explored': explored_turn, 'sampled': sampled_turn,
-                          'explore_gap': explore_gap})
+        rec = {'player': player, 'game_stage': game_stage, 'move_index': turn,
+               'explored': explored_turn, 'sampled': sampled_turn,
+               'explore_gap': explore_gap}
+        if afterstate:
+            rec['save_goal_turn'] = _save_goal_choice(board, moves, player)
+        else:
+            rec['raw_state'] = raw_state
+            positions.append(rec)
         side_turns[player] += 1
         for move in move_list:
             if move != (0, 0, 0):
                 board.apply_move(move, switch_turn=False)
+        if afterstate:
+            # The position the search scored for this pair: end of the turn,
+            # mover's frame, before the switch (training's update_state then
+            # applies the last-piece rule, as the search's _encode_after does).
+            rec['raw_state'] = serialize_state(board)
+            rec['afterstate'] = True
+            rec['terminal'] = board.check_game_over()[0] is not None
+            positions.append(rec)
         board.switch_turn()
 
     # 5. Hard cap reached — unresolved developed position == draw (score 0)

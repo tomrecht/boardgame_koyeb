@@ -498,9 +498,15 @@ class BoardEncoder:
     -- see features_v2.py. The extra columns are APPENDED, so the first
     TILE/PIECE/GLOBAL_FEAT_DIM columns are always exactly v1.
     """
-    def __init__(self, tile_neighbors_path='tile_neighbors.json', features='v1'):
+    def __init__(self, tile_neighbors_path='tile_neighbors.json', features='v1',
+                 afterstate=False):
         global _tile_index, _tile_info
         self.features = features
+        # AFTERSTATE encoding (2026-10-12): the position is the END of the
+        # mover's turn, in the mover's frame -- what the 2-ply search scores.
+        # The spent dice say nothing about it, so the four dice inputs are a
+        # constant (values 0, both used) instead of whatever was rolled.
+        self.afterstate = bool(afterstate)
         feature_dims(features)                      # validates the name
         self.tile_index, self.tile_info, self.tile_edge_index = \
             build_tile_index(tile_neighbors_path)
@@ -529,6 +535,8 @@ class BoardEncoder:
 
         p2t, t2p = encode_piece_tile_edges(all_pieces, self.tile_index)
         global_feats = encode_global_features(board)
+        if self.afterstate:
+            global_feats[0:4] = (0.0, 0.0, 1.0, 1.0)
 
         if self.features != 'v1':
             tile_feats, piece_feats, global_feats = self._extras(
