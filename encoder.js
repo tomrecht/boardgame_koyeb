@@ -222,7 +222,7 @@ function afterstateSnapshot(graph, snapshot) {
 /* The encoder's whole input for one position.
    opts (from the model's sidecar, see infer.js; all optional, so a call with
    none is exactly the shipped v1 turn-start encoding):
-     features   'v1' | 'A' | 'AB' -- appends features_v2.js's columns
+     features   'v1' | 'A' | 'AB' | 'A2' | 'AB2' -- appends features_v2.js's columns
      afterstate true for a net trained on end-of-turn positions
      table      endgame_table.json's object (A / AB only) */
 function encode(staticData, snapshot, currentPlayer, opts) {

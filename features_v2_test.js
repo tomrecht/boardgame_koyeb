@@ -31,6 +31,9 @@ const modes = {
     A: { features: 'A', table },
     AB: { features: 'AB', table },
     AB_after: { features: 'AB', afterstate: true, table },
+    A2: { features: 'A2', table },
+    AB2: { features: 'AB2', table },
+    AB2_after: { features: 'AB2', afterstate: true, table },
 };
 const stats = {};
 const firstFail = {};

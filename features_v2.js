@@ -33,7 +33,9 @@ const FV2 = (() => {
     const HOME_TO_GOAL = 7;
     const ROLLS = [];
     for (let a = 1; a <= 6; a++) for (let b = a; b <= 6; b++) ROLLS.push([a, b, (a === b ? 1 : 2) / 36.0]);
-    const EXTRA = { v1: [0, 0, 0], A: [1, 1, 14], AB: [1, 5, 86] };
+    const EXTRA = { v1: [0, 0, 0], A: [1, 1, 14], AB: [1, 5, 86], A2: [1, 1, 16], AB2: [1, 5, 88] };
+    const HAS_THREATS = (f) => f === 'AB' || f === 'AB2';
+    const HAS_NUMBERED_SAVEABLE = (f) => f === 'A2' || f === 'AB2';
 
     const other = (p) => (p === 'white' ? 'black' : 'white');
 
@@ -244,6 +246,12 @@ const FV2 = (() => {
         ];
     }
 
+    /* numbered_saveable: [mine, theirs], unsaved NUMBERED pieces on their own goal, /6. */
+    function numberedSaveable(ctx, currentPlayer) {
+        return [currentPlayer, other(currentPlayer)].map(pl => ctx.pieces.filter(p =>
+            p.player === pl && p.number <= 6 && !p.saved && isSaveable(ctx, p)).length / 6.0);
+    }
+
     // ------------------------------------------------------------------ AB
 
     /* _enemy_movers: {cnt: Map(dist -> n), dh, nHome, oblig}. */
@@ -439,14 +447,15 @@ const FV2 = (() => {
         const ctx = context(graph, snapshot, pieces);
         const tile = oppWallFlags(ctx, currentPlayer);
         let th = null;
-        if (features === 'AB') th = threatFeatures(ctx);
+        if (HAS_THREATS(features)) th = threatFeatures(ctx);
         const piece = allPieces.map(p => {
             const row = [ownGoalDist(ctx, p)];
             if (th) row.push(...(th.get(p) || [0.0, 0.0, 0.0, 0.0]));
             return row;
         });
         let glob = globalExtras(ctx, currentPlayer, table);
-        if (features === 'AB')
+        if (HAS_NUMBERED_SAVEABLE(features)) glob = glob.concat(numberedSaveable(ctx, currentPlayer));
+        if (HAS_THREATS(features))
             glob = glob.concat(rollOpportunities(ctx, currentPlayer), rollOpportunities(ctx, other(currentPlayer)));
         return { tile, piece, global: glob };
     }
