@@ -575,12 +575,43 @@ on main's CLAUDE.md, "Next training run". What is here:
   candidates exactly as the shipped agent does (same frame mismatch), and
   training moves it to the right frame. Watch the first gates: the targets'
   meaning changed, so an early dip is possible.
-  **NOT DONE -- needed before an afterstate net can ship:** the JS side.
-  `encoder.js` must take the same flag (dice inputs constant), `agent.js` must
-  apply the last-piece rule before encoding a candidate (as `_encode_after`), and
-  the ONNX export must carry the flag (e.g. a sidecar JSON next to model.onnx,
-  read by local_agent.js) -- together with the features_v2 JS twin, which is
-  not built either. `OnnxBackend` in Python also reads no flag yet.
+  **SMOKE RUN WITH THE REAL DRIVER (2026-10-12, `SMOKE=1 ITERS=2`, warm start
+  `blend_AB.pt`): clean, and it caught TWO BUGS, both fixed:** (1) the hedge's
+  weight average (`league_run._blend`) indexed the parent's state dict by the
+  candidate's keys, and the warm-start parent has no `afterstate_flag` ->
+  KeyError on the first gate; the flag is now taken from the candidate.
+  (2) a REJECT reloads the champion's weights into the live model, and the
+  warm-start champion carries no flag (= turn start) -- the run would have
+  silently switched its workers to turn-start records while training still
+  encoded afterstates. `td_selfplay_loop` now fixes the run's frame at the
+  start and re-applies it after every weight load (promote / fork / revert).
+  Measured: iteration 1 CAP -> kept, iteration 2 pre-screen REJECT -> reverted,
+  live checkpoint still `afterstate_flag` 1.0; a resume (`ITERS=3`, same
+  command) prints "frame: AFTERSTATE (end of turn)".
+  **EXPORT: `onnx_export.py` now builds the net's OWN encoder** (it was v1
+  always -- an A/AB export would have failed its own verification) **and writes
+  a SIDECAR `model.json`** (`{features, afterstate, source}`) beside the .onnx;
+  `OnnxBackend` reads it (absent = v1 turn start, as before). Measured on
+  `blend_AB.pt` with the flag set: export matches torch to 6.7e-8 across batch
+  sizes, sidecar `{"features": "AB", "afterstate": true}`, `GNNAgent` on the
+  .onnx reports afterstate True.
+  **THE JS SIDE IS BUILT on branch `js-features-v2`** (off `testing`; see its
+  CLAUDE.md): `features_v2.js` (twin of features_v2.py), `encoder.js` opts
+  `{features, afterstate, table}`, `infer.js` reads the sidecar, the engine
+  snapshot carries the no-save counter. Parity: `dump_v2_fixture.py` here writes
+  the fixture (owner's pool positions, random end-of-turn boards, 80 played-into
+  last-piece positions); JS = Python on all 680 in v1 / A / AB / AB-afterstate.
+  **SHIPPING AN A/AB OR AFTERSTATE NET:** `python3 onnx_export.py <ckpt>
+  model.onnx` (writes model.json too) -> copy model.onnx + model.json (and
+  endgame_table.json for A/AB) onto the JS branch / main -> update
+  `REC_MODEL_TAG` -> bump sw.js's cache.
+  **HOW MUCH THE MISMATCH COSTS THE CURRENT NET (frame_probe.py on main,
+  2026-10-12):** on the 559-position calibration benchmark the same deployed net
+  scored in its TRAINED frame (opponent's turn start, 21 rolls averaged,
+  negated) tracks the playouts at corr +0.238 / slope 0.65, against +0.159 /
+  0.50 as the search scores today -- +0.079 (95% bootstrap +0.009..+0.150). The
+  two frames disagree on which move is better in 103 of 559. Move-change rate on
+  owner's turns: see main's CLAUDE.md.
   **Re-check main's `_strands_last_piece` rule on the first afterstate net**
   (owner): it should no longer be needed.
 

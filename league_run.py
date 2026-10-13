@@ -245,7 +245,10 @@ def main():
     avg_state = {'sd': None}
 
     def _blend(a, b, beta):
-        return {k: (beta * a[k] + (1 - beta) * b[k]) if a[k].dtype.is_floating_point else b[k]
+        # The frame flag is not a weight: take the candidate's (the warm-start
+        # champion has none at all).
+        return {k: (beta * a[k] + (1 - beta) * b[k])
+                if k in a and k != 'afterstate_flag' and a[k].dtype.is_floating_point else b[k]
                 for k in b}
 
     def gate_fn(model, champ_sd, it):

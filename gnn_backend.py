@@ -55,7 +55,13 @@ class OnnxBackend:
     def __init__(self, onnx_path):
         import onnxruntime as ort
         from encoder import BoardEncoder
-        self.encoder = BoardEncoder()
+        # The sidecar onnx_export.py writes (model.json beside model.onnx) says
+        # which encoder the net needs; absent = v1 turn start, as before.
+        import json
+        side = onnx_path[:-5] + '.json' if onnx_path.endswith('.onnx') else onnx_path + '.json'
+        meta = json.load(open(side)) if os.path.exists(side) else {}
+        self.encoder = BoardEncoder(features=meta.get('features', 'v1'),
+                                    afterstate=bool(meta.get('afterstate', False)))
         opts = ort.SessionOptions()
         # One thread: the app scores many small batches inside a search loop, so
         # per-call thread pool overhead costs more than the parallelism gains —

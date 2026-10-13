@@ -183,8 +183,13 @@ def run_td_selfplay(model,
     except Exception:
         init_pool(10)
 
-    encoder = BoardEncoder(features=getattr(model, "features", "v1"),
-                           afterstate=getattr(model, "afterstate", False))
+    # The run's FRAME (turn start / afterstate) is fixed here. Loading a
+    # checkpoint's weights into the live model also loads its flag -- and the
+    # warm-start champion has none (= turn start) -- so every load below puts
+    # the run's frame back; otherwise a revert would silently switch the
+    # workers to turn-start records while this encoder stays afterstate.
+    frame = bool(getattr(model, "afterstate", False))
+    encoder = BoardEncoder(features=getattr(model, "features", "v1"), afterstate=frame)
     board = Board()
     optimizer = torch.optim.Adam(model.parameters(), lr=lr)
 
@@ -299,6 +304,8 @@ def run_td_selfplay(model,
             psd = (gate_report or {}).get('promote_sd')
             if psd is not None:
                 model.load_state_dict(psd)
+                if hasattr(model, 'afterstate'):
+                    model.afterstate = frame
                 optimizer = torch.optim.Adam(model.parameters(), lr=lr)
             champion_sd = _cpu_state_dict(model)
             torch.save(champion_sd, f'{save_prefix}_champion.pt')
@@ -337,9 +344,13 @@ def run_td_selfplay(model,
                 labels = sorted(revert_fork_sds.keys())
                 fork_label = _random.Random(it).choice(labels)
                 model.load_state_dict(revert_fork_sds[fork_label])
+                if hasattr(model, 'afterstate'):
+                    model.afterstate = frame
                 fork_note = f" reverted to fork '{fork_label}'"
             else:
                 model.load_state_dict(champion_sd)
+                if hasattr(model, 'afterstate'):
+                    model.afterstate = frame
                 fork_note = " reverted live model to champion weights."
             optimizer = torch.optim.Adam(model.parameters(), lr=lr)
             print(f"  Not promoted ({wr_txt}). "

@@ -159,9 +159,19 @@ def verify_onnx(path, model, encoder, atol=1e-4):
     return worst
 
 
+def sidecar_path(onnx_path):
+    return onnx_path[:-5] + '.json' if onnx_path.endswith('.onnx') else onnx_path + '.json'
+
+
 def export(ckpt, out_path):
-    encoder = BoardEncoder()
     model = load_model(ckpt).cpu().eval()
+    # The net's OWN encoder: its feature set (v1 / A / AB) and frame (turn start
+    # / afterstate) come with the checkpoint. A v1 encoder here would fail the
+    # verification below on any A/AB net (input widths), and the app would not
+    # know to switch encoders -- hence the sidecar written at the end.
+    features = getattr(model, 'features', 'v1')
+    afterstate = bool(getattr(model, 'afterstate', False))
+    encoder = BoardEncoder(features=features, afterstate=afterstate)
     wrapper = _ExportGNN(model, encoder.tile_edge_index).eval()
 
     gap = verify(model, wrapper, encoder)
@@ -182,9 +192,16 @@ def export(ckpt, out_path):
         do_constant_folding=True,
     )
     gap = verify_onnx(out_path, model, encoder)
-    import os
+    import os, json
     print(f'wrote {out_path} ({os.path.getsize(out_path) / 1e6:.2f} MB), '
           f'matches torch across batch sizes (max diff {gap:.2e})')
+    # SIDECAR, read by infer.js and gnn_backend.OnnxBackend: which encoder the net
+    # needs. Ship it beside model.onnx (and endgame_table.json for A / AB).
+    meta = {'features': features, 'afterstate': afterstate,
+            'source': os.path.basename(ckpt)}
+    with open(sidecar_path(out_path), 'w') as f:
+        json.dump(meta, f)
+    print(f'wrote {sidecar_path(out_path)}: {meta}')
 
 
 if __name__ == '__main__':
