@@ -504,6 +504,45 @@ with it in mind.** Assessment and the concrete implications:
 
 ## Current state
 
+- **JS SIDE FOR THE NEXT NETS: features_v2 + AFTERSTATE (2026-10-12/13, branch
+  `js-features-v2`, NOT merged -- merge when a v2 or afterstate net ships).** The
+  training branch `train-features-v2` now trains A/AB feature sets and, by default,
+  AFTERSTATE nets (trained on the end-of-turn position the search scores; see the
+  t49 entry below and that branch's runbook). This branch makes the app able to
+  run them; with today's net it changes nothing.
+  **Pieces:** `features_v2.js` (line-for-line twin of features_v2.py: opponent wall
+  flag, own-goal distance, 14 bookkeeping globals incl. the endgame-table value,
+  AB threats and 72 roll opportunities; distance and choke caches kept across
+  positions as in Python); `encoder.js` `encode(..., opts)` with `{features,
+  afterstate, table}` -- afterstate applies the last-piece rule to the snapshot
+  (as game.py's update_state does in training) and makes the four dice inputs a
+  constant; **`model.json`, a sidecar beside model.onnx** (`{features, afterstate,
+  source}`, written by the training branch's `onnx_export.py`) read by
+  `infer.js`, which then fetches `endgame_table.json` only for A/AB; the engine
+  snapshot carries the no-save counter (`engineState` <- `gs.noSaveTurns`).
+  `build_web.py` ships model.json and features_v2.js, adds the table only when
+  model.json says A/AB, and **refuses to build an A/AB model unless sw.js
+  precaches `./endgame_table.json`** (offline the computer could not move);
+  `sw.js` precaches model.json and features_v2.js.
+  **Measured:** `features_v2_test.js` vs the training branch's `dump_v2_fixture.py`
+  (owner's pool positions, random end-of-turn boards, 80 played-into last-piece
+  positions): **680/680 identical in v1, A, AB and AB-afterstate**; a control
+  with afterstate off mismatches all 680; the new inputs are non-zero in 649
+  (threats) / 680 (roll opps) / 114 (table) / 266 (opp walls) / 246 (no-save) of
+  680. Agent fixtures unchanged: 50/50, lookahead 176/176, last-piece 177/177.
+  **In the real page (`model_e2e.mjs`):** today's net + v1 sidecar -> config v1,
+  JS vs Python ORT scores max diff 1.2e-7 on 45 positions, 42 self-play moves at
+  median 308 ms / p90 1.12 s (= the recorded 301 / 1.10 baseline). An AB
+  afterstate net (`blend_AB.pt` with the flag set, exported) -> config AB +
+  afterstate, table fetched once, scores max diff 1.2e-7 on 60 positions incl.
+  15 last-piece ones, 42 moves at **median 354 ms / p90 1.54 s / max 3.0 s**
+  (+15% / +37% over v1, desktop; a phone scales by its usual factor).
+  **TO SHIP a trained net:** on `train-features-v2`, `python3 onnx_export.py
+  <ckpt> model.onnx` (writes model.json) -> copy both here (+ for A/AB add
+  `'./endgame_table.json'` to sw.js SHELL; the build refuses otherwise) -> bump
+  sw.js CACHE and `REC_MODEL_TAG` -> `node model_e2e.mjs <label> 40` with
+  `MODEL=` -> merge to testing.
+
 - **LAST-PIECE RULE READ A STALE STAGE IN THE AGENT'S ENGINES (owner, 2026-10-12;
   fixed in engine.js + game.py).** Owner's game 19831a60 t49: black's last two
   pieces 6@G6 + blank@G3, roll 1-3 -> banked the blank, stepped the 6 off to 6.10;
