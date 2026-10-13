@@ -145,15 +145,20 @@ def replay(rec, verbose=False):
                 roll = 0                      # a block-save costs both dice
             else:
                 board.get_reachable_tiles_by_dice(piece)
-                for r, dests in (piece.reachable_tiles or {}).items():
-                    for d in dests:
-                        if (d == 'save' and dest == 'save') or (
-                                d != 'save' and dest != 'save'
-                                and (d.ring, d.pos) == dest):
-                            roll = r
-                            break
-                    if roll is not None:
-                        break
+                rolls = [r for r, dests in (piece.reachable_tiles or {}).items()
+                         if any((d == 'save' and dest == 'save') or (
+                                d != 'save' and dest != 'save' and (d.ring, d.pos) == dest)
+                                for d in dests)]
+                # A SAVE's die is not recorded, and game.js's Piece.save picks it:
+                # a blank avoids a die an own numbered piece on its goal needs
+                # (numberedPieceNeedsDie). Taking the first legal die instead spent
+                # that die and failed the numbered save after it (2 of owner's games).
+                if dest == 'save' and len(rolls) > 1:
+                    needed = {q.number for q in board.pieces
+                              if q.player == colour and q.number <= 6 and q.tile is not None
+                              and q.tile.type == 'save' and q.tile.number == q.number}
+                    rolls = [r for r in rolls if r not in needed] or rolls
+                roll = rolls[0] if rolls else None
             if roll is None and dest not in ('save', 0):
                 # BACKWARD TOLERANCE for logs written before sum moves were
                 # recorded as two halves. game.py has no single "sum move", so a

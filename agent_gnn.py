@@ -138,6 +138,38 @@ def prefilter_kwargs(spec):
             'prefilter_top_k': k, 'prefilter_min_k': m}
 
 
+def _strands_last_piece(board, pair, player):
+    """KEEP A LAST NUMBERED PIECE ON ITS GOAL (owner, 2026-10-12). On its own
+    goal it turns blank at our next turn start (the last-piece rule) and banks in
+    1.0-1.64 turns; stepped off, it stays numbered and needs its goal AND an exact
+    die (3.27 turns from the goal). Owner's game 19831a60 t49: the net, trained
+    while game.py wrongly blanked such a piece anyway, scored stepping the last 6
+    off goal 6 level with staying. A candidate that leaves the mover with one
+    unsaved piece, numbered, which began the turn on its own goal and is now off
+    it, is dropped unless the pair captured, whenever any candidate survives.
+    RE-CHECK ON ANY NET TRAINED AFTER THE FIX (2c8a0f7): it may not need this.
+    Twin of strandsLastPiece in agent.js. Call with the board IN the pair's
+    resulting position, the pair's moves being the last entries of board.moves."""
+    k = sum(1 for m in pair if m != (0, 0, 0) and m != (1, 1, 1))
+    if not k:
+        return False
+    save_rack = board.get_save_rack(player)
+    left = [p for p in board.pieces if p.player == player and p.rack is not save_rack]
+    if len(left) != 1 or left[0].number > 6:
+        return False
+    piece = left[0]
+    if piece.tile is not None and piece.tile.type == 'save' and piece.tile.number == piece.number:
+        return False
+    done = board.moves[-k:]
+    if any(mv['captured_piece'] is not None for mv in done):
+        return False
+    own = [mv for mv in done if mv['piece'] is piece]
+    if not own:
+        return False
+    t = own[0]['origin_tile']
+    return t is not None and t.type == 'save' and t.number == piece.number
+
+
 def _opponent_wins_next_turn_regardless(board, player):
     """OPPONENT CERTAIN TO WIN NEXT TURN (owner, 2026-10-01). Their last one or
     two pieces are blanks on goal 1, so ANY roll banks them, and nothing we do can
@@ -155,10 +187,59 @@ def _opponent_wins_next_turn_regardless(board, player):
     return all(p.number > 6 and p.tile.type == 'save' and p.tile.number == 1 for p in left)
 
 
+def _opponent_near_finish(board, player):
+    """ENDGAME LOOKAHEAD TRIGGER (owner, 2026-10-08): the opponent has at most
+    two unsaved pieces, so their next turn may end the game (two dice bank at
+    most two). Only then does a ply over their 21 rolls reach exact terminal
+    margins, which is what makes it worth its cost. Twin of
+    opponentNearFinish in agent.js."""
+    opp_saved = board.black_saved if player == 'white' else board.white_saved
+    return NUM_PIECES - len(opp_saved) <= 2
+
+
 def _own_saves(pair, player):
     return sum(1 for m in pair
                if isinstance(m, tuple) and len(m) == 3 and m[1] == 'save'
                and isinstance(m[0], tuple) and m[0][0] == player)
+
+
+def _quiet_pair(board, pair, player):
+    """...AND NO SHUFFLING (owner, 2026-10-07). Among the max-save pairs when the
+    game is lost, keep those where every half is a pass, an own save, or a tile
+    move onto a goal the piece can bank from (own goal if numbered, from anywhere;
+    any goal if blank, but not from another goal -- owner: that is shuffling);
+    an entry onto home counts (the rack obligation). If none qualifies the
+    max-save set stands. Twin of quietPair in agent.js."""
+    # Call with the board at the TURN START: a half's origin is the piece's tile
+    # there, or the first half's destination if the same piece moved first.
+    for i, m in enumerate(pair):
+        if m == (0, 0, 0):
+            continue
+        if not (isinstance(m[0], tuple) and m[0][0] == player):
+            return False
+        if m[1] == 'save':
+            continue
+        if not (isinstance(m[1], tuple) and m[2]):
+            return False
+        if m[1] == (0, 0):
+            continue
+        t = board.get_tile(*m[1])
+        if t is None or t.type != 'save':
+            return False
+        if m[0][1] <= 6:
+            if t.number != m[0][1]:
+                return False
+            continue
+        # A blank: any goal, but not from another goal -- that is shuffling.
+        prev = pair[0] if i == 1 else None
+        if prev is not None and isinstance(prev[0], tuple) and prev[0] == m[0] and isinstance(prev[1], tuple):
+            frm = board.get_tile(*prev[1])
+        else:
+            pc = next((p for p in board.pieces if p.player == m[0][0] and p.number == m[0][1]), None)
+            frm = pc.tile if pc is not None else None
+        if frm is not None and frm.type == 'save':
+            return False
+    return True
 
 
 class GNNAgent:
@@ -175,13 +256,15 @@ class GNNAgent:
                  first_move_prefilter=0, hand_rules=True):
         # HAND-CODED PLAY RULES (owner, 2026-10-01/02): `_wastes_save` (never pass
         # a die that could still save a piece) and the bank-the-most rule when
-        # the opponent's last one or two blanks sit on goal 1. ON by default because the
+        # the opponent's last one or two blanks sit on goal 1 (with its quiet-pair
+        # filter), and `_strands_last_piece` (2026-10-12). ON by default because the
         # deployed agent uses them; the TRAINING pipeline (generation and gating)
         # passes hand_rules=False so the net is measured on what it learned for
         # itself (owner wants to know whether a trained net picks these up).
         # The two can be set separately via the attributes below.
         self.rule_no_wasted_save = bool(hand_rules)
         self.rule_bank_most_when_lost = bool(hand_rules)
+        self.rule_keep_last_piece = bool(hand_rules)
         # Branch-reached counters, so a test can prove the switch gates the code
         # path rather than merely that the outcome was legal.
         self.rule_stats = {'wastes_save_checked': 0, 'wastes_save_dropped': 0,
@@ -239,6 +322,10 @@ class GNNAgent:
         # -save dedupe (a hard game invariant) stays on regardless. Set
         # enable_never_good=True to re-enable the heuristic corrections.
         self.enable_never_good = False
+        # Endgame lookahead (see _opponent_near_finish / _select_with_lookahead).
+        # Off by default here so training and arena code are unchanged.
+        self.endgame_lookahead = False
+        self._in_lookahead = False
         # Diagnostic: when True, log whenever the chosen pair saves nothing yet a
         # save was legally available, distinguishing a value-head error (save
         # scored but not chosen) from a candidate drop (save never reached the
@@ -377,11 +464,17 @@ class GNNAgent:
         if not isinstance(moves, (list, set)) or not all(isinstance(m, tuple) for m in moves):
             raise ValueError('Invalid moves format: expected a list or set of tuples.')
 
+        if (self.endgame_lookahead and not self._in_lookahead
+                and _opponent_near_finish(board, player)):
+            return self._select_with_lookahead(moves, board, player, return_scores,
+                                               difficulty, deadline)
+
         draw_legal = (1, 1, 1) in moves
         draw_pair  = ((1, 1, 1), (0, 0, 0))
         loss_certain = (self.rule_bank_most_when_lost
                         and _opponent_wins_next_turn_regardless(board, player))
         rule_wastes = self.rule_no_wasted_save
+        rule_strands = self.rule_keep_last_piece
 
         prefilter = self.use_prefilter and self.heuristic is not None
 
@@ -390,6 +483,7 @@ class GNNAgent:
         outcome_keys = []   # resulting piece placement per candidate, dice ignored
         scored       = []   # (heuristic_score, pair)        (filled when prefiltering)
         wastes       = []   # per move_keys entry: leaves a die unused with a save on
+        strands      = []   # per move_keys entry: steps a last numbered piece off its goal
 
         # Move orders transpose heavily -- about half of a midgame turn's
         # candidate pairs land on a position some other pair already reached --
@@ -411,6 +505,7 @@ class GNNAgent:
                 encoded_list.append(self._encode_after(board, player))
                 outcome_keys.append(_piece_locs(board))
                 wastes.append(rule_wastes and _wastes_save(board, pair, player))
+                strands.append(rule_strands and _strands_last_piece(board, pair, player))
 
         # --- Pass move ---
         if (0, 0, 0) in moves:
@@ -475,7 +570,8 @@ class GNNAgent:
             # one that ENABLES a save as the pair's second half. "Never cull a
             # save" should hold by construction rather than by luck.
             keep += [m for _, m, e in first_scored
-                     if m not in kept and ((isinstance(m, tuple) and m[1] == 'save') or e)]
+                     if m not in kept and ((isinstance(m, tuple) and m[1] == 'save') or e
+                                           or (loss_certain and _quiet_pair(board, (m,), player)))]
             moves_iter = keep
 
         truncated = False
@@ -549,8 +645,10 @@ class GNNAgent:
             # can undervalue saves relative to flashier non-save moves, which
             # would otherwise silently drop a legal save before the GNN ever
             # sees it. Always keep save-containing pairs; cull only the rest.
-            save_scored  = [(s, p) for s, p in scored if self._pair_has_save(p)]
-            other_scored = [(s, p) for s, p in scored if not self._pair_has_save(p)]
+            # With the game lost, a quiet pair (_quiet_pair) is exempt too.
+            exempt = lambda p: self._pair_has_save(p) or (loss_certain and _quiet_pair(board, p, player))
+            save_scored  = [(s, p) for s, p in scored if exempt(p)]
+            other_scored = [(s, p) for s, p in scored if not exempt(p)]
             top_pairs = [p for _, p in save_scored] + self._select_filtered(other_scored)
             self.dbg_kept_total += len(top_pairs)
             self.dbg_kept_calls += 1
@@ -563,6 +661,7 @@ class GNNAgent:
                 encoded_list.append(self._encode_after(board, player))
                 outcome_keys.append(_piece_locs(board))
                 wastes.append(rule_wastes and _wastes_save(board, pair, player))
+                strands.append(rule_strands and _strands_last_piece(board, pair, player))
                 while len(board.moves) > base:
                     board.undo_last_move()
 
@@ -592,12 +691,13 @@ class GNNAgent:
         final_scores = scores * SCORE_SCALE
 
         def keep_only(keep):
-            nonlocal move_keys, outcome_keys, wastes, final_scores
+            nonlocal move_keys, outcome_keys, wastes, strands, final_scores
             if len(keep) == len(move_keys):
                 return
             if len(outcome_keys) == len(move_keys):
                 outcome_keys = [outcome_keys[i] for i in keep]
             wastes = [wastes[i] for i in keep]
+            strands = [strands[i] for i in keep]
             move_keys = [move_keys[i] for i in keep]
             final_scores = final_scores[keep]
 
@@ -609,6 +709,11 @@ class GNNAgent:
                 self.rule_stats['wastes_save_dropped'] += len(move_keys) - len(keep)
                 keep_only(keep)
 
+        # Never step a last numbered piece off its own goal (see _strands_last_piece).
+        keep = [i for i, x in enumerate(strands) if not x]
+        if keep:
+            keep_only(keep)
+
         # Lost whatever happens: keep only the pairs that bank the most. Twin of
         # the block in agent.js's selectMovePair; see the helper's docstring.
         if loss_certain:
@@ -618,6 +723,9 @@ class GNNAgent:
             self.rule_stats['bank_most_fired'] += 1
             self.rule_stats['bank_most_dropped'] += len(move_keys) - len(keep)
             keep_only(keep)
+            quiet = [i for i, pr in enumerate(move_keys) if _quiet_pair(board, pr, player)]
+            if quiet:
+                keep_only(quiet)
 
         best_idx     = final_scores.argmax().item()
 
@@ -703,6 +811,131 @@ class GNNAgent:
         if self.enable_never_good:
             chosen = self._fix_never_good(chosen, board, player)
         return self._dedupe_save_pair(chosen)
+
+    def _select_with_lookahead(self, moves, board, player, return_scores=False,
+                               difficulty=None, deadline=None):
+        """ENDGAME LOOKAHEAD (owner, 2026-10-08). With the opponent near the
+        finish the net valued a piece stepped onto a goal as nearly a saved
+        piece, even when the opponent banks out next turn and it then counts
+        for nothing. On a roll that finishes them the result is EXACT -- they
+        win by our unsaved count, however they do it -- so each candidate the
+        shallow search keeps (same prefilter, same rules) is rescored as
+
+            P(finish) * exact final margin + (1 - P(finish)) * net value
+
+        with P(finish) the share of the opponent's 21 rolls that let them bank
+        out from the position after the candidate (so a capture or a wall that
+        stops them counts). Move generation only; no extra net evaluations.
+        Scores stay in the shallow search's units (raw * SCORE_SCALE)."""
+        stages0 = dict(board.game_stages)
+        self._in_lookahead = True
+        try:
+            ranked = self.select_move_pair(moves, board, player, return_scores=True,
+                                           deadline=deadline)
+        finally:
+            self._in_lookahead = False
+            board.game_stages.update(stages0)
+        if not isinstance(ranked, list):
+            return ranked
+        if ranked and ranked[0][0] == float('inf'):
+            return ranked if return_scores else ranked[0][1]
+        draw_pair = ((1, 1, 1), (0, 0, 0))
+        draw_legal = any(p == draw_pair for _, p in ranked)
+        scored = [(v, p) for v, p in ranked if p != draw_pair]
+        if not scored:
+            if return_scores:
+                return ranked
+            return draw_pair if draw_legal else ((0, 0, 0), (0, 0, 0))
+
+        opp = 'white' if player == 'black' else 'black'
+        my_saved = board.white_saved if player == 'white' else board.black_saved
+        root_len = len(board.moves)
+        vals, cands, outcomes, shallow, memo = [], [], [], [], {}
+        try:
+            for v, pair in scored:
+                for m in pair:
+                    if m != (0, 0, 0):
+                        board.apply_move(m, switch_turn=False)
+                key = _piece_locs(board)
+                if key not in memo:
+                    memo[key] = (self._opp_finish_prob(board, opp),
+                                 -(NUM_PIECES - len(my_saved)) / NUM_PIECES * SCORE_SCALE)
+                while len(board.moves) > root_len:
+                    board.undo_last_move()
+                p_fin, v_fin = memo[key]
+                vals.append(p_fin * v_fin + (1.0 - p_fin) * v)
+                shallow.append(v)
+                cands.append(pair)
+                outcomes.append(key)
+        finally:
+            board.game_stages.update(stages0)
+
+        if return_scores:
+            out = list(zip(vals, cands))
+            if draw_legal:
+                out.append((0.0, draw_pair))
+            out.sort(key=lambda x: (-x[0], _pair_sort_key(x[1])))
+            return out
+        if len(cands) == 1 and not draw_legal:
+            return self._dedupe_save_pair(cands[0])
+        scores = np.asarray(vals, dtype=np.float64)
+        if draw_legal and 0.0 >= scores.max():
+            return draw_pair
+        best = self._pick_move_index(scores, difficulty)
+        top = float(scores[best])
+        tied = [i for i, v in enumerate(vals) if v == top]
+        if len(tied) > 1:
+            # Certain to be over (P(finish) = 1) ties every pair with the same
+            # saves; the net's own score then decides, as without the lookahead.
+            best = min(tied, key=lambda i: (-shallow[i], _pair_sort_key(cands[i])))
+        same = [i for i, k in enumerate(outcomes) if k == outcomes[best]]
+        if len(same) > 1:
+            best = min(same, key=lambda i: (_pair_relocations(cands[i]),
+                                            _pair_sort_key(cands[i])))
+        return self._dedupe_save_pair(cands[best])
+
+    def _opp_finish_prob(self, board, opp):
+        """Probability that `opp`, moving next from this position (our pair
+        applied, turn not yet switched), can bank all their pieces on the roll
+        they get. Board is left exactly as found."""
+        saved = self._enter_opponent_turn_deterministic(board)
+        base = len(board.moves)
+        dice = board.dice
+        p = 0.0
+        try:
+            for d1, d2, w in self._DICE_ROLLS_21:
+                dice[0].number, dice[0].used = d1, False
+                dice[1].number, dice[1].used = d2, False
+                if self._can_finish(board, opp, base):
+                    p += w
+        finally:
+            while len(board.moves) > base:
+                board.undo_last_move()
+            self._restore_turn_state(board, saved)
+        return p
+
+    def _can_finish(self, board, opp, base):
+        for m in board.get_valid_moves():
+            if m in ((0, 0, 0), (1, 1, 1)) or not (isinstance(m, tuple) and len(m) == 3):
+                continue
+            board.apply_move(m, switch_turn=False)
+            won = board.check_game_over()[0] == opp
+            if not won and not all(d.used for d in board.dice):
+                mid = len(board.moves)
+                for m2 in board.get_valid_moves():
+                    if m2 in ((0, 0, 0), (1, 1, 1)) or not (isinstance(m2, tuple) and len(m2) == 3):
+                        continue
+                    board.apply_move(m2, switch_turn=False)
+                    won = board.check_game_over()[0] == opp
+                    while len(board.moves) > mid:
+                        board.undo_last_move()
+                    if won:
+                        break
+            while len(board.moves) > base:
+                board.undo_last_move()
+            if won:
+                return True
+        return False
 
     @staticmethod
     def _pair_has_save(pair):
@@ -1407,7 +1640,8 @@ class GNNAgent:
         [3]=die2_used, so a variant shares every expensive tensor
         (tile/piece features, edges) by reference and clones only the
         11-float global vector."""
-        g = enc['global_feats'].clone()
+        g = enc['global_feats']
+        g = g.clone() if hasattr(g, 'clone') else g.copy()   # torch or numpy
         g[0] = d1 / 6.0
         g[1] = d2 / 6.0
         g[2] = u1

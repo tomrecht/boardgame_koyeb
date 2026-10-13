@@ -1870,11 +1870,81 @@ function _exitFullscreen() {
 // On pointerUP, not down: entering fullscreen resizes the viewport, and doing
 // that mid-gesture ate the first drag of a session (measured -- the drag simply
 // did nothing). Waiting for the release lets the first gesture finish first.
+// NOT one-shot (owner, 2026-10-07): on Android Chrome a back gesture in
+// fullscreen EXITS fullscreen rather than navigating, so the first accidental
+// swipe silently dropped it for the rest of the session and the next one left
+// the page. While the setting is on, any tap puts it back. Turning the setting
+// off in Settings writes '0', which this reads on every tap.
 function _armFullscreenOnFirstGesture() {
-    if (!_isPhone() || !getFullscreenPref() || !_fullscreenSupported()) return;
-    const go = () => { _enterFullscreen(); window.removeEventListener('pointerup', go, true); };
-    window.addEventListener('pointerup', go, true);
+    if (!_isPhone() || !_fullscreenSupported()) return;
+    window.addEventListener('pointerup', () => {
+        if (getFullscreenPref() && !document.fullscreenElement) _enterFullscreen();
+    }, true);
 }
+
+// "In progress" = anything has entered or been banked. There is no move history
+// on the frontend Game (that lives on the ported engine), and a freshly dealt
+// board has nothing to lose, so ask the board itself.
+function _gameHasProgress() {
+    const g = _currentGame();
+    return !!(g && !g.gameOver && !_gameFrozen &&
+              (g.pieces.some(p => p.currentTile) ||
+               g.whiteSavedRack.pieces.length || g.blackSavedRack.pieces.length));
+}
+
+// BACK GUARD. Android's gesture-nav back (and iOS Safari's edge swipe) cannot be
+// stopped by the page -- ARCHIVE.md, 2026-08-14 -- and a tap near the edge can
+// read as one, navigating away and losing the game. What the page CAN do is make
+// "back" land on its own history entry: while a game is in progress a dummy
+// entry sits on top, so an accidental back only pops it (popstate, same document)
+// and says so; a second back really leaves. Pushed from a pointerup because
+// Chrome skips history entries added without user activation. If the pop lands
+// when no game is in progress, carry on navigating back as asked.
+let _backGuardOn = !!(history.state && history.state.quahuruGuard);
+function _armBackGuard() {
+    if (_backGuardOn || !_gameHasProgress()) return;
+    try { history.pushState({ quahuruGuard: 1 }, ''); _backGuardOn = true; } catch (e) {}
+}
+window.addEventListener('pointerup', _armBackGuard, true);
+window.addEventListener('popstate', (ev) => {
+    if (ev.state && ev.state.quahuruGuard) { _backGuardOn = true; return; }  // forward onto it
+    if (!_backGuardOn) return;
+    _backGuardOn = false;
+    if (!_gameHasProgress()) { history.back(); return; }
+    flashNotice('Back again to leave \u2014 your game is saved.', 3500);
+});
+// THE ANDROID APP (Capacitor, @capacitor/app): back goes to the app, not the
+// WebView's history, so none of the above applies there -- and with a listener
+// registered the app decides everything. During a game the first back only says
+// so; a second within BACK_EXIT_MS sends the app to the background (minimise,
+// not exit, so the game is still there; autosave covers Android reclaiming it).
+// With no game in progress back minimises straight away, like any app.
+const BACK_EXIT_MS = 2500;
+let _appBackAt = 0;
+(function _appBackButton() {
+    const App = window.Capacitor && window.Capacitor.Plugins && window.Capacitor.Plugins.App;
+    if (!App || !App.addListener) return;
+    App.addListener('backButton', () => {
+        const now = Date.now();
+        if (!_gameHasProgress() || now - _appBackAt < BACK_EXIT_MS) {
+            _appBackAt = 0;
+            (App.minimizeApp ? App.minimizeApp() : App.exitApp());
+            return;
+        }
+        _appBackAt = now;
+        flashNotice('Back again to leave \u2014 your game is saved.', BACK_EXIT_MS);
+    });
+})();
+
+// Second layer, independent of history: the browser's own "Leave site?" prompt.
+// Chrome may skip the dummy entry above on its back button (it skips entries it
+// judges page-added), but it still honours beforeunload once the page has had a
+// tap. Also asks on reload, which would lose the game just the same.
+window.addEventListener('beforeunload', (ev) => {
+    if (!_gameHasProgress()) return;
+    ev.preventDefault();
+    ev.returnValue = '';
+});
 
 // Segmented pill control -- two or three mutually exclusive choices, sized for
 // a settings row. Returns the element with .value / .setValue / .setDisabled,
@@ -2883,7 +2953,7 @@ function getHintsEnabled() { return _boolSetting('hintsEnabled', false); }
 // makes a returning player look new.
 const _ALL_SETTING_KEYS = ['aiDifficulty', 'blackIsAI', 'whiteIsAI', 'boardTheme', 'sound',
     'fullscreen', 'hintsEnabled', 'seenNudge', 'fxEnabled', 'autoEndTurn',
-    'confirmRiskyEnd', 'sumToGoal', 'sumSaveGesture', 'autoEnRoute', 'ruleTips', 'ruleTipsSeen'];
+    'confirmRiskyEnd', 'sumToGoal', 'sumSaveGesture', 'autoEnRoute', 'ruleTips', 'ruleTipsSeen', 'savedGame'];
 // HINTS ON FOR A BRAND-NEW VISITOR, once, without making them the global default.
 //
 // HOW GOOD IS THE DETECTION? Every key above is written only when the player
@@ -3526,6 +3596,25 @@ function _tutApply(game, spec) {
     });
 }
 
+// The endgame mark on the saved racks. DERIVED from each player's phase every
+// frame, so every path that changes the phase (moves, undo, captures, the
+// tutorial and ?pos layouts) is covered without a hook. The pulse fires only on
+// a phase change seen on the SAME game; the first sight of a game, and a layout
+// jump (`_endgameMarkSync`), set the mark silently.
+function _endgameMarkTick(game, pulse = true) {
+    if (!game || !game.players || !game.whiteSavedRack) return;
+    const first = !game._egSeen;
+    game._egSeen = true;
+    [['white', game.whiteSavedRack], ['black', game.blackSavedRack]].forEach(([name, rack]) => {
+        const pl = game.players.find(p => p.name === name);
+        const on = !!(pl && pl.getGamePhase() === 'endgame' && !game.gameOver);
+        if (!!rack._endgame === on) return;
+        rack.setEndgame(on);
+        if (on && pulse && !first) rack.pulseEndgame();
+    });
+}
+function _endgameMarkSync(game) { _endgameMarkTick(game, false); }
+
 // Re-derive both players' phases from the laid-out position, the same way the
 // game does it (canBeSaved() reads the phase, so midgame has to be set first).
 function _tutPhases(game) {
@@ -4093,7 +4182,7 @@ const _tutSteps = [
     {
         title: 'The endgame',
         fast: true,
-        text: '<b>⏩ Later.</b> Once every piece is on a goal, saving gets easier. All but one of yours already are — use the <b>1</b> to step it onto goal 3. That’s the <b>endgame</b>: a blank now goes out on any die <i>bigger</i> than its goal’s number, as long as you hold no higher goal. Your highest is goal 3, so the <b>5</b> takes a blank straight off it. Numbered pieces never get this; they always need their own number.',
+        text: '<b>⏩ Later.</b> Once every piece is on a goal, saving gets easier. Use the <b>1</b> to step your last one onto goal 3. That’s the <b>endgame</b>, and your saved rack lights up to show it: a blank now goes out on any die <i>bigger</i> than its goal’s number, if you hold no higher goal. Your highest is goal 3, so the <b>5</b> takes a blank off it. Numbered pieces always need their own number.',
         dice: [1, 5],
         pos: { white: { board: [[2, [7, 4]], [11, [7, 8]], [12, [6, 8]]],
                         saved: [1, 3, 4, 5, 6, 7, 8, 9, 10] },
@@ -4332,6 +4421,7 @@ function _tutRender() {
         _tutApply(game, step.pos);
         _tutSetDice(game, step.dice[0], step.dice[1]);
         _tutPhases(game);
+        _endgameMarkSync(game);
         _tutRefresh(game);
         if (step.after) { try { step.after(game); } catch (e) { console.warn('[TUTORIAL] after() failed:', e); } }
     }
@@ -4609,7 +4699,7 @@ function makeHudButton(scene, cx, cy, label, { ghost = false, k = 1 } = {}) {
         g.fillStyle(0x000000, 0.12); g.fillRoundedRect(b.x, b.y + 2, b.width, b.height, r);
         if (ghost) {
             g.fillStyle(0xffffff, 1); g.fillRoundedRect(b.x, b.y, b.width, b.height, r);
-            g.lineStyle(1, HUD_PANEL_BORDER, 1); g.strokeRoundedRect(b.x, b.y, b.width, b.height, r);
+            g.lineStyle(1, HUD_PANEL_BORDER, 1); strokeRoundRect(g, b.x, b.y, b.width, b.height, r);
         } else {
             g.fillStyle(THEME.accent, 1); g.fillRoundedRect(b.x, b.y, b.width, b.height, r);
         }
@@ -4842,6 +4932,14 @@ function showWelcome(starter) {
             'background:' + (primary ? THEME.accentCss : '#fff') + '; color:' + (primary ? '#fff' : '#5a6473') + ';';
         el.onclick = fn; holder.appendChild(el);
     };
+    // An unfinished game from an earlier visit (autosave) comes first.
+    const saved = _savedGameRead();
+    if (saved) {
+        mkBtn(saved.match ? 'Resume match' : 'Resume game', true, () => {
+            box.remove();
+            if (!_resumeSavedGame()) showWelcome(starter);
+        });
+    }
     // Single game: reveal the starter with the coin flip, then start a *fresh*
     // game (new dice + rack) for that starter — nothing about the game is
     // committed, and the AI never moves, until this point.
@@ -5074,6 +5172,10 @@ function showInstructions() {
         'border:none; border-radius:10px; cursor:pointer; font-family:' + HUD_FONT + ';' +
         'font-weight:700; font-size:15px; background:' + THEME.accentCss + '; color:#fff;">' +
         'Take the interactive tutorial</button>';
+    html += '<button id="htpStratBtn" style="width:100%; margin:-10px 0 20px; padding:10px 0;' +
+        'border:2px solid ' + THEME.accentCss + '; border-radius:10px; cursor:pointer; font-family:' + HUD_FONT + ';' +
+        'font-weight:700; font-size:15px; background:#fff; color:' + THEME.accentCss + ';">' +
+        'Strategy tips</button>';
     sections.forEach(([h, b]) => { html += '<h3>' + h + '</h3><p>' + b + '</p>'; });
     const card = document.createElement('div');
     card.style.cssText = 'position:relative; background:#fff; color:#28313b; border-radius:16px;' +
@@ -5092,17 +5194,13 @@ function showInstructions() {
     // and only when there is actually something to lose.
     const tutBtn = body.querySelector('#htpTutBtn');
     if (tutBtn) tutBtn.onclick = () => {
-        const g = _currentGame();
-        // "In progress" = anything has entered or been banked. There is no move
-        // history on the frontend Game (that lives on the ported engine), and a
-        // freshly dealt board has nothing to lose, so ask the board itself.
-        const live = !!(g && !g.gameOver && !_gameFrozen &&
-                        (g.pieces.some(p => p.currentTile) ||
-                         g.whiteSavedRack.pieces.length || g.blackSavedRack.pieces.length));
+        const live = _gameHasProgress();
         const go = () => { box.remove(); startTutorial(); };
         if (live) showConfirm('Abandon this game and run the tutorial?', go, 'Run tutorial');
         else go();
     };
+    const stratBtn = body.querySelector('#htpStratBtn');
+    if (stratBtn) stratBtn.onclick = () => showStrategy();
     const close = document.createElement('button');
     close.setAttribute('aria-label', 'Close');
     close.textContent = '✕';   // ✕
@@ -5111,6 +5209,84 @@ function showInstructions() {
         'font-size:17px; line-height:1; display:grid; place-items:center;';
     close.onmouseenter = () => close.style.background = 'rgba(0,0,0,.12)';
     close.onmouseleave = () => close.style.background = 'rgba(0,0,0,.05)';
+    close.onclick = () => box.remove();
+    card.appendChild(body); card.appendChild(close);
+    box.appendChild(card); document.body.appendChild(box);
+    box.addEventListener('pointerdown', (e) => { if (e.target === box) box.remove(); });
+}
+
+// STRATEGY TIPS (owner, 2026-10-10), opened from How to Play. The tips are
+// owner's, in his order of importance; STRATEGY.md has the measurements behind
+// them and the ones rejected. The pictures are rendered by pos_image.mjs from
+// the positions in STRATEGY.md and served cache-first with a week's max-age
+// (/assets/*), so a CHANGED picture needs a NEW FILE NAME or returning players
+// keep the old one.
+// The overlay REUSES the id 'howToPlay' on purpose: everything that must treat
+// a reference card as "a card is up" -- the paused computer, the dice, the
+// hint lamp -- already asks for that id, and one more id to remember in four
+// places is how one gets missed.
+function showStrategy() {
+    const old = document.getElementById('howToPlay'); if (old) old.remove();
+    const box = document.createElement('div');
+    box.id = 'howToPlay';
+    box.style.cssText = 'position:fixed; inset:0; box-sizing:border-box;padding:var(--safe-t) var(--safe-r) var(--safe-b) var(--safe-l); z-index:60; display:grid; place-items:center;' +
+        'background:rgba(0,0,0,.5); font-family:' + HUD_FONT + ';';
+    const fig = (file, cap) => '<img src="assets/strategy/' + file + '" alt="" loading="lazy">' +
+        '<p class="cap">' + cap + '</p>';
+    const sections = [
+        ['Numbered pieces',
+         '<p><b>Get your numbered pieces home early.</b> A blank can use any goal; a numbered piece needs its own, then an exact roll to bank. Get each one onto its goal, or within one die of it — unless it’s holding a wall, especially against a higher-numbered piece.</p>' +
+         '<p><b>Save a numbered piece before a blank</b>, especially a high one. While it sits on a high goal, your blanks on lower goals can’t bank with a higher die in the endgame: they need exact rolls.</p>' +
+         '<p><b>Don’t leave a numbered piece alone where it can be captured.</b> A lone blank is fine — it’s often the first piece of a wall.</p>' +
+         '<p><b>Park numbered pieces behind a wall.</b></p>' +
+         fig('park.webp', 'White’s 3 sits behind its own wall on ring 5, so Black can’t get at it.')],
+        ['Make every roll count',
+         '<p><b>Aim for a position where every number does something</b>: saves a piece, brings one to its goal, builds a wall or captures.</p>' +
+         fig('every-roll.webp', '1 saves the blank on goal 1 · 2 saves the 2 · 3 takes the 3 to its goal · 4 and 5 bring blanks onto goals 4 and 5 · 6 captures.')],
+        ['Walls',
+         '<p><b>Block goal pairs.</b> Goals 2 &amp; 4, 1 &amp; 6 and 3 &amp; 5 share their approaches, so two walls shut both.</p>' +
+         fig('pair-block.webp', 'Black’s two walls on ring 5 seal goals 2 and 4. White’s 2 and 4 are stuck until a wall opens.') +
+         '<p><b>When you’re blocking a pair of goals, capture whenever you can.</b> A captured piece has to come back in first, so they can’t spend their dice breaking your wall.</p>' +
+         '<p><b>If they’re blocking you, don’t spend your dice on breaking the wall while they have anything else useful to do.</b> Sooner or later they run out of moves and have to open it or pass.</p>' +
+         '<p><b>Where to wall:</b> rings 5 and 6 are best, especially 5, where routes meet — then ring 3.</p>' +
+         '<p><b>Walls of blanks are best.</b> If you have to build one with a numbered piece, swap a blank in later.</p>'],
+        ['Endgame',
+         '<p><b>Spread your blanks over different goals, favouring the low ones.</b> In the endgame a blank on your highest occupied goal banks on that number or anything higher; every other piece needs its exact number. So the lower your blanks sit, the more rolls bank them, and on different goals they use different numbers.</p>' +
+         '<p><b>Use a 4 to drop a blank to a lower goal.</b> A 4 moves a blank from a high goal to its partner: 6→1, 5→3, 4→2.</p>' +
+         fig('hop.webp', 'A 4 takes the blank on goal 5 to goal 3, where any roll of 3 or more banks it.')],
+        ['Captures',
+         '<p><b>Bringing a piece to goal usually beats a capture.</b> Capture when it’s cheap, or to prevent the opponent from breaking your wall.</p>'],
+    ];
+    let html = '<style>' +
+        '#howToPlay h2 { margin:0 0 10px; font-size:30px; }' +
+        '#howToPlay h3 { margin:22px 0 6px; font-size:20px; }' +
+        '#howToPlay p { margin:0 0 10px; font-family:' + BODY_FONT + '; font-size:18px; line-height:1.55; color:#33404b; }' +
+        '#howToPlay img { display:block; width:100%; max-width:440px; margin:4px auto 4px; border-radius:10px; }' +
+        '#howToPlay p.cap { font-family:' + HUD_FONT + '; font-size:14px; line-height:1.45; color:#6a7480;' +
+            'max-width:440px; margin:0 auto 14px; }' +
+        '#howToPlay p.end { margin-top:22px; font-style:italic; }' +
+        '#stratBack { border:none; background:none; padding:0; margin:0 0 6px; cursor:pointer;' +
+            'font-family:' + HUD_FONT + '; font-size:15px; font-weight:700; color:' + THEME.accentCss + '; }' +
+        '</style><button id="stratBack">← How to Play</button><h2>Strategy</h2>';
+    sections.forEach(([h, b]) => { html += '<h3>' + h + '</h3>' + b; });
+    html += '<p class="end">And remember: it’s mostly dice. You can play every move right and still lose — that’s what the next game is for.</p>';
+    const card = document.createElement('div');
+    card.style.cssText = 'position:relative; background:#fff; color:#28313b; border-radius:16px;' +
+        'width:min(600px,94vw); box-sizing:border-box; overflow:hidden;' +
+        'max-height:min(90vh, calc(100vh - var(--safe-t) - var(--safe-b)));' +
+        'box-shadow:0 18px 50px rgba(0,0,0,.3);';
+    const body = document.createElement('div');
+    body.style.cssText = 'padding:22px 26px; box-sizing:border-box;' +
+        'max-height:min(90vh, calc(100vh - var(--safe-t) - var(--safe-b)));' +
+        'overflow-y:auto; -webkit-overflow-scrolling:touch;';
+    body.innerHTML = html;
+    body.querySelector('#stratBack').onclick = () => showInstructions();
+    const close = document.createElement('button');
+    close.setAttribute('aria-label', 'Close');
+    close.textContent = '✕';
+    close.style.cssText = 'position:absolute; top:9px; right:11px; z-index:2; width:30px; height:30px;' +
+        'border:none; border-radius:50%; cursor:pointer; background:rgba(0,0,0,.05); color:#6a7480;' +
+        'font-size:17px; line-height:1; display:grid; place-items:center;';
     close.onclick = () => box.remove();
     card.appendChild(body); card.appendChild(close);
     box.appendChild(card); document.body.appendChild(box);
@@ -5494,7 +5670,11 @@ function _posResetNumbers(game) {
     });
 }
 // Load a notation into the live game. Returns { ok, error }.
-function loadPositionNotation(str, game) {
+// `blankIds` (optional, autosave): {white:[n...], black:[n...]}, the identity of
+// each `x` in the order it appears (board, rack, saved), so a resumed game keeps
+// its blanks' numbers and the recorder's moves still name the right pieces. A
+// 13 there is the piece the last-piece rule blanked.
+function loadPositionNotation(str, game, blankIds) {
     game = game || _currentGame();
     let P;
     try { P = _posParse(str); } catch (e) { return { ok: false, error: e.message }; }
@@ -5510,13 +5690,17 @@ function loadPositionNotation(str, game) {
         const missing = [1, 2, 3, 4, 5, 6].filter(k => !nums.includes(k));
         if (missing.length > 1) return { ok: false, error: pl + ' is missing numbered pieces ' + missing.join(',') };
         const pool = [7, 8, 9, 10, 11, 12].concat(missing);
+        const ids = blankIds && blankIds[pl] ? blankIds[pl].slice() : null;
         const take = (t) => {
             if (t !== 'x') return +t;
-            const n = pool.shift();
+            let n = ids ? ids.shift() : pool.shift();
+            if (ids && !(n >= 7 && n <= 12)) n = missing.shift();
             if (n <= 6) blankMe.push([pl, n]);
             return n;
         };
         spec[pl] = { board: s.board.map(([t, loc]) => [take(t), loc]), rack: s.rack.map(take), saved: s.saved.map(take) };
+        const ns = [...spec[pl].board.map(b => b[0]), ...spec[pl].rack, ...spec[pl].saved];
+        if (new Set(ns).size !== 12 || ns.some(n => !(n >= 1 && n <= 12))) return { ok: false, error: pl + ' blank identities do not fit' };
         for (const [, loc] of spec[pl].board) if (!_posTileFor(game, loc)) return { ok: false, error: 'no tile ' + loc };
     }
     _clearSelection && game.selectedPiece && _clearSelection(game);
@@ -5537,6 +5721,7 @@ function loadPositionNotation(str, game) {
     else game.rollDice();
     _tutPhases(game);
     game.gameOver = false;
+    _endgameMarkSync(game);
     game.undoStack = [];
     game._pendingPreMove = null;
     game.pieces.forEach(p => { p.reachableTiles = null; p.justMovedHome = false; p._turnStartTile = p.currentTile || null; });
@@ -5555,6 +5740,112 @@ function loadPositionNotation(str, game) {
     if (typeof _refreshHitAreas === 'function') _refreshHitAreas();
     return { ok: true };
 }
+// ── AUTOSAVE / RESUME (owner, 2026-10-07) ────────────────────────────────────
+// A back swipe, a killed tab or Android reclaiming the backgrounded app used to
+// lose the game; the page cannot reliably stop any of them (see the back guard).
+// So the game is saved to THIS browser's localStorage at every turn start and the
+// welcome card offers to resume it. Nothing leaves the device, like the settings.
+// Saved at the TURN START only: a half-played turn resumes from its start with the
+// same dice, so nothing can be re-rolled by leaving. Cleared when the game ends or
+// a new one starts. The recorder's open entry rides along, so a resumed game
+// keeps recording under the same id (merge_games keeps the longest copy).
+const SAVED_GAME_KEY = 'savedGame';
+function _savedGameRead() {
+    try {
+        const g = JSON.parse(localStorage.getItem(SAVED_GAME_KEY) || 'null');
+        return (g && g.v === 1 && (g.pos || (g.between && g.match))) ? g : null;
+    } catch (e) { return null; }
+}
+function _savedGameClear() { try { localStorage.removeItem(SAVED_GAME_KEY); } catch (e) {} }
+// The identity of every blank, in the order positionToNotation lists them.
+function _savedBlankIds(game, pos) {
+    const P = _posParse(pos), out = {};
+    for (const pl of ['white', 'black']) {
+        const used = new Set(), ids = [];
+        for (const [t, loc] of P[pl].board) {
+            if (t !== 'x') continue;
+            const tile = _posTileFor(game, loc);
+            const p = tile && tile.pieces.find(q => q.player === pl && q.number > 6 && !used.has(q));
+            if (!p) throw new Error('blank on ' + loc + ' not found');
+            used.add(p); ids.push(p.number);
+        }
+        for (const kind of ['unentered', 'saved'])
+            _tutRack(game, pl, kind).pieces.forEach(p => { if (p.number > 6) ids.push(p.number); });
+        out[pl] = ids;
+    }
+    return out;
+}
+function _savedGameWrite(game) {
+    if (!game || _tut.active || window.setupMode || _gameFrozen || game.gameOver) return;
+    if (!_gameHasProgress()) return;
+    try {
+        const pos = positionToNotation(game);
+        const rec = (typeof _rec !== 'undefined' && _rec) ? Object.assign({}, _rec, { pending: [], agent: null, agentFail: null }) : null;
+        localStorage.setItem(SAVED_GAME_KEY, JSON.stringify({
+            v: 1, at: Date.now(), pos, ids: _savedBlankIds(game, pos),
+            whiteIsAI: !!WHITE_IS_AI, blackIsAI: !!BLACK_IS_AI, starter: game.startingPlayer,
+            noSave: { n: game.noSaveTurns, last: game.lastTotalSaved, half: game._halfTurnsSinceRound },
+            match: matchTracker ? Object.assign({}, matchTracker) : null,
+            rec,
+        }));
+    } catch (e) { console.warn('[autosave] not saved', e); }
+}
+// Between games of a match only the match is saved; resuming starts its next game.
+function _savedBetweenWrite() {
+    if (!matchTracker || matchTracker.over) return;
+    try {
+        localStorage.setItem(SAVED_GAME_KEY, JSON.stringify({
+            v: 1, at: Date.now(), between: true, match: Object.assign({}, matchTracker),
+            whiteIsAI: !!WHITE_IS_AI, blackIsAI: !!BLACK_IS_AI,
+        }));
+    } catch (e) {}
+}
+// Resume from the welcome card. The scene is REBUILT (as for any new game), so
+// everything built from matchTracker -- the HUD row, the score line -- is right;
+// create() then hands the saved position to _applySavedGame instead of opening.
+let _pendingResume = null;
+function _resumeSavedGame() {
+    const S = _savedGameRead(), sc = _setupScene();
+    if (!S || !sc || !sc.scene) return false;
+    WHITE_IS_AI = S.whiteIsAI; BLACK_IS_AI = S.blackIsAI;
+    matchTracker = S.match || null;
+    if (typeof refreshSettingsMatchState === 'function') refreshSettingsMatchState();
+    clearMoveRecording();
+    if (S.between) {
+        sc.scene.restart({ startingPlayer: matchStarterForGame(matchTracker.gamesPlayed) });
+    } else {
+        _pendingResume = S;
+        sc.scene.restart({ startingPlayer: S.starter || 'white' });
+    }
+    return true;
+}
+// Called from create() on the freshly built game.
+function _applySavedGame(g, S) {
+    const r = loadPositionNotation(S.pos, g, S.ids);
+    if (!r.ok) {
+        console.warn('[autosave] could not resume:', r.error);
+        _savedGameClear();
+        flashNotice('Sorry, the saved game could not be restored.', 4000);
+        return false;
+    }
+    if (S.starter) _lastGameStarter = S.starter;
+    g.noSaveTurns = S.noSave.n || 0; g.lastTotalSaved = S.noSave.last || 0; g._halfTurnsSinceRound = S.noSave.half || 0;
+    g.drawCallable = g.noSaveTurns >= NO_SAVE_TURNS_FOR_DRAW;
+    updateNoSaveDisplay();
+    // The new scene opened a recorder entry with fresh racks; swap in the
+    // resumed game's own, keeping its id. Recording is per browser, so only when on.
+    _rec = (S.rec && getRecordingEnabled()) ? Object.assign(S.rec, { pending: [], agent: null, agentFail: null,
+                                                                    instanceId: g.instanceId, resumed: (S.rec.resumed || 0) + 1 }) : null;
+    g.turnStartState = getGameState(g);
+    g.scene.updateScoreText && g.scene.updateScoreText();
+    if (typeof _refreshHitAreas === 'function') _refreshHitAreas();
+    if (g.players.find(p => p.name === g.turn).isAI) {
+        g.scene.showThinkingIcon();
+        setTimeout(() => getAgentMoves(getGameState(g)), 600);
+    }
+    return true;
+}
+
 // Settings > Position (dev): copy the live position, or paste one in.
 function _posCopy() {
     const n = positionToNotation();
@@ -6513,7 +6804,7 @@ class Piece {
             // setting covers both or neither. `save()` above is NOT gated -- that
             // is the core save gesture, not a shortcut.
             if (!saved && this.player === this.game.turn && getSumSaveGesture() &&
-                this.game.sumSave(this)) return;
+                this.game.sumSave(this, { uniqueGoal: true })) return;
             // Still on a goal it cannot bank from, and cannot reach-and-bank
             // another either -- but the sum may reach a goal it CAN eventually
             // use (a numbered piece parked on the wrong goal, most usefully).
@@ -6528,7 +6819,7 @@ class Piece {
             this.game._saveGuardUntil = Date.now() + 250;
             _clearSelection(this.game);
         } else if (this.player === this.game.turn && getSumSaveGesture() &&
-                   this.game.sumSave(this)) {
+                   this.game.sumSave(this, { uniqueGoal: true })) {
             // Not on a goal yet, but one die reaches a goal and the other saves it
             // this turn -> do both at once. Opt-in (see getSumSaveGesture): it
             // spends the entire roll off a single gesture, which is a lot to do
@@ -7706,6 +7997,31 @@ class Tile {
     
 }
 
+// Phaser 3.55's strokeRoundedRect is unsafe under WebGL: it does moveTo(p) and
+// then an arc that starts at p, and the stroke pipeline's batchLine divides by
+// the segment length with no zero guard -- so every corner emits NaN vertices.
+// Desktop GPUs and swiftshader drop them; phone GPUs draw them as slivers to the
+// middle of the screen (owner's Pixel, 2026-10-08: lines from the endgame-marked
+// saved racks to the board centre). This strokes the same outline as ONE closed
+// polygon with no repeated points.
+function strokeRoundRect(g, x, y, w, h, r) {
+    r = Math.max(0, Math.min(r, w / 2 - 0.5, h / 2 - 0.5));
+    const pts = [];
+    const n = 6;   // segments per quarter
+    [[x + w - r, y + r, -Math.PI / 2], [x + w - r, y + h - r, 0],
+     [x + r, y + h - r, Math.PI / 2], [x + r, y + r, Math.PI]].forEach(([cx, cy, a0]) => {
+        for (let i = 0; i <= n; i++) {
+            const a = a0 + (Math.PI / 2) * i / n;
+            const px = cx + r * Math.cos(a), py = cy + r * Math.sin(a);
+            const q = pts[pts.length - 1];
+            if (!q || Math.abs(q.x - px) > 0.01 || Math.abs(q.y - py) > 0.01) pts.push({ x: px, y: py });
+        }
+    });
+    const f = pts[0], l = pts[pts.length - 1];
+    if (pts.length > 1 && Math.abs(f.x - l.x) <= 0.01 && Math.abs(f.y - l.y) <= 0.01) pts.pop();
+    g.strokePoints(pts, false, true);   // WebGL closePath appends pts[0] itself
+}
+
 class Rack {
     constructor(scene, x, y, color, type, rows = 4, cols = 3) {
         this.scene = scene;
@@ -7858,6 +8174,31 @@ class Rack {
         if (game.sumSave(piece)) _clearSelection(game);
     }
 
+    setEndgame(on) {
+        if (!!this._endgame === !!on) return;
+        this._endgame = !!on;
+        this.drawBackground();
+    }
+
+    // Two accent outlines swelling off the panel and fading: the moment of
+    // entering the endgame, once, without words.
+    pulseEndgame() {
+        const sc = this.scene, b = this._box;
+        if (!sc || !b || !sc.tweens) return;
+        const g = sc.add.graphics().setDepth(this.background.depth);
+        const st = { t: 0 };
+        sc.tweens.add({
+            targets: st, t: 1, duration: 750, repeat: 1, ease: 'Sine.easeOut',
+            onUpdate: () => {
+                const d = st.t * 16;
+                g.clear();
+                g.lineStyle(3, THEME.accent, 1 - st.t);
+                strokeRoundRect(g, b.bx - d, b.by - d, b.bw + 2 * d, b.bh + 2 * d, 16 + d);
+            },
+            onComplete: () => g.destroy(),
+        });
+    }
+
     drawBackground() {
         // Clear first: this is redrawn on rotation now, and a Graphics replays
         // its entire command list every frame.
@@ -7871,8 +8212,18 @@ class Rack {
         this.background.fillRoundedRect(bx, by + 5, bw, bh, 16);      // soft drop shadow
         this.background.fillStyle(0xffffff, 1);
         this.background.fillRoundedRect(bx, by, bw, bh, 16);
-        this.background.lineStyle(1.5, 0xdbe1ea, 1);
-        this.background.strokeRoundedRect(bx, by, bw, bh, 16);
+        // A saved rack whose owner is in the ENDGAME takes a faint accent ground
+        // and an accent edge (owner, 2026-10-07): the place the pieces are headed
+        // says that saving has got easier. Set by _endgameMarkTick, not here.
+        if (this._endgame) {
+            this.background.fillStyle(THEME.accent, 0.07);
+            this.background.fillRoundedRect(bx, by, bw, bh, 16);
+            this.background.lineStyle(2.5, THEME.accent, 0.9);
+        } else {
+            this.background.lineStyle(1.5, 0xdbe1ea, 1);
+        }
+        strokeRoundRect(this.background, bx, by, bw, bh, 16);
+        this._box = { bx, by, bw, bh };
         if (this.type === 'saved') this._wireSaveTap(bx, by, bw, bh);
         // The unentered panel takes taps as well, for the send-to-goal gesture.
         // The first tap of that double-click moves the piece OFF the rack, so
@@ -8691,7 +9042,12 @@ class Game {
     // the other goal and the second die saves it there. That is two ordinary
     // moves, so it is a frontend affordance, not a rule change -- the engine has
     // always allowed the sequence and the agent already searches it.
-    sumSave(piece) {
+    // `opts.uniqueGoal` (the double-tap, owner 2026-10-08): if the piece has
+    // more than one goal it could be BANKED via this turn, do nothing and say so -- which goal it walks
+    // to changes what the other die can bank, so the player picks by hand. The
+    // saved-rack tap and drop are explicit "bank THIS piece" and skip the check.
+    // Returns 'ambiguous' (truthy, so callers stop) when it declines that way.
+    sumSave(piece, opts = {}) {
         if (!piece.currentTile) return false;
         if (piece.player !== this.turn) return false;
         if (this.dice[0].used || this.dice[1].used) return false;   // need both dice
@@ -8718,16 +9074,85 @@ class Game {
                 (player.getGamePhase() === 'endgame' || endgameAfterMove) &&
                 dieVal > goal.number && !this.isHigherNumberedGoalOccupied(player, goal.number);
         };
-        for (const goal of goals) {
-            if (goal === piece.currentTile) continue;   // already here: nothing to walk
+        // Goals this piece can be walked to with one die AND banked from with the
+        // other, this turn.
+        const bankable = goals.filter(goal => {
+            if (goal === piece.currentTile) return false;   // already here: nothing to walk
             // movePiece consumes die[0] if the goal is reachable by it, else die[1];
             // the *other* die must then be able to save from the goal.
             const byFirst = r.reachableByFirstDie.includes(goal);
             const bySecond = r.reachableBySecondDie.includes(goal);
             const saveDieVal = byFirst ? this.dice[1].value : (bySecond ? this.dice[0].value : null);
-            if (saveDieVal !== null && canSaveFrom(goal, saveDieVal)) {
-                if (this.movePiece(piece, goal) && piece.save()) return true;
+            return saveDieVal !== null && canSaveFrom(goal, saveDieVal);
+        });
+        if (!bankable.length) return false;
+        // The double-tap declines only when the GOAL CHOSEN MATTERS (owner,
+        // 2026-10-09). A goal it cannot bank from this turn is no choice; and if
+        // it can bank via several, walking to any of them and banking leaves the
+        // same position (both dice spent, nothing captured on a goal) -- unless
+        // the die left after the walk has another use from one of them, which is
+        // then a real choice (2026-10-08's G1-vs-G4 case). Entering the endgame
+        // makes the higher-die rule bank via most goals, so without this the
+        // gesture declined almost every time it started the endgame.
+        const leftUse = (goal) => {
+            const byFirst = r.reachableByFirstDie.includes(goal);
+            return this._dieHasOtherGoalUse(piece, this.dice[byFirst ? 1 : 0],
+                                             endgameAfterMove ? 'endgame' : null, goal);
+        };
+        if (opts.uniqueGoal && bankable.length > 1 && bankable.some(leftUse)) {
+            if (typeof flashNotice === 'function')
+                flashNotice('More than one goal is in reach, so move it by hand to choose.', 3500, 'move');
+            return 'ambiguous';
+        }
+        // Prefer a goal that leaves the other die no other use, so the gesture
+        // banks rather than stopping when it can.
+        const target = bankable.find(g => !leftUse(g)) || bankable[0];
+        if (!this.movePiece(piece, target)) return false;
+        // Second half of the same rule (owner, 2026-10-08): if the die left over
+        // could ALSO bank another piece, or put one onto a goal it can bank from,
+        // banking this one is a choice -- so stop on the goal and leave that die.
+        // A second double-tap banks it. Judged on the board AFTER the move, since
+        // the move itself can open the endgame or change the highest goal.
+        const left = this.dice.find(d => !d.used);
+        if (opts.uniqueGoal && left && this._dieHasOtherGoalUse(piece, left)) return 'moved';
+        return piece.save();
+    }
+
+    // Can `die` (unused) bank another of this side's pieces, or bring one onto a
+    // goal it can bank from (a numbered piece its own, a blank any)? Goal-to-goal
+    // steps do not count: they bank nothing. `at` is the goal `piece` stands on
+    // (or will, after the walk): a blank sharing it with a blank `piece` is no
+    // alternative -- banking either leaves the same position (owner, 2026-10-09:
+    // blank on G1, blank 5 from it, roll 5-6, the gesture stopped on G1).
+    // Nor is a blank on a LOWER goal (owner, 2026-10-12: blanks on G1/G3, a field
+    // blank walking to G5 or G6, roll 5-6, it declined): banking it instead of
+    // the mover leaves the mover on the higher goal, which banks no sooner and
+    // can block the higher-die rule for the goals below it.
+    _dieHasOtherGoalUse(piece, die, phaseOverride, at = piece.currentTile) {
+        const player = piece.color === 0xffffff ? this.players[0] : this.players[1];
+        const phase = phaseOverride || player.getGamePhase();
+        for (const q of this.pieces) {
+            if (q === piece || q.color !== piece.color || !q.currentTile) continue;
+            const t = q.currentTile;
+            if (piece.number > 6 && q.number > 6 && at && at.type === 'save' &&
+                t.type === 'save' && t.number <= at.number) continue;
+            // And a NUMBERED mover beats any blank (owner, 2026-10-12: the 2
+            // walked onto G2 with the 6 and stopped because the 2 could bank the
+            // blank there; the 4 stopped on G4 because the 4 could bring a blank
+            // onto a goal): a numbered piece on its goal takes 3.27 turns to
+            // bank, a blank on any goal at most 1.64. Save numbered over blank.
+            if (piece.number <= 6 && q.number > 6) continue;
+            if (t.type === 'save') {
+                if (phase !== 'opening' && q.canBeSaved() &&
+                    (die.value === t.number ||
+                     (q.number > 6 && phase === 'endgame' && die.value > t.number &&
+                      !this.isHigherNumberedGoalOccupied(player, t.number)))) return true;
+                continue;
             }
+            const r = this.getReachableTilesByDice(q);
+            if (!r) continue;
+            const byDie = die === this.dice[0] ? r.reachableByFirstDie : r.reachableBySecondDie;
+            if (byDie.some(g => g.type === 'save' && (q.number > 6 || g.number === q.number))) return true;
         }
         return false;
     }
@@ -9142,6 +9567,7 @@ switchTurn() {
         this.turnStartState = getGameState(this);
         if (typeof updateMustMoveHighlights === 'function') updateMustMoveHighlights(this);
         if (typeof updateTurnStatus === 'function') updateTurnStatus(this);
+        _savedGameWrite(this);
 
         if (window.showEvals) refreshEvalReadout();
 
@@ -9258,6 +9684,7 @@ endGame(winner, score = null, impasse_caller = null) {
 
     clearMoveRecording();
     if (typeof _recFinish === 'function') _recFinish(winner, score);
+    _savedGameClear();
 
     this.gameOver = true;
     console.log(`${winner} wins with a score of ${score}!`);
@@ -9278,6 +9705,7 @@ endGame(winner, score = null, impasse_caller = null) {
     if (typeof updateTurnStatus === 'function') updateTurnStatus('');   // hide during end screen
     // Fold this game into the active match (if any) before showing the result.
     const matchOver = matchTracker ? recordMatchGame(winner, score) : false;
+    if (matchTracker && !matchOver) _savedBetweenWrite();   // autosave: the match goes on
     // THE LAST GAME OF A MATCH SOUNDS FOR THE MATCH, NOT THE GAME (owner,
     // 2026-09-20): a match is decided on TOTAL SCORE, so you can lose the final
     // game and still take the match -- and the lose chime there reads as having
@@ -10047,6 +10475,7 @@ class MainGameScene extends Phaser.Scene {
         // On the first-load welcome, hold the game (no AI) until the player hits
         // Play; a real, freshly-rolled game is started then.
         _gameFrozen = !!(this._coinFlipOnStart && !matchTracker);
+        if (!_gameFrozen && !_pendingResume) _savedGameClear();   // a new game replaces any saved one
         this.game = new Game(this, this.startingPlayer, debugMode);
         // A restart destroys every game object, but this.game keeps pointing at
         // the old Game until create() runs again -- so anything deferred (the
@@ -10203,6 +10632,11 @@ class MainGameScene extends Phaser.Scene {
         if (this._coinFlipOnStart && !matchTracker) {
             this._coinFlipOnStart = false;
             showWelcome(this.startingPlayer);
+        }
+        if (_pendingResume) {
+            const S = _pendingResume;
+            _pendingResume = null;
+            if (!_applySavedGame(this.game, S)) this.checkInitialAIReady();
         }
         if (typeof updateTurnStatus === 'function') updateTurnStatus(this.game);
 
@@ -10432,11 +10866,12 @@ class MainGameScene extends Phaser.Scene {
     }
 
     update() {
-        // Update logic if needed
+        _endgameMarkTick(this.game);
     }
 
     checkInitialAIReady() {
         if (_gameFrozen) return;   // welcome up: don't let the AI open behind it
+        if (_pendingResume) return;   // a resumed game: _applySavedGame decides who moves
         const isBlackAI = this.startingPlayer === 'black' && BLACK_IS_AI;
         const isWhiteAI = this.startingPlayer === 'white' && WHITE_IS_AI;
 
@@ -10546,6 +10981,11 @@ class EndGameScene extends Phaser.Scene {
 
         if (this.inMatch && matchTracker) {
             const m = matchTracker;
+            // The running score is what the player looks for between games
+            // (owner, 2026-10-07), so it gets its own row in the headline's ink
+            // rather than sharing a small grey line with the game count.
+            const scoreRow = (y) => headline(y,
+                `White ${m.whiteScore} (${m.whiteWins}W)   ·   Black ${m.blackScore} (${m.blackWins}W)`, 30);
             if (this.matchOver) {
                 // The winner's MARGIN, not their running total -- a match is won
                 // on total score, so the interesting number is the gap. It can be
@@ -10555,34 +10995,34 @@ class EndGameScene extends Phaser.Scene {
                 const mres = m.winner === 'draw' ? 'The match is a draw!'
                     : mDiff > 0 ? `${_cap(m.winner)} wins the match by ${mDiff}`
                                 : `${_cap(m.winner)} wins the match on games won`;
-                const top = card(340);
+                const top = card(380);
                 subline(top + P(58), message, 21);
                 headline(top + P(118), mres, 34);
-                subline(top + P(182),
-                    `White ${m.whiteScore} (${m.whiteWins}W)   ·   Black ${m.blackScore} (${m.blackWins}W)   ·   ${m.gamesPlayed} games`, 21);
-                button(CENTER_X - P(105), top + P(262), 'New Match', false,
+                scoreRow(top + P(182));
+                subline(top + P(224), `${m.gamesPlayed} games`, 21);
+                button(CENTER_X - P(105), top + P(302), 'New Match', false,
                     () => { abortAndClear(); matchTracker = null; refreshSettingsMatchState(); showMatchSetup(); });
-                button(CENTER_X + P(105), top + P(262), 'Single Game', true,
+                button(CENTER_X + P(105), top + P(302), 'Single Game', true,
                     () => { matchTracker = null; refreshSettingsMatchState(); startGame('white'); });
             } else {
                 const status = m.mode === 'race' ? `race to ${m.target}`
                     : `game ${m.gamesPlayed + 1} of ${m.target}`;
                 const extended = m.justExtended;
                 m.justExtended = false;
-                const top = card(extended ? 330 : 290);
-                headline(top + P(78), message, 34);
-                subline(top + P(142),
-                    `White ${m.whiteScore} (${m.whiteWins}W)   ·   Black ${m.blackScore} (${m.blackWins}W)   ·   ${status}`, 21);
+                const top = card(extended ? 370 : 330);
+                headline(top + P(74), message, 34);
+                scoreRow(top + P(142));
+                subline(top + P(184), status, 21);
                 if (extended) {
                     // Was 20 against the score line's 21, and in a lighter accent
                     // colour, which read as noticeably smaller than everything
                     // else on the card. Matched to the score line and given the
                     // weight to go with being a one-off announcement.
-                    subline(top + P(186),
+                    subline(top + P(226),
                         `Level after ${m.extendedAt} games — match extended by 2`, 21)
                         .setColor(THEME.accentCss).setFontStyle('bold');
                 }
-                button(CENTER_X, top + P(extended ? 258 : 218), 'Next Game', false,
+                button(CENTER_X, top + P(extended ? 298 : 258), 'Next Game', false,
                     () => startGame(matchStarterForGame(m.gamesPlayed)));
             }
             return;

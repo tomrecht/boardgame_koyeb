@@ -36,7 +36,10 @@ nothing on a chime.
 
 **`testing` IS THE STAGING BRANCH (owner, 2026-09-25).** New features land on
 `testing`, which KOYEB builds for owner to play; once he is happy they reach
-`main`, which Cloudflare builds as quahuru.com, by a fast-forward merge. The old
+`main`, which Cloudflare builds as quahuru.com, by a fast-forward merge.
+**FOR NOW (owner, 2026-10-12): all but MAJOR changes go straight to `main`**
+(then fast-forward `testing`) -- nobody else is playing yet, so owner tests on
+quahuru.com. Major features still stage on `testing`. The old
 cherry-pick-to-both rule is GONE — the branches share one history now. See
 "`testing` IS A STAGING BRANCH" below.
 
@@ -102,9 +105,20 @@ ARCHIVE.md under "Current benchmark".
   its own goal, the same for every number** — the endgame higher-die rule is
   blank-only, so it needs an exact match (11/36 a turn). Numbered pieces are the
   endgame bottleneck.
-- **Stack low and extras ride out free; stack level and they queue.** A blank on
-  goal 1 under a numbered-2 on goal 2 costs nothing (3.273 either way); the same
-  blank *on* goal 2 costs 0.059, and two of them 0.353.
+- **Where to put blanks beside a numbered piece (exact DP, 2026-10-10;
+  supersedes "stack low and extras ride out free", which ignored the
+  last-piece rule).** `endgame_table.py` (train-features-v2) extended to a
+  finite horizon: expected pieces still unbanked after k turns, k = 1..8, for
+  one numbered piece N on its goal + 2-3 blanks on goals, play optimal for
+  that horizon. Numbered 2 + one blank: blank on G2 finishes in 1.79 turns,
+  on G1 in 2.11 (the bank-the-blank-first line makes the 2 a lone blank).
+  Best layout by N, and it barely changes with k (race vs score is NOT the
+  driver): N=1-2 blanks LEVEL on its goal (2 blanks under a 2 = both on G1:
+  finish 3.05 vs 2.25 level); N=3 mixed ~ level; N=4 MIX (G1 + G4, 2.96 vs
+  3.10-3.44); N=5-6 all UNDER on distinct low goals (N=6, 3 blanks: G1/G2/G3
+  3.46, all on G1 3.85, all on G6 6.08). Rule: blanks on DISTINCT LOW goals,
+  and with a 1 or 2 on the same goal as it. Not covered: 2+ numbered pieces,
+  4+ blanks, the cost of getting the blanks there.
 - **A goal tile can never be blocked** (`is_blocked` requires `type == 'field'`)
   — only the routes to it. Sealing a goal from home takes 2 walls (4 pieces),
   and those same 2 walls seal its whole 4-apart pair.
@@ -116,6 +130,17 @@ ARCHIVE.md under "Current benchmark".
   The agent never leaves goals 1-3 (where the value gradient is steep) and
   sometimes leaves 4-6 (where standing on goal 6 is worth 0.039 turns more than
   standing beside it).
+
+**`STRATEGY.md`** collects owner's strategy tips and the measurements behind
+them. **They ship as the STRATEGY panel (`showStrategy`, 2026-10-10, on
+`testing`)**, opened by "Strategy tips" under the tutorial button in How to
+Play; its overlay reuses the id `howToPlay` so the pause / dice / hint-lamp
+checks cover it. Four pictures in `assets/strategy/*.webp`, rendered by
+`pos_image.mjs` (now with `--fill`, `--ring`, `--labels`) from the positions in
+STRATEGY.md and cropped to the board; `/assets/*` is cache-first with a week's
+max-age, so a CHANGED picture needs a NEW file name. Text mirrored in
+WORDING.md section 10. Measured headless, desktop + phone: 4/4 images load, no
+sideways scroll, game paused, back returns to How to Play.
 
 ## AI and model — current status
 
@@ -135,8 +160,7 @@ ARCHIVE.md under "Current benchmark".
   Previous: `symaug_champ_July27_iter6.pt`. `REC_MODEL_TAG` = 'blend4way_Oct6'.
   **`sw.js` cache bumped to v9 and `model.onnx` now served `no-cache`** (it was
   cache-first with a week's max-age, so a new net could take a week to reach
-  returning players). The Android package still bundles the OLD net until the
-  next build (would be versionCode 8). Re-export with `BOARDGAME_DEVICE=cpu
+  returning players). The Android package carries it from versionCode 8. Re-export with `BOARDGAME_DEVICE=cpu
   python3 onnx_export.py <ckpt> model.onnx` (self-verifies; on this iMac torch
   must be on CPU).
 - **Inference runs on the device.** `local_agent.js` + the ported stack
@@ -452,8 +476,13 @@ Three changes, all in `league_run.py` (driver), `panel_gate.py`, `explore.py`,
    learner's positions are trained on, and opponent records are dropped BEFORE
    TD targets (each learner state bootstraps from the next learner state).
 3. **Softmax opening exploration** in generation only; eval/gate asserted greedy.
-Hand-coded play rules (`_wastes_save`, bank-the-most) are OFF in generation and
-gating (`GNNAgent(hand_rules=False)`); the deployed app keeps them on.
+Hand-coded play rules (`_wastes_save`, bank-the-most with its quiet-pair filter,
+and since the 2026-10-13 merge of main `_strands_last_piece`) are OFF in generation
+and gating (`GNNAgent(hand_rules=False)`); the deployed app keeps them on.
+Measured on a t49-style position: rule called on 45 candidates (4 flagged) with
+hand rules on, 0 calls with them off. The same merge brings 2c8a0f7 (game.py
+computes the stage fresh in the last-piece rule), so runs from here train on
+correct rules; the October AB run predates it.
 
 **Launch (full run):**
 
@@ -825,6 +854,196 @@ with it in mind.** Assessment and the concrete implications:
 
 ## Current state
 
+- **LAST-PIECE RULE READ A STALE STAGE IN THE AGENT'S ENGINES (owner, 2026-10-12;
+  fixed in engine.js + game.py).** Owner's game 19831a60 t49: black's last two
+  pieces 6@G6 + blank@G3, roll 1-3 -> banked the blank, stepped the 6 off to 6.10;
+  it stayed a numbered 6 off its goal and black lost 11-12. `apply_last_piece_rule`
+  read the stored `stages`, which a tile move does not refresh, so a last numbered
+  piece stepped OFF its goal still read 'endgame' and was blanked on a field tile;
+  game.js (phase reverts) never did that. Now the stage is computed fresh in both.
+  Measured: replay of owner's logs through game.py 288/295 -> 293/295 (the 5 fixed
+  divergences were all this; the 2 left are pre-existing white-save ones);
+  `agent_test.js` 50/50; lookahead fixture regenerated, JS 176/176 (3 choices changed).
+  **The fix did NOT change the t49 move:** with true rules the net still scored
+  stepping off -36.74 vs staying -37.27 (shallow). **Cause (measured, same day): a
+  TRAIN/SEARCH FRAME MISMATCH, not the bug.** Training records only TURN-START
+  positions (game_worker: mover to move, fresh dice). The 2-ply search scores the
+  END-OF-TURN position in the mover's frame, which the net reads as "mover to move
+  with these dice AGAIN": the die-used flags have zero effect (all 4 combos
+  identical), while the spent dice VALUES swing it (blank on G6: -7 with 1-3, +102
+  with 6-6). "Stay" = a numbered 6 as last piece on its own goal, which never
+  exists at a turn start (the last-piece rule blanks it first), so it was scored
+  as an untrained input. In the TRAINED frame (opponent to move, 21 rolls averaged,
+  negated) the net is right: G6-now-blank -19 vs numbered 6 on 6.10 -60 (exact
+  race DP: -30 vs -74; P(black wins) 32% vs 6%). **Fixes:** (1) search scores
+  -E_rolls[V_opp(turn start)] -- NOT built (21x inference; needs an arena and a
+  phone latency check); (2) AFTERSTATE TRAINING -- BUILT on `train-features-v2`
+  (default on for fresh runs) with its JS side on `js-features-v2`; see those
+  branches. Pull 2c8a0f7 into training branches anyway (correct rules).
+  **HOW MUCH THE MISMATCH COSTS TODAY'S NET (`frame_probe.py`, 2026-10-12/13,
+  deployed blend, Python reference agent, prefilter 12/40/5, lookahead off;
+  "trained frame" = the same net scoring each candidate as the opponent's turn
+  start averaged over the 21 rolls, negated):**
+  (a) calibration benchmark (559 owner positions with playout labels): corr /
+  slope of the move gap vs the playouts **+0.159 / 0.50 as searched today ->
+  +0.238 / 0.65 in the trained frame**, +0.079 (95% bootstrap +0.009..+0.150);
+  the frames disagree on which move is better in 103/559.
+  (b) 1,500 of the computer's turns in owner's games: the trained frame picks a
+  different END POSITION on **26.1% +- 2.2%** (opening/midgame 353/1288, late
+  39/212) -- mostly near-ties: where they differ it says the current pick gives
+  up median 0.04 pts (mean 0.07). Net-judged cost **0.51 pts/game**; shrunk by
+  the trained frame's calibration slope (0.65) that is **~0.3 pts/game** -- the
+  size of the 4-way blend's whole gain (+0.16), so worth an arena before
+  dismissing fix (1) for today's net. Not yet measured by games.
+  **So a SEARCH RULE (owner, same day): `_strands_last_piece` / `strandsLastPiece`
+  drop a pair leaving the mover one unsaved piece, numbered, that began the turn on
+  its own goal and is now off it, unless the pair captured** (a capture can stop
+  the opponent finishing). **RE-CHECK IT ON ANY NET TRAINED AFTER THE FIX** (owner):
+  run the real15-style probe with the rule off. Measured: real net (Python) on the
+  15 positions in owner's logs where it removes a candidate: changes the move in
+  2 (t49 here, and d3ebf897 t62 -- the same blunder, 6 stepped off with a spare 1),
+  leaves 13 as they were (all already banked and kept the piece). Stub-net fixture of 177 owner endgame
+  positions: JS = Python 177/177 with it on, 175/177 with the JS rule disabled
+  (the gate is live). `agent_test.js` 50/50, lookahead 176/176. In the browser the
+  t49 position keeps the 6 on with old AND new code -- a near-tie (~0.003 raw) that
+  ORT-web and Python break differently, so it cannot show the gate.
+  **replay_games.py now picks a blank save's die the way game.js does** (avoiding
+  one an own numbered piece on its goal needs): the 2 white-save "divergences" were
+  the checker, not the engines. Owner's logs now replay 220/220 + 76/76.
+
+- **ENDGAME LOOKAHEAD (owner, 2026-10-08; on `testing`).** Owner saw the net, at
+  a near-certain loss (his last piece a blank on goal 3), step a piece onto a goal
+  instead of saving -- the certain-loss rule's cousin, not fixable by rule. When
+  the opponent has <= 2 unsaved pieces, every candidate the shallow search keeps is
+  rescored as `P(finish) * exact final margin + (1 - P(finish)) * net value`,
+  P(finish) = share of the opponent's 21 rolls on which they can bank out from the
+  position after the candidate (so a capture or wall that stops them counts). A
+  finish is EXACT: they win by our unsaved count however they do it. Move
+  generation only, no extra net calls. Ties (P = 1) fall back to the net's score.
+  `selectWithLookahead` / `oppFinishProb` in agent.js (`lookahead: true` default),
+  `_select_with_lookahead` / `_opp_finish_prob` in agent_gnn.py (OFF by default,
+  `endgame_lookahead = True`, so arenas and training are unchanged).
+  **Measured.** Owner's 166 games vs the current blend, 176 computer turns with
+  owner at <= 2 pieces (`owner_lookahead.py`): changes the move on 8; the three
+  goal-instead-of-save cases fixed at +1.00 / +0.31 / +0.75 pts (16 paired
+  playouts each), two -0.25 where it kept a piece back to slow owner's route
+  (noise level), three level; +0.20 per change (95% CI -0.12..+0.51), ~+0.01
+  pts/game. Self-play, 210 games (`lookahead_probe.py`): 4% of trigger turns
+  change, +0.06 per change (CI -0.15..+0.27). So it fixes a visible blunder, not
+  measurable strength. **Latency** added on trigger turns (~1-3 a game): node on
+  the iMac median 50 ms, p90 143 ms, max 335 ms (Python 0.41 / 1.2 / 3.1 s).
+  **Parity:** `lookahead_fixture.py` (owner's 176 positions, stub net) -> JS
+  176/176, the lookahead changing the stub's choice in 34 of them;
+  `agent_fixture.json` regenerated with the lookahead on, 50/50. In the browser,
+  real net, `b 56 | W 2@3.3 ... | B 2@G2 x@6.4 5@6.4 ...` (game 15619a3e t45): the
+  computer banks the 5 (recorded game: 5 to goal 5, blank to goal 1, no save).
+  A full deep search over the opponent's replies was tried first and cost 13-100 s
+  a turn in Python -- the per-roll reply search is what P(finish) replaces.
+
+- **LEAVING A GAME BY ACCIDENT: AUTOSAVE + BACK HANDLING (owner, 2026-10-07).**
+  Owner's phone: a tap near the edge read as a back swipe and left the site,
+  losing the game -- in fullscreen too, because on Android Chrome a back gesture
+  in fullscreen EXITS fullscreen, and the game re-entered it only on the first
+  tap after load, so the next swipe navigated. Four layers:
+  1. **Fullscreen re-enters on any tap** while the setting is on
+     (`_armFullscreenOnFirstGesture` is no longer one-shot).
+  2. **Web back guard** (`_armBackGuard`): while `_gameHasProgress()`, a
+     pointerup pushes a dummy history entry, so back pops it (popstate, notice)
+     and a second back leaves. **Plus `beforeunload`** ("Leave site?").
+     **Owner, on device, fullscreen off: sometimes the notice, sometimes the
+     prompt, sometimes it just leaves.** Chrome may skip page-added entries on
+     its back button and may decline the prompt; neither is visible to the page.
+     That is the browser's anti-hijacking stance, not a bug to chase.
+  3. **AUTOSAVE** (`_savedGameWrite`, key `savedGame`, this browser's
+     localStorage only): written at every TURN START from `switchTurn` (so a
+     half-played turn resumes from its start with the SAME dice), cleared in
+     `endGame` and when a fresh real game is built. Stores the position
+     notation plus each blank's identity (`ids`, so recorded moves still name the
+     right pieces), both isAI flags, starter, the no-save counter, matchTracker
+     and the recorder's open entry (same id, `resumed` count; `merge_games.py`
+     now keeps the duplicate that got furthest). The welcome card offers
+     **Resume game / Resume match**. Measured: 10 self-play turns, reload,
+     Resume -> notation AND every piece's identity identical, recorder 10 turns
+     same id, play continues (10 -> 17 turns).
+     **Resume REBUILDS the scene** (`_pendingResume`, picked up in create() after
+     the HUD is built from the restored matchTracker; `checkInitialAIReady` and the
+     save-clear both stand aside for it), so a match resumes with the match HUD.
+     **Between games of a match** `endGame` writes `{between: true, match}`;
+     Resume match starts the next game with `matchStarterForGame`. Measured:
+     mid-match resume -> position identical, HUD [hidden New Game, New Match, How
+     to Play] same as before; after game 1 ends 12-0, reload -> Resume match ->
+     game 2, gamesPlayed 1, scores 12-0, black (the alternate starter) to move,
+     and it plays.
+  4. **Android app: `@capacitor/app` installed** (8.1.2; `cap sync` wired it into
+     `capacitor.settings.gradle` / `capacitor.build.gradle`; `assembleDebug`
+     builds). Back no longer reaches the WebView history: during a game the first
+     back shows a notice, a second within 2.5 s MINIMISES (not exit); otherwise
+     minimises at once. Without a listener the plugin would make back do nothing
+     at all at the root, so the listener is required. **Ships with the next
+     package (versionCode 8); not yet run on a device.**
+- **DOUBLE-TAP SUM-SAVE DECLINES WHEN MORE THAN ONE GOAL IS IN REACH (owner,
+  2026-10-08).** Owner: blanks x2 on G4, a blank 5 from both G1 and G4, roll 5-6;
+  the gesture walked it to G4 and banked it (layout G4+G4, 2.13 turns by the
+  endgame table) where G1 + bank a G4 blank with the 6 was right (G1+G4, 1.30).
+  `sumSave(piece, {uniqueGoal: true})` from `handleDoubleClick` now does nothing
+  and says "More than one goal is in reach..." when the piece has 2+ eligible
+  goals in reach (any die or the sum, as `sendToGoal` counts). The saved-rack tap
+  and drop are explicit "bank THIS piece" and keep the old pick. Measured in the
+  browser: owner's position -> nothing moves, notice; old code -> banked off G4;
+  control (only G4 in reach, roll 1-5) -> walks and banks.
+  **Narrowed (owner, 2026-10-09): only goals it can be BANKED via THIS TURN count**
+  (walked to on one die, banked with the other); a goal merely in reach is no
+  choice. Measured, 219 midgame positions with 2+ goals in reach (lone white blank
+  + a numbered 6): 32 now walk and bank, 3 still decline (two bankable goals), 4
+  stop on the goal for the 6, 180 have no bankable goal and fall through.
+  **And several bankable goals decline only if the CHOICE MATTERS (owner,
+  2026-10-09: "doesn't trigger when the first move enters the endgame").** Entering
+  the endgame turns on the higher-die rule, so most goals become bankable, yet
+  banking via any of them leaves the same position. Now: decline only if, from
+  some bankable goal, the leftover die has another use (`_dieHasOtherGoalUse`
+  judged at the post-move phase); otherwise walk to a goal with no such use and
+  bank. 1,395 scanned positions (companions 2@G2 / x@G3 / x@G4 x2): 333 bank, 99
+  stop on the goal, 34 decline -- each checked case a real choice (e.g. G4+bank
+  the blank vs G2+bank the numbered 2). **And when the leftover
+  die is contested** -- after the move it could bank another own piece or bring
+  one onto a goal it can bank from (`_dieHasOtherGoalUse`; goal-to-goal steps do
+  not count) -- the gesture stops on the goal and leaves that die, silently;
+  a second double-tap banks. Measured: blank 1 from G4, roll 1-4, another blank 4
+  from G4 -> first piece to G4, the 4 unused; second double-tap banks it; control
+  with the other blank unable to reach a goal on either die -> walks and banks.
+  **A blank sharing the goal is no alternative (owner, 2026-10-09):** blank on
+  G1, blank 5 from it, roll 5-6 -> it stopped on G1 because the 6 "could bank"
+  the other blank; banking either is the same position. `_dieHasOtherGoalUse`
+  now skips a blank on the landing goal when the mover is a blank. Measured:
+  old code stops on G1 with the 6 unused, new code banks.
+  **Nor are dominated alternatives (owner, 2026-10-12, three positions):** a blank
+  mover ignores blanks on goals at or BELOW its landing goal (banking one leaves
+  the mover higher; and a blank on a HIGHER goal can never be the alternative,
+  since it blocks the higher-die bank from the lower goal anyway). A NUMBERED
+  mover ignores blanks entirely (3.27 turns vs <= 1.64: save numbered over
+  blank). Another numbered piece reaching its goal still counts. Measured, old
+  -> new: blank 5.8 to G5/G6 with blanks on G1/G3 (roll 5-6) declined -> banks;
+  numbered 2 to G2 beside a blank on G2 (6-2) stopped -> banks; numbered 4 to G4
+  while the 4 could move a blank onto a goal (4-1) stopped -> banks. Control:
+  same 4-1 with the white 2 on 5.22 (4 from G2) still stops on G4, both versions.
+- **ENDGAME MARK ON THE SAVED RACK (owner, 2026-10-07; on `testing`).** A
+  player in the endgame gets a faint accent ground and accent edge on their SAVED
+  rack, plus a one-off double pulse when they enter it. `_endgameMarkTick` runs in
+  `MainGameScene.update()` and DERIVES the mark from `getGamePhase()` each frame;
+  the pulse fires only on a change seen on the same game, and tutorial / `?pos`
+  layouts call `_endgameMarkSync` (silent). Tutorial step "The endgame" says the
+  rack lights up -- text trimmed so it is no taller than before (desktop 96px
+  same, portrait 174 -> 152, landscape no longer scrolls). Measured: stepping the
+  12 onto goal 3 via the real handlers -> phase endgame, mark on, 1 pulse, at
+  desktop / portrait / portrait+insets / landscape.
+  **Radial lines on the phone (owner, Pixel, 2026-10-08):** Phaser 3.55's
+  `strokeRoundedRect` does moveTo(p) then an arc starting at p, and WebGL
+  `batchLine` divides by the segment length unguarded -> NaN vertices at every
+  corner; phone GPUs draw them as slivers to screen centre (swiftshader drops
+  them, so headless never shows it). Always there in the pale grey rack edge;
+  the accent mark made it visible. **Use `strokeRoundRect(g, ...)` (game.js), never
+  `strokeRoundedRect`.** Measured: 60 zero-length segments per 400ms -> 0.
+
 - **POSITION NOTATION, `?pos=`, AND `pos_image.mjs` (owner, 2026-10-02; dev only,
   on main since 2026-10-03).** A FEN-like text form, documented beside `positionToNotation`
   in game.js:
@@ -889,6 +1108,27 @@ with it in mind.** Assessment and the concrete implications:
   A flag is the class definition firing, NOT a proven error -- the deeper search
   over all 21 replies is what could arbitrate. Script was a scratchpad one-off
   (`probe_classes.py`), not committed.
+
+- **CERTAIN LOSS -> NO SHUFFLING (owner, 2026-10-07).** Inside the bank-the-most
+  rule below, among the max-save pairs keep only QUIET ones: every half a pass,
+  an own save, an entry onto home (the rack obligation), or a move onto a goal
+  the piece can bank from (a numbered piece onto its own goal from anywhere; a
+  blank onto any goal but NOT from another goal -- owner: shuffling between
+  goals is pointless); if none, the max-save set stands. Max saves come first,
+  so a goal-to-goal step that ENABLES a save is still played (measured: roll
+  4-4, blank G2 -> G4 then banked). Second position (`B 3@G3 6@4.12 x@G2 x@G5
+  x@3.6`): quiet 10/21 before, 20/21 after (the 21st is that 4-4), JS = Python.
+  **A lone NUMBERED 1 on goal 1 also triggers it (owner, 2026-10-07)** -- the
+  last-piece rule blanks it. Nothing to add: both engines apply that rule to
+  BOTH sides in the endgame when the search's position is built, so the piece
+  already reads as number 13. Measured (`W 1@G1`, same black): 20/21 quiet, JS =
+  Python, vs 10/21 with the rule off. `quietPair` (agent.js) / `_quiet_pair` (agent_gnn.py).
+  **Quiet pairs are also exempt from both prefilter culls** while the loss is
+  certain -- without that the cull had already dropped them (even plain pass),
+  and the rule fired on only 17 of 21 rolls. Measured with the real net on
+  `b - | W x@G1 ... | B 3@G3 6@4.12 x@5.2 x@3.6 x@1.4 ...`, all 21 rolls: quiet
+  pair chosen 11/21 before, **21/21 after, identical in JS and Python**.
+  `agent_test.js` 50/50.
 
 - **CERTAIN LOSS NEXT TURN -> BANK THE MOST (owner, 2026-10-01; on main and in
   versionCode 7 since 2026-10-03).** Owner saw the computer, unable to win, bring a piece
@@ -2238,8 +2478,21 @@ with it in mind.** Assessment and the concrete implications:
     needed versionCode 2. **A reinstall from Play does NOT pick up a local
     rebuild** — obvious in hindsight, easy to misread as the icon fix having
     failed.
-    **CURRENT PACKAGE: versionCode 7, versionName 1.0.6, 8.7 MB, built
-    2026-10-03** -- everything from 2026-09-26 to 10-02: the two computer rules
+    **PLAY CONSOLE ADVISORIES ON versionCode 8, BOTH DELIBERATELY IGNORED (owner,
+    2026-10-09):** "edge-to-edge may not display" (a static check for
+    `EdgeToEdge.enable()` in MainActivity; Android 15+ is already handled by the
+    safe-area fix, the call would only make <=14 edge-to-edge too -- cosmetic,
+    needs a device check) and "enable R8" (the Java side is a Capacitor stub;
+    the size is web assets R8 cannot touch, and stripping risks the plugins'
+    reflection). Revisit only if Play makes either a requirement.
+    **CURRENT PACKAGE: versionCode 8, versionName 1.0.7, 8.7 MB, built
+    2026-10-06** -- the FIRST PRODUCTION RELEASE (Play granted production access
+    2026-10-06). Carries the 4-way blend net (`blend4way_Oct6`), the 0.65-1.0
+    difficulty knots, the fitted prefilter scales and `sw.js` `quahuru-v9`.
+    Verified on the bundle: `jar verified`, versionCode 8 / 1.0.7 /
+    com.quahuru.game, and game.js, agent.js, engine.js, local_agent.js,
+    index.html, sw.js, model.onnx hash-identical to the working tree.
+    Previous: versionCode 7, versionName 1.0.6, 8.7 MB, built 2026-10-03 -- everything from 2026-09-26 to 10-02: the two computer rules
     (never pass a die that could save; bank the most when the opponent's last two
     blanks sit on goal 1), the AI save using the agent's die, the end-card resize
     fix, the refusal explanations, dismissible advice notices, the tutorial rework

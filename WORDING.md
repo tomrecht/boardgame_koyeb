@@ -49,7 +49,7 @@ A wall doesn’t stop you, but it can make you pay. Black has walled the tile in
 Sometimes the only way past a wall is to buy it down. The two walled tiles are the only ways into goals 2 and 4, so both are sealed — your <b>2</b> has no route home on any roll. Spend your dice on the door: double-click one of the two black pieces on the wall <b>in front of goal 2</b> to <b>save it for Black</b>. It costs both dice and hands Black a point, but the wall drops to a single piece — your 2 has a path again.
 
 ### Step 9 — The endgame
-<b>⏩ Later.</b> Once every piece is on a goal, saving gets easier. All but one of yours already are — use the <b>1</b> to step it onto goal 3. That’s the <b>endgame</b>: a blank now goes out on any die <i>bigger</i> than its goal’s number, as long as you hold no higher goal. Your highest is goal 3, so the <b>5</b> takes a blank straight off it. Numbered pieces never get this; they always need their own number.
+<b>⏩ Later.</b> Once every piece is on a goal, saving gets easier. Use the <b>1</b> to step your last one onto goal 3. That’s the <b>endgame</b>, and your saved rack lights up to show it: a blank now goes out on any die <i>bigger</i> than its goal’s number, if you hold no higher goal. Your highest is goal 3, so the <b>5</b> takes a blank off it. Numbered pieces always need their own number.
 
 ### Step 10 — Some dice do nothing
 Not every roll can be used, and that’s fine. The <b>4</b> takes your last blank off goal 3. Your 2 can’t use the 5 — a numbered piece only ever goes out on its own number. Nothing else to do, so end your turn yourself: the right-hand arrow above the board (or the Enter key).
@@ -159,6 +159,9 @@ Double-click-to-goal declines (`sendToGoal`):
 - The computer couldn’t start on this device. Tap ↷ to try again.
 - The on-device computer is switched off for this session.
 - Turn pill: `Your turn` · `Computer thinking…` · `{White/Black}’s turn` · `Computer unavailable`
+- Back again to leave — your game is saved.  *(an accidental back during a game: web back guard, and the Android app's back button)*
+- Sorry, the saved game could not be restored.  *(Resume failed)*
+- Browser's own "Leave site?" prompt during a game — its wording is the browser's, not ours
 
 Confirmations (Cancel / confirm button):
 - End your turn without using both dice?
@@ -173,7 +176,7 @@ Confirmations (Cancel / confirm button):
 **QUAHURU**
 Race your pieces out from the centre to the six goals and bank them all — while walling off your opponent’s routes. Play a single game or a multi-game match. New to it? Try the tutorial first.
 
-Buttons: **Single game** · **Play a match** · **How to Play** · **Interactive tutorial**
+Buttons: **Resume game** or **Resume match** (first, only when an unfinished game or match is saved) · **Single game** · **Play a match** · **How to Play** · **Interactive tutorial**
 
 ---
 
@@ -228,3 +231,44 @@ automatically when both dice used · Confirm ending a turn with a move left ·
 {Double-click} sends a piece to its goal · {Double-click} saves a piece in one move ·
 Automatic en-route capture · Explain rules as they come up (first game) ·
 **Interactive tutorial**
+
+## 10. Strategy tips (`showStrategy`, opened by "Strategy tips" in How to Play)
+
+Button in How to Play, under the tutorial button: **Strategy tips**. Panel title **Strategy**, back link **← How to Play**.
+
+### Numbered pieces
+**Get your numbered pieces home early.** A blank can use any goal; a numbered piece needs its own, then an exact roll to bank. Get each one onto its goal, or within one die of it — unless it’s holding a wall, especially against a higher-numbered piece.
+
+**Save a numbered piece before a blank**, especially a high one. While it sits on a high goal, your blanks on lower goals can’t bank with a higher die in the endgame: they need exact rolls.
+
+**Don’t leave a numbered piece alone where it can be captured.** A lone blank is fine — it’s often the first piece of a wall.
+
+**Park numbered pieces behind a wall.**
+*[park.webp]* White’s 3 sits behind its own wall on ring 5, so Black can’t get at it.
+
+### Make every roll count
+**Aim for a position where every number does something**: saves a piece, brings one to its goal, builds a wall or captures.
+*[every-roll.webp]* 1 saves the blank on goal 1 · 2 saves the 2 · 3 takes the 3 to its goal · 4 and 5 bring blanks onto goals 4 and 5 · 6 captures.
+
+### Walls
+**Block goal pairs.** Goals 2 & 4, 1 & 6 and 3 & 5 share their approaches, so two walls shut both.
+*[pair-block.webp]* Black’s two walls on ring 5 seal goals 2 and 4. White’s 2 and 4 are stuck until a wall opens.
+
+**When you’re blocking a pair of goals, capture whenever you can.** A captured piece has to come back in first, so they can’t spend their dice breaking your wall.
+
+**If they’re blocking you, don’t spend your dice on breaking the wall while they have anything else useful to do.** Sooner or later they run out of moves and have to open it or pass.
+
+**Where to wall:** rings 5 and 6 are best, especially 5, where routes meet — then ring 3.
+
+**Walls of blanks are best.** If you have to build one with a numbered piece, swap a blank in later.
+
+### Endgame
+**Spread your blanks over different goals, favouring the low ones.** In the endgame a blank on your highest occupied goal banks on that number or anything higher; every other piece needs its exact number. So the lower your blanks sit, the more rolls bank them, and on different goals they use different numbers.
+
+**Use a 4 to drop a blank to a lower goal.** A 4 moves a blank from a high goal to its partner: 6→1, 5→3, 4→2.
+*[hop.webp]* A 4 takes the blank on goal 5 to goal 3, where any roll of 3 or more banks it.
+
+### Captures
+**Bringing a piece to goal usually beats a capture.** Capture when it’s cheap, or to prevent the opponent from breaking your wall.
+
+*And remember: it’s mostly dice. You can play every move right and still lose — that’s what the next game is for.*

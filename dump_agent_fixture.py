@@ -72,6 +72,7 @@ def build_agent():
                  first_move_prefilter=12)
     a.encoder = StubEncoder()
     a.model = StubModel()
+    a.endgame_lookahead = True      # served config (agent.js lookahead: true)
     return a
 
 
