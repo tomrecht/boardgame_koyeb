@@ -515,9 +515,21 @@ with it in mind.** Assessment and the concrete implications:
   divergences were all this; the 2 left are pre-existing white-save ones);
   `agent_test.js` 50/50; lookahead fixture regenerated, JS 176/176 (3 choices changed).
   **The fix did NOT change the t49 move:** with true rules the net still scored
-  stepping off -36.74 vs staying -37.27 (shallow) -- it rates a numbered 6 off goal
-  ~ a blank on G6, plausibly learned under the bug (all self-play ran on game.py;
-  owner's run at work too -- pull 2c8a0f7 before its next start).
+  stepping off -36.74 vs staying -37.27 (shallow). **Cause (measured, same day): a
+  TRAIN/SEARCH FRAME MISMATCH, not the bug.** Training records only TURN-START
+  positions (game_worker: mover to move, fresh dice). The 2-ply search scores the
+  END-OF-TURN position in the mover's frame, which the net reads as "mover to move
+  with these dice AGAIN": the die-used flags have zero effect (all 4 combos
+  identical), while the spent dice VALUES swing it (blank on G6: -7 with 1-3, +102
+  with 6-6). "Stay" = a numbered 6 as last piece on its own goal, which never
+  exists at a turn start (the last-piece rule blanks it first), so it was scored
+  as an untrained input. In the TRAINED frame (opponent to move, 21 rolls averaged,
+  negated) the net is right: G6-now-blank -19 vs numbered 6 on 6.10 -60 (exact
+  race DP: -30 vs -74; P(black wins) 32% vs 6%). **Two candidate fixes, both
+  unmeasured:** (1) search scores -E_rolls[V_opp(turn start)] (21x inference;
+  arena first, phone latency); (2) training also records end-of-turn positions
+  with TD targets (cheap; owner's next run). Pull 2c8a0f7 into training branches
+  anyway (correct rules).
   **So a SEARCH RULE (owner, same day): `_strands_last_piece` / `strandsLastPiece`
   drop a pair leaving the mover one unsaved piece, numbered, that began the turn on
   its own goal and is now off it, unless the pair captured** (a capture can stop
