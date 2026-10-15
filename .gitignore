@@ -44,3 +44,6 @@ android/keystore.properties
 .jdk/
 prefilter_data/
 prefilter_data2/
+
+# the start pool travels with the code (work Mac pulls it)
+!start_pool.jsonl

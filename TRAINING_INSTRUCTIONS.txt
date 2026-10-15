@@ -26,7 +26,8 @@ What is new in fv2C (nothing to set -- all on by default):
   * NEW-INPUT HELP: the new inputs are rescaled, learn 10x faster at first (falling to
     normal by iteration 21), and are left out of the weight averaging. Each iteration
     logs "input usage" -- how much the net leans on the new inputs vs the old ones.
-  * A NEW start_pool.jsonl (19,776 positions from 440 games) -- bring it from home.
+  * A NEW start_pool.jsonl (19,776 positions from 440 games) -- now IN THE REPO, so
+    step 2's git pull brings it (no copying from home any more).
 
 1. Stop the old run and bring its results home first (see BRINGING RESULTS HOME):
 
@@ -38,11 +39,12 @@ What is new in fv2C (nothing to set -- all on by default):
        cd ~/quahuru-train && source .venv/bin/activate
        git pull
 
-3. Copy in the NEW start_pool.jsonl from home (replace the old one), then make the
-   warm start from the app's champion (the 4-way blend):
+3. Make the warm start from the app's champion (the 4-way blend). blend_AB.pt is the
+   file fv2B started from, so it is already in the folder:
 
-       cp ~/Downloads/start_pool.jsonl ~/quahuru-train/
-       python widen_v2.py blend.pt AB2 fv2C_start.pt
+       python widen_v2.py blend_AB.pt AB2 fv2C_start.pt
+
+   (If it says blend_AB.pt is missing: python widen_v2.py blend.pt AB2 fv2C_start.pt)
 
    GOOD looks like: "AB2 student vs ... teacher on 282 positions: max |diff| ...e-08"
    (anything up to 1e-05), then "saved fv2C_start.pt (AB2)".
@@ -92,7 +94,8 @@ What is new in fv2C (nothing to set -- all on by default):
 WHAT YOU NEED TO BRING FROM HOME
 ==========================================================================================
 
-One file: start_pool.jsonl (about 32 MB; REBUILT 2026-10-14), in the game folder on the home iMac
+NOTHING since 2026-10-14: start_pool.jsonl is in the repo and comes with git pull.
+(Before that it was carried by hand:) start_pool.jsonl (about 32 MB; REBUILT 2026-10-14), in the game folder on the home iMac
 (/Users/tom/Game/BoardGame/start_pool.jsonl). Email it to yourself with these
 instructions, or AirDrop / iCloud / USB. It holds 19,776 positions from 440 of your games;
 it is NOT in git on purpose. Without it the run still works, but every game starts

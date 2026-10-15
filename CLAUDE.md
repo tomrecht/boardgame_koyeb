@@ -769,8 +769,8 @@ cache. Cost ~1,200 games per panel promote. `test_panel_gate.py` part C.
 `confirm_match.py A.pt B.pt [pairs]`: fresh-seed head-to-head in the app config
 (prefilter 12/40/5, hand rules on, seeds 81M), resumable.
 **fv2B CHAMPION ON FRESH SEEDS (`runs/confirm_fv2B_vs_blend.jsonl`): -0.15 pts/game
-vs the blend (95% CI -0.37..+0.07), 44.8% wins, 402 games** -- the gate's +0.23 was
-seed luck. fv2C starts from the blend.
+vs the blend (95% CI -0.37..+0.07), 44.8% wins, 402 games; final, stopped at 1,361
+games: -0.068 (95% CI -0.189..+0.053), 46.8%** -- the gate's +0.23 was seed luck. fv2C starts from the blend.
 **fv2C ADDITIONS (2026-10-14), each switchable (TRAINING_INSTRUCTIONS.txt):**
 * `revert_policy.py` (REVERT_POLICY=lenient): no reset to the champion in the first
   BURNIN_ITERS=10 (bar a pre-screen collapse below -2), then only on a panel REJECT,
@@ -791,7 +791,8 @@ seed luck. fv2C starts from the blend.
   weights; (4) "input usage" logged per iteration and in the gate log.
   `test_new_inputs.py`.
 * Start pool rebuilt from all logs: 19,776 positions / 440 games (old:
-  `start_pool_Oct6.jsonl`). Upweighting unchanged (near_end 3, save_goal 2,
+  `start_pool_Oct6.jsonl`). NOW TRACKED in git (force-added past `*.jsonl`; 32 MB) so
+  the work Mac gets it by pulling. Owner's own game positions; repo is public. Upweighting unchanged (near_end 3, save_goal 2,
   near_draw 3); none measured separately.
 * v1 control arm: not for now (owner) -- maybe after fv2C's results.
 
