@@ -199,9 +199,15 @@ def export(ckpt, out_path):
     # needs. Ship it beside model.onnx (and endgame_table.json for A / AB).
     meta = {'features': features, 'afterstate': afterstate,
             'source': os.path.basename(ckpt)}
+    if features in ('A2', 'AB2'):
+        # the new columns' factors (input_scales.json): features_v2.js refuses
+        # to encode A2/AB2 without them, so they travel with the net
+        with open(os.path.join(os.path.dirname(os.path.abspath(__file__)), 'input_scales.json')) as f:
+            meta['input_scales'] = json.load(f)[features]
     with open(sidecar_path(out_path), 'w') as f:
         json.dump(meta, f)
-    print(f'wrote {sidecar_path(out_path)}: {meta}')
+    print(f'wrote {sidecar_path(out_path)}: ' + str({k: v for k, v in meta.items() if k != 'input_scales'})
+          + (' + input_scales' if 'input_scales' in meta else ''))
 
 
 if __name__ == '__main__':
