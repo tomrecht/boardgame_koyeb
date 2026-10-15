@@ -768,6 +768,32 @@ lucky promotion and nothing came near it again). State persists in the panel
 cache. Cost ~1,200 games per panel promote. `test_panel_gate.py` part C.
 `confirm_match.py A.pt B.pt [pairs]`: fresh-seed head-to-head in the app config
 (prefilter 12/40/5, hand rules on, seeds 81M), resumable.
+**fv2B CHAMPION ON FRESH SEEDS (`runs/confirm_fv2B_vs_blend.jsonl`): -0.15 pts/game
+vs the blend (95% CI -0.37..+0.07), 44.8% wins, 402 games** -- the gate's +0.23 was
+seed luck. fv2C starts from the blend.
+**fv2C ADDITIONS (2026-10-14), each switchable (TRAINING_INSTRUCTIONS.txt):**
+* `revert_policy.py` (REVERT_POLICY=lenient): no reset to the champion in the first
+  BURNIN_ITERS=10 (bar a pre-screen collapse below -2), then only on a panel REJECT,
+  an early pre-screen reject, or BEHIND_STREAK=3 in a row behind. Only the gate (with
+  its fresh-seed check) replaces the champion. `test_revert_policy.py`.
+* `new_inputs.py`: why the new inputs stayed unused -- weight x input spread, fv2B
+  champion's new columns ~1-3% of an old column's (all_ratio 0.0065). Adam steps
+  ~lr whatever the gradient, so zero-initialised weights grow slowly, small-spread
+  inputs need bigger weights, averaging halves each step and the resets threw the
+  rest away. Fixes: (1) A2/AB2 new columns RESCALED in the encoder to spread ~0.25
+  (factor 1-5, `fit_input_scales.py` -> `input_scales.json`; A/AB never scaled, so
+  no checkpoint changes meaning; widen_v2 divides copied weights by the factor,
+  exact 6e-8; the ONNX sidecar carries `input_scales` and features_v2.js REFUSES
+  A2/AB2 without them -- parity 680/680, js-features-v2); (2) `BoostedAdam`: the
+  STEP on new columns x NEW_LR_MULT=10 falling linearly to 1x by iteration
+  NEW_LR_ANNEAL+1=21 (a gradient multiplier would do nothing under Adam);
+  (3) AVG_NEW_COLS=0: the weight average takes the new columns from the trained
+  weights; (4) "input usage" logged per iteration and in the gate log.
+  `test_new_inputs.py`.
+* Start pool rebuilt from all logs: 19,776 positions / 440 games (old:
+  `start_pool_Oct6.jsonl`). Upweighting unchanged (near_end 3, save_goal 2,
+  near_draw 3); none measured separately.
+* v1 control arm: not for now (owner) -- maybe after fv2C's results.
 
 **FULL-SIZE PRE-FLIGHT (2026-10-06, this iMac, `preflight/fv2B.log`): the whole
 loop works at real sizes** -- 300 generation games (72 min, 42-46 s/game single

@@ -10,14 +10,23 @@ Lines starting with # are explanations -- do not type them.
 UPDATE 2026-10-13 -- THE NEXT RUN (fv2C): AB2 features, AFTERSTATE frame
 ==========================================================================================
 
-The run described further down (fv2B) is the CURRENT one. Do this once it has been
-judged. Setup is already done on the work Mac; skip to step 1.
+fv2B has been judged (2026-10-14): its one champion did NOT hold up on fresh seeds
+(-0.15 pts/game vs the blend over 400+ games), so fv2C starts from the blend. Setup is
+already done on the work Mac; skip to step 1.
 
-What is new in fv2C:
+What is new in fv2C (nothing to set -- all on by default):
   * AB2 = AB + two inputs: per side, numbered pieces standing on their own goal.
   * AFTERSTATE: the net learns the end-of-turn position, which is what the search
-    scores (the t49 cause). This is ON by default for a fresh run.
+    scores (the t49 cause).
   * correct last-piece rule (game.py computes the stage fresh).
+  * FRESH-SEED CHECK: a panel promotion is replayed on new seeds before it counts.
+  * LENIENT REVERT: the live net is not reset to the champion during the first 10
+    iterations, and after that only on a clear loss or 3 iterations in a row behind.
+    (fv2B reset almost every iteration, so nothing ever built up.)
+  * NEW-INPUT HELP: the new inputs are rescaled, learn 10x faster at first (falling to
+    normal by iteration 21), and are left out of the weight averaging. Each iteration
+    logs "input usage" -- how much the net leans on the new inputs vs the old ones.
+  * A NEW start_pool.jsonl (19,776 positions from 440 games) -- bring it from home.
 
 1. Stop the old run and bring its results home first (see BRINGING RESULTS HOME):
 
@@ -29,16 +38,10 @@ What is new in fv2C:
        cd ~/quahuru-train && source .venv/bin/activate
        git pull
 
-3. Make the warm start. Pick ONE (decide with Claude once fv2B is judged):
+3. Copy in the NEW start_pool.jsonl from home (replace the old one), then make the
+   warm start from the app's champion (the 4-way blend):
 
-   (Since 2026-10-14 the gate replays any panel promotion on fresh seeds before
-   accepting it -- a "CONFIRM [itN] ... -> PASS/FAIL" line follows the panel. Nothing
-   to set; a git pull brings it.)
-
-   (a) fv2B PROMOTED a champion and it holds up:
-       python widen_v2.py runs/fv2B_champion.pt AB2 fv2C_start.pt
-
-   (b) otherwise, start from the app's champion (the 4-way blend):
+       cp ~/Downloads/start_pool.jsonl ~/quahuru-train/
        python widen_v2.py blend.pt AB2 fv2C_start.pt
 
    GOOD looks like: "AB2 student vs ... teacher on 282 positions: max |diff| ...e-08"
@@ -49,11 +52,18 @@ What is new in fv2C:
        mkdir -p smoke
        caffeinate -i env BOARDGAME_DEVICE=mps PYTHONHASHSEED=0 SMOKE=1 PREFIX=smoke/c \
            WARM_START=fv2C_start.pt PRESCREEN_BAR=-12 python -u league_run.py > smoke/c.log 2>&1
-       grep -E "Feature set|Start pool|PANEL GATE|Traceback|Error" smoke/c.log
+       grep -E "Feature set|Start pool|Input usage|multiplier|PANEL GATE|REVERT POLICY|input usage|Traceback|Error" smoke/c.log
 
-   GOOD looks like: "Feature set: AB2; frame: AFTERSTATE (end of turn)", the start pool
-   line, a "PANEL GATE" line, and NO "Traceback" or "Error". If the frame says
-   "turn start", stop and send the log over.
+   GOOD looks like:
+       "Feature set: AB2; frame: AFTERSTATE (end of turn)"
+       "Start pool: 19776 positions ..."     (14183 = the OLD pool; copy the new one)
+       "Input usage at start (new/old median influence): 0.000"
+       "new-input step multiplier 10.00x"
+       a "PANEL GATE" line
+       "REVERT POLICY [lenient] it1: KEEP live model -- burn-in (1/10)"
+       an "input usage it1: ..." line
+   and NO "Traceback" or "Error". If the frame says "turn start", stop and send the
+   log over.
 
 5. The real run (use the same WORKER_DEVICE / cpu choice as fv2B):
 
@@ -65,8 +75,16 @@ What is new in fv2C:
    RESUME, run the step 5 command again (no git pull needed). The run remembers its
    frame, so a resume stays afterstate.
 
-   Changing the frame shifts what the net is asked to predict, so early REJECTs are more
-   likely than in fv2B. The LR=2e-5 fallback below applies here too.
+   Changing the frame shifts what the net is asked to predict, so early iterations may
+   well trail the champion -- the burn-in is there for exactly that. Send Claude the log
+   after ~10 iterations: the "input usage" lines show whether the new inputs are being
+   picked up (fv2B ended at ~0.01).
+
+   Switches, if Claude asks for one (add to the env line, e.g. NEW_LR_MULT=1):
+       REVERT_POLICY=strict    fv2B's reset rule        BURNIN_ITERS=10, BEHIND_STREAK=3
+       NEW_LR_MULT=1           no new-input boost       NEW_LR_ANNEAL=20
+       AVG_NEW_COLS=1          average the new inputs too
+       CONFIRM_PAIRS=0         no fresh-seed check
 
 
 
@@ -74,9 +92,9 @@ What is new in fv2C:
 WHAT YOU NEED TO BRING FROM HOME
 ==========================================================================================
 
-One file: start_pool.jsonl (about 22 MB), in the game folder on the home iMac
+One file: start_pool.jsonl (about 32 MB; REBUILT 2026-10-14), in the game folder on the home iMac
 (/Users/tom/Game/BoardGame/start_pool.jsonl). Email it to yourself with these
-instructions, or AirDrop / iCloud / USB. It holds 14,183 positions from 314 of your games;
+instructions, or AirDrop / iCloud / USB. It holds 19,776 positions from 440 of your games;
 it is NOT in git on purpose. Without it the run still works, but every game starts
 from the opening.
 
