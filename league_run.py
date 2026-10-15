@@ -81,6 +81,10 @@ CONFIG = {
     'GATE_GUARD':      _env('GATE_GUARD', -1.0, float),
     'PRESCREEN_PAIRS': _env('PRESCREEN_PAIRS', 1 if SMOKE else 100, int),  # 0 = off
     'PRESCREEN_BAR':   _env('PRESCREEN_BAR', 0.0, float),
+    # fresh-seed confirmation of a panel PROMOTE (panel_gate.py stage 3): the
+    # panel's fixed seeds select for luck over a long run (fv2B). 0 = off.
+    'CONFIRM_PAIRS':   _env('CONFIRM_PAIRS', 2 if SMOKE else 100, int),   # per member
+    'CONFIRM_BAR':     _env('CONFIRM_BAR', 0.0, float),
     # 2. league
     'LEAGUE_FRAC':     _env('LEAGUE_FRAC', 0.5 if SMOKE else 0.3, float),
     'LEAGUE_HEURISTIC': _env('LEAGUE_HEURISTIC', False, _bool),
@@ -168,7 +172,8 @@ def main():
                      prescreen_batch_pairs=C['PRESCREEN_BATCH'],
                      prescreen_alpha=C['PRESCREEN_ALPHA'],
                      cache_path=f'{P}_panel_cache.json',
-                     hand_rules=C['HAND_RULES'], prefix=P)
+                     hand_rules=C['HAND_RULES'], prefix=P,
+                     confirm_pairs=C['CONFIRM_PAIRS'], confirm_bar=C['CONFIRM_BAR'])
 
     ckpt, last_iter = find_latest(P)
     champion_path, live_path = f'{P}_champion.pt', f'{P}_live.pt'

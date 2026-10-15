@@ -44,7 +44,21 @@ Three stages, each configurable:
      given the seed, so the cache is exact; a promoted candidate's games become
      the new champion's entries for free.
 
-3. GUARD: against no single member may the candidate's mean margin (over the
+3. FRESH-SEED CONFIRMATION (confirm_pairs > 0; added 2026-10-14). The panel
+   replays the SAME seeds for every candidate, so over a long run the gate
+   picks whichever candidate happened to be lucky on them -- fv2B promoted once
+   in 145 iterations, the max of ~55 panel-tested candidates averaging -0.17,
+   and its offspring showed ~+0.05, not the +0.23 measured. A panel PROMOTE
+   is therefore replayed, candidate AND champion, on a block of seeds no gate
+   has used (CONFIRM_SEED_BASE + attempt * CONFIRM_STRIDE), same members,
+   fixed sample. Promoted iff that paired diff > confirm_bar; otherwise
+   CONFIRM_FAIL (not promoted, not kept). On success the panel MOVES to the
+   confirmation block, whose games are already cached for the new champion --
+   so its baseline is an unselected estimate rather than the lucky one it was
+   promoted on (fv2B's bar jumped from +0.33 to +0.56 and nothing came close
+   again). Attempt counter and current block persist in the cache file.
+
+4. GUARD: against no single member may the candidate's mean margin (over the
    units played) fall below `guard` (default -1.0 points). A promote-boundary
    crossing with the guard failing is recorded as GUARD_FAIL (not promoted).
 
@@ -81,6 +95,8 @@ PANEL_FIVE = {
 PANEL_DEFAULT = {t: PANEL_FIVE[t] for t in ('symaug6', 'iter10', 'iter14')}
 PANEL_SEED_BASE = 77_000_000      # disjoint from every generation/eval seed block
 PRESCREEN_SEED_BASE = 78_000_000
+CONFIRM_SEED_BASE = 79_000_000    # fresh block per confirmation attempt
+CONFIRM_STRIDE = 10_000
 
 
 def sd_hash(sd):
@@ -234,7 +250,7 @@ class PanelGate:
                  prescreen_batch_pairs=20, prescreen_alpha=0.2,
                  sequential=True, seed_base=PANEL_SEED_BASE,
                  cache_path='panel_cache.json', hand_rules=False, workdir='.',
-                 prefix='panel', check_paths=True):
+                 prefix='panel', check_paths=True, confirm_pairs=0, confirm_bar=0.0):
         assert max_pairs >= 1 and batch_pairs >= 1
         self.panel = dict(panel or PANEL_DEFAULT)
         if check_paths:
@@ -273,9 +289,19 @@ class PanelGate:
             with open(cache_path) as f:
                 self.cache = json.load(f)
         self.timing = {'games': 0, 'secs': 0.0, 'turns': 0}
+        self.confirm_pairs = int(confirm_pairs)
+        self.confirm_bar = float(confirm_bar)
+        self.state_key = f'_gate_state:{self.cfg_key}'
+        st = self.cache.setdefault(self.state_key, {'confirm_n': 0, 'panel_base': seed_base})
+        self.seeds = [st['panel_base'] + k for k in range(max_pairs)]
+        if st['panel_base'] != seed_base:
+            print(f'  panel gate: panel seeds moved to block {st["panel_base"]} '
+                  f'by an earlier confirmed promotion')
         print(f'  panel gate: {M} members {sorted(self.panel)}, looks at '
               f'{looks} pairs/member (cap {max_pairs}), alpha {alpha}, OBF c={self.seq.c:.3f}, '
-              f'pre-screen {len(self.prescreen_seeds)} pairs bar {prescreen_bar:+.2f}')
+              f'pre-screen {len(self.prescreen_seeds)} pairs bar {prescreen_bar:+.2f}, '
+              + (f'fresh-seed confirmation {self.confirm_pairs} pairs/member bar {self.confirm_bar:+.2f}'
+                 if self.confirm_pairs else 'no fresh-seed confirmation'))
 
     # ---- game running (overridable in tests) ----
     def run_tasks(self, tasks):
@@ -303,14 +329,15 @@ class PanelGate:
             json.dump(self.cache, f)
         os.replace(tmp, self.cache_path)
 
-    def ensure(self, sd, h, n_pairs, label):
+    def ensure(self, sd, h, n_pairs, label, seeds=None):
         """Make sure `sd` (hash h) has panel games on the first n_pairs seeds of
         every member; plays only what is missing. Returns its game dict and the
-        number of games newly played."""
+        number of games newly played. Entries are keyed by seed, so games on any
+        seed block share one dict per model."""
         ck = f'{self.cfg_key}:{h}'
         g = self.cache.setdefault(ck, {})
         tasks = []
-        for seed in self.seeds[:n_pairs]:
+        for seed in (seeds if seeds is not None else self.seeds)[:n_pairs]:
             for tag, path in sorted(self.panel.items()):
                 for cw in (True, False):
                     if f'{tag}|{seed}|{int(cw)}' not in g:
@@ -325,8 +352,42 @@ class PanelGate:
                   f'{n_pairs} pairs/member')
         return g, len(tasks)
 
-    def _units(self, g, tag, n_pairs):
-        return [0.5 * (g[f'{tag}|{s}|1'] + g[f'{tag}|{s}|0']) for s in self.seeds[:n_pairs]]
+    def _units(self, g, tag, n_pairs, seeds=None):
+        return [0.5 * (g[f'{tag}|{s}|1'] + g[f'{tag}|{s}|0'])
+                for s in (seeds if seeds is not None else self.seeds)[:n_pairs]]
+
+    # ---- stage 3 ----
+    def confirm(self, cand_sd, champ_sd, label):
+        """Replay candidate and champion on a fresh seed block (fixed sample).
+        Returns a report dict; on a pass the panel moves to that block."""
+        st = self.cache[self.state_key]
+        base = CONFIRM_SEED_BASE + st['confirm_n'] * CONFIRM_STRIDE
+        st['confirm_n'] += 1
+        self._save_cache()
+        n = self.confirm_pairs
+        seeds = [base + k for k in range(max(n, self.max_pairs))]
+        ch, hh = sd_hash(cand_sd), sd_hash(champ_sd)
+        gh, nh = self.ensure(champ_sd, hh, n, f'{label} confirm, champion', seeds)
+        gc, nc = self.ensure(cand_sd, ch, n, f'{label} confirm', seeds)
+        d, per = [], {}
+        for t in sorted(self.panel):
+            cu, hu = self._units(gc, t, n, seeds), self._units(gh, t, n, seeds)
+            dd = [a - b for a, b in zip(cu, hu)]
+            per[t] = {'cand': sum(cu) / n, 'champ': sum(hu) / n, 'diff': sum(dd) / n}
+            d += dd
+        m, se, tst = SequentialTest.tstat(d)
+        passed = m > self.confirm_bar
+        print(f'  CONFIRM [{label}] fresh seeds {base}..: {n} pairs/member, paired diff '
+              f'{m:+.3f} +- {se:.3f} (' + ', '.join(f'{t} {p["diff"]:+.2f}' for t, p in per.items())
+              + f') -> {"PASS" if passed else "FAIL"} (bar {self.confirm_bar:+.2f})')
+        if passed:
+            # the new champion's baseline: its games on this unselected block
+            st['panel_base'] = base
+            self.seeds = seeds[:self.max_pairs]
+            self._save_cache()
+            print(f'  panel moves to seed block {base} (new champion already has its games there)')
+        return {'seed_base': base, 'pairs': n, 'diff': m, 'se': se, 't': tst,
+                'per_member': per, 'passed': passed, 'games': nc + nh}
 
     # ---- stage 1 ----
     def prescreen(self, cand_sd, champ_sd, label, sequential=None, cand_path=None):
@@ -425,8 +486,14 @@ class PanelGate:
         if dec == 'promote' and not guard_ok:
             outcome = 'guard_fail'
         cs = sum(cu_all) / len(cu_all)
+        conf = None
+        if outcome == 'promote' and self.confirm_pairs > 0:
+            conf = self.confirm(cand_sd, champ_sd, label)
+            if not conf['passed']:
+                outcome = 'confirm_fail'
         rep.update(outcome=outcome, promote=(outcome == 'promote'),
                    keep=(outcome == 'promote') or (outcome in ('cap', 'guard_fail') and m > 0),
+                   confirm=conf,
                    cand_score=cs, champ_score=sum(hu_all) / len(hu_all),
                    diff=m, diff_se=se, diff_lo=m - _norm_ppf(1 - self.alpha) * se,
                    diff_hi=m + _norm_ppf(1 - self.alpha) * se,

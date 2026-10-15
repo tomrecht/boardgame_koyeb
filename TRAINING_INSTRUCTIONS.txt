@@ -31,6 +31,10 @@ What is new in fv2C:
 
 3. Make the warm start. Pick ONE (decide with Claude once fv2B is judged):
 
+   (Since 2026-10-14 the gate replays any panel promotion on fresh seeds before
+   accepting it -- a "CONFIRM [itN] ... -> PASS/FAIL" line follows the panel. Nothing
+   to set; a git pull brings it.)
+
    (a) fv2B PROMOTED a champion and it holds up:
        python widen_v2.py runs/fv2B_champion.pt AB2 fv2C_start.pt
 

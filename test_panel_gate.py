@@ -19,7 +19,8 @@ import sys
 import numpy as np
 import torch
 
-from panel_gate import PanelGate, SequentialTest, _norm_ppf
+from panel_gate import (PanelGate, SequentialTest, _norm_ppf, CONFIRM_SEED_BASE,
+                        CONFIRM_STRIDE, PANEL_SEED_BASE)
 
 SD = 1.8
 
@@ -163,6 +164,62 @@ def part_b():
     good = r1['champ_games_new'] > 0 and r2['champ_games_new'] == 0 and r2['panel_games'] == 0
     print(f'  => cache: champion games first {r1["champ_games_new"]}, second {r2["champ_games_new"]}, '
           f'candidate replays {r2["panel_games"]}: {"ok" if good else "FAIL"}')
+    ok &= good
+    return ok and part_c()
+
+
+class LuckyGate(FakeGate):
+    """Candidate 1.0 is strong ONLY on the original panel seeds (a lucky draw);
+    on any other seed block it is `elsewhere`."""
+
+    def __init__(self, strength, elsewhere, **kw):
+        self.elsewhere = elsewhere
+        super().__init__(strength, **kw)
+
+    def run_tasks(self, tasks):
+        out = super().run_tasks(tasks)
+        for t, r in zip(tasks, out):
+            v = self.weights_by_path[t[0]]
+            if v == 1.0 and t[2] != 'parent' and t[4] >= CONFIRM_SEED_BASE:
+                r['margin'] += self.elsewhere - self.strength[(v, t[2])]
+        return out
+
+
+def part_c():
+    print('\nPart C: fresh-seed confirmation of a panel PROMOTE')
+    champ = {'symaug6': 0.0, 'iter10': 0.0, 'iter14': 0.0}
+    strong = S(champ, {t: 2.0 for t in champ}, 1.0)
+    ok = True
+    # off: behaves as before
+    g = FakeGate(strong, max_pairs=20, batch_pairs=5, prescreen_pairs=0)
+    r = g.evaluate(sd_of(1.0), sd_of(0.0), label='confirm off')
+    good = r['outcome'] == 'promote' and r['confirm'] is None
+    print(f'  => confirm off: {r["outcome"]}: {"ok" if good else "FAIL"}'); ok &= good
+    # real improver: passes, panel moves to the confirmation block
+    g = FakeGate(strong, max_pairs=20, batch_pairs=5, prescreen_pairs=0, confirm_pairs=20)
+    r = g.evaluate(sd_of(1.0), sd_of(0.0), label='real')
+    good = (r['outcome'] == 'promote' and r['promote'] and r['confirm']['passed']
+            and g.seeds[0] == CONFIRM_SEED_BASE and r['confirm']['games'] == 2 * 20 * 3 * 2)
+    print(f'  => real improver: {r["outcome"]}, confirm diff {r["confirm"]["diff"]:+.2f}, '
+          f'panel block {g.seeds[0]}: {"ok" if good else "FAIL"}'); ok &= good
+    # the promoted model is now the champion: its games on the new block are cached
+    st = dict(strong); st[(2.0, 'symaug6')] = st[(2.0, 'iter10')] = st[(2.0, 'iter14')] = 2.0
+    g.strength = st
+    r2 = g.evaluate(sd_of(2.0), sd_of(1.0), label='next')
+    good = r2['champ_games_new'] == 0
+    print(f'  => new champion baseline cached on the new block: champion games played '
+          f'{r2["champ_games_new"]}: {"ok" if good else "FAIL"}'); ok &= good
+    # lucky candidate: promotes on the panel seeds, fails on fresh ones, not kept
+    g = LuckyGate(strong, -0.5, max_pairs=20, batch_pairs=5, prescreen_pairs=0, confirm_pairs=20)
+    r = g.evaluate(sd_of(1.0), sd_of(0.0), label='lucky')
+    good = (r['outcome'] == 'confirm_fail' and not r['promote'] and not r['keep']
+            and g.seeds[0] == PANEL_SEED_BASE)
+    print(f'  => lucky: {r["outcome"]}, confirm diff {r["confirm"]["diff"]:+.2f}, '
+          f'panel block {g.seeds[0]}: {"ok" if good else "FAIL"}'); ok &= good
+    # a second attempt uses a NEW block
+    r = g.evaluate(sd_of(1.0), sd_of(0.0), label='lucky again')
+    good = r['confirm']['seed_base'] == CONFIRM_SEED_BASE + CONFIRM_STRIDE
+    print(f'  => second attempt block {r["confirm"]["seed_base"]}: {"ok" if good else "FAIL"}')
     return ok and good
 
 

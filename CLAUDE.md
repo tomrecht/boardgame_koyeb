@@ -753,6 +753,22 @@ on main's CLAUDE.md, "Next training run". What is here:
       nohup python -u league_run.py >> fv2B.log 2>&1 &
 
 Arm A: same with `A` / `symaug6_A.pt` / `PREFIX=fv2A`. Same SEED_BASE for both.
+**fv2B RESULT AND THE FRESH-SEED CONFIRMATION (2026-10-14).** fv2B (work Mac,
+snapshot at iter 145; `runs/`) promoted once, iter 83, +0.233 +- 0.129 on the
+panel -- the max of ~55 panel-tested candidates averaging -0.17 on the SAME
+cached seeds; its offspring score only ~+0.05 over the blend's. Candidates that
+fail are reverted, so the run was ~145 independent one-step fine-tunes of the
+blend (val loss flat), each neutral-to-worse vs its parent. **Fix, in
+`panel_gate.py` stage 3 (`CONFIRM_PAIRS`, default 100/member; `CONFIRM_BAR` 0):**
+a panel PROMOTE is replayed, candidate and champion, on a fresh seed block
+(79M + 10k per attempt) and promoted only if that paired diff > bar, else
+CONFIRM_FAIL (reverted). On a pass the panel MOVES to that block, so the new
+champion's baseline is unselected (fv2B's bar jumped +0.33 -> +0.56 after the
+lucky promotion and nothing came near it again). State persists in the panel
+cache. Cost ~1,200 games per panel promote. `test_panel_gate.py` part C.
+`confirm_match.py A.pt B.pt [pairs]`: fresh-seed head-to-head in the app config
+(prefilter 12/40/5, hand rules on, seeds 81M), resumable.
+
 **FULL-SIZE PRE-FLIGHT (2026-10-06, this iMac, `preflight/fv2B.log`): the whole
 loop works at real sizes** -- 300 generation games (72 min, 42-46 s/game single
 core), 8 epochs on 13,469 positions, hedge pre-screens 200+200 games (raw -0.055,
