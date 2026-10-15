@@ -61,6 +61,18 @@ def column_map(kind, src, dst):
     return [(s0[b], d0[b], SIZE[kind][b]) for b in BLOCKS[kind][src]]
 
 
+def col_scales(kind, f):
+    """Per-column input factor of set f (1 for v1 columns; A2/AB2's new columns
+    are multiplied by input_scales.json in the encoder)."""
+    n = encoder.feature_dims(f)[('tile', 'piece', 'global').index(kind)]
+    base = SIZE[kind]['base']
+    out = np.ones(n, dtype=np.float32)
+    if f in ('A2', 'AB2'):
+        sc = json.load(open('input_scales.json'))[f][kind]
+        out[base:] = sc
+    return out
+
+
 def widen(src_sd, features):
     src = network.features_of_state(src_sd)
     student = BoardGNN(features=features)
@@ -72,8 +84,11 @@ def widen(src_sd, features):
             kind, off = GROWN[k]
             w = torch.zeros_like(sd[k])
             w[:, :off] = v[:, :off]          # readout's hidden inputs
+            ss, ds = col_scales(kind, src), col_scales(kind, features)
             for a, b, n in column_map(kind, src, features):
-                w[:, off + b:off + b + n] = v[:, off + a:off + a + n]
+                # an input scaled up by s needs its weight divided by s
+                r = torch.from_numpy(ss[a:a + n] / ds[b:b + n])
+                w[:, off + b:off + b + n] = v[:, off + a:off + a + n] * r
             sd[k] = w                        # new columns stay zero
         else:
             if sd[k].shape != v.shape:

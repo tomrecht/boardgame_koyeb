@@ -511,9 +511,16 @@ class BoardEncoder:
     TILE/PIECE/GLOBAL_FEAT_DIM columns are always exactly v1.
     """
     def __init__(self, tile_neighbors_path='tile_neighbors.json', features='v1',
-                 afterstate=False):
+                 afterstate=False, scaled=True):
         global _tile_index, _tile_info
         self.features = features
+        # A2/AB2 new columns are rescaled by input_scales.json (fit_input_scales.py;
+        # scaled=False only for fitting them). Sets trained before it (A, AB) never are.
+        self._scales = None
+        if scaled and features in ('A2', 'AB2'):
+            path = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'input_scales.json')
+            sc = json.load(open(path))[features]
+            self._scales = {k: np.asarray(v, dtype=np.float32) for k, v in sc.items()}
         # AFTERSTATE encoding (2026-10-12): the position is the END of the
         # mover's turn, in the mover's frame -- what the 2-ply search scores.
         # The spent dice say nothing about it, so the four dice inputs are a
@@ -583,6 +590,11 @@ class BoardEncoder:
             g = g + fv.roll_opportunities(board, current_player) \
                   + fv.roll_opportunities(board, fv._other(current_player))
         global_feats = np.concatenate([global_feats, np.asarray(g, dtype=np.float32)])
+        if self._scales is not None:        # A2/AB2: new columns rescaled (input_scales.json)
+            v1 = feature_dims('v1')
+            tile_feats[:, v1[0]:] *= self._scales['tile']
+            piece_feats[:, v1[1]:] *= self._scales['piece']
+            global_feats[v1[2]:] *= self._scales['global']
         return tile_feats, piece_feats, global_feats
 
 

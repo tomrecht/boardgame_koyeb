@@ -41,6 +41,8 @@ from td_selfplay_loop import run_td_selfplay
 from agent import get_weights
 from symmetry import Symmetry
 from panel_gate import PanelGate, PANEL_DEFAULT, PANEL_FIVE
+from revert_policy import RevertPolicy
+import new_inputs
 from explore import temperature_for_iter
 
 SMOKE = os.environ.get('SMOKE') == '1'
@@ -85,6 +87,22 @@ CONFIG = {
     # panel's fixed seeds select for luck over a long run (fv2B). 0 = off.
     'CONFIRM_PAIRS':   _env('CONFIRM_PAIRS', 2 if SMOKE else 100, int),   # per member
     'CONFIRM_BAR':     _env('CONFIRM_BAR', 0.0, float),
+    # 9. when the live model is reset to the champion (revert_policy.py).
+    #    'lenient' (default since 2026-10-14): never during the first
+    #    BURNIN_ITERS iterations (bar a collapse), then only on a clear loss or
+    #    BEHIND_STREAK iterations in a row behind the champion. 'strict' = the
+    #    old rule (reset unless the panel capped with a positive diff); fv2B
+    #    ran strict and was ~145 independent one-step fine-tunes.
+    'REVERT_POLICY':   _env('REVERT_POLICY', 'lenient', str),
+    'BURNIN_ITERS':    _env('BURNIN_ITERS', 10, int),
+    'BEHIND_STREAK':   _env('BEHIND_STREAK', 3, int),
+    'COLLAPSE_FLOOR':  _env('COLLAPSE_FLOOR', -2.0, float),   # pre-screen margin vs champion
+    # 10. new input columns (new_inputs.py): their optimizer STEP is multiplied
+    #     by NEW_LR_MULT at iteration 1, falling linearly to 1x by iteration
+    #     NEW_LR_ANNEAL + 1; AVG_NEW_COLS=0 keeps them out of the weight average.
+    'NEW_LR_MULT':     _env('NEW_LR_MULT', 10.0, float),
+    'NEW_LR_ANNEAL':   _env('NEW_LR_ANNEAL', 20, int),
+    'AVG_NEW_COLS':    _env('AVG_NEW_COLS', False, _bool),
     # 2. league
     'LEAGUE_FRAC':     _env('LEAGUE_FRAC', 0.5 if SMOKE else 0.3, float),
     'LEAGUE_HEURISTIC': _env('LEAGUE_HEURISTIC', False, _bool),
@@ -220,6 +238,20 @@ def main():
         print(f"Start pool: {len(start_pool)} positions from {C['START_POOL']}, "
               f"{C['START_FRAC']:.0%} of games, rotate {C['START_ROTATE']}")
 
+    # Input usage (new_inputs.usage): spread of every input over pool positions,
+    # measured once in the run's own encoding; weights x spread logged per iter.
+    spread = None
+    if model.features != 'v1':
+        src = start_pool
+        if not src and os.path.exists('start_pool.jsonl'):
+            with open('start_pool.jsonl') as fh:
+                src = [json.loads(line)['state'] for line in fh if line.strip()]
+        if src:
+            spread = new_inputs.input_spread(
+                network.BoardEncoder(features=model.features, afterstate=model.afterstate), src)
+            u = new_inputs.usage(model.state_dict(), spread, model.features)
+            print(f"Input usage at start (new/old median influence): {u['all_ratio']:.3f}")
+
     def start_cfg_fn(it):
         if not start_pool:
             return None
@@ -248,8 +280,13 @@ def main():
     hedge = json.load(open(hedge_path)) if os.path.exists(hedge_path) else \
         {'mode': None, 'diffs': [], 'avg': None, 'prev_reverted': False}
     avg_state = {'sd': None}
+    revert = RevertPolicy(C['REVERT_POLICY'], C['BURNIN_ITERS'], C['BEHIND_STREAK'],
+                          C['COLLAPSE_FLOOR'], 2 * C['PRESCREEN_PAIRS'],
+                          state_path=f'{P}_revert_state.json')
 
     def _blend(a, b, beta):
+        if not C['AVG_NEW_COLS'] and model.features != 'v1':
+            return new_inputs.blend_skip_new(a, b, beta, model.features)
         # The frame flag is not a weight: take the candidate's (the warm-start
         # champion has none at all).
         return {k: (beta * a[k] + (1 - beta) * b[k])
@@ -260,6 +297,7 @@ def main():
         sd = {k: v.detach().cpu() for k, v in model.state_dict().items()}
         if not C['AVG']:
             rep = gate.evaluate(sd, champ_sd, label=f'it{it}')
+            revert.apply(rep, it)
             return _finish(rep, sd, it)
         # running average of the trained weights; restarts from the champion
         # whenever the live model was reverted to it
@@ -290,12 +328,19 @@ def main():
             rep['gated'] = 'averaged'
         else:
             rep['gated'] = 'raw'
+        revert.apply(rep, it)
         hedge['prev_reverted'] = not (rep.get('promote') or rep.get('keep'))
         with open(hedge_path, 'w') as fh:
             json.dump({k: v for k, v in hedge.items() if k != 'avg'}, fh)
         return _finish(rep, cand, it)
 
     def _finish(rep, sd, it):
+        if spread is not None:
+            u = new_inputs.usage(sd, spread, model.features)
+            rep['input_usage'] = u
+            print('  input usage it%d: new/old median influence %.3f | ' % (it, u['all_ratio'])
+                  + ' | '.join(f"{k} old {u[k]['old_median']:.3f} new {u[k]['new_median']:.4f}"
+                               f" (max {u[k]['new_max']:.4f})" for k in ('tile', 'piece', 'global')))
         if calib_ok:
             c, sl, g, n = calib_bench.score_model(network.model_from_state(sd))
             rep['calib'] = {'corr': round(c, 4), 'slope': round(sl, 4), 'n': n}
@@ -319,6 +364,8 @@ def main():
         augment=Symmetry() if C['SYMAUG'] else None,
         gen_cfg_fn=gen_cfg_fn, league_cfg_fn=league_cfg_fn, gate_fn=gate_fn,
         start_cfg_fn=start_cfg_fn,
+        optimizer_fn=lambda m, it: new_inputs.BoostedAdam(
+            m, lr=C['LR'], mult=C['NEW_LR_MULT'], anneal=C['NEW_LR_ANNEAL'], it=it),
         prefilter_cfg_fn=(lambda it: {'spec': C['GEN_PREFILTER'], 'unfiltered': C['GEN_UNFILTERED']})
                          if C['GEN_PREFILTER'] else None,
     )

@@ -130,7 +130,8 @@ def run_td_selfplay(model,
                     league_cfg_fn=None,
                     gate_fn=None,
                     start_cfg_fn=None,
-                    prefilter_cfg_fn=None):
+                    prefilter_cfg_fn=None,
+                    optimizer_fn=None):
     """Iterative TD(lambda) self-play. `model` is trained in place and is the
     current/live network; `champion_sd` is the promotion baseline (start it at
     iter5). `start_iter` lets a resumed run continue checkpoint numbering
@@ -164,6 +165,8 @@ def run_td_selfplay(model,
                            of games vs frozen panel opponents / heuristic).
       start_cfg_fn(it)  -> start_cfg for generate_games_parallel (a fraction
                            of games begin from pool positions, greedy).
+      optimizer_fn(model, it) -> optimizer (default Adam at lr); one with a
+                           set_iter(it) method is told each iteration (BoostedAdam).
       gate_fn(model, champion_sd, it) -> report dict with 'promote', 'keep'
                            and 'cand_score'; replaces the vs-champion gate
                            (see panel_gate.PanelGate.evaluate).
@@ -191,7 +194,11 @@ def run_td_selfplay(model,
     frame = bool(getattr(model, "afterstate", False))
     encoder = BoardEncoder(features=getattr(model, "features", "v1"), afterstate=frame)
     board = Board()
-    optimizer = torch.optim.Adam(model.parameters(), lr=lr)
+    def _new_opt(it):
+        if optimizer_fn is not None:
+            return optimizer_fn(model, it)
+        return torch.optim.Adam(model.parameters(), lr=lr)
+    optimizer = _new_opt(start_iter)
 
     history = []
     replay = deque(maxlen=replay_iters)   # last replay_iters lists of records
@@ -203,6 +210,10 @@ def run_td_selfplay(model,
     for it in range(start_iter, last_iter + 1):
         t0 = time.time()
         print(f"\n=== Iteration {it}/{last_iter} ===")
+        if hasattr(optimizer, 'set_iter'):
+            optimizer.set_iter(it)
+            if getattr(optimizer, 'mult', 1.0) != 1.0:
+                print(f"  new-input step multiplier {optimizer.mult:.2f}x")
 
         # 1. Generate fresh on-policy self-play with the CURRENT model.
         # Workers are CPU-only; ship a CPU state_dict. opp = self (None) unless
@@ -306,7 +317,7 @@ def run_td_selfplay(model,
                 model.load_state_dict(psd)
                 if hasattr(model, 'afterstate'):
                     model.afterstate = frame
-                optimizer = torch.optim.Adam(model.parameters(), lr=lr)
+                optimizer = _new_opt(it + 1)
             champion_sd = _cpu_state_dict(model)
             torch.save(champion_sd, f'{save_prefix}_champion.pt')
             what = (f'panel score {wr:+.3f}' if gate_fn is not None
@@ -319,7 +330,7 @@ def run_td_selfplay(model,
             # untouched: no discontinuity in the weights to accommodate.
             action = 'kept'
             print(f"  Not promoted ({wr_txt}) but "
-                  f"better than the champion -- keeping live model, not reverting.")
+                  f"gate or revert policy keeps the live model -- not reverting.")
         else:
             # BUGFIX: `model` was previously left as this iteration's (failed)
             # weights unconditionally, so the NEXT iteration's self-play
@@ -352,7 +363,7 @@ def run_td_selfplay(model,
                 if hasattr(model, 'afterstate'):
                     model.afterstate = frame
                 fork_note = " reverted live model to champion weights."
-            optimizer = torch.optim.Adam(model.parameters(), lr=lr)
+            optimizer = _new_opt(it + 1)
             print(f"  Not promoted ({wr_txt}). "
                   f"Champion unchanged;{fork_note}")
 
