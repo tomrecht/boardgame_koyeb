@@ -266,6 +266,22 @@ full loop on AB: clean. Not built: rollout-labelled disagreement targets, the JS
 twin of features_v2. Gate games ran 528 s single-core on the loaded iMac, so
 launch real runs on a quiet machine or a cloud box.
 
+**fv2B RUN (AB features, warm start blend_AB.pt, work Mac; snapshot at iter 145
+of 200, 2026-10-14; files in `runs/`: `fv2B.log`, `fv2B_gate_log.jsonl`,
+`fv2B_champion.pt`).** ONE promotion in 145 iterations: **iter 83**, panel paired
+diff +0.233 +- 0.129 (t 1.81 vs boundary 1.76 at the last look; iter10 +0.47,
+iter14 +0.37, symaug6 -0.14), calib corr +0.168 (blend +0.159). **Treat it as
+UNCONFIRMED -- likely mostly winner's curse:** the panel replays the SAME cached
+seeds every iteration, and iter 83 is the max of ~55 panel-tested candidates whose
+diffs averaged -0.17 (sd 0.15; next best +0.09). Its offspring (iters 84-145)
+average panel score +0.217 vs the blend's offspring +0.167 -- so its lineage is
+~+0.05 better, not +0.23. Other readings: a candidate is reverted unless it passes
+or is kept, so the run is ~145 independent one-step fine-tunes of the champion,
+not a trajectory (val loss flat at ~0.0055 throughout); one-step fine-tunes are
+neutral-to-worse vs parent (pre-screen mean -0.03 before, -0.15 after the
+promotion); and they lose ground specifically vs symaug6 (cand 0.00 vs blend
+0.45). **Before using it as fv2C's warm start: a fresh-seed match vs the blend.**
+
 **OPENING BLOCKABILITY IS PROBABLY NOT A REAL WEAKNESS (rollouts, 2026-10-04).**
 In 99 opening positions from owner's games where the computer had a near-equal
 alternative (within 0.25 pts by its own scoring) that left its numbered pieces
