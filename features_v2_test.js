@@ -10,6 +10,7 @@ const path = require('path');
 const E = require(path.join(__dirname, 'encoder.js'));
 const staticData = JSON.parse(fs.readFileSync(path.join(__dirname, 'encoder_static.json'), 'utf8'));
 const table = JSON.parse(fs.readFileSync(path.join(__dirname, 'endgame_table.json'), 'utf8'));
+const scales = JSON.parse(fs.readFileSync(path.join(__dirname, 'input_scales.json'), 'utf8'));
 const fx = JSON.parse(fs.readFileSync(process.argv[2] || path.join(__dirname, 'features_v2_fixture.json'), 'utf8'));
 
 const TOL = 2e-6;
@@ -31,13 +32,19 @@ const modes = {
     A: { features: 'A', table },
     AB: { features: 'AB', table },
     AB_after: { features: 'AB', afterstate: true, table },
-    A2: { features: 'A2', table },
-    AB2: { features: 'AB2', table },
-    AB2_after: { features: 'AB2', afterstate: true, table },
+    A2: { features: 'A2', table, scales: scales.A2 },
+    AB2: { features: 'AB2', table, scales: scales.AB2 },
+    AB2_after: { features: 'AB2', afterstate: true, table, scales: scales.AB2 },
 };
 const stats = {};
 const firstFail = {};
 let tested = 0;
+// a missing scale set must throw, never encode unscaled
+let throwOk = false;
+try {
+    E.encode(staticData, fx.cases[0].snapshot, fx.cases[0].player, { features: 'AB2', table });
+    console.log('FAIL: AB2 without scales did not throw');
+} catch (e) { throwOk = /input scales/.test(e.message); console.log(`AB2 without scales throws: ${throwOk ? 'ok' : 'FAIL ' + e.message}`); }
 for (const c of fx.cases) {
     for (const [mode, opts] of Object.entries(modes)) {
         const exp = c.expected[mode];
@@ -61,7 +68,7 @@ for (const c of fx.cases) {
         tested++;
     }
 }
-let all = true;
+let all = throwOk;
 for (const [mode, s] of Object.entries(stats)) {
     const kinds = Object.entries(s.byKind).map(([k, [ok, n]]) => `${k} ${ok}/${n}`).join(', ');
     console.log(`${mode.padEnd(9)} ${s.ok}/${s.n}  (${kinds})`);

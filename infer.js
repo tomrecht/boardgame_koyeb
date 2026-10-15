@@ -36,7 +36,8 @@ const Infer = (() => {
             if (r.ok) meta = await r.json();
         } catch (e) { meta = null; }
         const features = (meta && meta.features) || 'v1';
-        encOpts = { features, afterstate: !!(meta && meta.afterstate), table: null };
+        encOpts = { features, afterstate: !!(meta && meta.afterstate), table: null,
+                    scales: (meta && meta.input_scales) || null };
         if (features !== 'v1')
             encOpts.table = await (await fetch(tableUrl)).json();
         session = await ort.InferenceSession.create(modelUrl, {

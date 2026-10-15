@@ -443,7 +443,7 @@ const FV2 = (() => {
 
     /* The extra columns for one position: {tile: [n], piece: [[k] per row of
        allPieces], global: [m]}. */
-    function extras(graph, snapshot, pieces, allPieces, currentPlayer, features, table) {
+    function extras(graph, snapshot, pieces, allPieces, currentPlayer, features, table, scales) {
         const ctx = context(graph, snapshot, pieces);
         const tile = oppWallFlags(ctx, currentPlayer);
         let th = null;
@@ -457,6 +457,18 @@ const FV2 = (() => {
         if (HAS_NUMBERED_SAVEABLE(features)) glob = glob.concat(numberedSaveable(ctx, currentPlayer));
         if (HAS_THREATS(features))
             glob = glob.concat(rollOpportunities(ctx, currentPlayer), rollOpportunities(ctx, other(currentPlayer)));
+        // A2/AB2: every new column is multiplied by its factor from
+        // input_scales.json (fit_input_scales.py, train-features-v2), carried in
+        // the model's sidecar. Without them the net would see inputs up to 5x
+        // off, silently -- so they are required, not defaulted.
+        if (features === 'A2' || features === 'AB2') {
+            if (!scales) throw new Error(`features_v2: ${features} needs input scales (sidecar input_scales)`);
+            return {
+                tile: tile.map(v => v * scales.tile[0]),
+                piece: piece.map(r => r.map((v, j) => v * scales.piece[j])),
+                global: glob.map((v, j) => v * scales.global[j]),
+            };
+        }
         return { tile, piece, global: glob };
     }
 

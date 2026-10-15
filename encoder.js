@@ -224,7 +224,8 @@ function afterstateSnapshot(graph, snapshot) {
    none is exactly the shipped v1 turn-start encoding):
      features   'v1' | 'A' | 'AB' | 'A2' | 'AB2' -- appends features_v2.js's columns
      afterstate true for a net trained on end-of-turn positions
-     table      endgame_table.json's object (A / AB only) */
+     table      endgame_table.json's object (A / AB only)
+     scales     input_scales.json[features] (A2 / AB2 only; the sidecar's input_scales) */
 function encode(staticData, snapshot, currentPlayer, opts) {
     const o = opts || {};
     const graph = _R.buildGraph(staticData);
@@ -240,7 +241,7 @@ function encode(staticData, snapshot, currentPlayer, opts) {
     if (o.features && o.features !== 'v1') {
         const _F = (typeof require !== 'undefined') ? require('./features_v2.js')
             : (typeof window !== 'undefined' ? window : self).FV2;
-        const ex = _F.extras(graph, snapshot, pieces, allPieces, player, o.features, o.table);
+        const ex = _F.extras(graph, snapshot, pieces, allPieces, player, o.features, o.table, o.scales);
         tile = tile.map((r, i) => r.concat([ex.tile[i]]));
         piece = piece.map((r, i) => r.concat(ex.piece[i]));
         glob = glob.concat(ex.global);
