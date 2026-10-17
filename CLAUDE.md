@@ -119,6 +119,17 @@ ARCHIVE.md under "Current benchmark".
   3.46, all on G1 3.85, all on G6 6.08). Rule: blanks on DISTINCT LOW goals,
   and with a 1 or 2 on the same goal as it. Not covered: 2+ numbered pieces,
   4+ blanks, the cost of getting the blanks there.
+- **Save two numbered pieces over bringing a third to its goal on the sum
+  (owner's question, 2026-10-16).** 5 and 6 on their goals, numbered 1 eleven
+  from goal 1, roll 5-6: in the 3 real positions in `start_pool.jsonl`, 100
+  paired playouts per option (blend net 1-ply both sides, common dice), saving
+  beat bringing the 1 in by **0.50 pts (95% CI 0.15..0.85)**, -1.26 / -0.24 /
+  -0.01 per position, largest late (6-5 saved). **The net gets it wrong**: its
+  2-ply search preferred bringing the 1 in by ~0.4 pts in all three. A turns-
+  to-finish DP (own pieces only) also favoured bringing it in (5.75 vs 6.56
+  turns; 4.00 vs 4.55 with the last-piece rule) -- it ignores the race and the
+  piece's exposure on the way, so don't settle such questions by that DP alone.
+  Bringing a BLANK in instead is dominated (owner) and was not played out.
 - **A goal tile can never be blocked** (`is_blocked` requires `type == 'field'`)
   — only the routes to it. Sealing a goal from home takes 2 walls (4 pieces),
   and those same 2 walls seal its whole 4-apart pair.
