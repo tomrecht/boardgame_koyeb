@@ -129,7 +129,13 @@ ARCHIVE.md under "Current benchmark".
   settled. **The net leans to bringing N in by ~0.23 throughout** (per-position
   corr with playouts 0.35). A turns-to-finish DP (own pieces only) favoured
   bringing it in (5.75 vs 6.56 turns) -- it ignores the race and the piece's
-  exposure; don't settle such questions by that DP alone. Bringing a BLANK in
+  exposure; don't settle such questions by that DP alone. **The net's lean is
+  mostly the FRAME MISMATCH** (`probe_save56/frames.py`, 36 positions): its B-A
+  is +0.25 as the search scores (end of turn, 5-6 still showing, so "bring"
+  looks like it can save both again) vs +0.06 in the trained frame, playouts
+  -0.11; corr with playouts 0.28 -> 0.41. So NOT an upweighting case: the fix
+  is afterstate training -- rerun frames.py on the first afterstate net (its
+  search-frame B-A should drop to ~-0.1). Bringing a BLANK in
   is dominated (owner), not played out. A 177-position run (identity-swapped
   positions) is set up, NOT yet run: `probe_save56/README.md`.
 - **A goal tile can never be blocked** (`is_blocked` requires `type == 'field'`)
