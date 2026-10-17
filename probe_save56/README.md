@@ -32,7 +32,9 @@ Earlier results (same method, unmodified positions):
 * the 3 positions with N = 1 first found, 100 pairs each: B - A = -0.50
   (95% CI -0.85..-0.15); -1.26 / -0.24 / -0.01; the net preferred B by ~0.4 in
   all three. Pictures `pos_*.png`.
-* 33 more unmodified positions (N = 1-4), 40 pairs: see `rungen` in CLAUDE.md.
+* 33 more unmodified positions (N = 1-4), 40 pairs (`rungen.py`, results
+  `gen_prefs.json` / `rungen.jsonl`): B - A -0.07 (CI by game -0.33..+0.16);
+  late (<= 8 unsaved, 3 pos) -0.63 (-1.18..-0.28); the net's B - A +0.23.
 
 Sample size: paired SD ~3.0 per playout, real between-position SD ~0.5, so
 80% power at 5% needs ~94 positions for a 0.2 effect, ~42 for 0.3.
