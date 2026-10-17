@@ -218,6 +218,20 @@ it misses the net's best on ~10% of the computer's turns (~0.23 pts/game by the
 net's own valuation; the Aug match bounds the real cost < ~0.27). Gain is bounded
 by that, at zero latency cost; an afternoon's work, no retraining.
 
+## Later idea: a general SAVE vs BRING-TO-GOAL answer (owner, 2026-10-16)
+
+Owner wants a general rule for when to save pieces vs bring a piece onto a goal
+it can bank from (generalising `probe_save56/`). Plan: screen owner's real
+positions x 21 rolls for turns where the best max-save pair competes with the
+best goal-arrival pair (numbered or blank, one die or the sum); paired playouts
+on a few hundred, sampled across types (~2 min/position at 40 pairs on the
+iMac); fit B-A to position features (pieces left both sides, race lead, numbers
+saved / goal reached, distance and exposure of the piece, last-piece effects),
+distil into a shallow tree validated on held-out GAMES. **Wait for an afterstate
+net to play the playouts** -- today's 1-ply policy has the frame mismatch that
+biases it toward bringing pieces in (frames.py); trained-frame scoring works now
+but costs ~21x.
+
 ## Next training run: encoder changes (owner + Claude, 2026-10-04)
 
 Any new input reshapes the input layer, so these need a **from-scratch** run, not
