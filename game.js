@@ -11329,6 +11329,11 @@ function _orderMovePairForDisplay(movePair) {
     // 5 with 4+4 walked to goal 3 and then passed, because the save was tried
     // first from goal 5, where a 4 does not bank, and silently failed.
     if (samePiece(a, b)) return movePair;
+    // Nor may a HIGHER-DIE save be DEMOTED: the companion (typically a capture
+    // made by a piece stepping off a goal) can end the endgame, and then the
+    // die no longer banks. Owner hit it: blank on G4 to bank with a 5, blank off
+    // G1 capturing with the 6 -- the capture ran first and the save was refused.
+    if ((isSaveMove(a) && !isPromotableSave(a)) || (isSaveMove(b) && !isPromotableSave(b))) return movePair;
     const rank = (mv) => (isCaptureMove(mv) ? 0 : isPromotableSave(mv) ? 1 : 2);
     return rank(b) < rank(a) ? [b, a] : movePair;
 }
