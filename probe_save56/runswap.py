@@ -33,12 +33,21 @@ def job(t):
 if __name__ == '__main__':
     ps = sswap.positions()
     late = lambda x: 12 - len(x[0]['state']['racks'][x[0]['state']['currentTurn'] + 'Saved']) <= 8
+    # Late positions are scarce: keep them all. Otherwise prefer games not yet
+    # used (positions from one game are correlated), never two at one game-turn.
     rng = random.Random(0); pick = [x for x in ps if late(x)]
+    used = {x[0]['game'] for x in pick}; used_turn = {(x[0]['game'], x[0]['turn']) for x in pick}
     for n in (1, 2, 3, 4):
         pool_n = [x for x in ps if x[1] == n and not late(x)]
-        pick += rng.sample(pool_n, min(PER, len(pool_n)))
-    seen = {(x[0]['game'], x[0]['turn'], x[1]) for x in pick}
-    pick += [x for x in splace.positions() if late(x) and (x[0]['game'], x[0]['turn'], x[1]) not in seen]
+        rng.shuffle(pool_n)
+        pool_n.sort(key=lambda x: x[0]['game'] in used)          # stable: unused games first
+        k = 0
+        for x in pool_n:
+            if k == PER: break
+            if (x[0]['game'], x[0]['turn']) in used_turn: continue
+            pick.append(x); k += 1
+            used.add(x[0]['game']); used_turn.add((x[0]['game'], x[0]['turn']))
+    pick += [x for x in splace.positions() if late(x) and (x[0]['game'], x[0]['turn']) not in used_turn]
     print('positions', len(pick), 'late', sum(map(late, pick)), flush=True)
     with Pool(3, initializer=W.agent) as pool:
         prefs = pool.map(pref, pick)

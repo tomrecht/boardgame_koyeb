@@ -15,8 +15,9 @@ Positions come from owner's games (`start_pool.jsonl`), made to fit by:
 * `splace.py` -- N already 11 away; the 5/6 MOVED onto their goals from the
   field (changes occupancy). Used only for the scarce late positions.
 
-`runswap.py` samples 40 per N from the swap set (mover > 8 unsaved) plus every
-late position (mover <= 8 unsaved) from both sets, gets the net's 2-ply values
+`runswap.py` takes every late position (mover <= 8 unsaved) from both sets, then
+40 per N from the swap set, preferring games not yet used and never two at one
+game-turn (177 positions, 140 games, 112 of them contributing one), gets the net's 2-ply values
 for A and B, then N=40 pair playouts each. ~5 h on 3 workers of the iMac.
 
     cd /Users/tom/Game/BoardGame
@@ -24,8 +25,8 @@ for A and B, then N=40 pair playouts each. ~5 h on 3 workers of the iMac.
       nohup python3 -u probe_save56/runswap.py > probe_save56/runswap.log 2>&1 &
 
 Output: `swap_prefs.json` (positions, net values) and `runswap.jsonl` (one line
-per playout) in this folder. Group the CI by game: positions from one game are
-correlated.
+per playout) in this folder. `python3 probe_save56/analyze.py` summarises, with
+CIs bootstrapped over GAMES (positions from one game are correlated).
 
 Earlier results (same method, unmodified positions):
 * the 3 positions with N = 1 first found, 100 pairs each: B - A = -0.50
