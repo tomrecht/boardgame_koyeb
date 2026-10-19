@@ -843,7 +843,11 @@ reverts reset to the zero-weight warm start, and sits at 0.06-0.09. `input_probe
 champion's V, grouped CV): on 300 games / 13,164 records the new inputs explain
 the net's errors no better than an equal-width control of OLD inputs (ridge
 -4.7% vs -3.9%, both overfit; endgame boosted trees +15% vs +16% -- readout
-slack, not information). Underpowered at 300 games; rerun at ~1,500.
+slack, not information). **Rerun at 1,800 games / 78,527 records (iters
+80-85, 2026-10-19): NEW -0.71% (95% CI -1.24..-0.21) ridge, -1.20% boosted --
+the new inputs make the held-out fit WORSE; OLD control -0.12% / -0.30%; only
+in the endgame does anything help, and OLD more than NEW (+1.65 vs -0.62 ridge,
++2.96 vs +2.06 boosted). Settled: no information about the net's errors.**
 **The blend already holds most new inputs; it never learned the rest
 (`embed_probe.py`, 2026-10-19).** Each new input fitted (ridge, held-out R^2,
 grouped by game; 13,164 positions / 114k field pieces) from the v1 blend's
