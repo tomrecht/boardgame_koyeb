@@ -829,6 +829,25 @@ games: -0.068 (95% CI -0.189..+0.053), 46.8%** -- the gate's +0.23 was seed luck
   near_draw 3); none measured separately.
 * v1 control arm: not for now (owner) -- maybe after fv2C's results.
 
+**fv2C RESULT (work Mac, 2026-10-19).** One promotion in 79 iterations, iter 55
+(panel +0.32; fresh-seed confirm +0.42 +- 0.14). **App config vs the blend
+(`confirm_match.py`, seeds 81M, hand rules on): +0.258 pts/game (95% CI
++0.153..+0.363), 53.0% wins, 2,000 games** -- the first net since the blend to
+hold up outside the gate (fv2B's: -0.07). Saved as `fv2C_it55.pt` (= the run's
+champion; weights identical to `runs/fv2C_iter55.pt`). Shipping needs the AB2 +
+afterstate JS side (`js-features-v2`) and the export recipe above.
+**The gain is probably NOT the new inputs.** Input usage (weight x spread vs an
+old column) rose to 0.37 in burn-in with no strength gain, fell to ~0.1 when
+reverts reset to the zero-weight warm start, and sits at 0.06-0.09. `input_probe.py`
+(records saved by `DUMP_RECORDS=<path.jsonl.gz>`; held-out game result vs the
+champion's V, grouped CV): on 300 games / 13,164 records the new inputs explain
+the net's errors no better than an equal-width control of OLD inputs (ridge
+-4.7% vs -3.9%, both overfit; endgame boosted trees +15% vs +16% -- readout
+slack, not information). Underpowered at 300 games; rerun at ~1,500.
+After the promotion only 1 of 24 children passed the pre-screen (before: ~half),
+so the run was restarted at iter 80 with `LR=2e-5 EPOCHS=4`, records dumped to
+`runs/fv2C_records.jsonl.gz`.
+
 **FULL-SIZE PRE-FLIGHT (2026-10-06, this iMac, `preflight/fv2B.log`): the whole
 loop works at real sizes** -- 300 generation games (72 min, 42-46 s/game single
 core), 8 epochs on 13,469 positions, hedge pre-screens 200+200 games (raw -0.055,
