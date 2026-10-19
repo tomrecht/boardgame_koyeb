@@ -203,6 +203,16 @@ def export(ckpt, out_path):
     # needs. Ship it beside model.onnx (and endgame_table.json for A / AB).
     meta = {'features': features, 'afterstate': afterstate,
             'source': os.path.basename(ckpt)}
+    # The web app loads the net by a CONTENT-HASHED name that the sidecar gives:
+    # a returning player's old service worker serves .onnx cache-first and would
+    # pair its cached old model.onnx with this sidecar (main's build_web.py
+    # refuses a sidecar without it). Ship both files; they are identical.
+    import hashlib, shutil
+    digest = hashlib.sha256(open(out_path, 'rb').read()).hexdigest()[:8]
+    hashed = os.path.join(os.path.dirname(os.path.abspath(out_path)), f'model-{digest}.onnx')
+    shutil.copyfile(out_path, hashed)
+    meta['onnx'] = os.path.basename(hashed)
+    print(f'wrote {hashed} (the name the web app loads)')
     if features in ('A2', 'AB2'):
         # the new columns' factors (input_scales.json): features_v2.js refuses
         # to encode A2/AB2 without them, so they travel with the net
