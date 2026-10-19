@@ -844,6 +844,20 @@ champion's V, grouped CV): on 300 games / 13,164 records the new inputs explain
 the net's errors no better than an equal-width control of OLD inputs (ridge
 -4.7% vs -3.9%, both overfit; endgame boosted trees +15% vs +16% -- readout
 slack, not information). Underpowered at 300 games; rerun at ~1,500.
+**The blend already holds most new inputs; it never learned the rest
+(`embed_probe.py`, 2026-10-19).** Each new input fitted (ridge, held-out R^2,
+grouped by game; 13,164 positions / 114k field pieces) from the v1 blend's
+internal representation (NET), the raw v1 inputs (RAW) and the same net with
+random weights (RAND). NET ~= RAW ~= RAND almost everywhere, i.e. training built
+nothing beyond what a linear read-off of the board gives:
+(a) REDUNDANT, all three >= 0.99: per-side counts, opp saveable, race, turns to
+finish; numbered-on-own-goal 0.94 / RAW 1.00; own-goal distance 0.97 / 0.92 /
+0.94; P(captured) 0.87 / 0.89 / 0.88.
+(b) ABSENT in all three: no-save counter 0.06 (v1 cannot know it), blots >= 1
+0.15, >= 2 0.04, P(walled) 0.61 / 0.56 / 0.57, roll opportunities 0.2-0.6.
+The only feature the trained net built itself: the endgame-table value, 0.79
+vs 0.58 / 0.60-0.68. So the (b) inputs carry information the net lacks, yet
+fv2C barely used them and input_probe found none of it in the net's errors.
 After the promotion only 1 of 24 children passed the pre-screen (before: ~half),
 so the run was restarted at iter 80 with `LR=2e-5 EPOCHS=4`, records dumped to
 `runs/fv2C_records.jsonl.gz`.
