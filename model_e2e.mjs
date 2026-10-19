@@ -32,7 +32,7 @@ const served = { model: 0, sidecar: 0, table: 0 };
 const server = http.createServer((req, res) => {
     const u = decodeURIComponent(new URL(req.url, 'http://x').pathname);
     let p = path.join(ROOT, u);
-    if (u === '/model.onnx' && MODEL) { p = MODEL; served.model++; }
+    if (/^\/model(-[0-9a-f]+)?\.onnx$/.test(u) && MODEL) { p = MODEL; served.model++; }
     if (u === '/model.json' && MODEL) {
         const side = MODEL.replace(/\.onnx$/, '.json');
         served.sidecar++;

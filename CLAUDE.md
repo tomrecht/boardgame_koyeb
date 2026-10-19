@@ -160,6 +160,22 @@ sideways scroll, game paused, back returns to How to Play.
   last-piece; `agent_test.js` 50/50; build passes. **Latency, same machine, 40
   moves each, training run competing:** median 108 / p90 296 / max 689 ms vs
   the blend's 90 / 121 / 520 -- check on a phone before main.
+  **THE NET SHIPS AS `model-<sha256[:8]>.onnx`, NAMED BY THE SIDECAR's `onnx`
+  (2026-10-19).** Owner's phone on testing: "on-device computer is switched off".
+  sw.js serves .onnx CACHE-FIRST, and a returning player's OLD worker answers the
+  first load after a deploy: it returned the cached v1 model.onnx beside the
+  fresh (network-first) AB2 model.json -> `Got invalid dimensions for input:
+  tile_feats ... Got: 13 Expected: 12` -> disabled. Reproduced headless (old
+  build, worker controlling, swap to new build, reload: fails; second reload
+  works). Before, every swap was v1 -> v1, so a stale net cost one session of the
+  old champion and nobody saw it. Now infer.js loads the file the sidecar names,
+  a name no old worker has cached; `model.onnx` stays in the repo for the Python
+  tools (identical bytes, one git blob). `build_web.py` refuses a sidecar without
+  `onnx`, a name not matching the hash, or a copy differing from model.onnx.
+  Measured on the repro: first reload after the swap, second reload and an
+  OFFLINE reload all play. **TO SHIP a net now also:** the training branch's
+  `onnx_export.py` writes the hashed copy and the key; put the hashed name in
+  sw.js SHELL in place of the old one.
   **Re-check the hand rules on this net (owner):** `_strands_last_piece` and the
   save-die rule were written for turn-start nets; an afterstate net may not need
   them (CLAUDE.md "Re-check main's `_strands_last_piece` rule on the first

@@ -41,7 +41,7 @@ const SHELL = [
     './ort/ort.wasm.min.js',
     './ort/ort-wasm-simd-threaded.mjs',
     './ort/ort-wasm-simd-threaded.wasm',
-    './model.onnx',
+    './model-70432462.onnx',   // the name model.json gives (build_web.py checks)
     './model.json',
     // The fv2C net (AB2) reads the exact endgame table; without it offline the
     // computer could not move (build_web.py refuses to build otherwise).

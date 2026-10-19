@@ -85,7 +85,8 @@ RUNTIME = [
     'ort/ort.wasm.min.js',
     'ort/ort-wasm-simd-threaded.mjs',
     'ort/ort-wasm-simd-threaded.wasm',
-    'model.onnx',
+    # The net itself ships under the name the sidecar gives it (MODEL_FILE
+    # below), not as model.onnx -- see there.
     # The model's SIDECAR (onnx_export.py writes it): which encoder the net
     # needs -- feature set v1/A/AB, and whether it was trained on end-of-turn
     # positions. infer.js reads it; absent would mean v1 turn start.
@@ -100,10 +101,24 @@ def _model_meta():
         return {}
 
 
+# THE NET SHIPS UNDER A CONTENT-HASHED NAME (2026-10-19). sw.js serves .onnx
+# cache-first, so a returning player's OLD service worker -- the one that answers
+# the first load after a deploy -- handed back the cached old model.onnx beside
+# the fresh model.json, and an AB2 sidecar on a v1 net made the first inference
+# fail ("on-device computer is switched off"). A name the old worker has never
+# seen goes to the network. The repo keeps model.onnx for the Python tools; the
+# sidecar's "onnx" names a byte-identical copy, model-<sha256[:8]>.onnx.
+def _model_file():
+    return _model_meta().get('onnx') or 'model.onnx'
+
+
+MODEL_FILE = _model_file()
+
+
 # An A/AB net reads the exact endgame table (features_v2); a v1 net does not,
 # so it ships only then -- 1.3 MB raw, ~0.4 MB compressed.
 NEEDS_TABLE = _model_meta().get('features', 'v1') != 'v1'
-BUNDLE = SHELL + ASSETS + STRATEGY + ICONS + PORT + RUNTIME + \
+BUNDLE = SHELL + ASSETS + STRATEGY + ICONS + PORT + RUNTIME + [MODEL_FILE] + \
     (['endgame_table.json'] if NEEDS_TABLE else [])
 
 
@@ -122,6 +137,19 @@ def check():
     missing = [f for f in BUNDLE if not os.path.exists(os.path.join(HERE, f))]
     if missing:
         problems.append('missing from the repo: ' + ', '.join(missing))
+
+    if MODEL_FILE == 'model.onnx':
+        problems.append("model.json names no hashed model file ('onnx'): a returning "
+                        "player's old service worker would serve its cached model.onnx "
+                        "with the new sidecar")
+    elif os.path.exists(os.path.join(HERE, MODEL_FILE)):
+        import hashlib
+        data = open(os.path.join(HERE, MODEL_FILE), 'rb').read()
+        if MODEL_FILE != 'model-%s.onnx' % hashlib.sha256(data).hexdigest()[:8]:
+            problems.append(MODEL_FILE + ' is not named by its content hash')
+        if data != open(os.path.join(HERE, 'model.onnx'), 'rb').read():
+            problems.append(MODEL_FILE + ' differs from model.onnx (the Python tools '
+                            'and the app would run different nets)')
 
     sw = sw_precache_list()
     if sw is None:
@@ -201,6 +229,9 @@ def build(out):
             # must reach returning players on their next visit (2026-10-06)
             "/model.onnx\n"
             "  Cache-Control: no-cache\n"
+            # the hashed name never changes content
+            "/model-*.onnx\n"
+            "  Cache-Control: public, max-age=31536000, immutable\n"
             "/model.json\n"
             "  Cache-Control: no-cache\n"
             "/features_v2.js\n"

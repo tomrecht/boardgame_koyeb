@@ -40,7 +40,10 @@ const Infer = (() => {
                     scales: (meta && meta.input_scales) || null };
         if (features !== 'v1')
             encOpts.table = await (await fetch(tableUrl)).json();
-        session = await ort.InferenceSession.create(modelUrl, {
+        // The sidecar names the net's file (content-hashed, so a service worker
+        // that cached an older net can never pair it with this sidecar).
+        const onnxUrl = (meta && meta.onnx) ? modelUrl.replace(/[^/]*$/, meta.onnx) : modelUrl;
+        session = await ort.InferenceSession.create(onnxUrl, {
             executionProviders: ['wasm'],
             graphOptimizationLevel: 'all',
         });
