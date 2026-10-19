@@ -12,7 +12,18 @@
 #
 #     nohup ./queue_v1_arm.sh > runs/queue_v1_arm.log 2>&1 &
 cd "${0:A:h}"
-while pgrep -f "PREFIX=runs/fv2C " > /dev/null; do sleep 60; done
+# STOP_AT (default 92): end fv2C once that iteration is done (the smaller-step
+# restart at iter 80 has had a fair test by then); 0 = wait for it to end itself.
+STOP_AT=${STOP_AT:-92}
+while pgrep -f "PREFIX=runs/fv2C " > /dev/null; do
+    if [[ $STOP_AT -gt 0 ]] && grep -q "^  iter $STOP_AT done" runs/fv2C.log; then
+        echo "fv2C iter $STOP_AT done $(date); stopping it"
+        pkill -f "league_run.py"
+        sleep 60
+        continue
+    fi
+    sleep 60
+done
 echo "fv2C ended $(date); starting fv2V1"
 sleep 30   # let the old pool's workers exit
 exec caffeinate -is env PATH="$PWD/.venv/bin:$PATH" BOARDGAME_DEVICE=mps PYTHONHASHSEED=0 \
