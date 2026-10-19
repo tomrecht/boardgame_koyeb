@@ -180,8 +180,12 @@ def export(ckpt, out_path):
     sample = _batches(encoder, sizes=(8,))[0]
     args = (sample['tile_feats'], sample['piece_feats'], sample['global_feats'],
             sample['piece_to_tile'], sample['tile_to_piece'])
+    # The classic TorchScript exporter, as every shipped model used: torch >= 2.9
+    # defaults to the dynamo exporter (needs onnxscript, different graph).
+    import inspect
+    legacy = {'dynamo': False} if 'dynamo' in inspect.signature(torch.onnx.export).parameters else {}
     torch.onnx.export(
-        wrapper, args, out_path,
+        wrapper, args, out_path, **legacy,
         input_names=['tile_feats', 'piece_feats', 'global_feats',
                      'piece_to_tile', 'tile_to_piece'],
         output_names=['value'],
