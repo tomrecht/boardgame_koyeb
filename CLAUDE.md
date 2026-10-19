@@ -144,8 +144,8 @@ sideways scroll, game paused, back returns to How to Play.
 
 ## AI and model — current status
 
-- **Deployed model: `model.onnx` = `fv2C_it55.pt` (on `testing` 2026-10-19,
-  for owner to play before main)** -- the first net with the v2 inputs (AB2) and
+- **Deployed model: `model.onnx` = `fv2C_it55.pt` (LIVE on quahuru.com
+  2026-10-19; owner played it on testing, phone included -- no felt slowdown)** -- the first net with the v2 inputs (AB2) and
   AFTERSTATE training, from the fv2C run (branch `train-features-v2`, where the
   checkpoint is committed). **vs the 4-way blend on fresh seeds in the app's
   config (`confirm_match.py`, hand rules on): +0.258 pts/game (95% CI
@@ -173,7 +173,8 @@ sideways scroll, game paused, back returns to How to Play.
   tools (identical bytes, one git blob). `build_web.py` refuses a sidecar without
   `onnx`, a name not matching the hash, or a copy differing from model.onnx.
   Measured on the repro: first reload after the swap, second reload and an
-  OFFLINE reload all play. **TO SHIP a net now also:** the training branch's
+  OFFLINE reload all play; live after the merge: first visit and a
+  worker-controlled reload both play, loading model-70432462.onnx. **TO SHIP a net now also:** the training branch's
   `onnx_export.py` writes the hashed copy and the key; put the hashed name in
   sw.js SHELL in place of the old one.
   **Re-check the hand rules on this net (owner):** `_strands_last_piece` and the
