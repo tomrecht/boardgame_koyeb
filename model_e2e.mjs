@@ -15,9 +15,15 @@ const ROOT = path.dirname(new URL(import.meta.url).pathname);
 const [label = 'run', nMovesArg = '40', scoresPath = ''] = process.argv.slice(2);
 const N_MOVES = +nMovesArg;
 const MODEL = process.env.MODEL || '';
-const extDir = path.join(os.homedir(), '.vscode', 'extensions');
-const cg = fs.readdirSync(extDir).filter(d => d.startsWith('danielsanmedium.dscodegpt-')).sort().pop();
-const { chromium } = createRequire(path.join(extDir, cg, 'standalone') + '/')('patchright');
+// patchright: from $PATCHRIGHT_FROM (a dir whose node_modules has it) if set,
+// else the CodeGPT extension's copy, as on the iMac.
+function pwBase() {
+    if (process.env.PATCHRIGHT_FROM) return process.env.PATCHRIGHT_FROM;
+    const extDir = path.join(os.homedir(), '.vscode', 'extensions');
+    const cg = fs.readdirSync(extDir).filter(d => d.startsWith('danielsanmedium.dscodegpt-')).sort().pop();
+    return path.join(extDir, cg, 'standalone');
+}
+const { chromium } = createRequire(pwBase() + '/')('patchright');
 const CHROME = '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome';
 const TYPES = { '.html': 'text/html', '.js': 'text/javascript', '.mjs': 'text/javascript', '.json': 'application/json',
                 '.png': 'image/png', '.webp': 'image/webp', '.wasm': 'application/wasm',

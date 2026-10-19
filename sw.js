@@ -12,7 +12,9 @@
  */
 // v9 (2026-10-06): new model.onnx (4-way blend) -- the bump makes every
 // installed worker drop its cached copy of the old net.
-const CACHE = 'quahuru-v9';
+// v10 (2026-10-19): new model.onnx (fv2C iter 55: AB2 inputs, afterstate) and
+// its endgame table.
+const CACHE = 'quahuru-v10';
 
 // The shell is what a cold, offline start needs to render a board.
 const SHELL = [
@@ -41,6 +43,9 @@ const SHELL = [
     './ort/ort-wasm-simd-threaded.wasm',
     './model.onnx',
     './model.json',
+    // The fv2C net (AB2) reads the exact endgame table; without it offline the
+    // computer could not move (build_web.py refuses to build otherwise).
+    './endgame_table.json',
     // The ported agent itself. local_agent.js injects these lazily, so without
     // precaching they would only ever be cached AFTER a first online move --
     // i.e. the offline app would load and then be unable to move a piece.

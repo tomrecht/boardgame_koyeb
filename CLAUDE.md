@@ -144,7 +144,27 @@ sideways scroll, game paused, back returns to How to Play.
 
 ## AI and model — current status
 
-- **Deployed model: `model.onnx` = `blend4way_Oct6.pt` (shipped 2026-10-06)**,
+- **Deployed model: `model.onnx` = `fv2C_it55.pt` (on `testing` 2026-10-19,
+  for owner to play before main)** -- the first net with the v2 inputs (AB2) and
+  AFTERSTATE training, from the fv2C run (branch `train-features-v2`, where the
+  checkpoint is committed). **vs the 4-way blend on fresh seeds in the app's
+  config (`confirm_match.py`, hand rules on): +0.258 pts/game (95% CI
+  +0.153..+0.363), 53.0% wins, 2,000 games.** The gain is probably not the new
+  inputs (input_probe; see train-features-v2's CLAUDE.md). `model.json` sidecar
+  = `{features: AB2, afterstate: true, input_scales}`; `endgame_table.json`
+  ships and is precached; `sw.js` v10; `REC_MODEL_TAG` = 'fv2C_it55_Oct19'.
+  Export with TRAIN-FEATURES-V2's `onnx_export.py` (main's builds a v1 encoder
+  and writes no sidecar). **Verified (work Mac):** encoder JS = Python 280/280 in
+  every mode incl. AB2-afterstate (fresh `dump_v2_fixture.py 100 100`); in the
+  page (`model_e2e.mjs`) JS vs Python ORT scores max diff 1.8e-7 on 280 incl. 80
+  last-piece; `agent_test.js` 50/50; build passes. **Latency, same machine, 40
+  moves each, training run competing:** median 108 / p90 296 / max 689 ms vs
+  the blend's 90 / 121 / 520 -- check on a phone before main.
+  **Re-check the hand rules on this net (owner):** `_strands_last_piece` and the
+  save-die rule were written for turn-start nets; an afterstate net may not need
+  them (CLAUDE.md "Re-check main's `_strands_last_piece` rule on the first
+  afterstate net").
+- **Previous: `blend4way_Oct6.pt` (shipped 2026-10-06)**,
   the plain AVERAGE of four nets' weights: symaug iter6 (the previous champion),
   iter10, iter14 and symaug iter11 (one lineage, so they share a basin).
   **Confirmed vs the previous champion on fresh seeds in the app's config:
@@ -521,7 +541,7 @@ with it in mind.** Assessment and the concrete implications:
 ## Current state
 
 - **JS SIDE FOR THE NEXT NETS: features_v2 + AFTERSTATE (2026-10-12/13, branch
-  `js-features-v2`, NOT merged -- merge when a v2 or afterstate net ships).** The
+  `js-features-v2`, MERGED into testing 2026-10-19 with the fv2C net).** The
   training branch `train-features-v2` now trains A/AB feature sets and, by default,
   AFTERSTATE nets (trained on the end-of-turn position the search scores; see the
   t49 entry below and that branch's runbook). This branch makes the app able to
