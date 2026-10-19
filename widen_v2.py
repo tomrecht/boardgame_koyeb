@@ -99,20 +99,40 @@ def widen(src_sd, features):
     return student
 
 
-def verify(teacher, student, n_games=3):
-    import weakness_probe as W
-    e1 = BoardEncoder(features=teacher.features)
-    e2 = BoardEncoder(features=student.features)
-    recs = [json.loads(l) for l in open('quahuru-games-apvo2h65.jsonl')][5:5 + n_games]
-    worst, n = 0.0, 0
-    with torch.no_grad():
+def _verify_boards(n_games=3, n_pool=300):
+    """Boards to check the widened net on: owner's game log replayed (both turn
+    start and after) when it is here (it is gitignored, so iMac only), else the
+    tracked start pool's positions."""
+    import os
+    log = 'quahuru-games-apvo2h65.jsonl'
+    if os.path.exists(log):
+        import weakness_probe as W
+        recs = [json.loads(l) for l in open(log)][5:5 + n_games]
         for rec in recs:
             for t, b, played, b2 in W.turn_states(rec):
-                for bb in (b, b2):
-                    a = float(teacher(e1.encode(bb, bb.current_player)))
-                    c = float(student(e2.encode(bb, bb.current_player)))
-                    worst = max(worst, abs(a - c))
-                    n += 1
+                yield b
+                yield b2
+        return
+    from game import Board
+    with open('start_pool.jsonl') as f:
+        for i, l in enumerate(f):
+            if i >= n_pool:
+                break
+            b = Board()
+            b.update_state(json.loads(l)['state'])
+            yield b
+
+
+def verify(teacher, student):
+    e1 = BoardEncoder(features=teacher.features)
+    e2 = BoardEncoder(features=student.features)
+    worst, n = 0.0, 0
+    with torch.no_grad():
+        for bb in _verify_boards():
+            a = float(teacher(e1.encode(bb, bb.current_player)))
+            c = float(student(e2.encode(bb, bb.current_player)))
+            worst = max(worst, abs(a - c))
+            n += 1
     return n, worst
 
 

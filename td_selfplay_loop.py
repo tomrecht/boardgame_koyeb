@@ -45,6 +45,7 @@ workers. This keeps all main-process tensors on one device and avoids the
 cross-device errors seen previously.
 """
 import copy
+import os
 import time
 from collections import deque
 
@@ -64,6 +65,26 @@ def learner_records(records):
     trained. Self-play records are all learner=True (old records without the
     field count as learner)."""
     return [r for r in records if r.get('learner', True)]
+
+
+_DUMP_KEYS = ('game_id', 'player', 'game_stage', 'move_index', 'raw_state',
+              'final_score', 'explored', 'sampled', 'afterstate', 'terminal')
+
+
+def _dump_records(records, it):
+    """DUMP_RECORDS=<path.jsonl.gz>: append this iteration's learner records
+    (training's own inputs: raw_state + final_score) for offline probes such as
+    input_probe.py. Off by default; never affects training."""
+    path = os.environ.get('DUMP_RECORDS')
+    if not path:
+        return
+    import gzip, json
+    with gzip.open(path, 'at') as f:      # gzip members concatenate, so append is safe
+        for r in records:
+            d = {k: r[k] for k in _DUMP_KEYS if k in r}
+            d['iter'] = it
+            f.write(json.dumps(d) + '\n')
+    print(f"  dumped {len(records)} records to {path}")
 
 
 def _cpu_state_dict(model):
@@ -251,6 +272,7 @@ def run_td_selfplay(model,
         if len(records) != n_all:
             print(f"  league: kept {len(records)} learner positions of {n_all} "
                   f"(dropped {n_all - len(records)} panel-opponent positions)")
+        _dump_records(records, it)
 
         if len({r['game_id'] for r in records}) < 4:
             print("  Too few games to train this iteration; skipping.")
