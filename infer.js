@@ -14,9 +14,15 @@ const _enc = (typeof require !== 'undefined') ? require('./encoder.js')
 const Infer = (() => {
     let session = null;
     let staticData = null;
+    // The model's SIDECAR (model.json beside model.onnx, written by
+    // onnx_export.py): which encoder the net was trained with. Absent -> the
+    // shipped v1 turn-start encoding, so an old deploy without the file is
+    // unchanged. A/AB nets also need endgame_table.json (features_v2).
+    let encOpts = { features: 'v1', afterstate: false, table: null };
+    let meta = null;
 
     async function init({ ort, modelUrl = 'model.onnx', staticUrl = 'encoder_static.json',
-                          wasmPath = '/ort/' } = {}) {
+                          wasmPath = '/ort/', tableUrl = 'endgame_table.json' } = {}) {
         ort.env.wasm.numThreads = 1;          // see header: no COOP/COEP needed
         // Must be root-absolute (or a full URL): the loader dynamically IMPORTS
         // the .mjs beside the wasm, and a bare relative path is not a valid
@@ -24,6 +30,16 @@ const Infer = (() => {
         // reads like a missing build rather than a bad path.
         ort.env.wasm.wasmPaths = wasmPath;
         staticData = await (await fetch(staticUrl)).json();
+        meta = null;
+        try {
+            const r = await fetch(modelUrl.replace(/\.onnx$/, '.json'));
+            if (r.ok) meta = await r.json();
+        } catch (e) { meta = null; }
+        const features = (meta && meta.features) || 'v1';
+        encOpts = { features, afterstate: !!(meta && meta.afterstate), table: null,
+                    scales: (meta && meta.input_scales) || null };
+        if (features !== 'v1')
+            encOpts.table = await (await fetch(tableUrl)).json();
         session = await ort.InferenceSession.create(modelUrl, {
             executionProviders: ['wasm'],
             graphOptimizationLevel: 'all',
@@ -79,13 +95,14 @@ const Infer = (() => {
     /* Score one snapshot, or a batch of them. Returns a number / array. */
     async function score(ort, snapshots, currentPlayer) {
         const list = Array.isArray(snapshots) ? snapshots : [snapshots];
-        const encoded = list.map(s => _enc.encode(staticData, s, currentPlayer || s.current_player));
+        const encoded = list.map(s => _enc.encode(staticData, s, currentPlayer || s.current_player, encOpts));
         const out = await session.run(collate(ort, encoded));
         const values = out[session.outputNames[0]].data;
         return Array.isArray(snapshots) ? Array.from(values) : values[0];
     }
 
-    return { init, score, collate, ready: () => !!session };
+    return { init, score, collate, ready: () => !!session,
+             config: () => ({ features: encOpts.features, afterstate: encOpts.afterstate, meta }) };
 })();
 
 if (typeof module !== 'undefined' && module.exports) module.exports = Infer;

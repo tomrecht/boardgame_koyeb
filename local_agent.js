@@ -48,7 +48,7 @@ const LocalAgent = (function () {
 
     // Order is not load-bearing (each file aliases the global object rather than
     // importing at parse time) but it is the dependency order, so keep it.
-    const FILES = ['ort/ort.wasm.min.js', 'route.js', 'encoder.js', 'infer.js',
+    const FILES = ['ort/ort.wasm.min.js', 'route.js', 'features_v2.js', 'encoder.js', 'infer.js',
                    'engine.js', 'heuristic.js', 'agent.js'];
 
     // A classic script that fails to PARSE still fires `load`, so the script
@@ -57,7 +57,7 @@ const LocalAgent = (function () {
     // undefined. Checking for the exports themselves is the only honest test.
     // (This is not hypothetical: engine.js's NO_SAVE_TURNS_FOR_DRAW collided
     // with game.js's and had to be renamed.)
-    const REQUIRED = ['ort', 'buildGraph', 'encode', 'Infer', 'Engine', 'evaluate',
+    const REQUIRED = ['ort', 'buildGraph', 'FV2', 'encode', 'Infer', 'Engine', 'evaluate',
                       'selectMovePair', 'moveCmp'];
 
     const NO_SAVE_TURNS_FOR_DRAW_FALLBACK = 10;
@@ -238,6 +238,8 @@ const LocalAgent = (function () {
             stages: { white: 'opening', black: 'opening' },
             first_move: firstMove,
             draw_called: false,
+            // features_v2's no-save input (A/AB nets); update_state reads the same.
+            no_save_turns: gs.noSaveTurns || 0,
             // The frontend owns the no-save counter; update_state adopts what it
             // reports, falling back to the threshold only when it is absent.
             draw_callable: gs.drawCallable === undefined

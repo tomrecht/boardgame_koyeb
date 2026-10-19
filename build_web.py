@@ -15,6 +15,7 @@ Usage:  python build_web.py [--out dist] [--check]
         --check verifies the manifest without writing anything.
 """
 import argparse
+import json
 import os
 import re
 import shutil
@@ -66,6 +67,7 @@ ICONS = [
 # The ported agent (local_agent.js's FILES) and the data it reads.
 PORT = [
     'route.js',
+    'features_v2.js',
     'encoder.js',
     'infer.js',
     'engine.js',
@@ -84,9 +86,25 @@ RUNTIME = [
     'ort/ort-wasm-simd-threaded.mjs',
     'ort/ort-wasm-simd-threaded.wasm',
     'model.onnx',
+    # The model's SIDECAR (onnx_export.py writes it): which encoder the net
+    # needs -- feature set v1/A/AB, and whether it was trained on end-of-turn
+    # positions. infer.js reads it; absent would mean v1 turn start.
+    'model.json',
 ]
 
-BUNDLE = SHELL + ASSETS + STRATEGY + ICONS + PORT + RUNTIME
+
+def _model_meta():
+    try:
+        return json.load(open(os.path.join(HERE, 'model.json')))
+    except Exception:
+        return {}
+
+
+# An A/AB net reads the exact endgame table (features_v2); a v1 net does not,
+# so it ships only then -- 1.3 MB raw, ~0.4 MB compressed.
+NEEDS_TABLE = _model_meta().get('features', 'v1') != 'v1'
+BUNDLE = SHELL + ASSETS + STRATEGY + ICONS + PORT + RUNTIME + \
+    (['endgame_table.json'] if NEEDS_TABLE else [])
 
 
 def sw_precache_list():
@@ -116,6 +134,12 @@ def check():
         if not_shipped:
             problems.append('precached by sw.js but NOT in the bundle (the app '
                             'would install and fail offline): ' + ', '.join(not_shipped))
+        # The table is fetched at start-up by an A/AB net, so offline it must
+        # come from the cache: refuse to build an A/AB model without it there.
+        if NEEDS_TABLE and 'endgame_table.json' not in sw:
+            problems.append("model.json says an A/AB net but sw.js does not precache "
+                            "'./endgame_table.json' (offline the computer could not "
+                            "move) -- add it to SHELL and bump CACHE")
     return problems
 
 
@@ -176,6 +200,10 @@ def build(out):
             # no-cache (revalidate) rather than a week's max-age: a new champion
             # must reach returning players on their next visit (2026-10-06)
             "/model.onnx\n"
+            "  Cache-Control: no-cache\n"
+            "/model.json\n"
+            "  Cache-Control: no-cache\n"
+            "/features_v2.js\n"
             "  Cache-Control: no-cache\n"
             "/phaser.min.js\n"
             "  Cache-Control: public, max-age=31536000\n"

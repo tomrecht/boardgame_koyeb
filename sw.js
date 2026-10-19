@@ -40,12 +40,14 @@ const SHELL = [
     './ort/ort-wasm-simd-threaded.mjs',
     './ort/ort-wasm-simd-threaded.wasm',
     './model.onnx',
+    './model.json',
     // The ported agent itself. local_agent.js injects these lazily, so without
     // precaching they would only ever be cached AFTER a first online move --
     // i.e. the offline app would load and then be unable to move a piece.
     // They stay ALWAYS_FRESH below (they are our own .js), so precaching them
     // cannot serve a stale copy after a deploy; it only guarantees a fallback.
     './route.js',
+    './features_v2.js',
     './encoder.js',
     './infer.js',
     './engine.js',
