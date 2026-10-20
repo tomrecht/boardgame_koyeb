@@ -864,7 +864,17 @@ vs 0.58 / 0.60-0.68. So the (b) inputs carry information the net lacks, yet
 fv2C barely used them and input_probe found none of it in the net's errors.
 After the promotion only 1 of 24 children passed the pre-screen (before: ~half),
 so the run was restarted at iter 80 with `LR=2e-5 EPOCHS=4`, records dumped to
-`runs/fv2C_records.jsonl.gz`.
+`runs/fv2C_records.jsonl.gz`. **Iters 80-92 at the smaller steps: pre-screen
+passed 4 of 13 (83, 87, 90, 92; before: 1 of 24), panel diffs vs the champion
+-0.02 / -0.22 (REJECT) / -0.09 / +0.01 -- smaller steps keep children closer to
+the parent but none is better: iter 55 is a local optimum for this fine-tuning.
+fv2C stopped after iter 92 (2026-10-19 17:50).**
+**fv2V1 = the v1 CONTROL (started 2026-10-19 18:06, `queue_v1_arm.sh`):**
+warm start `blend.pt` (v1 inputs), afterstate on, fv2C's settings and seeds
+(LR 5e-5, 8 epochs), 80 iterations, records in `runs/fv2V1_records.jsonl.gz`.
+Compare at matched iterations (fv2C promoted at 55), then its champion vs
+`fv2C_it55.pt` with `confirm_match.py`. If level: the new inputs go (phone time,
+~500 lines of JS).
 
 **FULL-SIZE PRE-FLIGHT (2026-10-06, this iMac, `preflight/fv2B.log`): the whole
 loop works at real sizes** -- 300 generation games (72 min, 42-46 s/game single
