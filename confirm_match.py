@@ -12,7 +12,7 @@ appended to the output file as it finishes; re-running resumes.
 import json, math, os, sys
 import multiprocessing as mp
 
-SEED_BASE = 81_000_000          # disjoint from gen (11M), panel (77M), pre-screen (78M), confirm gate (79M)
+SEED_BASE = int(os.environ.get('SEED_BASE', 81_000_000))         # disjoint from gen (11M), panel (77M), pre-screen (78M), confirm gate (79M)
 N_WORKERS = int(os.environ.get('N_WORKERS', '3'))
 os.environ.setdefault('GATE_PREFILTER', '12,40,5')
 

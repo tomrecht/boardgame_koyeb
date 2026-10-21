@@ -875,6 +875,14 @@ warm start `blend.pt` (v1 inputs), afterstate on, fv2C's settings and seeds
 Compare at matched iterations (fv2C promoted at 55), then its champion vs
 `fv2C_it55.pt` with `confirm_match.py`. If level: the new inputs go (phone time,
 ~500 lines of JS).
+**fv2V1 promoted once, iter 36 (panel +0.28, fresh-seed confirm only +0.10 +-
+0.14); iter 49 cleared the panel (+0.25) and FAILED confirmation (-0.13).
+HEAD TO HEAD, app config, seeds 81M (`runs/confirm_fv2V1_vs_fv2C.jsonl`):
+fv2V1 iter 36 vs fv2C iter 55 = -0.059 pts/game (95% CI -0.153..+0.035), 48.7%,
+2,000 games (2026-10-21).** So the new inputs are worth at most ~0.15 and
+probably ~0.05; the bulk of fv2C's +0.26 over the blend is the afterstate frame
+(+ start pool, gate). fv2C stays shipped (level or slightly better; owner felt
+no phone slowdown). For FUTURE runs the inputs are optional, not a lever.
 
 **FULL-SIZE PRE-FLIGHT (2026-10-06, this iMac, `preflight/fv2B.log`): the whole
 loop works at real sizes** -- 300 generation games (72 min, 42-46 s/game single
