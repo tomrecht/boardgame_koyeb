@@ -22,7 +22,7 @@ starts); this is the afterstate version, restricted to close calls.
     python3 close_call.py match <net.pt> <T> [K=3] [pairs=300] [out.jsonl]
     python3 close_call.py analyze <out.jsonl>
 """
-import json, math, os, sys
+import json, math, os, sys, time
 import multiprocessing as mp
 
 import numpy as np
@@ -38,11 +38,14 @@ def make_agent_class():
     from agent_gnn import GNNAgent, SCORE_SCALE, NUM_PIECES
 
     class CloseCallAgent(GNNAgent):
-        def __init__(self, *a, T=50.0, K=3, **kw):
+        def __init__(self, *a, T=50.0, K=3, inner=None, **kw):
             super().__init__(*a, **kw)
             self.T, self.K = float(T), int(K)
             self._inner = False
-            self.stats = {'moves': 0, 'triggered': 0, 'changed': 0}
+            # the opponent-reply search: this agent's own shallow search, or a
+            # cheaper agent (e.g. a narrower prefilter) on the same net
+            self.inner = inner
+            self.stats = {'moves': 0, 'triggered': 0, 'changed': 0, 'deep_s': 0.0}
             self.gap_log = None          # list -> record every top-2 gap
 
         def select_move_pair(self, moves, board, player, return_scores=False,
@@ -77,7 +80,9 @@ def make_agent_class():
                 return plain
             top = [p for v, p in cands[:self.K] if cands[0][0] - v < self.T]
             self.stats['triggered'] += 1
+            t0 = time.time()
             deep = [self._deep_value(board, player, p) for p in top]
+            self.stats['deep_s'] += time.time() - t0
             pick = top[int(np.argmax(deep))]
             pick = self._dedupe_save_pair(pick)
             if pick != plain:
@@ -117,7 +122,10 @@ def make_agent_class():
                     board.dice[1].number, board.dice[1].used = d2, False
                     board._reachable_cache.clear()
                     moves = board.get_valid_moves()
-                    r = super().select_move_pair(moves, board, opp, True)
+                    if self.inner is not None:
+                        r = self.inner.select_move_pair(moves, board, opp, True)
+                    else:
+                        r = super().select_move_pair(moves, board, opp, True)
                     if isinstance(r, list) and r:
                         best = max(v for v, _ in r)
                         val = win_value if best == float('inf') else -best
@@ -146,7 +154,9 @@ def _agents(path, T, K):
         m = model_from_state(torch.load(path, map_location='cpu'), strict=False)
         pf = prefilter_kwargs(os.environ['GATE_PREFILTER'])
         C = make_agent_class()
-        _CACHE[key] = (C(model=m, hand_rules=True, T=T, K=K, **pf),
+        ipf = os.environ.get('INNER_PREFILTER', '')      # e.g. '6,10,3'; '' = app's
+        inner = GNNAgent(model=m, hand_rules=True, **prefilter_kwargs(ipf)) if ipf else None
+        _CACHE[key] = (C(model=m, hand_rules=True, T=T, K=K, inner=inner, **pf),
                        GNNAgent(model=m, hand_rules=True, **pf))
     return _CACHE[key]
 
@@ -188,6 +198,8 @@ def analyze(path):
         per.setdefault(r['seed'], {})[r['a_white']] = r['a_margin']
     units = [0.5 * (v[True] + v[False]) for v in per.values() if len(v) == 2]
     n = len(units)
+    if n < 2:
+        print(f'{path}: {len(rows)} games, too few pairs'); return
     mean = sum(units) / n
     se = math.sqrt(sum((u - mean) ** 2 for u in units) / (n - 1)) / math.sqrt(n)
     mv = sum(r['moves'] for r in rows)
@@ -198,7 +210,8 @@ def analyze(path):
           f'({100 * wins / len(rows):.1f}%), mean paired margin {mean:+.3f} '
           f'(95% CI {mean - 1.96 * se:+.3f} .. {mean + 1.96 * se:+.3f}); '
           f'triggered {tr}/{mv} moves ({100 * tr / max(mv, 1):.1f}%), changed {ch} '
-          f'({100 * ch / max(tr, 1):.1f}% of triggers, {ch / max(len(rows), 1):.2f}/game)')
+          f'({100 * ch / max(tr, 1):.1f}% of triggers, {ch / max(len(rows), 1):.2f}/game); '
+          f'deep search {sum(r.get("deep_s", 0) for r in rows) / max(tr, 1):.2f} s per trigger')
 
 
 def match(path, T, K=3, pairs=300, out=None):
