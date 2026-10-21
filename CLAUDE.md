@@ -888,6 +888,17 @@ no phone slowdown). For FUTURE runs the inputs are optional, not a lever.
 1/6 +0.118 (95% CI -0.055..+0.292), 53+55+83+92 +0.012 -- all within noise; the
 best of four at +0.12 is about what luck alone gives (SE ~0.09). Not shipped;
 a 1,000-pair fresh-seed confirmation of s4heavy would be needed first.
+**CLOSE-CALL DEEPER SEARCH (`close_call.py`, 2026-10-21).** The afterstate
+version of deep search, only where the shallow search is unsure: top-2 DISTINCT
+positions within T score units (83 units = 1 pt; transpositions and swapped
+blanks collapsed first -- ~35% of raw top-2 gaps are exactly 0 from them), the
+top K rescored as minus the opponent's expected best reply over its 21 rolls
+(the app's own search for the reply). Distinct-position gaps, fv2C_it55, 506
+decisions: median 4.4 units (0.05 pts), 40th pct 3.0, 75th 12. **T=3 K=3 vs
+the plain agent, same net, app config, seeds 84M, 300 pairs: +0.163 pts/game
+(95% CI -0.010..+0.337), 52.7%; triggered on 38.4% of moves, changed the move
+on 48% of triggers (5.4 per game).** ~20 s/game on 8 workers (63 extra searches
+per triggered move) -- far too slow for a phone as is. Needs more pairs.
 
 **FULL-SIZE PRE-FLIGHT (2026-10-06, this iMac, `preflight/fv2B.log`): the whole
 loop works at real sizes** -- 300 generation games (72 min, 42-46 s/game single
