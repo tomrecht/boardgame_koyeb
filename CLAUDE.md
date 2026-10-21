@@ -883,6 +883,11 @@ fv2V1 iter 36 vs fv2C iter 55 = -0.059 pts/game (95% CI -0.153..+0.035), 48.7%,
 probably ~0.05; the bulk of fv2C's +0.26 over the blend is the afterstate frame
 (+ start pool, gate). fv2C stays shipped (level or slightly better; owner felt
 no phone slowdown). For FUTURE runs the inputs are optional, not a lever.
+**fv2C SOUPS (`make_soup.py`, `soup_sweep.sh`; 300 pairs each vs fv2C_it55, seeds
+82M, app config):** 55+83+92 +0.048, 55+83+90+92 +0.013, 0.5x55 + 83/90/92 at
+1/6 +0.118 (95% CI -0.055..+0.292), 53+55+83+92 +0.012 -- all within noise; the
+best of four at +0.12 is about what luck alone gives (SE ~0.09). Not shipped;
+a 1,000-pair fresh-seed confirmation of s4heavy would be needed first.
 
 **FULL-SIZE PRE-FLIGHT (2026-10-06, this iMac, `preflight/fv2B.log`): the whole
 loop works at real sizes** -- 300 generation games (72 min, 42-46 s/game single
