@@ -902,6 +902,9 @@ per triggered move) -- far too slow for a phone as is.
 **CONFIRMED on fresh seeds (87M, 700 pairs): +0.129 (95% CI +0.019..+0.238),
 50.9% wins; triggered 39.6%, changed 5.5 moves/game; 10.8 s of Python deep
 search per trigger. Pooled 1,000 pairs: ~+0.14 (95% CI ~+0.05..+0.23).**
+Cheap opponent reply (INNER_PREFILTER=6,10,3, seeds 89M, 300 pairs): +0.045 (95%
+CI -0.120..+0.210), 6.8 s per trigger (vs 10.8) -- a poor trade: 37% less time,
+most of the gain gone. The reply needs the app's own prefilter.
 **FRIDAY PLAN, IF THE close_call QUEUE IS POSITIVE (owner + Claude, 2026-10-21;
 code written, NOTHING run beyond smoke checks).** Read `closecall/*.log` (each ends
 with the paired margin and 'deep search s per trigger'). Two tracks:
