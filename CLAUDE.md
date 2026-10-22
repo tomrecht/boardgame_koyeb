@@ -557,6 +557,16 @@ with it in mind.** Assessment and the concrete implications:
 
 ## Current state
 
+- **A PIECE'S PHONE TAP TARGET NO LONGER REACHES INTO THE NEXT RING (owner,
+  2026-10-21: "sometimes thinks I'm tapping one ring further out").** `_applyHitArea`
+  grows a lone piece's target to 2.4r (60) on a 60-deep tile, and pieces sit above
+  tiles, so a tap near a ring's edge went to the neighbouring ring's piece and was
+  forwarded to its tile. Its hit callback now yields, outside the piece's own tile
+  and drawn face, to any other non-nogo tile under the point (`_pointInTile`); over
+  bare board it still takes the tap. Measured (phone, Phaser hitTestPointer on a grid
+  over the target): off-tile points taken by the piece, ring 1 829/834 -> 394 (all
+  bare board), ring 4 490/490 -> 0; own-tile halo unchanged.
+
 - **JS SIDE FOR THE NEXT NETS: features_v2 + AFTERSTATE (2026-10-12/13, branch
   `js-features-v2`, MERGED into testing 2026-10-19 with the fv2C net).** The
   training branch `train-features-v2` now trains A/AB feature sets and, by default,

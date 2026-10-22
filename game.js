@@ -1714,6 +1714,18 @@ function _tapOnPieceFace(piece, pointer) {
     return Math.hypot(pointer.worldX - piece.x, pointer.worldY - piece.y) <= r;
 }
 
+// Is world point (wx, wy) inside this tile's wedge? Same shape as the tile's
+// hit polygon; angles are stored in [0, 2pi]. Home is a disc about the centre.
+function _pointInTile(tile, wx, wy) {
+    const d = Math.hypot(wx - CENTER_X, wy - CENTER_Y);
+    if (tile.type === 'home') return d <= HOME_TILE_RADIUS;
+    if (tile.startAngle == null || tile.innerRadius == null) return true;
+    if (d < tile.innerRadius || d > tile.outerRadius) return false;
+    const TAU = 2 * Math.PI;
+    const a = ((Math.atan2(wy - CENTER_Y, wx - CENTER_X) - tile.startAngle) % TAU + TAU) % TAU;
+    return a <= tile.endAngle - tile.startAngle;
+}
+
 // IS THERE ROOM TO AIM BESIDE A LONE PIECE ON THIS TILE?
 // The face/halo split gives the visible disc to "take the selection" and the
 // ring around it to "move here" -- but on a narrow tile the piece is most of
@@ -7020,7 +7032,29 @@ class Piece {
             if (this.scene && this.scene.children) this.scene.children.bringToTop(c);
         }
         c.input.hitArea = new Phaser.Geom.Circle(r, r, Math.max(r, Math.min(r * cap, room)));
-        c.input.hitAreaCallback = Phaser.Geom.Circle.Contains;
+        // ...AND ON THE BOARD IT MAY NOT LEAVE ITS OWN TILE EITHER (owner,
+        // 2026-10-21: "sometimes thinks I'm tapping one ring further out"). Field
+        // tiles are only 60 deep, so a lone piece's 2.4r target, centred on the
+        // tile, reached ~30 into the rings either side; pieces sit above tiles, so
+        // a tap near the edge of ring N went to the piece on ring N+1 and was
+        // forwarded to ITS tile. Past the piece's own tile the halo now yields to
+        // any other tappable tile under the finger (the drawn face always counts);
+        // over bare board (the home disc, the gaps between ring-1 spokes) it still
+        // takes the tap, so a near-miss there selects rather than deselects.
+        const self = this;
+        c.input.hitAreaCallback = (ha, x, y) => {
+            if (!Phaser.Geom.Circle.Contains(ha, x, y)) return false;
+            const t = self.currentTile;
+            if (!t || t.type === 'home') return true;   // racks; home is clamped above
+            const s = c.scaleX || 1;
+            const dx = (x - ha.x) * s, dy = (y - ha.y) * s;
+            if (Math.hypot(dx, dy) <= r * s) return true;
+            const wx = c.x + dx, wy = c.y + dy;
+            if (_pointInTile(t, wx, wy)) return true;
+            const tiles = (self.game && self.game.tiles) || [];
+            return !tiles.some(o => o !== t && o.type !== 'nogo' && o.type !== 'home'
+                                    && _pointInTile(o, wx, wy));
+        };
     }
 
     // Show/hide the whole piece. Overflow pieces on a stacked tile are hidden
