@@ -240,6 +240,8 @@ const LocalAgent = (function () {
             draw_called: false,
             // features_v2's no-save input (A/AB nets); update_state reads the same.
             no_save_turns: gs.noSaveTurns || 0,
+            half_turns: gs.halfTurnsSinceRound || 0,
+            last_total_saved: gs.lastTotalSaved,
             // The frontend owns the no-save counter; update_state adopts what it
             // reports, falling back to the threshold only when it is absent.
             draw_callable: gs.drawCallable === undefined
@@ -263,6 +265,18 @@ const LocalAgent = (function () {
         return [[m.piece[0], m.piece[1]], m.dest, m.roll];
     }
 
+    /* The close-call deeper search (agent.js selectWithCloseCall): OFF until
+       its match results are in. ?cc=1 turns it on; ?ccms=<budget ms> (1500),
+       ?cct=<T score units> (3), ?cck=<K> (3). Stats in window._closeCallStats. */
+    const ccStats = {};
+    if (typeof window !== 'undefined') window._closeCallStats = ccStats;
+    function closeCallOpts() {
+        if (param('cc') !== '1') return {};
+        const num = (k, d) => { const v = parseFloat(param(k)); return isFinite(v) ? v : d; };
+        return { closeCall: true, closeCallBudgetMs: num('ccms', 1500),
+                 closeCallT: num('cct', 3), closeCallK: num('cck', 3), closeCallStats: ccStats };
+    }
+
     /* Returns the move pair in wire format, or null when there is nothing to
        play (the server answers that with no `move` key). Rejects on any
        internal failure so the caller can fall back to the server. */
@@ -272,12 +286,14 @@ const LocalAgent = (function () {
         const player = engine.currentPlayer;
         const moves = engine.getValidMoves();
         if (!moves.length) return null;
-        const pair = await window.selectMovePair(engine, weights, moves, player, {
+        const pair = await window.selectMovePair(engine, weights, moves, player, Object.assign({
             difficulty: gs.difficulty === undefined ? 1.0 : gs.difficulty,
             snapshot: (eng) => eng.snapshot(),
             // One batched call per turn, as the search intends.
             score: async (snaps) => window.Infer.score(window.ort, snaps, player),
-        });
+            // The close-call search scores the OPPONENT's replies too.
+            scoreFor: (pl) => async (snaps) => window.Infer.score(window.ort, snaps, pl),
+        }, closeCallOpts()));
         if (!Array.isArray(pair) || pair.length !== 2) throw new Error('agent returned ' + JSON.stringify(pair));
         moveCount++;
         return pair.map(toWire);

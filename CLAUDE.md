@@ -557,6 +557,35 @@ with it in mind.** Assessment and the concrete implications:
 
 ## Current state
 
+- **CLOSE-CALL SEARCH IN JS, OFF BY DEFAULT (branch `close-call-js`, 2026-10-21;
+  waiting on the work Mac's close_call queue).** `selectWithCloseCall` in agent.js,
+  twin of close_call.py (copied here as the parity reference): where the best two
+  DISTINCT end positions are within T score units, the top K within T are rescored
+  as minus the opponent's expected best reply over its rolls. Phone budget: rolls
+  searched ROLL-MAJOR in `CC_ROLL_ORDER`, complete rounds only (all candidates on
+  the same rolls), a round started only if it fits `closeCallBudgetMs`;
+  `closeCallMaxReplies` = close_call.py's `MAX_REPLIES` count cap. Full strength
+  only; skipped when the endgame lookahead applies. Enabled by `?cc=1` (`ccms`,
+  `cct`, `cck`; stats in `window._closeCallStats`). Needs `scoreFor(player)` (the
+  replies are the OPPONENT's) and the no-save counter's half-round state in the
+  engine (`updateNoSaveCounter`, fed `halfTurnsSinceRound` / `lastTotalSaved`,
+  which getGameState already sent). **Parity (stub net, `close_call_fixture.py` ->
+  `node close_call_test.js`): 30 positions x caps full/9/3 -> trigger 90/90, deep
+  values 63/63, chosen pair 90/90**; `agent_test.js` 50/50, lookahead 176/176.
+  Latency: `node close_call_latency.mjs [moves]` (configs off / full / 3000 / 1500 /
+  800 ms). **Harness trap:** agent.js's functions are page globals, so a wrapper on
+  `window.selectMovePair` also catches the search's own inner calls -- pass
+  `_rankOut` / `closeCall: false` / `returnScores` calls straight through.
+  Before shipping: a Python match with `MAX_REPLIES` set to what the phone budget
+  buys (a partial search is a different agent), then the latency run.
+  **First latency (desktop Chrome, 4 moves -- a smoke, not a measurement):** plain
+  236-315 ms; on the 3 triggered moves the FULL search took 13.8-15.4 s, i.e. ~0.7 s
+  per round of 3 replies; budgets 3000 / 1500 / 800 ms got 4 / 1-2 / 1 rounds of 21.
+  A phone is slower, so **a 1.5 s budget buys ~1 roll of 21** -- the phone version
+  lives or dies on whether a 1-3 roll search keeps the gain (Python: `MAX_REPLIES`
+  3-12) or the cheap reply search (INNER_PREFILTER) is much faster. Measure both
+  before any JS shipping work.
+
 - **A PIECE'S PHONE TAP TARGET NO LONGER REACHES INTO THE NEXT RING (owner,
   2026-10-21: "sometimes thinks I'm tapping one ring further out").** `_applyHitArea`
   grows a lone piece's target to 2.4r (60) on a 60-deep tile, and pieces sit above
