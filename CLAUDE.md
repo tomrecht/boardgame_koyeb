@@ -898,7 +898,10 @@ decisions: median 4.4 units (0.05 pts), 40th pct 3.0, 75th 12. **T=3 K=3 vs
 the plain agent, same net, app config, seeds 84M, 300 pairs: +0.163 pts/game
 (95% CI -0.010..+0.337), 52.7%; triggered on 38.4% of moves, changed the move
 on 48% of triggers (5.4 per game).** ~20 s/game on 8 workers (63 extra searches
-per triggered move) -- far too slow for a phone as is. Needs more pairs.
+per triggered move) -- far too slow for a phone as is.
+**CONFIRMED on fresh seeds (87M, 700 pairs): +0.129 (95% CI +0.019..+0.238),
+50.9% wins; triggered 39.6%, changed 5.5 moves/game; 10.8 s of Python deep
+search per trigger. Pooled 1,000 pairs: ~+0.14 (95% CI ~+0.05..+0.23).**
 **FRIDAY PLAN, IF THE close_call QUEUE IS POSITIVE (owner + Claude, 2026-10-21;
 code written, NOTHING run beyond smoke checks).** Read `closecall/*.log` (each ends
 with the paired margin and 'deep search s per trigger'). Two tracks:
