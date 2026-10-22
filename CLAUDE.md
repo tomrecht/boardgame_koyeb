@@ -905,6 +905,12 @@ search per trigger. Pooled 1,000 pairs: ~+0.14 (95% CI ~+0.05..+0.23).**
 Cheap opponent reply (INNER_PREFILTER=6,10,3, seeds 89M, 300 pairs): +0.045 (95%
 CI -0.120..+0.210), 6.8 s per trigger (vs 10.8) -- a poor trade: 37% less time,
 most of the gain gone. The reply needs the app's own prefilter.
+**Reply caps (MAX_REPLIES, roll-major complete rounds; seeds 91M/92M, 300 pairs
+each):** cap 3 (= ONE roll for the 3 candidates) +0.090 (95% CI -0.074..+0.254),
+0.58 s per trigger; cap 9 (3 rolls) +0.068 (-0.095..+0.231), 1.98 s. Not
+separable from the full search (+0.14) or from 0 at 300 pairs; cap 3 is ~one
+roll-round = the phone's 1.5 s budget, so it gets a 1,000-pair confirmation
+(`closecall/queue3.sh`, seeds 96M), then T=12 at cap 3, then distill_run.
 **FRIDAY PLAN, IF THE close_call QUEUE IS POSITIVE (owner + Claude, 2026-10-21;
 code written, NOTHING run beyond smoke checks).** Read `closecall/*.log` (each ends
 with the paired margin and 'deep search s per trigger'). Two tracks:
