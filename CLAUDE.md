@@ -920,6 +920,10 @@ not the averaging over rolls. Phone track A goes ahead with a 1-round budget.
 **Track A DONE (2026-10-22): staged on `testing` (branch `close-call-ship`, ON by
 default, 1 round); latency + parity + full-game checks in main's CLAUDE.md entry
 "CLOSE-CALL SEARCH". Owner to judge phone feel before main.**
+**T=12 at the 1-roll cap (seeds 97M, 300 pairs): +0.198 (95% CI +0.042..+0.355),
+triggered 72% of moves, 8.7 changes/game, 0.68 s per trigger (median game; the
+mean 7.6 s is games frozen mid-search during latency runs).** No better than T=3
+(+0.189) at twice the triggers -- T=3 stays.
 **FRIDAY PLAN, IF THE close_call QUEUE IS POSITIVE (owner + Claude, 2026-10-21;
 code written, NOTHING run beyond smoke checks).** Read `closecall/*.log` (each ends
 with the paired margin and 'deep search s per trigger'). Two tracks:
