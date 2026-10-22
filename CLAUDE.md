@@ -911,6 +911,12 @@ each):** cap 3 (= ONE roll for the 3 candidates) +0.090 (95% CI -0.074..+0.254),
 separable from the full search (+0.14) or from 0 at 300 pairs; cap 3 is ~one
 roll-round = the phone's 1.5 s budget, so it gets a 1,000-pair confirmation
 (`closecall/queue3.sh`, seeds 96M), then T=12 at cap 3, then distill_run.
+**CONFIRMED: cap 3 (ONE roll) on fresh seeds 96M, 1,000 pairs: +0.189 (95% CI
++0.095..+0.283), 53.6% wins, 0.60 s per trigger, 5.4 changed moves/game.** Cap
+30: +0.183 (+0.019..+0.348), 6.5 s. So a single roll keeps all of the full
+search's gain (+0.14) at 1/18 of the cost -- the gain is probably the TRAINED
+FRAME (scoring a candidate as the opponent's end-of-turn after a real reply),
+not the averaging over rolls. Phone track A goes ahead with a 1-round budget.
 **FRIDAY PLAN, IF THE close_call QUEUE IS POSITIVE (owner + Claude, 2026-10-21;
 code written, NOTHING run beyond smoke checks).** Read `closecall/*.log` (each ends
 with the paired margin and 'deep search s per trigger'). Two tracks:
