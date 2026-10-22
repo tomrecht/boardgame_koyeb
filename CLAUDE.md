@@ -2244,7 +2244,17 @@ with it in mind.** Assessment and the concrete implications:
     needs a device check) and "enable R8" (the Java side is a Capacitor stub;
     the size is web assets R8 cannot touch, and stripping risks the plugins'
     reflection). Revisit only if Play makes either a requirement.
-    **CURRENT PACKAGE: versionCode 8, versionName 1.0.7, 8.7 MB, built
+    **CURRENT PACKAGE: versionCode 9, versionName 1.0.8, 9.2 MB, built
+    2026-10-21** -- the fv2C iter-55 net (AB2, afterstate; content-hashed
+    model-70432462.onnx + model.json), endgame lookahead, last-piece fixes,
+    autosave/Resume, Android back via @capacitor/app (first package with it),
+    Strategy tips panel, double-tap sum-save rules, the phone ring-tap fix,
+    `sw.js` `quahuru-v10`. Verified on the bundle: `jar verified`, versionCode 9 /
+    1.0.8 / com.quahuru.game, AppPlugin in the dex and capacitor.plugins.json, and
+    game.js, agent.js, engine.js, local_agent.js, features_v2.js, encoder.js,
+    infer.js, index.html, sw.js, model.json, the .onnx and endgame_table.json
+    hash-identical to the working tree.
+    Previous: versionCode 8, versionName 1.0.7, 8.7 MB, built
     2026-10-06** -- the FIRST PRODUCTION RELEASE (Play granted production access
     2026-10-06). Carries the 4-way blend net (`blend4way_Oct6`), the 0.65-1.0
     difficulty knots, the fitted prefilter scales and `sw.js` `quahuru-v9`.
