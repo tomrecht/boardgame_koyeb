@@ -181,6 +181,28 @@ sideways scroll, game paused, back returns to How to Play.
   save-die rule were written for turn-start nets; an afterstate net may not need
   them (CLAUDE.md "Re-check main's `_strands_last_piece` rule on the first
   afterstate net").
+- **CLOSE-CALL SEARCH, ON BY DEFAULT (on `testing` 2026-10-22, for owner to play
+  before main; branch `close-call-ship`).** When the shallow search's top two
+  DISTINCT positions are within T=3 score units (~0.04 pts), the top K=3 are
+  rescored by ONE roll of the opponent (3-4, the first of agent.js's
+  CC_ROLL_ORDER): each candidate's value = minus the opponent's best reply score,
+  i.e. the net scores the opponent's end-of-turn position in the frame it was
+  trained in. `local_agent.js` passes `closeCallMaxReplies: 3`, so exactly one
+  round on every device (the time budget never cuts below one round).
+  `?cc=0` off; `?ccr=<cap>` (0 = no cap, then `?ccms` budget), `?cct`, `?cck`;
+  stats in `window._closeCallStats`. Full strength only (difficulty >= 1), so the
+  HINT gets it too. **Measured (train-features-v2, close_call.py, same net both
+  sides, app config): 1-roll cap +0.189 pts/game (95% CI +0.095..+0.283), 53.6%,
+  1,000 pairs on fresh seeds; full 21-roll search +0.14 (1,000 pairs pooled) at
+  18x the cost.** JS = Python 90/90 (stub net, caps incl.). **Latency, desktop
+  Chrome, 101 moves (2 games, `close_call_latency.mjs`):** all moves median 155 /
+  p90 375 / max 1,524 ms vs plain 87 / 273 / 621; the 36 triggered moves 272 /
+  727 / 1,524 vs plain on the same moves 80 / 191. A phone (~4x) ~1 s median,
+  ~3 s p90, ~6 s worst, on about a third of the computer's moves -- **owner to
+  judge by feel**. A complete self-play game in the page: 54 decisions, 26
+  triggered, 1 round each, max 0.8 s, 15 changed, 0 errors; `?cc=0` the same
+  game shape with empty stats. If too slow on a phone: K=2 (`?cck=2`) cuts a
+  third of the search; nothing between 0 and 1 round exists.
 - **Previous: `blend4way_Oct6.pt` (shipped 2026-10-06)**,
   the plain AVERAGE of four nets' weights: symaug iter6 (the previous champion),
   iter10, iter14 and symaug iter11 (one lineage, so they share a basin).
