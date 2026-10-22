@@ -924,6 +924,15 @@ default, 1 round); latency + parity + full-game checks in main's CLAUDE.md entry
 triggered 72% of moves, 8.7 changes/game, 0.68 s per trigger (median game; the
 mean 7.6 s is games frozen mid-search during latency runs).** No better than T=3
 (+0.189) at twice the triggers -- T=3 stays.
+**QUEUED: a RANDOM roll per decision (owner, 2026-10-22; `closecall/queue4.sh`,
+runs after the distillation).** The 1-roll cap always uses 3-4 (ROLL_ORDER's
+first), so every close call is judged by the opponent's best 3-4 -- possibly
+favouring moves good against that roll in particular. `CC_ROLL=random` draws
+the roll(s) by their odds for each decision (all candidates still share them;
+own RNG, reseeded per game, so the dice are untouched); one round is then an
+unbiased sample of the 21-roll value. Same seeds as MR3_confirm (96M, 1,000
+pairs vs plain) so `closecall/compare_rolls.py` compares the two seed for seed.
+If random wins, agent.js's `CC_ROLL_ORDER` needs the same change.
 **FRIDAY PLAN, IF THE close_call QUEUE IS POSITIVE (owner + Claude, 2026-10-21;
 code written, NOTHING run beyond smoke checks).** Read `closecall/*.log` (each ends
 with the paired margin and 'deep search s per trigger'). Two tracks:

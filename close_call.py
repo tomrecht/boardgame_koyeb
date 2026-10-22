@@ -55,6 +55,15 @@ ROLL_ORDER = [(3, 4), (1, 6), (2, 5), (5, 6), (1, 2), (3, 3), (2, 6), (1, 4), (4
 ROLL_P = {(a, b): p for a, b, p in ROLLS}
 assert sorted(ROLL_ORDER) == sorted(ROLL_P) and len(ROLL_ORDER) == 21
 MAX_REPLIES = int(os.environ.get('MAX_REPLIES', '0'))
+# CC_ROLL=random (2026-10-22, owner): under a reply cap, draw the rolls at random
+# for EACH decision (by their odds, without replacement; all candidates still
+# share them) instead of always starting ROLL_ORDER at 3-4. A fixed first roll
+# judges every close call by the opponent's best 3-4, which may favour moves
+# that are good against that roll in particular. With one round the drawn roll's
+# value is an unbiased sample of the full 21-roll expectation. Own RNG stream,
+# reseeded per game, so the game's dice are untouched.
+CC_ROLL = os.environ.get('CC_ROLL', 'fixed')
+assert CC_ROLL in ('fixed', 'random'), CC_ROLL
 
 
 def make_agent_class():
@@ -72,6 +81,8 @@ def make_agent_class():
             self.gap_log = None          # list -> record every top-2 gap
             self.label_log = None        # list -> record searched candidates (label)
             self.max_replies = MAX_REPLIES
+            import random
+            self.roll_rng = random.Random(0)    # CC_ROLL=random; reseeded per game
 
         def select_move_pair(self, moves, board, player, return_scores=False,
                              difficulty=None, deadline=None):
@@ -184,7 +195,7 @@ def make_agent_class():
             totals, mass = [0.0] * len(top), 0.0
             self._inner = True
             try:
-                for d1, d2 in ROLL_ORDER[:rounds]:
+                for d1, d2 in self._roll_sequence(rounds):
                     pr = ROLL_P[(d1, d2)]
                     for i, pair in enumerate(top):
                         root = len(board.moves)
@@ -204,6 +215,22 @@ def make_agent_class():
             finally:
                 self._inner = False
             return [t / mass for t in totals]
+
+        def _roll_sequence(self, rounds):
+            """The rolls a capped search uses: ROLL_ORDER's first `rounds`, or
+            under CC_ROLL=random a fresh draw by the rolls' odds, without
+            replacement."""
+            if CC_ROLL == 'fixed':
+                return ROLL_ORDER[:rounds]
+            pool, out = list(ROLL_ORDER), []
+            for _ in range(rounds):
+                r = self.roll_rng.random() * sum(ROLL_P[x] for x in pool)
+                for j, x in enumerate(pool):
+                    r -= ROLL_P[x]
+                    if r < 0 or j == len(pool) - 1:
+                        out.append(pool.pop(j))
+                        break
+            return out
 
         def _deep_value(self, board, player, pair):
             """Minus the opponent's expected best reply score after `pair`."""
@@ -266,6 +293,7 @@ def _game(task):
     path, T, K, seed, deep_white = task
     from arena import _play
     deep, plain = _agents(path, T, K)
+    deep.roll_rng.seed((seed << 1 | deep_white) ^ 0xC0C0)
     before = dict(deep.stats)
     winner, score = _play(seed, deep if deep_white else plain, plain if deep_white else deep)
     m = 0 if winner is None else (score if (winner == 'white') == deep_white else -score)
@@ -323,7 +351,8 @@ def match(path, T, K=3, pairs=300, out=None):
         done = {(r['seed'], r['a_white']) for r in map(json.loads, open(out))}
     tasks = [(path, T, K, SEED_BASE + k, w) for k in range(pairs) for w in (True, False)
              if (SEED_BASE + k, w) not in done]
-    print(f'{len(tasks)} games to play ({len(done)} done), T={T} K={K}, seeds {SEED_BASE}', flush=True)
+    print(f'{len(tasks)} games to play ({len(done)} done), T={T} K={K} '
+          f'max_replies={MAX_REPLIES or "off"} rolls={CC_ROLL}, seeds {SEED_BASE}', flush=True)
     from arena import _worker_init
     with mp.Pool(N_WORKERS, initializer=_worker_init) as pool, open(out, 'a') as f:
         for i, r in enumerate(pool.imap_unordered(_game, tasks, chunksize=1), 1):
@@ -370,6 +399,7 @@ def _label_game(task):
     deep, _ = _agents(path, T, K)
     assert getattr(deep, 'afterstate', False), 'labelling needs an afterstate net'
     deep.label_log = []
+    deep.roll_rng.seed(seed ^ 0xC0C0)
     before = dict(deep.stats)
     t0 = time.time()
     random.seed(seed)
@@ -440,7 +470,7 @@ def label(path, T, K=3, games=300, out=None):
                     done.add(r['seed'])
     tasks = [(path, T, K, SEED_BASE + k) for k in range(games) if SEED_BASE + k not in done]
     print(f'{len(tasks)} games to label ({len(done)} done), T={T} K={K} '
-          f'max_replies={MAX_REPLIES or "off"}, seeds {SEED_BASE}', flush=True)
+          f'max_replies={MAX_REPLIES or "off"} rolls={CC_ROLL}, seeds {SEED_BASE}', flush=True)
     from arena import _worker_init
     n_c = n_t = 0
     t0 = time.time()
