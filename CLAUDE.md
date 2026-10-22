@@ -2244,8 +2244,8 @@ with it in mind.** Assessment and the concrete implications:
     needs a device check) and "enable R8" (the Java side is a Capacitor stub;
     the size is web assets R8 cannot touch, and stripping risks the plugins'
     reflection). Revisit only if Play makes either a requirement.
-    **CURRENT PACKAGE: versionCode 9, versionName 1.0.8, 9.2 MB, built
-    2026-10-21** -- the fv2C iter-55 net (AB2, afterstate; content-hashed
+    **CURRENT PACKAGE: versionCode 9, versionName 1.0.8, 9.2 MB, built and
+    UPLOADED to Play 2026-10-21** -- the fv2C iter-55 net (AB2, afterstate; content-hashed
     model-70432462.onnx + model.json), endgame lookahead, last-piece fixes,
     autosave/Resume, Android back via @capacitor/app (first package with it),
     Strategy tips panel, double-tap sum-save rules, the phone ring-tap fix,
