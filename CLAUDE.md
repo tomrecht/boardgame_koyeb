@@ -917,6 +917,9 @@ roll-round = the phone's 1.5 s budget, so it gets a 1,000-pair confirmation
 search's gain (+0.14) at 1/18 of the cost -- the gain is probably the TRAINED
 FRAME (scoring a candidate as the opponent's end-of-turn after a real reply),
 not the averaging over rolls. Phone track A goes ahead with a 1-round budget.
+**Track A DONE (2026-10-22): staged on `testing` (branch `close-call-ship`, ON by
+default, 1 round); latency + parity + full-game checks in main's CLAUDE.md entry
+"CLOSE-CALL SEARCH". Owner to judge phone feel before main.**
 **FRIDAY PLAN, IF THE close_call QUEUE IS POSITIVE (owner + Claude, 2026-10-21;
 code written, NOTHING run beyond smoke checks).** Read `closecall/*.log` (each ends
 with the paired margin and 'deep search s per trigger'). Two tracks:
