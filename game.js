@@ -2276,6 +2276,15 @@ function createSettingsPanel() {
         'overflow-y:auto; overscroll-behavior:contain; -webkit-overflow-scrolling:touch;' +
         'box-shadow:0 12px 34px rgba(0,0,0,.22);');
     panel.id = 'settingsPanel';
+    // The Android app's WebView scales TEXT by the system font size but not a
+    // px width, so the fixed 216 crammed every label there. In the app the
+    // panel sizes to its content instead, never narrower than 216 nor wider
+    // than the screen.
+    if (window.Capacitor && window.Capacitor.isNativePlatform && window.Capacitor.isNativePlatform()) {
+        panel.style.width = 'max-content';
+        panel.style.minWidth = '216px';
+        panel.style.maxWidth = 'calc(100vw - 24px - var(--safe-l) - var(--safe-r))';
+    }
 
     // Theme — applied live (no reload, no new game)
     const trow = mk('div', 'margin-bottom:12px;');
