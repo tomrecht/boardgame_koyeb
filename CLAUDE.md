@@ -899,6 +899,30 @@ the plain agent, same net, app config, seeds 84M, 300 pairs: +0.163 pts/game
 (95% CI -0.010..+0.337), 52.7%; triggered on 38.4% of moves, changed the move
 on 48% of triggers (5.4 per game).** ~20 s/game on 8 workers (63 extra searches
 per triggered move) -- far too slow for a phone as is. Needs more pairs.
+**FRIDAY PLAN, IF THE close_call QUEUE IS POSITIVE (owner + Claude, 2026-10-21;
+code written, NOTHING run beyond smoke checks).** Read `closecall/*.log` (each ends
+with the paired margin and 'deep search s per trigger'). Two tracks:
+* **A, the search on the phone** (branch `close-call-js`, off by default, `?cc=1`).
+  JS = Python 90/90 on a stub net. Desktop Chrome: full search ~14 s on a triggered
+  move, ~0.7 s per round of the 21 rolls, so a 1.5 s budget is ~1 roll on a phone.
+  FIRST measure what a partial search keeps: `MAX_REPLIES=3|9|30 close_call.py
+  match fv2C_it55.pt 3 3 300` (roll-major, complete rounds; = full search at 63,
+  checked to 2e-14), with and without `INNER_PREFILTER=6,10,3`. Only if a
+  phone-sized cap keeps the gain: `node close_call_latency.mjs 120` on that branch,
+  then ship.
+* **B, distillation (expert iteration)** -- `distill_run.py` (label -> train ->
+  fresh-seed confirm -> promote; resumable; state in `distill/state.json`):
+  `BOARDGAME_DEVICE=cpu PYTHONHASHSEED=0 N_WORKERS=8 nohup python -u distill_run.py
+  >> distill/run.log 2>&1 &` (mkdir distill first). Labelling =
+  `close_call.py label` (search on BOTH sides, so ~2x a match game; 300 games per
+  iteration). `distill_train.py`: MSE to the search values + 0.5 x TD(lambda) on the
+  same games + optional listwise rank loss; prints a BASELINE (warm-start net vs the
+  labels: MSE, within-decision corr, top-1 agreement) and the same AFTER training --
+  the first thing to read. Knobs untuned (lr 2e-5, 8 epochs, td-w 0.5, rank-w 0,
+  confirm 300 pairs, bar 0). Smoke: 1 labelled game (27 decisions, 73 candidates),
+  2 epochs clean; baseline within-decision corr 0.20, top-1 agreement 0.48.
+* If the queue is LEVEL: run the 559-position calibration check of the search's
+  move gaps before dropping B (CLAUDE.md, 'Later idea' discussion of 2026-10-21).
 
 **FULL-SIZE PRE-FLIGHT (2026-10-06, this iMac, `preflight/fv2B.log`): the whole
 loop works at real sizes** -- 300 generation games (72 min, 42-46 s/game single
