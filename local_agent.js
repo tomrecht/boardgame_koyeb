@@ -265,15 +265,22 @@ const LocalAgent = (function () {
         return [[m.piece[0], m.piece[1]], m.dest, m.roll];
     }
 
-    /* The close-call deeper search (agent.js selectWithCloseCall): OFF until
-       its match results are in. ?cc=1 turns it on; ?ccms=<budget ms> (1500),
-       ?cct=<T score units> (3), ?cck=<K> (3). Stats in window._closeCallStats. */
+    /* The close-call deeper search (agent.js selectWithCloseCall): ON at full
+       strength, capped at ONE round of rolls (3 reply searches) -- the setting
+       measured at +0.189 pts/game over 1,000 pairs vs the plain search
+       (close_call.py, MAX_REPLIES=3, 2026-10-22). One round is always played,
+       so the cap, not the device, decides how deep it looks.
+       ?cc=0 turns it off; ?ccr=<reply cap> (3; 0 = no cap, then the time
+       budget ?ccms=<ms> (1500) decides), ?cct=<T score units> (3),
+       ?cck=<K> (3). Stats in window._closeCallStats. */
     const ccStats = {};
     if (typeof window !== 'undefined') window._closeCallStats = ccStats;
     function closeCallOpts() {
-        if (param('cc') !== '1') return {};
+        if (param('cc') === '0') return {};
         const num = (k, d) => { const v = parseFloat(param(k)); return isFinite(v) ? v : d; };
+        const cap = num('ccr', 3);
         return { closeCall: true, closeCallBudgetMs: num('ccms', 1500),
+                 closeCallMaxReplies: cap > 0 ? cap : Infinity,
                  closeCallT: num('cct', 3), closeCallK: num('cck', 3), closeCallStats: ccStats };
     }
 

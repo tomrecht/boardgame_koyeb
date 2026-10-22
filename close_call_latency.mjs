@@ -21,9 +21,14 @@ import { createRequire } from 'module';
 
 const ROOT = path.dirname(fileURLToPath(import.meta.url));
 const N_MOVES = +(process.argv[2] || 120);
-const extDir = path.join(os.homedir(), '.vscode', 'extensions');
-const cg = fs.readdirSync(extDir).filter(d => d.startsWith('danielsanmedium.dscodegpt-')).sort().pop();
-const { chromium } = createRequire(path.join(extDir, cg, 'standalone') + '/')('patchright');
+// patchright: from $PATCHRIGHT_FROM if set, else the CodeGPT extension's copy
+function pwBase() {
+    if (process.env.PATCHRIGHT_FROM) return process.env.PATCHRIGHT_FROM;
+    const extDir = path.join(os.homedir(), '.vscode', 'extensions');
+    const cg = fs.readdirSync(extDir).filter(d => d.startsWith('danielsanmedium.dscodegpt-')).sort().pop();
+    return path.join(extDir, cg, 'standalone');
+}
+const { chromium } = createRequire(pwBase() + '/')('patchright');
 const CHROME = '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome';
 const TYPES = { '.html': 'text/html', '.js': 'text/javascript', '.mjs': 'text/javascript', '.json': 'application/json',
                 '.png': 'image/png', '.wasm': 'application/wasm', '.onnx': 'application/octet-stream', '.css': 'text/css' };
@@ -50,12 +55,12 @@ try {
     await page.addScriptTag({ content: `
       (function () {
         const CC = (ms, extra) => Object.assign({ closeCall: true, closeCallBudgetMs: ms }, extra || {});
+        // 'shipped' = the plain search (close-call is ON by default since
+        // 2026-10-22, so it must be switched off explicitly); cc_r3 = what ships:
+        // one round of rolls, whatever the device.
         const CONFIGS = {
-          shipped:   {},
-          cc_full:   CC(Infinity),
-          cc_3000:   CC(3000),
-          cc_1500:   CC(1500),
-          cc_800:    CC(800),
+          shipped:   { closeCall: false },
+          cc_r3:     CC(Infinity, { closeCallMaxReplies: 3 }),
         };
         const orig = window.selectMovePair;
         const rows = [];
