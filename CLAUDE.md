@@ -914,9 +914,17 @@ roll-round = the phone's 1.5 s budget, so it gets a 1,000-pair confirmation
 **CONFIRMED: cap 3 (ONE roll) on fresh seeds 96M, 1,000 pairs: +0.189 (95% CI
 +0.095..+0.283), 53.6% wins, 0.60 s per trigger, 5.4 changed moves/game.** Cap
 30: +0.183 (+0.019..+0.348), 6.5 s. So a single roll keeps all of the full
-search's gain (+0.14) at 1/18 of the cost -- the gain is probably the TRAINED
-FRAME (scoring a candidate as the opponent's end-of-turn after a real reply),
-not the averaging over rolls. Phone track A goes ahead with a 1-round budget.
+search's gain (+0.14) at 1/18 of the cost (1 vs 21 rolls: +0.05 +- 0.13, level).
+**The gain is NOT a frame fix** (corrected 2026-10-23, owner): fv2C is an
+afterstate net, so the plain search already scores end-of-turn positions, the
+frame it was trained in. What the search adds is one REAL opponent turn: on a
+close call (~0.04 pts apart, far inside the net's error) it judges each
+candidate by the position after the opponent's best reply, which exposes
+captures / walls / banks the net misjudged. Extra rolls only average out dice
+luck; the net's error on a position is largely shared across rolls, so it does
+not cancel -- untested guess, as is that much of what the reply exposes is
+roll-independent (queue4's random-roll run is a partial check). Phone track A
+goes ahead with a 1-round budget.
 **Track A DONE (2026-10-22): staged on `testing` (branch `close-call-ship`, ON by
 default, 1 round); latency + parity + full-game checks in main's CLAUDE.md entry
 "CLOSE-CALL SEARCH". Owner to judge phone feel before main.**
