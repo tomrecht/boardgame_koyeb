@@ -941,6 +941,16 @@ own RNG, reseeded per game, so the dice are untouched); one round is then an
 unbiased sample of the 21-roll value. Same seeds as MR3_confirm (96M, 1,000
 pairs vs plain) so `closecall/compare_rolls.py` compares the two seed for seed.
 If random wins, agent.js's `CC_ROLL_ORDER` needs the same change.
+**QUEUED FIRST in queue4: WHICH SEARCH IS THE BEST DISTILLATION TEACHER
+(`calib_search.py`, owner, 2026-10-23).** distill_run labels with the FULL
+21-roll search (MAX_REPLIES unset); for a teacher the VALUES matter, not the
+pick, and fixed 3-4 labels are BIASED while one random roll is noisy but
+unbiased. One pass stores every roll's reply value for both moves of the 559
+calibration positions, so it scores plain / fixed34 / random1 / full21 (corr +
+slope of the gap vs the playouts, paired bootstrap). ~28 s/position single core
+(smoke, 3 positions) -> ~35 min on 8 workers. Separates only big differences
+(playout SE ~0.6 per position). A head-to-head match full21 vs 1-roll was
+costed (~3,700 pairs / ~40 h for +-0.05) and NOT queued.
 **FRIDAY PLAN, IF THE close_call QUEUE IS POSITIVE (owner + Claude, 2026-10-21;
 code written, NOTHING run beyond smoke checks).** Read `closecall/*.log` (each ends
 with the paired margin and 'deep search s per trigger'). Two tracks:
