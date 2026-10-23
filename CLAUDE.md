@@ -144,7 +144,18 @@ sideways scroll, game paused, back returns to How to Play.
 
 ## AI and model — current status
 
-- **Deployed model: `model.onnx` = `fv2C_it55.pt` (LIVE on quahuru.com
+- **Deployed model: `model.onnx` = `distill_cand3.pt` (main 2026-10-23), file
+  `model-8ee32fcb.onnx`.** fv2C_it55 DISTILLED from the close-call search
+  (train-features-v2: `distill_run.py`, 6 iterations, full 21-roll search labels
+  on close calls + TD; checkpoint committed there as `distill_cand3.pt`). **vs
+  fv2C_it55, plain search both sides, app config, fresh seeds, 1,000 pairs: +0.141
+  pts/game (95% CI +0.049..+0.232), 51.1%** -- no runtime cost (same AB2
+  afterstate inputs). `sw.js` v11, `REC_MODEL_TAG` 'distill_cand3_Oct23'.
+  Verified: page scores = Python 280/280 (max diff 1.8e-7, 80 last-piece);
+  worker handover from the live v10 build: first reload, second reload and
+  offline all play. The close-call search on top of it (+0.103, 95% CI
+  +0.013..+0.194) is on `testing` for owner's phone check.
+- **Previous: `fv2C_it55.pt` (LIVE on quahuru.com
   2026-10-19; owner played it on testing, phone included -- no felt slowdown)** -- the first net with the v2 inputs (AB2) and
   AFTERSTATE training, from the fv2C run (branch `train-features-v2`, where the
   checkpoint is committed). **vs the 4-way blend on fresh seeds in the app's
