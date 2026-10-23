@@ -932,6 +932,16 @@ default, 1 round); latency + parity + full-game checks in main's CLAUDE.md entry
 triggered 72% of moves, 8.7 changes/game, 0.68 s per trigger (median game; the
 mean 7.6 s is games frozen mid-search during latency runs).** No better than T=3
 (+0.189) at twice the triggers -- T=3 stays.
+**QUEUE4 RESULTS (2026-10-23).** (1) TEACHERS on the 559 calibration positions
+(corr / slope of the move gap vs playouts): full21 +0.232 / 0.50, plain +0.199 /
+0.44, random1 +0.191 / 0.34 (redraws +0.153..+0.229), fixed34 +0.168 / 0.29;
+full21 - fixed34 +0.065 (95% bootstrap +0.015..+0.112), full21 - plain +0.034
+(-0.010..+0.079). So distill_run's full-search labels were the right teacher;
+fixed 3-4 values are LESS calibrated than plain yet fixed 3-4 PLAYS best -- one
+roll ranks close candidates well and estimates values badly. (2) RANDOM roll in
+play (1,000 pairs, seeds 96M, same as MR3_confirm): +0.157 (95% CI
++0.065..+0.249) vs plain; seed for seed random - fixed -0.032 (-0.158..+0.094)
+-- no difference; agent.js keeps fixed 3-4 (deterministic, already verified).
 **DISTILLATION RESULT (distill_run.py, 2026-10-22/23, defaults: full-search
 labels, 300 games/iter, 8 epochs lr 2e-5, td-w 0.5, confirm 300 pairs bar 0).**
 6 iterations; promoted 0 (+0.123), 1 (+0.145), 3 (+0.167); 2/4/5 kept the
