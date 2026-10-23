@@ -2577,7 +2577,7 @@ const REC_TOKEN = 'rec-quahuru-7f3a';
 // WHICH NET THE GAMES WERE PLAYED AGAINST. **Update this whenever model.onnx is
 // re-exported** -- a stats table that silently mixes two champions is worse than
 // no table, and nothing else in the shipped bundle carries a version.
-const REC_MODEL_TAG = 'fv2C_it55_Oct19';
+const REC_MODEL_TAG = 'distill_cand3_Oct23';
 const REC_KEY = 'recGames';           // localStorage buffer, one JSON line per game
 const REC_DEVICE_KEY = 'recDevice';   // stable random id for this browser
 const REC_WARN_BYTES = 2000000;       // localStorage tops out near 5MB

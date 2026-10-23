@@ -12,9 +12,9 @@
  */
 // v9 (2026-10-06): new model.onnx (4-way blend) -- the bump makes every
 // installed worker drop its cached copy of the old net.
-// v10 (2026-10-19): new model.onnx (fv2C iter 55: AB2 inputs, afterstate) and
+// v11 (2026-10-23): the distilled net (distill_cand3). v10 (2026-10-19): new model.onnx (fv2C iter 55: AB2 inputs, afterstate) and
 // its endgame table.
-const CACHE = 'quahuru-v10';
+const CACHE = 'quahuru-v11';
 
 // The shell is what a cold, offline start needs to render a board.
 const SHELL = [
@@ -41,7 +41,7 @@ const SHELL = [
     './ort/ort.wasm.min.js',
     './ort/ort-wasm-simd-threaded.mjs',
     './ort/ort-wasm-simd-threaded.wasm',
-    './model-70432462.onnx',   // the name model.json gives (build_web.py checks)
+    './model-8ee32fcb.onnx',   // the name model.json gives (build_web.py checks)
     './model.json',
     // The fv2C net (AB2) reads the exact endgame table; without it offline the
     // computer could not move (build_web.py refuses to build otherwise).
