@@ -214,6 +214,15 @@ sideways scroll, game paused, back returns to How to Play.
   triggered, 1 round each, max 0.8 s, 15 changed, 0 errors; `?cc=0` the same
   game shape with empty stats. If too slow on a phone: K=2 (`?cck=2`) cuts a
   third of the search; nothing between 0 and 1 round exists.
+  **Now on top of the DISTILLED net (testing 2026-10-23): close-call adds +0.103
+  (95% CI +0.013..+0.194, 1,000 pairs) over distill_cand3 plain.** **SLOW-DEVICE
+  GUARD (owner's question: is his Pixel representative? No -- minSdk 24 reaches
+  phones 3-5x slower):** one round = K opponent searches, each about the cost of
+  the plain search just run, so if plain_ms x K > `closeCallGuardMs` (app 2,500,
+  `?ccguard=<ms>`) the move is played plain and `skippedSlow` counts it. Measured
+  in the page: default, a whole game 26 triggered / 0 skipped (desktop max 1.4 s);
+  `?ccguard=1`, a whole game 0 triggered / 17 skipped. Parity 90/90 unchanged
+  (agent.js's default guard is off; only the app sets it).
 - **Previous: `blend4way_Oct6.pt` (shipped 2026-10-06)**,
   the plain AVERAGE of four nets' weights: symaug iter6 (the previous champion),
   iter10, iter14 and symaug iter11 (one lineage, so they share a basin).

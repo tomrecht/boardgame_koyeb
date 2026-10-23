@@ -281,6 +281,9 @@ const LocalAgent = (function () {
         const cap = num('ccr', 3);
         return { closeCall: true, closeCallBudgetMs: num('ccms', 1500),
                  closeCallMaxReplies: cap > 0 ? cap : Infinity,
+                 // skip the search where one round is predicted to take longer
+                 // than this (?ccguard=<ms>, 2500): slow phones play plain
+                 closeCallGuardMs: num('ccguard', 2500),
                  closeCallT: num('cct', 3), closeCallK: num('cck', 3), closeCallStats: ccStats };
     }
 

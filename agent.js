@@ -450,6 +450,7 @@ async function ccReplyValue(engine, W, opp, d1, d2, winValue, o) {
 
 async function selectWithCloseCall(engine, W, moves, player, o) {
     const ranked = [];
+    const tPlain = ccNow();
     const plain = await selectMovePair(engine, W, moves, player,
                                        Object.assign({}, o, { closeCall: false, _rankOut: ranked }));
     const st = o.closeCallStats;
@@ -467,6 +468,15 @@ async function selectWithCloseCall(engine, W, moves, player, o) {
     const T = o.closeCallT;
     if (cands[0].score - cands[1].score >= T) return plain;
     const top = cands.slice(0, o.closeCallK).filter(r => cands[0].score - r.score < T).map(r => r.pair);
+    // SLOW-DEVICE GUARD (2026-10-23): one round of rolls is top.length opponent
+    // searches, each about as costly as the plain search just run. If that
+    // predicts more than closeCallGuardMs on THIS device, play the plain move:
+    // a slow phone must never sit for many seconds. Desktop never trips it.
+    const plainMs = ccNow() - tPlain;
+    if (plainMs * top.length > o.closeCallGuardMs) {
+        if (st) st.skippedSlow = (st.skippedSlow || 0) + 1;
+        return plain;
+    }
 
     const opp = engine.other(player);
     const maxRounds = Math.min(21, Math.floor(o.closeCallMaxReplies / top.length));
@@ -527,6 +537,7 @@ async function selectMovePair(engine, W, moves, player, opts = {}) {
         lookahead: true, _inLookahead: false,
         closeCall: false, closeCallT: 3, closeCallK: 3,
         closeCallBudgetMs: 1500, closeCallMaxReplies: Infinity, closeCallStats: null,
+        closeCallGuardMs: Infinity,
         scoreFor: null, _rankOut: null,
     }, opts);
     const score = o.score;
