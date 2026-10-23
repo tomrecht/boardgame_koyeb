@@ -950,8 +950,12 @@ champion. Held-out fit to the search's labels: iter 0 within-decision corr
 **Final champion `cand_3` (saved as `distill_cand3.pt`, AB2 afterstate) vs
 fv2C_it55, PLAIN search both sides, app config, fresh seeds 98M, 1,000 pairs:
 +0.141 pts/game (95% CI +0.049..+0.232), 51.1%** -- a real gain at zero runtime
-cost. Queued after queue4 (`closecall/queue5.sh`): close-call ON TOP of it (does
-the search still add?).
+cost. **Close-call ON TOP of it (queue5, seeds 99M, 1,000 pairs, 1-roll cap,
+T=3 K=3): distill_cand3 + close-call vs distill_cand3 plain +0.103 (95% CI
++0.013..+0.194), 51.2%; triggered 40.8%, 5.1 changes/game.** The gains stack
+partly: distillation absorbed about half of the search's +0.189. Distilled +
+close-call vs today's live fv2C plain is ~+0.24 by addition (not measured head
+to head). Exported: `export/distill/` (model-8ee32fcb.onnx + sidecar).
 **QUEUED: a RANDOM roll per decision (owner, 2026-10-22; `closecall/queue4.sh`,
 runs after the distillation).** The 1-roll cap always uses 3-4 (ROLL_ORDER's
 first), so every close call is judged by the opponent's best 3-4 -- possibly
