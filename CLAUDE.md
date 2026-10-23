@@ -956,6 +956,8 @@ T=3 K=3): distill_cand3 + close-call vs distill_cand3 plain +0.103 (95% CI
 partly: distillation absorbed about half of the search's +0.189. Distilled +
 close-call vs today's live fv2C plain is ~+0.24 by addition (not measured head
 to head). Exported: `export/distill/` (model-8ee32fcb.onnx + sidecar).
+**SHIPPED 2026-10-23 (owner): distill_cand3 on main (live, model-8ee32fcb.onnx,
+sw v11); distill_cand3 + close-call (with a slow-device guard) on testing.**
 **QUEUED: a RANDOM roll per decision (owner, 2026-10-22; `closecall/queue4.sh`,
 runs after the distillation).** The 1-roll cap always uses 3-4 (ROLL_ORDER's
 first), so every close call is judged by the opponent's best 3-4 -- possibly
