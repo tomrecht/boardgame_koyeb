@@ -932,6 +932,16 @@ default, 1 round); latency + parity + full-game checks in main's CLAUDE.md entry
 triggered 72% of moves, 8.7 changes/game, 0.68 s per trigger (median game; the
 mean 7.6 s is games frozen mid-search during latency runs).** No better than T=3
 (+0.189) at twice the triggers -- T=3 stays.
+**DISTILLATION RESULT (distill_run.py, 2026-10-22/23, defaults: full-search
+labels, 300 games/iter, 8 epochs lr 2e-5, td-w 0.5, confirm 300 pairs bar 0).**
+6 iterations; promoted 0 (+0.123), 1 (+0.145), 3 (+0.167); 2/4/5 kept the
+champion. Held-out fit to the search's labels: iter 0 within-decision corr
+0.18 -> 0.38, top-1 agreement 50% -> 58%; later iterations gained little.
+**Final champion `cand_3` (saved as `distill_cand3.pt`, AB2 afterstate) vs
+fv2C_it55, PLAIN search both sides, app config, fresh seeds 98M, 1,000 pairs:
++0.141 pts/game (95% CI +0.049..+0.232), 51.1%** -- a real gain at zero runtime
+cost. Queued after queue4 (`closecall/queue5.sh`): close-call ON TOP of it (does
+the search still add?).
 **QUEUED: a RANDOM roll per decision (owner, 2026-10-22; `closecall/queue4.sh`,
 runs after the distillation).** The 1-roll cap always uses 3-4 (ROLL_ORDER's
 first), so every close call is judged by the opponent's best 3-4 -- possibly
