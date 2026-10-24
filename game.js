@@ -10522,7 +10522,13 @@ class MainGameScene extends Phaser.Scene {
         // On the first-load welcome, hold the game (no AI) until the player hits
         // Play; a real, freshly-rolled game is started then.
         _gameFrozen = !!(this._coinFlipOnStart && !matchTracker);
-        if (!_gameFrozen && !_pendingResume) _savedGameClear();   // a new game replaces any saved one
+        // A new game replaces any saved one -- but mid-match it keeps the MATCH
+        // (owner, 2026-10-23: reloaded during a match's first turn, no Resume).
+        // The position is first saved at the first turn switch, so until then
+        // Resume match restarts this game from its start.
+        if (!_gameFrozen && !_pendingResume) {
+            if (matchTracker && !matchTracker.over) _savedBetweenWrite(); else _savedGameClear();
+        }
         this.game = new Game(this, this.startingPlayer, debugMode);
         // A restart destroys every game object, but this.game keeps pointing at
         // the old Game until create() runs again -- so anything deferred (the
