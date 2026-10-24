@@ -9150,14 +9150,18 @@ class Game {
         // Prefer a goal that leaves the other die no other use, so the gesture
         // banks rather than stopping when it can.
         const target = bankable.find(g => !leftUse(g)) || bankable[0];
+        const fromGoal = piece.currentTile.type === 'save';
         if (!this.movePiece(piece, target)) return false;
         // Second half of the same rule (owner, 2026-10-08): if the die left over
         // could ALSO bank another piece, or put one onto a goal it can bank from,
         // banking this one is a choice -- so stop on the goal and leave that die.
         // A second double-tap banks it. Judged on the board AFTER the move, since
         // the move itself can open the endgame or change the highest goal.
+        // Not for a piece that STARTED on a goal (owner, 2026-10-23: blank on G1,
+        // roll 6-4, it stopped on G6): stopping there is a goal-to-goal step that
+        // banks nothing and leaves it on a worse goal, so it always banks.
         const left = this.dice.find(d => !d.used);
-        if (opts.uniqueGoal && left && this._dieHasOtherGoalUse(piece, left)) return 'moved';
+        if (opts.uniqueGoal && left && !fromGoal && this._dieHasOtherGoalUse(piece, left)) return 'moved';
         return piece.save();
     }
 
