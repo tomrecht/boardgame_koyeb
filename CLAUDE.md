@@ -43,8 +43,12 @@ quahuru.com. Major features still stage on `testing`. The old
 cherry-pick-to-both rule is GONE — the branches share one history now. See
 "`testing` IS A STAGING BRANCH" below.
 
-**WORKSPACE CONSTRAINT (owner, 2026-07-21): Ownder works on two machines, iMac and MacBook. 
-Work only inside this folder (`/Users/tomrecht/game/boardgame_koyeb` on MacBook, `/Users/tom/Game/BoardGame` on iMac).** Reads/writes outside it trigger permission prompts. Do NOT create git worktrees or files in sibling dirs; run new experiments from a branch checked out *in this folder* (or keep files here).
+**WORKSPACE CONSTRAINT (owner, 2026-07-21; machines corrected 2026-10-23): THREE machines --
+the HOME iMac (Intel i5-7500, 4 cores, no usable training GPU; `/Users/tom/Game/BoardGame`), the
+WORK iMac (2024, Apple Silicon; runs the long training jobs; folder: ask owner) and a MacBook Pro
+M3 (`/Users/tomrecht/game/boardgame_koyeb`, the "MacBook" of older notes). Work only inside the
+repo folder on whichever machine.** Training plans live in `train-features-v2`'s CLAUDE.md
+("MONDAY 2026-10-26 PLAN"). Reads/writes outside it trigger permission prompts. Do NOT create git worktrees or files in sibling dirs; run new experiments from a branch checked out *in this folder* (or keep files here).
 When you must inspect another branch's file, use `git show <branch>:<path>`;
 when you must read an out-of-folder artifact (e.g. a running worktree's log),
 `cp` it in first. (Some existing runs — e.g. the symmetry-aug worktree — predate
