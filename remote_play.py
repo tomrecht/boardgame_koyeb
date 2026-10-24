@@ -5,6 +5,7 @@ Actions (free on this public repo: ~20 parallel 4-core jobs), keep training loca
 
   mode   'label'   -> close_call.py label <a> T K <games> <out>   (n = games)
          'confirm' -> confirm_match.py <a> <b> <pairs> <out>      (n = pairs)
+         'ccmatch' -> close_call.py match <a> T K <pairs> <out>   (n = pairs)
   ckpts  local checkpoint paths, uploaded to the `cloud-scratch` release under
          a content-hashed name, so a rerun reuses them and nothing lands in git
   out    the local file the shards' outputs are concatenated into (label files
@@ -174,6 +175,31 @@ def remote_play(mode, ckpts, n, seed_base, out, env=None, shards=None):
     return miss
 
 
+def _cli():
+    """By hand (results also land in the run summary):
+        python3 remote_play.py confirm A.pt B.pt [pairs=2000] [seed_base=150000000] [out]
+        python3 remote_play.py ccmatch NET.pt [pairs=2000] [seed_base=160000000] [out]
+    ccmatch = NET + close-call vs NET plain (close_call.py match, T=3 K=3, one
+    roll, as on testing): how much the search still adds over this net --
+    the expert-iteration loop's "is the teacher exhausted?" gauge."""
+    a = sys.argv[1:]
+    if a[0] == 'confirm':
+        ck, rest = a[1:3], a[3:]
+        env = {}
+    else:
+        ck, rest = a[1:2], a[2:]
+        env = {'T': '3', 'K': '3', 'MAX_REPLIES': '3'}
+    pairs = int(rest[0]) if rest else 2000
+    seed = int(rest[1]) if len(rest) > 1 else (150_000_000 if a[0] == 'confirm' else 160_000_000)
+    out = rest[2] if len(rest) > 2 else f'remote_{a[0]}_{seed}.jsonl'
+    miss = remote_play(a[0], ck, pairs, seed, out, env=env)
+    subprocess.call([sys.executable, 'confirm_match.py', 'analyze', out])
+    if miss:
+        print(f'{miss} games missing (resume locally with the matching script and SEED_BASE={seed})')
+
+
+if __name__ == '__main__' and sys.argv[1:2] in (['confirm'], ['ccmatch']):
+    _cli()
 if __name__ == '__main__' and sys.argv[1:] == ['smoke']:
     out = 'remote_smoke.jsonl'
     if os.path.exists(out):
