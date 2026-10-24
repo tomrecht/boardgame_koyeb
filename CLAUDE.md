@@ -856,6 +856,10 @@ with it in mind.** Assessment and the concrete implications:
   numbered 2 to G2 beside a blank on G2 (6-2) stopped -> banks; numbered 4 to G4
   while the 4 could move a blank onto a goal (4-1) stopped -> banks. Control:
   same 4-1 with the white 2 on 5.22 (4 from G2) still stops on G4, both versions.
+  **A piece that STARTS on a goal never stops halfway (owner, 2026-10-23):** blank
+  on G1, roll 6-4, it walked to G6 and stopped because a field blank could use the
+  6 -- a goal-to-goal step that banks nothing. Now it always banks. Measured in the
+  page: old code `x@G6`, 6 unused; new code banked, both dice spent.
 - **ENDGAME MARK ON THE SAVED RACK (owner, 2026-10-07; on `testing`).** A
   player in the endgame gets a faint accent ground and accent edge on their SAVED
   rack, plus a one-off double pulse when they enter it. `_endgameMarkTick` runs in
