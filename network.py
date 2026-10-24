@@ -336,7 +336,8 @@ def features_of_state(state_dict):
     """The feature set a checkpoint was trained with, read off its input layers."""
     return _enc.features_for_dims(state_dict['tile_embed.weight'].shape[1],
                                   state_dict['piece_embed.weight'].shape[1],
-                                  state_dict['readout.0.weight'].shape[1] - 3 * HIDDEN_DIM)
+                                  state_dict['readout.0.weight'].shape[1]
+                                  - 3 * state_dict['tile_embed.weight'].shape[0])
 
 
 def model_from_state(state_dict, strict=True):
@@ -344,7 +345,11 @@ def model_from_state(state_dict, strict=True):
     eval mode). Use this, not BoardGNN() + load_state_dict, wherever the
     checkpoint might be from any feature set (panel members are v1)."""
     sd = {k: v.cpu() for k, v in state_dict.items()}
-    m = BoardGNN(features=features_of_state(sd))
+    # width and depth from the weights, so a wider/deeper net (e.g. a teacher,
+    # distill_train.py --scratch) loads too; today's nets read as 64 x 6
+    H = sd['tile_embed.weight'].shape[0] if 'tile_embed.weight' in sd else HIDDEN_DIM
+    L = len({k.split('.')[1] for k in sd if k.startswith('mp_layers.')}) or NUM_MP_LAYERS
+    m = BoardGNN(hidden_dim=H, num_mp_layers=L, features=features_of_state(sd))
     m.load_state_dict(sd, strict=strict)
     m.eval()
     return m.to(DEVICE)

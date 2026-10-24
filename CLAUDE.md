@@ -1033,6 +1033,14 @@ champion (the teacher is exhausted when it nears 0); then variance-reduced
 (luck-adjusted) rollouts as the stronger teacher; a bigger teacher net only if
 a 64- vs 128-wide fit test on the same labels shows the student is capacity-
 limited.
+**THE CAPACITY TEST IS READY: `closecall/fit_test.sh`** (work Mac; waits for
+weekend.sh to finish): on ALL distill/labels_*.jsonl.gz, same held-out games,
+from scratch 64x6 / 128x6 / 128x9 (lr 5e-4, 15 epochs) + today's net warm
+started; prints held-out MSE / within-decision corr / top-1 per arm.
+`distill_train.py --scratch AB2 --hidden H --layers L` builds a fresh afterstate
+net; `network.model_from_state` now reads width and depth off the weights
+(features_of_state assumed width 64 -- fixed); 64/128 x 6/9 round-trip, the
+existing checkpoints still load as 64 x 6. Smoke (2 games, 2 epochs) clean.
 
 **FULL-SIZE PRE-FLIGHT (2026-10-06, this iMac, `preflight/fv2B.log`): the whole
 loop works at real sizes** -- 300 generation games (72 min, 42-46 s/game single

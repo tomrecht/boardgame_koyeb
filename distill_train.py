@@ -197,7 +197,11 @@ def baseline(model, cands, encoder, board, batch_size=256):
 def main():
     ap = argparse.ArgumentParser(description=__doc__.split('\n')[0])
     ap.add_argument('--data', nargs='+', required=True)
-    ap.add_argument('--load', required=True, help='warm start (an afterstate net)')
+    ap.add_argument('--load', help='warm start (an afterstate net)')
+    ap.add_argument('--scratch', metavar='FEATURES', help='instead of --load: a FRESH afterstate '
+                    'net with these inputs (e.g. AB2), --hidden wide, --layers rounds')
+    ap.add_argument('--hidden', type=int, default=64)
+    ap.add_argument('--layers', type=int, default=6)
     ap.add_argument('--save', required=True)
     ap.add_argument('--distill-w', type=float, default=1.0)
     ap.add_argument('--td-w', type=float, default=0.5)
@@ -213,7 +217,15 @@ def main():
     args = ap.parse_args()
 
     random.seed(args.seed); torch.manual_seed(args.seed)
-    model = network.model_from_state(torch.load(args.load, map_location='cpu'), strict=False).to(network.DEVICE)
+    if args.scratch:
+        model = network.BoardGNN(hidden_dim=args.hidden, num_mp_layers=args.layers,
+                                 features=args.scratch).to(network.DEVICE)
+        model.afterstate = True
+        print(f'fresh {args.scratch} net, {args.hidden} wide x {args.layers} rounds, '
+              f'{sum(p.numel() for p in model.parameters())} params', flush=True)
+    else:
+        assert args.load, '--load or --scratch'
+        model = network.model_from_state(torch.load(args.load, map_location='cpu'), strict=False).to(network.DEVICE)
     assert getattr(model, 'afterstate', False), 'distillation targets afterstates: load an afterstate net'
     encoder = BoardEncoder(features=getattr(model, 'features', 'v1'), afterstate=True)
     board = Board()
