@@ -155,6 +155,12 @@ sideways scroll, game paused, back returns to How to Play.
   worker handover from the live v10 build: first reload, second reload and
   offline all play. The close-call search on top of it (+0.103, 95% CI
   +0.013..+0.194) is on `testing` for owner's phone check.
+  **CLOSE-CALL STAYS OFF MAIN (owner, 2026-10-23): "I prefer the instantaneous
+  feel."** On his phone it felt slightly slower (it ~2-4x the thinking time on
+  the ~40% of moves it triggers on, capped at 2 s extra). Revisit only if it
+  can be made near-free; the preferred route to its strength is DISTILLATION
+  (zero runtime cost; round 1 captured +0.14 of its +0.19; the weekend run on
+  train-features-v2 continues it).
 - **Previous: `fv2C_it55.pt` (LIVE on quahuru.com
   2026-10-19; owner played it on testing, phone included -- no felt slowdown)** -- the first net with the v2 inputs (AB2) and
   AFTERSTATE training, from the fv2C run (branch `train-features-v2`, where the
