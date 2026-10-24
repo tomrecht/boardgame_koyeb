@@ -273,6 +273,26 @@ const LocalAgent = (function () {
        ?cc=0 turns it off; ?ccr=<reply cap> (3; 0 = no cap, then the time
        budget ?ccms=<ms> (1500) decides), ?cct=<T score units> (3),
        ?cck=<K> (3). Stats in window._closeCallStats. */
+    // A macrotask via MessageChannel: unlike setTimeout it is not throttled in a
+    // background tab (1 s+ per call there), so a hidden game still moves.
+    const yieldToPage = () => new Promise(r => {
+        if (typeof MessageChannel === 'undefined') { setTimeout(r, 0); return; }
+        const ch = new MessageChannel(); ch.port1.onmessage = () => { ch.port1.close(); r(); }; ch.port2.postMessage(0);
+    });
+    // Score in chunks of SCORE_CHUNK with a yield before each: one batch costs
+    // ~8-10 ms a position on desktop, and endgame searches send 100-270 at once
+    // (1.9 s blocked, measured 2026-10-23). Batch values do not depend on the
+    // batch they ride in, so chunking changes nothing but the blocking.
+    const SCORE_CHUNK = 48;
+    async function scoreChunked(snaps, pl) {
+        if (!Array.isArray(snaps)) { await yieldToPage(); return window.Infer.score(window.ort, snaps, pl); }
+        const out = [];
+        for (let i = 0; i < snaps.length; i += SCORE_CHUNK) {
+            await yieldToPage();
+            out.push(...await window.Infer.score(window.ort, snaps.slice(i, i + SCORE_CHUNK), pl));
+        }
+        return out;
+    }
     const ccStats = {};
     if (typeof window !== 'undefined') window._closeCallStats = ccStats;
     function closeCallOpts() {
@@ -300,9 +320,13 @@ const LocalAgent = (function () {
             difficulty: gs.difficulty === undefined ? 1.0 : gs.difficulty,
             snapshot: (eng) => eng.snapshot(),
             // One batched call per turn, as the search intends.
-            score: async (snaps) => window.Infer.score(window.ort, snaps, player),
+            // Yield to the browser before every network batch: the search runs on
+            // the main thread and awaits on ORT resolve as microtasks, so without
+            // this a whole turn's search is one long task (2-4 s measured on
+            // desktop) and Chrome offers to kill the page.
+            score: (snaps) => scoreChunked(snaps, player),
             // The close-call search scores the OPPONENT's replies too.
-            scoreFor: (pl) => async (snaps) => window.Infer.score(window.ort, snaps, pl),
+            scoreFor: (pl) => (snaps) => scoreChunked(snaps, pl),
         }, closeCallOpts()));
         if (!Array.isArray(pair) || pair.length !== 2) throw new Error('agent returned ' + JSON.stringify(pair));
         moveCount++;
@@ -353,7 +377,11 @@ const LocalAgent = (function () {
         const ranked = await window.selectMovePair(engine, weights, moves, player, {
             returnScores: true,
             snapshot: (e) => e.snapshot(),
-            score: async (snaps) => window.Infer.score(window.ort, snaps, player),
+            // Yield to the browser before every network batch: the search runs on
+            // the main thread and awaits on ORT resolve as microtasks, so without
+            // this a whole turn's search is one long task (2-4 s measured on
+            // desktop) and Chrome offers to kill the page.
+            score: (snaps) => scoreChunked(snaps, player),
         });
         if (!ranked.length) return null;
         const best = ranked[0];

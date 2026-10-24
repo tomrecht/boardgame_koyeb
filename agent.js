@@ -383,6 +383,16 @@ async function selectWithLookahead(engine, W, moves, player, o) {
 const CC_ROLL_ORDER = [[3, 4], [1, 6], [2, 5], [5, 6], [1, 2], [3, 3], [2, 6], [1, 4], [4, 5],
                        [6, 6], [1, 3], [2, 4], [3, 6], [1, 1], [4, 6], [2, 3], [5, 5], [1, 5],
                        [3, 5], [2, 2], [4, 4]];
+/* Hand the browser a turn between searches. The search runs on the page's main
+   thread and an await on ORT resolves as a microtask, so without a macrotask
+   yield the whole close-call search is one long task (3.8 s measured on desktop,
+   2026-10-23) and Chrome offers to kill the page. */
+// A macrotask via MessageChannel: unlike setTimeout it is not throttled in a
+// background tab (1 s+ per call there), so a hidden game still moves.
+const ccYield = () => new Promise(r => {
+    if (typeof MessageChannel === 'undefined') { setTimeout(r, 0); return; }
+    const ch = new MessageChannel(); ch.port1.onmessage = () => { ch.port1.close(); r(); }; ch.port2.postMessage(0);
+});
 const ccNow = () => (typeof performance !== 'undefined' && performance.now) ? performance.now() : Date.now();
 
 /* close_call._outcome: the end position with same-colour blanks
@@ -490,6 +500,7 @@ async function selectWithCloseCall(engine, W, moves, player, o) {
             if (rounds > 0 && spent + spent / rounds > o.closeCallBudgetMs) break;
             const pr = (d1 === d2 ? 1 : 2) / 36;
             for (let i = 0; i < top.length; i++) {
+                await ccYield();
                 const root = engine.moves.length;
                 for (const m of top[i]) if (!isPass(m)) engine.applyMove(m, false);
                 const winValue = -(LOOKAHEAD_PIECES - engine.savedRack(player).length) / LOOKAHEAD_PIECES * SCORE_SCALE;

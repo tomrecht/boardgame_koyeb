@@ -193,7 +193,18 @@ sideways scroll, game paused, back returns to How to Play.
   them (CLAUDE.md "Re-check main's `_strands_last_piece` rule on the first
   afterstate net").
 - **CLOSE-CALL SEARCH, ON BY DEFAULT (on `testing` 2026-10-22, for owner to play
-  before main; branch `close-call-ship`).** When the shallow search's top two
+  before main; branch `close-call-ship`).**
+  **"PAGE UNRESPONSIVE" ON KOYEB DESKTOP (owner, 2026-10-23), FIXED.** The search
+  runs on the main thread and ORT's awaits resolve as microtasks, so a whole
+  search was ONE task: close-call made it up to 3.8 s (main 2.1 s), and endgame
+  searches sent 100-270 positions in one batch (1.9 s). Now `local_agent.js`
+  scores in chunks of 48 with a MessageChannel yield before each (not throttled
+  in a background tab, unlike setTimeout), and agent.js yields between reply
+  searches. Measured (headless desktop, self-play from load, `PerformanceObserver`
+  longtask): in-game worst block 3.8 s -> 0.82 s; every block > 1 s is now in the
+  first 16 s of load (model start-up, board bake -- main has the same); chunked
+  scores bit-identical to whole batches, 76/76 checks; close_call_test 90/90,
+  agent_test 50/50. When the shallow search's top two
   DISTINCT positions are within T=3 score units (~0.04 pts), the top K=3 are
   rescored by ONE roll of the opponent (3-4, the first of agent.js's
   CC_ROLL_ORDER): each candidate's value = minus the opponent's best reply score,
