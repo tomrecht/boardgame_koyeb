@@ -43,8 +43,11 @@ quahuru.com. Major features still stage on `testing`. The old
 cherry-pick-to-both rule is GONE — the branches share one history now. See
 "`testing` IS A STAGING BRANCH" below.
 
-**WORKSPACE CONSTRAINT (owner, 2026-07-21): Ownder works on two machines, iMac and MacBook. 
-Work only inside this folder (`/Users/tomrecht/game/boardgame_koyeb` on MacBook, `/Users/tom/Game/BoardGame` on iMac).** Reads/writes outside it trigger permission prompts. Do NOT create git worktrees or files in sibling dirs; run new experiments from a branch checked out *in this folder* (or keep files here).
+**WORKSPACE CONSTRAINT (owner, 2026-07-21): Owner works on two machines, BOTH iMacs (corrected
+2026-10-23; older notes call the second one "the MacBook"): the home iMac and the WORK iMac.
+Work only inside this folder (`/Users/tomrecht/game/boardgame_koyeb` on the work iMac, `/Users/tom/Game/BoardGame` on the home iMac).**
+The home iMac is an Intel i5-7500, 4 cores, no usable training GPU (MPS hard-aborts). The work iMac
+runs the long training jobs (N_WORKERS=8) and is often free for 2-3 days at a time. Reads/writes outside it trigger permission prompts. Do NOT create git worktrees or files in sibling dirs; run new experiments from a branch checked out *in this folder* (or keep files here).
 When you must inspect another branch's file, use `git show <branch>:<path>`;
 when you must read an out-of-folder artifact (e.g. a running worktree's log),
 `cp` it in first. (Some existing runs — e.g. the symmetry-aug worktree — predate
@@ -72,6 +75,46 @@ So, for any "work through the night / while I sleep" task:
      background if needed.
   4. Checkpoint durably every step (commit, update CLAUDE.md/memory) so progress
      survives an interruption and is visible on waking.
+
+## MONDAY 2026-10-26 PLAN (written 2026-10-23; work iMac, in order)
+
+1. **`git pull` (train-features-v2), then read the weekend result**: the last
+   line of `closecall/weekend_vs_live.log` (weekend champion vs the live
+   `distill_cand3`, 1,000 fresh pairs) and the per-iteration lines in
+   `distill/run.log` (PROMOTE / keep champion). Send both to Claude.
+2. **Ship decision.** If the weekend champion's 95% CI is clear of 0: optionally
+   firm it up first on GitHub (`python3 remote_play.py confirm
+   distill/weekend_champion.pt distill_cand3.pt 2000`, ~20 min), then ship it the
+   usual way (this branch's `onnx_export.py` -> hashed `model-*.onnx` + sidecar
+   to main, sw.js SHELL + cache bump, REC_MODEL_TAG, `model_e2e.mjs`). Level ->
+   keep the live net; it then tells us one 600-game round no longer moves it.
+3. **GPU check, 5 minutes** (only meaningful if the work iMac is Apple Silicon):
+       BOARDGAME_DEVICE=mps .venv/bin/python -u distill_train.py --data distill/labels_0.jsonl.gz \
+         --load distill_cand3.pt --save /tmp/mps.pt --epochs 1 --max-games 50
+   An AFTER line = MPS works -> use BOARDGAME_DEVICE=mps for training below
+   (several times faster if so). An `MPSNDArrayScatter` abort = stay on cpu.
+4. **Launch the scaled distillation** (continues distill/state.json from the
+   weekend's champion; labelling + confirms on GitHub, training here, local
+   fallback if GitHub fails):
+       REMOTE=1 ITERS=20 GAMES=2000 CONFIRM_PAIRS=2000 T=6 K=5 REPLAY=2 \
+         TRAIN_ARGS='--epochs 4 --lr 2e-5 --td-w 0.5 --rank-w 0' \
+         BOARDGAME_DEVICE=cpu PYTHONHASHSEED=0 N_WORKERS=8 \
+         caffeinate -is nohup .venv/bin/python -u distill_run.py >> distill/run.log 2>&1 &
+   (6 iterations; each ~1.5-2 h labelling on GitHub + ~1.5-2.5 h training here
+   + ~20 min confirm. Seeds are keyed by iteration, so nothing repeats.)
+5. **After every 2-3 promotions: the teacher gauge** --
+   `python3 remote_play.py ccmatch <current champion> 2000` (GitHub, ~1 h):
+   close-call's remaining gain over that champion (+0.10 over distill_cand3). Near
+   0 = the search has nothing left to teach -> stop scaling, move to luck-
+   adjusted rollouts as the teacher.
+6. **Capacity test** (`closecall/fit_test.sh`, an evening) once the work iMac is
+   free of the scaled run: 64 vs 128 wide on the same labels -> whether a bigger
+   teacher / phone net is worth it. It and the scaled run both want this
+   machine's CPU; don't run them together.
+
+Everything above is documented in the RUNBOOK (features v2) entries "CLOUD
+GAMES, LOCAL TRAINING", "THE CAPACITY TEST IS READY", "ENCODE-ONCE CACHE" and
+"Scaled-run settings".
 
 ## Project background
 
