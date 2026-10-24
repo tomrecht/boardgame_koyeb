@@ -21,6 +21,9 @@ Knobs (env; defaults are a first guess):
     CONFIRM_PAIRS=300  BAR=0.0
     TRAIN_ARGS='--epochs 8 --lr 2e-5 --td-w 0.5 --rank-w 0'
     MAX_REPLIES (passed through to labelling; 0 = full 21-roll search)
+    REMOTE=1  play LABEL and CONFIRM on GitHub Actions (remote_play.py; the
+              branch must be pushed), TRAIN locally. REMOTE_SHARDS (20).
+              Same seeds as a local run, so the two are interchangeable.
     START_POOL / START_FRAC (labelling games from owner's positions; default
     start_pool.jsonl at 0.3 if present)
 """
@@ -36,6 +39,7 @@ GAMES = E.get('GAMES', '300')
 REPLAY = int(E.get('REPLAY', '2'))
 CONFIRM_PAIRS = E.get('CONFIRM_PAIRS', '300')
 BAR = float(E.get('BAR', '0.0'))
+REMOTE = E.get('REMOTE', '0') == '1'
 TRAIN_ARGS = shlex.split(E.get('TRAIN_ARGS', '--epochs 8 --lr 2e-5 --td-w 0.5 --rank-w 0'))
 
 
@@ -75,6 +79,11 @@ def main():
         champ = st['champion']
         print(f'=== iteration {k}: champion {champ}', flush=True)
         lab = os.path.join(D, f'labels_{k}.jsonl.gz')
+        if not done.get('label') and REMOTE:
+            from remote_play import remote_play
+            remote_play('label', [champ], GAMES, 91_000_000 + 10_000 * k, lab,
+                        env=dict(lab_env, T=T, K=K))
+            done['label'] = True; save()
         if not done.get('label'):
             run([PY, '-u', 'close_call.py', 'label', champ, T, K, GAMES, lab],
                 dict(lab_env, SEED_BASE=str(91_000_000 + 10_000 * k)), os.path.join(D, f'label_{k}.log'))
@@ -87,6 +96,10 @@ def main():
                 {}, os.path.join(D, f'train_{k}.log'))
             done['train'] = True; save()
         conf = os.path.join(D, f'confirm_{k}.jsonl')
+        if not done.get('confirm') and REMOTE:
+            from remote_play import remote_play
+            remote_play('confirm', [cand, champ], CONFIRM_PAIRS, 93_000_000 + 10_000 * k, conf)
+            done['confirm'] = True; save()
         if not done.get('confirm'):
             run([PY, '-u', 'confirm_match.py', cand, champ, CONFIRM_PAIRS, conf],
                 {'SEED_BASE': str(93_000_000 + 10_000 * k)}, os.path.join(D, f'confirm_{k}.log'))
