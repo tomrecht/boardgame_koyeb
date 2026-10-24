@@ -1,0 +1,73 @@
+# Fresh-seed head-to-head of two checkpoints (confirm_match.py), split across
+# parallel GitHub-hosted runners. Free on a public repo. Start it from the
+# Actions tab or:
+#   gh workflow run confirm.yml -f a=distill/weekend_champion.pt -f b=distill_cand3.pt
+# Each shard plays pairs/shards colour-swapped pairs on its own seed block
+# (SEED_BASE + shard * per); the merge job concatenates them and prints the
+# paired margin with its 95% CI (also in the run summary and as an artifact).
+name: confirm-match
+on:
+  workflow_dispatch:
+    inputs:
+      ref:       { description: 'branch holding the code + checkpoints', default: 'train-features-v2' }
+      a:         { description: 'checkpoint A (path in that branch)', required: true }
+      b:         { description: 'checkpoint B (path in that branch)', required: true }
+      pairs:     { description: 'colour-swapped pairs in total', default: '1000' }
+      shards:    { description: 'parallel jobs (max ~20 at once)', default: '20' }
+      seed_base: { description: 'first seed; keep blocks disjoint from earlier matches', default: '120000000' }
+jobs:
+  plan:
+    runs-on: ubuntu-latest
+    outputs:
+      shards: ${{ steps.p.outputs.shards }}
+      per: ${{ steps.p.outputs.per }}
+    steps:
+      - id: p
+        run: |
+          S=${{ inputs.shards }}; P=${{ inputs.pairs }}
+          echo "shards=$(python3 -c "print(list(range($S)))")" >> "$GITHUB_OUTPUT"
+          echo "per=$(( (P + S - 1) / S ))" >> "$GITHUB_OUTPUT"
+  play:
+    needs: plan
+    runs-on: ubuntu-latest
+    timeout-minutes: 350
+    strategy:
+      fail-fast: false
+      matrix: { shard: '${{ fromJSON(needs.plan.outputs.shards) }}' }
+    steps:
+      - uses: actions/checkout@v4
+        with: { ref: '${{ inputs.ref }}' }
+      - uses: actions/setup-python@v5
+        with: { python-version: '3.11', cache: 'pip' }
+      - run: |
+          pip install torch==2.2.2 --index-url https://download.pytorch.org/whl/cpu
+          pip install "numpy<2" scipy
+      - name: play
+        env:
+          SEED_BASE: ${{ inputs.seed_base }}
+          PER: ${{ needs.plan.outputs.per }}
+          BOARDGAME_DEVICE: cpu
+          PYTHONHASHSEED: '0'
+        run: |
+          export SEED_BASE=$(( SEED_BASE + ${{ matrix.shard }} * PER ))
+          export N_WORKERS=$(nproc)
+          echo "shard ${{ matrix.shard }}: seeds $SEED_BASE.. ($PER pairs), $N_WORKERS workers"
+          python -u confirm_match.py "${{ inputs.a }}" "${{ inputs.b }}" "$PER" shard.jsonl
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with: { name: 'shard-${{ matrix.shard }}', path: shard.jsonl, if-no-files-found: ignore }
+  merge:
+    needs: play
+    if: always()
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with: { ref: '${{ inputs.ref }}', sparse-checkout: confirm_match.py, sparse-checkout-cone-mode: false }
+      - uses: actions/download-artifact@v4
+        with: { pattern: 'shard-*', path: shards }
+      - run: |
+          cat shards/*/shard.jsonl > confirm.jsonl
+          python3 confirm_match.py analyze confirm.jsonl | tee result.txt
+          { echo '### ${{ inputs.a }} vs ${{ inputs.b }}'; echo; cat result.txt; } >> "$GITHUB_STEP_SUMMARY"
+      - uses: actions/upload-artifact@v4
+        with: { name: confirm-merged, path: 'confirm.jsonl' }

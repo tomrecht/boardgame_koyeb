@@ -1,0 +1,66 @@
+# Game-playing steps of a training loop, split across parallel runners.
+# Driven by remote_play.py (train-features-v2), which uploads checkpoints to the
+# `cloud-scratch` release, dispatches this with a JSON spec, waits, and
+# concatenates the shards' outputs locally. Not meant to be started by hand.
+#   spec = {mode: label|confirm|ccmatch, ckpts: [asset...], n, shards, seed_base, env: {...}}
+name: cloud-play
+on:
+  workflow_dispatch:
+    inputs:
+      ref:  { description: 'branch with the code', default: 'train-features-v2' }
+      spec: { description: 'JSON job spec (see remote_play.py)', required: true }
+permissions: { contents: read, actions: read }
+jobs:
+  plan:
+    runs-on: ubuntu-latest
+    outputs: { shards: '${{ steps.p.outputs.shards }}' }
+    steps:
+      - id: p
+        env: { SPEC: '${{ inputs.spec }}' }
+        run: python3 -c "import json,os; s=json.loads(os.environ['SPEC']); print('shards=' + json.dumps(list(range(s['shards']))))" >> "$GITHUB_OUTPUT"
+  play:
+    needs: plan
+    runs-on: ubuntu-latest
+    timeout-minutes: 350
+    strategy:
+      fail-fast: false
+      matrix: { shard: '${{ fromJSON(needs.plan.outputs.shards) }}' }
+    steps:
+      - uses: actions/checkout@v4
+        with: { ref: '${{ inputs.ref }}' }
+      - uses: actions/setup-python@v5
+        with: { python-version: '3.11', cache: 'pip' }
+      - run: |
+          pip install torch==2.2.2 --index-url https://download.pytorch.org/whl/cpu
+          pip install "numpy<2" scipy
+      - name: checkpoints
+        env: { SPEC: '${{ inputs.spec }}', GH_TOKEN: '${{ github.token }}' }
+        run: |
+          for a in $(python3 -c "import json,os; print(' '.join(json.loads(os.environ['SPEC'])['ckpts']))"); do
+            gh release download cloud-scratch -p "$a" -R "${{ github.repository }}"
+          done
+      - name: play
+        env: { SPEC: '${{ inputs.spec }}', SHARD: '${{ matrix.shard }}', BOARDGAME_DEVICE: cpu, PYTHONHASHSEED: '0' }
+        run: |
+          python3 - <<'PY'
+          import json, os, subprocess, sys
+          s = json.loads(os.environ['SPEC']); k = int(os.environ['SHARD'])
+          per = -(-s['n'] // s['shards']); n = min(per, s['n'] - k * per)
+          if n <= 0: sys.exit(0)
+          env = dict(os.environ, **{a: str(b) for a, b in s['env'].items()},
+                     SEED_BASE=str(s['seed_base'] + k * per), N_WORKERS=str(os.cpu_count()))
+          c = s['ckpts']
+          if s['mode'] == 'label':
+              cmd = ['close_call.py', 'label', c[0], env['T'], env['K'], str(n), 'shard.out']
+          elif s['mode'] == 'confirm':
+              cmd = ['confirm_match.py', c[0], c[1], str(n), 'shard.out']
+          elif s['mode'] == 'ccmatch':
+              cmd = ['close_call.py', 'match', c[0], env['T'], env['K'], str(n), 'shard.out']
+          else:
+              sys.exit('unknown mode ' + s['mode'])
+          print('shard', k, 'seeds', env['SEED_BASE'], 'n', n, ' '.join(cmd), flush=True)
+          sys.exit(subprocess.call([sys.executable, '-u', *cmd], env=env))
+          PY
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with: { name: 'shard-${{ matrix.shard }}', path: shard.out, if-no-files-found: ignore, retention-days: 7 }

@@ -43,8 +43,12 @@ quahuru.com. Major features still stage on `testing`. The old
 cherry-pick-to-both rule is GONE — the branches share one history now. See
 "`testing` IS A STAGING BRANCH" below.
 
-**WORKSPACE CONSTRAINT (owner, 2026-07-21): Ownder works on two machines, iMac and MacBook. 
-Work only inside this folder (`/Users/tomrecht/game/boardgame_koyeb` on MacBook, `/Users/tom/Game/BoardGame` on iMac).** Reads/writes outside it trigger permission prompts. Do NOT create git worktrees or files in sibling dirs; run new experiments from a branch checked out *in this folder* (or keep files here).
+**WORKSPACE CONSTRAINT (owner, 2026-07-21; machines corrected 2026-10-23): THREE machines --
+the HOME iMac (Intel i5-7500, 4 cores, no usable training GPU; `/Users/tom/Game/BoardGame`), the
+WORK iMac (2024, Apple Silicon; runs the long training jobs; folder: ask owner) and a MacBook Pro
+M3 (`/Users/tomrecht/game/boardgame_koyeb`, the "MacBook" of older notes). Work only inside the
+repo folder on whichever machine.** Training plans live in `train-features-v2`'s CLAUDE.md
+("MONDAY 2026-10-26 PLAN"). Reads/writes outside it trigger permission prompts. Do NOT create git worktrees or files in sibling dirs; run new experiments from a branch checked out *in this folder* (or keep files here).
 When you must inspect another branch's file, use `git show <branch>:<path>`;
 when you must read an out-of-folder artifact (e.g. a running worktree's log),
 `cp` it in first. (Some existing runs — e.g. the symmetry-aug worktree — predate
@@ -283,6 +287,22 @@ sideways scroll, game paused, back returns to How to Play.
   parent-only gating), and the fix is a fixed-panel gate.
 - `?dev=1` unlocks debug / eval / setup modes and un-silences `console.log`.
   **Any harness that reads console output must pass it.**
+
+## FREE PARALLEL COMPUTE: GitHub Actions (2026-10-23)
+
+The repo is PUBLIC, so GitHub-hosted runners are free with no minute cap: ~20
+concurrent jobs x 4 cores, 6 h per job. **Use them for anything that splits by
+seed** instead of tying up the iMac / work Mac (owner: suggest this kind of
+thing unprompted). `.github/workflows/confirm.yml` (on main, so it can be
+dispatched) runs `confirm_match.py` from a branch (default `train-features-v2`)
+across N shards on disjoint seed blocks and merges the result into the run
+summary + a `confirm-merged` artifact:
+
+    gh workflow run confirm.yml -f a=<ckpt A> -f b=<ckpt B> [-f pairs=1000 -f shards=20 -f seed_base=120000000]
+
+Keep seed blocks disjoint from earlier matches (81M-100M used). GitHub's terms
+want Actions used for the project itself -- training/testing the shipped AI is
+that, but keep it to bursts, not a 24/7 farm.
 
 ## Prefilter latency, measured 2026-10-04 (`latency_probe.mjs`, 104 moves, desktop Chrome)
 
