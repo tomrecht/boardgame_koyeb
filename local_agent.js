@@ -304,6 +304,9 @@ const LocalAgent = (function () {
                  // skip the search where one round is predicted to take longer
                  // than this (?ccguard=<ms>, 2500): slow phones play plain
                  closeCallGuardMs: num('ccguard', 2500),
+                 // hard cap on the extra search's wall time (?cccap=<ms>, 2000,
+                 // owner 2026-10-23): past it the plain move is played
+                 closeCallCapMs: num('cccap', 2000),
                  closeCallT: num('cct', 3), closeCallK: num('cck', 3), closeCallStats: ccStats };
     }
 

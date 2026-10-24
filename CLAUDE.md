@@ -204,7 +204,18 @@ sideways scroll, game paused, back returns to How to Play.
   longtask): in-game worst block 3.8 s -> 0.82 s; every block > 1 s is now in the
   first 16 s of load (model start-up, board bake -- main has the same); chunked
   scores bit-identical to whole batches, 76/76 checks; close_call_test 90/90,
-  agent_test 50/50. When the shallow search's top two
+  agent_test 50/50.
+  **HARD 2 s CAP on the extra search (owner, 2026-10-23; `closeCallCapMs`,
+  `?cccap=<ms>`).** The plainMs x K guard UNDERESTIMATES (reply searches can
+  cost more than the plain one: one triggered move took 3.5 s on desktop with
+  the guard passing). A reply search now starts only if it should finish inside
+  the cap (estimate: mean reply so far, else plainMs); a round cut short is
+  discarded whole, so with the 1-round cap an overrun plays the plain move.
+  Owner's bar: ~2-3 s is where a wait gets noticeable. Measured (headless
+  self-play): cap 1 ms -> 13/13 triggers capped, 0 changed, max 0 ms; cap 600 ->
+  max 449 ms; default 2 s -> 12 triggers, 9 completed, 3 capped, max 2.1 s
+  (headless desktop is slower than a fast phone); cap check BEFORE each reply alone (first cut) let one run 1.86 s
+  past a 1 ms cap. close_call_test 90/90, agent_test 50/50. When the shallow search's top two
   DISTINCT positions are within T=3 score units (~0.04 pts), the top K=3 are
   rescored by ONE roll of the opponent (3-4, the first of agent.js's
   CC_ROLL_ORDER): each candidate's value = minus the opponent's best reply score,
