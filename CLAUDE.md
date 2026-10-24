@@ -888,6 +888,12 @@ with it in mind.** Assessment and the concrete implications:
   on G1, roll 6-4, it walked to G6 and stopped because a field blank could use the
   6 -- a goal-to-goal step that banks nothing. Now it always banks. Measured in the
   page: old code `x@G6`, 6 unused; new code banked, both dice spent.
+  **A numbered piece on a WRONG goal is an alternative (owner, 2026-10-23):** 4
+  three from G4, 3 on G5, roll 3-4 -> it banked the 4, but the 4 could take the 3
+  G5 -> G3 (its own goal). `_dieHasOtherGoalUse` skipped every piece already on a
+  goal; now only blanks and numbered pieces on their OWN goal are skipped there.
+  Measured in the page: old banked the 4; new stops the 4 on G4, the 4 unused;
+  control (3 on G3) banks in both.
 - **ENDGAME MARK ON THE SAVED RACK (owner, 2026-10-07; on `testing`).** A
   player in the endgame gets a faint accent ground and accent edge on their SAVED
   rack, plus a one-off double pulse when they enter it. `_endgameMarkTick` runs in

@@ -9194,7 +9194,10 @@ class Game {
                     (die.value === t.number ||
                      (q.number > 6 && phase === 'endgame' && die.value > t.number &&
                       !this.isHigherNumberedGoalOccupied(player, t.number)))) return true;
-                continue;
+                // A goal-to-goal step banks nothing -- unless it takes a NUMBERED
+                // piece off a wrong goal onto its own (owner, 2026-10-23: 3 on G5,
+                // roll 3-4; the 4 should take it to G3, not bank the double-tapped 4).
+                if (q.number > 6 || t.number === q.number) continue;
             }
             const r = this.getReachableTilesByDice(q);
             if (!r) continue;
