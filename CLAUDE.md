@@ -1499,6 +1499,10 @@ with it in mind.** Assessment and the concrete implications:
   next turn) >= ~0.8 (preferred; twin in agent.js + agent_gnn.py); (2) never
   step a numbered piece off its own goal unless the pair captures (broader,
   may cut useful walls); (3) leave it.
+  **Not new with distillation:** fv2C_it55 makes the same move (lead 0.003);
+  the turn-start blend4way left the 2 unused (lead 0.035). **RECHECK ON EVERY
+  PROMOTION:** `python3 offgoal_probe.py <new.pt>` (position built in; prints
+  RIGHT/wrong and the lead).
 
 - **CERTAIN LOSS -> NO SHUFFLING (owner, 2026-10-07).** Inside the bank-the-most
   rule below, among the max-save pairs keep only QUIET ones: every half a pass,
