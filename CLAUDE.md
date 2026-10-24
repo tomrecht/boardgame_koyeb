@@ -1012,7 +1012,7 @@ sw v11); distill_cand3 + close-call (with a slow-device guard) on testing.**
 iterations 6-13 from cand_3, GAMES=600 REPLAY=3 CONFIRM_PAIRS=500, then the final
 champion vs distill_cand3 (live) on 1,000 fresh pairs (seeds 100M).** ~6.5 h per
 iteration. Progress: it6 +0.114 (95% CI -0.016..+0.244, 500 pairs) PROMOTE (fit
-to labels corr 0.23 -> 0.26, top-1 58%). it7 -0.025 (-0.147..+0.097) keep (fit 0.27 -> 0.30, 59%). it8 -0.055 (-0.179..+0.069) keep (fit 0.24 -> 0.34, 59%). From iteration 7 on, training uses the new default
+to labels corr 0.23 -> 0.26, top-1 58%). it7 -0.025 (-0.147..+0.097) keep (fit 0.27 -> 0.30, 59%). it8 -0.055 (-0.179..+0.069) keep (fit 0.24 -> 0.34, 59%). it9 +0.080 (-0.040..+0.200) PROMOTE (fit 0.24 -> 0.33, 59%). From iteration 7 on, training uses the new default
 `--cache fp16` (pulled mid-run; fp16 differs from fp32 in the 8th decimal of MSE).
 **Capacity test armed (2026-10-23 evening): `nice -n 19 zsh closecall/fit_test.sh`
 is waiting for weekend.sh and starts the moment it ends** (Monday plan step 6,
