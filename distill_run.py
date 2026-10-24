@@ -64,6 +64,38 @@ def run(cmd, env_extra, log):
         sys.exit(f'step failed (exit {rc}); see {log}')
 
 
+def try_remote(st, save, mode, ckpts, n, seed_base, out, env=None):
+    """Play a step on GitHub (REMOTE=1). True = the cloud finished it. False =
+    the local script must run, and it resumes from whatever landed in `out`
+    (both resume by seed). ANY failure falls back to local, so an unattended run
+    never stalls on GitHub; two failures in a row turn the cloud off for the
+    rest of the run."""
+    if not REMOTE or st.get('remote_off'):
+        return False
+    if os.path.exists(out):
+        print(f'[remote] {out} exists from an earlier attempt; finishing it locally', flush=True)
+        return False
+    try:
+        from remote_play import remote_play
+        miss = remote_play(mode, ckpts, n, seed_base, out, env=env)
+    except Exception as e:                       # incl. RemoteError, network, gh missing
+        print(f'[remote] FAILED: {e!r}; running this step locally', flush=True)
+        miss = None
+    if miss == 0:
+        st['remote_fails'] = 0
+        save()
+        return True
+    st['remote_fails'] = st.get('remote_fails', 0) + 1
+    if st['remote_fails'] >= 2:
+        st['remote_off'] = True
+        print('[remote] two failures in a row: local for the rest of this run '
+              '(delete "remote_off" from state.json to retry the cloud)', flush=True)
+    save()
+    if miss:
+        print(f'[remote] {miss} game(s) missing; the local run plays them', flush=True)
+    return False
+
+
 def main():
     os.makedirs(D, exist_ok=True)
     sp = os.path.join(D, 'state.json')
@@ -79,15 +111,12 @@ def main():
         champ = st['champion']
         print(f'=== iteration {k}: champion {champ}', flush=True)
         lab = os.path.join(D, f'labels_{k}.jsonl.gz')
-        if not done.get('label') and REMOTE:
-            from remote_play import remote_play
-            remote_play('label', [champ], GAMES, 91_000_000 + 10_000 * k, lab,
-                        env=dict(lab_env, T=T, K=K))
-            done['label'] = True; save()
         if not done.get('label'):
+          if not try_remote(st, save, 'label', [champ], GAMES, 91_000_000 + 10_000 * k, lab,
+                            env=dict(lab_env, T=T, K=K)):
             run([PY, '-u', 'close_call.py', 'label', champ, T, K, GAMES, lab],
                 dict(lab_env, SEED_BASE=str(91_000_000 + 10_000 * k)), os.path.join(D, f'label_{k}.log'))
-            done['label'] = True; save()
+          done['label'] = True; save()
         cand = os.path.abspath(os.path.join(D, f'cand_{k}.pt'))
         if not done.get('train'):
             files = [os.path.join(D, f'labels_{j}.jsonl.gz') for j in range(max(0, k - REPLAY + 1), k + 1)]
@@ -96,14 +125,12 @@ def main():
                 {}, os.path.join(D, f'train_{k}.log'))
             done['train'] = True; save()
         conf = os.path.join(D, f'confirm_{k}.jsonl')
-        if not done.get('confirm') and REMOTE:
-            from remote_play import remote_play
-            remote_play('confirm', [cand, champ], CONFIRM_PAIRS, 93_000_000 + 10_000 * k, conf)
-            done['confirm'] = True; save()
         if not done.get('confirm'):
+          if not try_remote(st, save, 'confirm', [cand, champ], CONFIRM_PAIRS,
+                            93_000_000 + 10_000 * k, conf):
             run([PY, '-u', 'confirm_match.py', cand, champ, CONFIRM_PAIRS, conf],
                 {'SEED_BASE': str(93_000_000 + 10_000 * k)}, os.path.join(D, f'confirm_{k}.log'))
-            done['confirm'] = True; save()
+          done['confirm'] = True; save()
         m, se, n = paired(conf)
         promote = m > BAR
         print(f'iteration {k}: cand vs champion {m:+.3f} (95% CI {m - 1.96 * se:+.3f} .. '
