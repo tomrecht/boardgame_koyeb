@@ -1484,6 +1484,22 @@ with it in mind.** Assessment and the concrete implications:
   over all 21 replies is what could arbitrate. Script was a scratchpad one-off
   (`probe_classes.py`), not committed.
 
+- **KNOWN, LEFT FOR NOW: OFFGOALING IN A NEAR-CERTAIN LOSS (owner, 2026-10-24;
+  revisit after the next promotion, which may make it moot).** Owner's game
+  48ff83c7 t46 (live net `distill_cand3`): black 3@G3 x@G3 5@G5 x@6.2 vs white's
+  last piece a blank on G3; roll 6-2 -> blank to G1, then 3 OFF G3 to 5.8. White
+  banks next turn on 32/36, so only black's next turn after a white miss counts.
+  Exact max saves on that turn (36 rolls), by use of the 2: unused 1.14, blank
+  G3 off 1.03, 3 off (played) 0.97, 5 off 0.81 -> cost 0.17 x 4/36 = ~0.02 pts.
+  The net had all 40 candidates within 0.016 pts (unused 0.005 behind); no
+  rule fires: the quiet-pair filter needs the opponent's last blanks on G1, and
+  the endgame lookahead gives every candidate the same P(finish). No effect on
+  the game (white rolled 1-1; black's 5-1 saved 2 either way; white won by 2).
+  Fix options if it recurs: (1) extend the quiet-pair filter to P(opp finishes
+  next turn) >= ~0.8 (preferred; twin in agent.js + agent_gnn.py); (2) never
+  step a numbered piece off its own goal unless the pair captures (broader,
+  may cut useful walls); (3) leave it.
+
 - **CERTAIN LOSS -> NO SHUFFLING (owner, 2026-10-07).** Inside the bank-the-most
   rule below, among the max-save pairs keep only QUIET ones: every half a pass,
   an own save, an entry onto home (the rack obligation), or a move onto a goal
