@@ -1002,6 +1002,38 @@ with the paired margin and 'deep search s per trigger'). Two tracks:
 * If the queue is LEVEL: run the 559-position calibration check of the search's
   move gaps before dropping B (CLAUDE.md, 'Later idea' discussion of 2026-10-21).
 
+**CLOUD GAMES, LOCAL TRAINING (2026-10-23; `remote_play.py`, `distill_run.py
+REMOTE=1`, workflow `cloud-play.yml` on main).** The repo is public, so GitHub
+Actions is free: ~20 parallel 4-core jobs, 6 h each. With REMOTE=1 the LABEL
+and CONFIRM steps run there (checkpoints passed via the `cloud-scratch` release,
+content-hashed; shards play the SAME seed blocks a local run would), TRAIN stays
+local. The branch must be pushed (the cloud runs the pushed code).
+**Failover (owner: runs must survive GitHub trouble unattended):** any failure
+(gh missing or unauthorised, dispatch refused, run failed/cancelled, still
+queued after REMOTE_QUEUE_MIN=30, running past REMOTE_TIMEOUT_MIN=400, contact
+lost) -> the step runs LOCALLY; complete records already returned are kept
+(truncated last lines / gzip members salvaged, a label game counts only with its
+closing 'game' line) and the local script resumes by seed, playing only what is
+missing. Two failures in a row set `remote_off` in state.json: local for the
+rest of the run. Tested offline (salvage at 3 cut points; success / partial /
+error / remote_off / existing-output paths) -- a REAL GitHub failure has not
+been exercised.
+**Measured (smoke, 2026-10-23):** confirm 4 pairs on 2 shards 1.6 min end to
+end; label 2 games on 2 shards 5.8 min (~4 min per full-search labelling game
+per 4-core job -> 600 games on 20 shards ~30 min); 20-game confirm ~24 s per
+game per core. Launch as before plus `REMOTE=1`:
+
+    REMOTE=1 ITERS=.. GAMES=.. CONFIRM_PAIRS=.. BOARDGAME_DEVICE=cpu PYTHONHASHSEED=0 \
+      N_WORKERS=8 nohup python -u distill_run.py >> distill/run.log 2>&1 &
+
+**Plan (owner + Claude, 2026-10-23):** after the weekend result, scaled
+distillation from its champion: thousands of full-search labelled games per
+iteration, 2,000-pair confirms; track close-call's remaining gain over each new
+champion (the teacher is exhausted when it nears 0); then variance-reduced
+(luck-adjusted) rollouts as the stronger teacher; a bigger teacher net only if
+a 64- vs 128-wide fit test on the same labels shows the student is capacity-
+limited.
+
 **FULL-SIZE PRE-FLIGHT (2026-10-06, this iMac, `preflight/fv2B.log`): the whole
 loop works at real sizes** -- 300 generation games (72 min, 42-46 s/game single
 core), 8 epochs on 13,469 positions, hedge pre-screens 200+200 games (raw -0.055,
