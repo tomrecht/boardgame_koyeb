@@ -744,6 +744,12 @@ with it in mind.** Assessment and the concrete implications:
      to Play] same as before; after game 1 ends 12-0, reload -> Resume match ->
      game 2, gamesPlayed 1, scores 12-0, black (the alternate starter) to move,
      and it plays.
+     **A new game of a match keeps the MATCH saved (owner, 2026-10-23):** create()
+     cleared the save for any new game, and the position is first saved at the
+     first turn switch -- so a reload during a match game's first turn lost the
+     match. Mid-match it now writes the between-games save instead. Measured:
+     start a match, reload in turn 1 -> old: no save, no Resume; new: Resume
+     match -> the match restarts that game (gamesPlayed 0, unfrozen).
   4. **Android app: `@capacitor/app` installed** (8.1.2; `cap sync` wired it into
      `capacitor.settings.gradle` / `capacitor.build.gradle`; `assembleDebug`
      builds). Back no longer reaches the WebView history: during a game the first
