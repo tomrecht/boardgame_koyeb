@@ -231,6 +231,22 @@ sideways scroll, game paused, back returns to How to Play.
 - `?dev=1` unlocks debug / eval / setup modes and un-silences `console.log`.
   **Any harness that reads console output must pass it.**
 
+## FREE PARALLEL COMPUTE: GitHub Actions (2026-10-23)
+
+The repo is PUBLIC, so GitHub-hosted runners are free with no minute cap: ~20
+concurrent jobs x 4 cores, 6 h per job. **Use them for anything that splits by
+seed** instead of tying up the iMac / work Mac (owner: suggest this kind of
+thing unprompted). `.github/workflows/confirm.yml` (on main, so it can be
+dispatched) runs `confirm_match.py` from a branch (default `train-features-v2`)
+across N shards on disjoint seed blocks and merges the result into the run
+summary + a `confirm-merged` artifact:
+
+    gh workflow run confirm.yml -f a=<ckpt A> -f b=<ckpt B> [-f pairs=1000 -f shards=20 -f seed_base=120000000]
+
+Keep seed blocks disjoint from earlier matches (81M-100M used). GitHub's terms
+want Actions used for the project itself -- training/testing the shipped AI is
+that, but keep it to bursts, not a 24/7 farm.
+
 ## Prefilter latency, measured 2026-10-04 (`latency_probe.mjs`, 104 moves, desktop Chrome)
 
 Shipped (F=12, K=40): median 301 ms, p90 1.10 s, max 2.4 s. K=80: 1.8x median,
