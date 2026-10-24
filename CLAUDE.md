@@ -1035,12 +1035,30 @@ a 64- vs 128-wide fit test on the same labels shows the student is capacity-
 limited.
 **THE CAPACITY TEST IS READY: `closecall/fit_test.sh`** (work Mac; waits for
 weekend.sh to finish): on ALL distill/labels_*.jsonl.gz, same held-out games,
-from scratch 64x6 / 128x6 / 128x9 (lr 5e-4, 15 epochs) + today's net warm
-started; prints held-out MSE / within-decision corr / top-1 per arm.
+from scratch 64x6 / 128x6 / 128x9 (lr 5e-4, 8 epochs, a 2,000-GAME SAMPLE
+`--max-games`, same games every arm) + today's net warm started; prints
+held-out MSE / within-decision corr / top-1 per arm.
 `distill_train.py --scratch AB2 --hidden H --layers L` builds a fresh afterstate
 net; `network.model_from_state` now reads width and depth off the weights
 (features_of_state assumed width 64 -- fixed); 64/128 x 6/9 round-trip, the
 existing checkpoints still load as 64 x 6. Smoke (2 games, 2 epochs) clean.
+**ENCODE-ONCE CACHE in distill_train.py (2026-10-23, default `--cache fp16`,
+`--workers` / $N_WORKERS for the one-off encode).** Every record used to be
+re-encoded every epoch (and turn records twice, for TD targets). Now encoded
+once into compact arrays (fp16 ~3.4 KB a record). Measured: `--cache fp32` is
+BIT-IDENTICAL to `--cache off` (every epoch line and the AFTER metrics, 3
+epochs); fp16 differs in the 8th decimal of MSE. Speed on 5,060 records x 4
+epochs: 119 s -> 82 s, only 1.45x, because the PROFILE says the net's own
+forward+backward is about half of the old cost and stays: **~4 ms per record
+per epoch on the iMac CPU (64 wide; ~4x at 128)** -> ~50 min per epoch at
+700k records here, perhaps 20-30 on the work Mac. So at scale TRAINING is the
+local bottleneck: use 3-4 epochs on big data. Untested levers: MPS on the work
+Mac (it hard-aborts on this iMac, the work Mac's chip may not); pipelining
+(label iteration k+1 on GitHub while k trains).
+**Scaled-run settings (decided 2026-10-23, compute change):** GAMES 2000,
+CONFIRM_PAIRS 2000 (+-0.07), K 5, T ~6 for labelling (more decisions labelled;
+a wider trigger did not help in PLAY, labels are a different question), epochs
+3-4, teacher full 21-roll (unchanged), REPLAY 2-3.
 
 **FULL-SIZE PRE-FLIGHT (2026-10-06, this iMac, `preflight/fv2B.log`): the whole
 loop works at real sizes** -- 300 generation games (72 min, 42-46 s/game single

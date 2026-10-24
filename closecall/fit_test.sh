@@ -14,7 +14,12 @@ while pgrep -f closecall/weekend.sh > /dev/null; do sleep 300; done
 echo "== start $(date)"
 DATA=(distill/labels_*.jsonl.gz)
 echo "data: ${#DATA} files"
-COMMON=(--data $DATA --epochs ${EPOCHS:-15} --lr ${LR:-5e-4} --batch-size 256 --td-w 0.5 --seed 0 --log closecall/fit_test.jsonl)
+# Training costs ~4 ms per record per epoch on CPU (64 wide; 128 wide ~4x), so
+# the test uses a game SAMPLE (same games for every arm): ~2,000 games ~250k
+# records x 8 epochs -- an evening on the work Mac, not days.
+NW=${N_WORKERS:-8}
+COMMON=(--data $DATA --max-games ${GAMES:-2000} --epochs ${EPOCHS:-8} --lr ${LR:-5e-4} --batch-size 256
+        --td-w 0.5 --seed 0 --workers $NW --log closecall/fit_test.jsonl)
 export BOARDGAME_DEVICE=cpu PYTHONHASHSEED=0
 for HL in "64 6" "128 6" "128 9"; do
   set -- ${=HL}
@@ -24,7 +29,8 @@ for HL in "64 6" "128 6" "128 9"; do
 done
 echo "== warm start from distill_cand3 (the real loop's step) $(date)"
 .venv/bin/python -u distill_train.py --load distill_cand3.pt --save closecall/fit_warm.pt \
-    --data $DATA --epochs 8 --lr 2e-5 --batch-size 256 --td-w 0.5 --seed 0 --log closecall/fit_test.jsonl
+    --data $DATA --max-games ${GAMES:-2000} --epochs 8 --lr 2e-5 --batch-size 256 --td-w 0.5 --seed 0 \
+    --workers $NW --log closecall/fit_test.jsonl
 .venv/bin/python - <<'PY'
 import json
 print('\narm                         held-out: mse      corr-within  top-1')

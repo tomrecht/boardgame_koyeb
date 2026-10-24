@@ -54,9 +54,124 @@ def load_label_files(paths):
     return cands, turns
 
 
+# ---------------------------------------------------------------------------
+# ENCODE ONCE (2026-10-23). Encoding a position (~2 ms, AB2 on the iMac) used
+# to happen for every record on every epoch, twice for turn records (TD targets
+# + the training pass) -- hours per epoch at the scaled run's ~800k records,
+# while the net's own forward/backward is cheap. The store encodes each record
+# ONCE (parallel), keeps the features in compact arrays (fp16 by default:
+# ~3.4 KB a record, ~2.7 GB at 800k; --cache fp32 is bit-identical to no cache)
+# and builds batches from them. Records are keyed by r['_ci'], which survives
+# the shallow copies compute_td_targets makes.
+# ---------------------------------------------------------------------------
+STORE = None
+_W = {}
+
+
+def _enc_worker_init(features):
+    from game import Board as _B
+    _W['enc'] = BoardEncoder(features=features, afterstate=True)
+    _W['board'] = _B()
+
+
+def _enc_one(r, enc, board):
+    try:
+        board.update_state(r['raw_state'])
+        e = enc.encode(board, r['player'])
+        f = upweight(board, r)
+    except Exception:
+        return None
+    return (e['tile_feats'].cpu().numpy(), e['piece_feats'].cpu().numpy(),
+            e['global_feats'].cpu().numpy(), e['piece_to_tile'].cpu().numpy().astype('int16'),
+            e['tile_to_piece'].cpu().numpy().astype('int16'), float(f))
+
+
+def _enc_chunk(rs):
+    return [_enc_one(r, _W['enc'], _W['board']) for r in rs]
+
+
+class EncodedStore:
+    def __init__(self, recs, features, encoder, dtype='fp16', workers=1):
+        import numpy as np, time, multiprocessing as mp
+        self.np = np
+        self.edge = encoder.tile_edge_index
+        n = len(recs)
+        for i, r in enumerate(recs):
+            r['_ci'] = i
+        t0 = time.time()
+        if workers > 1:
+            chunks = [recs[i:i + 512] for i in range(0, n, 512)]
+            with mp.Pool(workers, initializer=_enc_worker_init, initargs=(features,)) as pool:
+                out = [x for c in pool.imap(_enc_chunk, chunks) for x in c]
+        else:
+            b = Board()
+            out = [_enc_one(r, encoder, b) for r in recs]
+        first = next(o for o in out if o is not None)
+        dt = np.float16 if dtype == 'fp16' else np.float32
+        self.T = np.zeros((n,) + first[0].shape, dt)
+        self.P = np.zeros((n,) + first[1].shape, dt)
+        self.G = np.zeros((n,) + first[2].shape, dt)
+        self.p2t, self.t2p = [None] * n, [None] * n
+        self.w = np.ones(n, np.float32)
+        self.ok = np.zeros(n, bool)
+        for i, o in enumerate(out):
+            if o is None:
+                continue
+            self.T[i], self.P[i], self.G[i], self.p2t[i], self.t2p[i], self.w[i] = o
+            self.ok[i] = True
+        gb = (self.T.nbytes + self.P.nbytes + self.G.nbytes) / 1e9
+        print(f'  encoded {int(self.ok.sum())}/{n} records once in {time.time() - t0:.0f} s '
+              f'({dtype}, {gb:.2f} GB, {workers} workers)', flush=True)
+
+    def batch(self, recs):
+        """(collated batch, weights, kept recs) for the records that encoded."""
+        np = self.np
+        kept = [r for r in recs if self.ok[r['_ci']]]
+        if not kept:
+            return None, None, []
+        idx = np.array([r['_ci'] for r in kept])
+        dev = network.DEVICE
+        T = torch.from_numpy(self.T[idx].astype(np.float32)).to(dev)
+        P = torch.from_numpy(self.P[idx].astype(np.float32)).to(dev)
+        G = torch.from_numpy(self.G[idx].astype(np.float32)).to(dev)
+        enc = [{'tile_feats': T[j], 'piece_feats': P[j], 'global_feats': G[j],
+                'tile_edge_index': self.edge,
+                'piece_to_tile': torch.from_numpy(self.p2t[i].astype(np.int64)).to(dev),
+                'tile_to_piece': torch.from_numpy(self.t2p[i].astype(np.int64)).to(dev)}
+               for j, i in enumerate(idx)]
+        return collate_batch(enc), torch.from_numpy(self.w[idx]).to(dev), kept
+
+
+def epoch_td_targets(model, turns, encoder, board, lam):
+    """train_td.compute_epoch_targets, reading encodings from STORE."""
+    from td_returns import compute_td_targets
+    tm = copy.deepcopy(model); tm.eval()
+    for p_ in tm.parameters():
+        p_.requires_grad_(False)
+    if STORE is None:
+        return compute_td_targets(turns, tm, encoder, board, lam=lam, gamma=1.0, verbose=False)
+
+    def predict(recs):
+        b, _, kept = STORE.batch(recs)
+        if len(kept) != len(recs):              # a record that failed to encode: no target
+            raise ValueError('unencodable record in trajectory')
+        with torch.no_grad():
+            v = tm(b).detach().cpu().tolist()
+        return v if isinstance(v, list) else [v]
+    return compute_td_targets(turns, tm, encoder, board, lam=lam, gamma=1.0, verbose=False,
+                              predict_fn=predict)
+
+
 def _encode(recs, encoder, board, target_key):
     """Encode records, keeping only those that encode; returns (batch, targets,
     weights, kept records) aligned."""
+    if STORE is not None:
+        recs = [r for r in recs if r.get(target_key) is not None]
+        batch, w, kept = STORE.batch(recs)
+        if batch is None:
+            return None, None, None, []
+        tg = torch.tensor([float(r[target_key]) for r in kept], dtype=torch.float32, device=network.DEVICE)
+        return batch, tg, w, kept
     enc, tg, w, kept = [], [], [], []
     for r in recs:
         t = r.get(target_key)
@@ -214,6 +329,12 @@ def main():
     ap.add_argument('--val-frac', type=float, default=0.15)
     ap.add_argument('--seed', type=int, default=0)
     ap.add_argument('--log', default=None, help='append a JSON summary line here')
+    ap.add_argument('--max-games', type=int, default=0,
+                    help='use a random subset of this many GAMES (0 = all), seeded by --seed')
+    ap.add_argument('--cache', choices=['fp16', 'fp32', 'off'], default='fp16',
+                    help='encode every record once (default fp16; fp32 = bit-identical to off)')
+    ap.add_argument('--workers', type=int, default=int(__import__('os').environ.get('N_WORKERS', '1')),
+                    help='processes for the one-off encoding (default $N_WORKERS or 1)')
     args = ap.parse_args()
 
     random.seed(args.seed); torch.manual_seed(args.seed)
@@ -231,12 +352,23 @@ def main():
     board = Board()
 
     cands, turns = load_label_files(args.data)
+    if args.max_games:
+        gids = sorted({r['game_id'] for r in turns or cands})
+        if len(gids) > args.max_games:
+            keep = set(random.Random(args.seed).sample(gids, args.max_games))
+            cands = [r for r in cands if r['game_id'] in keep]
+            turns = [r for r in turns if r['game_id'] in keep]
+            print(f'  --max-games: {args.max_games} of {len(gids)} games')
     print(f'{len(cands)} candidate + {len(turns)} turn records from {len(args.data)} file(s)')
     # split by GAME across both kinds
     tr_ids = {r['game_id'] for r in split_by_game(turns or cands, args.val_frac, args.seed)[0]}
     c_tr = [r for r in cands if r['game_id'] in tr_ids]; c_va = [r for r in cands if r['game_id'] not in tr_ids]
     t_tr = [r for r in turns if r['game_id'] in tr_ids]; t_va = [r for r in turns if r['game_id'] not in tr_ids]
     print(f'  train {len(c_tr)} cand / {len(t_tr)} turn, val {len(c_va)} cand / {len(t_va)} turn')
+    global STORE
+    if args.cache != 'off':
+        STORE = EncodedStore(cands + turns, getattr(model, 'features', 'v1'), encoder,
+                             dtype=args.cache, workers=args.workers)
 
     base = baseline(model, c_va, encoder, board)
     print(f'  BASELINE (warm start) on val candidates: {base}')
@@ -244,8 +376,8 @@ def main():
     best, best_state, hist = float('inf'), None, []
     for ep in range(1, args.epochs + 1):
         if args.td_w > 0:
-            t_tr_t = compute_epoch_targets(model, t_tr, encoder, board, args.lam, 1.0)
-            t_va_t = compute_epoch_targets(model, t_va, encoder, board, args.lam, 1.0)
+            t_tr_t = epoch_td_targets(model, t_tr, encoder, board, args.lam)
+            t_va_t = epoch_td_targets(model, t_va, encoder, board, args.lam)
         else:
             t_tr_t, t_va_t = [], []
         tr = run_epoch(model, c_tr, t_tr_t, encoder, board, opt, args, True)
