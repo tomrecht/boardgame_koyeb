@@ -109,12 +109,15 @@ So, for any "work through the night / while I sleep" task:
    close-call's remaining gain over that champion (+0.10 over distill_cand3). Near
    0 = the search has nothing left to teach -> stop scaling, move to luck-
    adjusted rollouts as the teacher.
-6. **Capacity test** (`closecall/fit_test.sh`, an evening) on the MacBook Pro
-   M3, IN PARALLEL with the scaled run (they must not share a machine: both want
-   all of its CPU/GPU). It needs the distillation labels: copy `distill/labels_*.jsonl.gz`
-   from the work iMac (AirDrop / a shared folder) into the MacBook's repo first;
-   the script waits for nothing on the MacBook (weekend.sh is not running there).
-   Same MPS check first; if MPS works, `BOARDGAME_DEVICE=mps zsh closecall/fit_test.sh`.
+6. **Capacity test** (`closecall/fit_test.sh`) on the WORK iMac too, started
+   right after step 4, at LOW PRIORITY so it uses the ~2 h per iteration the
+   machine sits idle waiting on GitHub and yields while the scaled run trains:
+       OMP_NUM_THREADS=4 nohup nice -n 19 zsh closecall/fit_test.sh > closecall/fit_test.log 2>&1 &
+   Keep it on CPU (its default) if the scaled run uses MPS -- nice does not
+   apply to the GPU, which the two would split evenly. Expect ~a day, not an
+   evening; nothing waits on it. Memory: ~2.4 GB (scaled run's cache) + ~0.9 GB.
+   Alternative for a faster answer: the MacBook Pro M3 (copy
+   `distill/labels_*.jsonl.gz` over first; MPS check there too).
 
 Everything above is documented in the RUNBOOK (features v2) entries "CLOUD
 GAMES, LOCAL TRAINING", "THE CAPACITY TEST IS READY", "ENCODE-ONCE CACHE" and
