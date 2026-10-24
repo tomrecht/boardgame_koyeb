@@ -20,7 +20,7 @@ echo "data: ${#DATA} files"
 NW=${N_WORKERS:-8}
 COMMON=(--data $DATA --max-games ${GAMES:-2000} --epochs ${EPOCHS:-8} --lr ${LR:-5e-4} --batch-size 256
         --td-w 0.5 --seed 0 --workers $NW --log closecall/fit_test.jsonl)
-export BOARDGAME_DEVICE=cpu PYTHONHASHSEED=0
+export BOARDGAME_DEVICE=${BOARDGAME_DEVICE:-cpu} PYTHONHASHSEED=0
 for HL in "64 6" "128 6" "128 9"; do
   set -- ${=HL}
   echo "== scratch $1 x $2 $(date)"

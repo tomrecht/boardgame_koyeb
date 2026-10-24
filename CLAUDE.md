@@ -43,11 +43,13 @@ quahuru.com. Major features still stage on `testing`. The old
 cherry-pick-to-both rule is GONE — the branches share one history now. See
 "`testing` IS A STAGING BRANCH" below.
 
-**WORKSPACE CONSTRAINT (owner, 2026-07-21): Owner works on two machines, BOTH iMacs (corrected
-2026-10-23; older notes call the second one "the MacBook"): the home iMac and the WORK iMac.
-Work only inside this folder (`/Users/tomrecht/game/boardgame_koyeb` on the work iMac, `/Users/tom/Game/BoardGame` on the home iMac).**
-The home iMac is an Intel i5-7500, 4 cores, no usable training GPU (MPS hard-aborts). The work iMac
-runs the long training jobs (N_WORKERS=8) and is often free for 2-3 days at a time. Reads/writes outside it trigger permission prompts. Do NOT create git worktrees or files in sibling dirs; run new experiments from a branch checked out *in this folder* (or keep files here).
+**WORKSPACE CONSTRAINT (owner, 2026-07-21; machines corrected 2026-10-23): THREE machines --
+the HOME iMac (Intel i5-7500, 4 cores, no usable training GPU: MPS hard-aborts; folder
+`/Users/tom/Game/BoardGame`), the WORK iMac (2024, Apple Silicon; runs the long jobs with
+N_WORKERS=8, often free for 2-3 days at a time; folder: ask owner) and a MacBook Pro M3
+(folder `/Users/tomrecht/game/boardgame_koyeb`, which older notes call "the MacBook").
+Work only inside the repo folder on whichever machine.** The two Apple Silicon machines should
+be able to train on MPS (`BOARDGAME_DEVICE=mps`) -- unverified, see the Monday plan. Reads/writes outside it trigger permission prompts. Do NOT create git worktrees or files in sibling dirs; run new experiments from a branch checked out *in this folder* (or keep files here).
 When you must inspect another branch's file, use `git show <branch>:<path>`;
 when you must read an out-of-folder artifact (e.g. a running worktree's log),
 `cp` it in first. (Some existing runs — e.g. the symmetry-aug worktree — predate
@@ -88,7 +90,7 @@ So, for any "work through the night / while I sleep" task:
    usual way (this branch's `onnx_export.py` -> hashed `model-*.onnx` + sidecar
    to main, sw.js SHELL + cache bump, REC_MODEL_TAG, `model_e2e.mjs`). Level ->
    keep the live net; it then tells us one 600-game round no longer moves it.
-3. **GPU check, 5 minutes** (only meaningful if the work iMac is Apple Silicon):
+3. **GPU check, 5 minutes** (work iMac is 2024 Apple Silicon, so MPS should exist):
        BOARDGAME_DEVICE=mps .venv/bin/python -u distill_train.py --data distill/labels_0.jsonl.gz \
          --load distill_cand3.pt --save /tmp/mps.pt --epochs 1 --max-games 50
    An AFTER line = MPS works -> use BOARDGAME_DEVICE=mps for training below
@@ -107,10 +109,12 @@ So, for any "work through the night / while I sleep" task:
    close-call's remaining gain over that champion (+0.10 over distill_cand3). Near
    0 = the search has nothing left to teach -> stop scaling, move to luck-
    adjusted rollouts as the teacher.
-6. **Capacity test** (`closecall/fit_test.sh`, an evening) once the work iMac is
-   free of the scaled run: 64 vs 128 wide on the same labels -> whether a bigger
-   teacher / phone net is worth it. It and the scaled run both want this
-   machine's CPU; don't run them together.
+6. **Capacity test** (`closecall/fit_test.sh`, an evening) on the MacBook Pro
+   M3, IN PARALLEL with the scaled run (they must not share a machine: both want
+   all of its CPU/GPU). It needs the distillation labels: copy `distill/labels_*.jsonl.gz`
+   from the work iMac (AirDrop / a shared folder) into the MacBook's repo first;
+   the script waits for nothing on the MacBook (weekend.sh is not running there).
+   Same MPS check first; if MPS works, `BOARDGAME_DEVICE=mps zsh closecall/fit_test.sh`.
 
 Everything above is documented in the RUNBOOK (features v2) entries "CLOUD
 GAMES, LOCAL TRAINING", "THE CAPACITY TEST IS READY", "ENCODE-ONCE CACHE" and
