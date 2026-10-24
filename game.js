@@ -11726,6 +11726,11 @@ const config = {
         ? { mode: Phaser.Scale.NONE }
         : { mode: Phaser.Scale.FIT, autoCenter: Phaser.Scale.CENTER_BOTH },
     scene: [MainGameScene, EndGameScene],
+    // No Phaser audio: the game's sounds are SFX's own WebAudio. Phaser made an
+    // AudioContext at boot regardless, and on owner's iMac (2026-10-23) creating
+    // one blocked the page for 20 s (a stuck macOS audio service), so every
+    // load froze. SFX still creates its context on the first sound.
+    audio: { noAudio: true },
 };
 
 const gameInstance = new Phaser.Game(config);
