@@ -1008,6 +1008,11 @@ close-call vs today's live fv2C plain is ~+0.24 by addition (not measured head
 to head). Exported: `export/distill/` (model-8ee32fcb.onnx + sidecar).
 **SHIPPED 2026-10-23 (owner): distill_cand3 on main (live, model-8ee32fcb.onnx,
 sw v11); distill_cand3 + close-call (with a slow-device guard) on testing.**
+**WEEKEND CONTINUATION (`closecall/weekend.sh`, from 2026-10-23 14:00): distill_run
+iterations 6-13 from cand_3, GAMES=600 REPLAY=3 CONFIRM_PAIRS=500, then the final
+champion vs distill_cand3 (live) on 1,000 fresh pairs (seeds 100M).** ~6.5 h per
+iteration. Progress: it6 +0.114 (95% CI -0.016..+0.244, 500 pairs) PROMOTE (fit
+to labels corr 0.23 -> 0.26, top-1 58%).
 **QUEUED: a RANDOM roll per decision (owner, 2026-10-22; `closecall/queue4.sh`,
 runs after the distillation).** The 1-roll cap always uses 3-4 (ROLL_ORDER's
 first), so every close call is judged by the opponent's best 3-4 -- possibly
