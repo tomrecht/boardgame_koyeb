@@ -124,6 +124,19 @@ So, for any "work through the night / while I sleep" task:
    close-call's remaining gain over that champion (+0.10 over distill_cand3). Near
    0 = the search has nothing left to teach -> stop scaling, move to luck-
    adjusted rollouts as the teacher.
+   **Run the FIRST gauge on Monday** (added 2026-10-25): the weekend already
+   made 3 promotions (it6/it9/it10), so it is due -- launch it on GitHub
+   alongside the final match (`ccmatch <weekend champion> 2000`; default seed
+   160M). Note the teacher is the search ON the current champion, so it climbs
+   with the student: a gauge near 0 means the search stopped adding, not that a
+   fixed ceiling was reached.
+   **Also re-test the champion vs the LIVE net at every gauge**
+   (`remote_play.py confirm <champion> distill_cand3.pt 2000 <fresh seed_base>`).
+   Reason: BAR=0 promotes a no-gain candidate half the time, and each promotion
+   is judged vs its parent only; the TD programme found ~76% of parent-gated
+   gains did not generalise. The weekend's three promotions sum to +0.29 nominal
+   vs cand3 -- expect much less; the vs-live number is the one that counts. If
+   it trails the summed parent gains badly, raise BAR (e.g. 0.03).
 6. **Capacity test** (`closecall/fit_test.sh`) on the WORK iMac too, started
    right after step 4, at LOW PRIORITY so it uses the ~2 h per iteration the
    machine sits idle waiting on GitHub and yields while the scaled run trains:
