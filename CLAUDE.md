@@ -84,6 +84,21 @@ So, for any "work through the night / while I sleep" task:
    line of `closecall/weekend_vs_live.log` (weekend champion vs the live
    `distill_cand3`, 1,000 fresh pairs) and the per-iteration lines in
    `distill/run.log` (PROMOTE / keep champion). Send both to Claude.
+   **IF THE WEEKEND RUN STALLED OR THE MAC SLEPT** (added 2026-10-25: the
+   session pushing per-iteration results went silent after it10 at 10-24 17:44;
+   it pushed keep-champion results too, so silence is not "no promotion"):
+   check `pgrep -fl 'weekend.sh|distill_run'` and the tail of `distill/run.log`.
+   If the final match has not run, do NOT run it locally (~hours) -- run it on
+   GitHub instead, 2,000 pairs (~20 min; this replaces both the 1,000-pair local
+   match and step 2's optional firm-up):
+       pkill -f weekend.sh; pkill -f distill_run.py     # only if stalled
+       CH=$(.venv/bin/python -c "import json; print(json.load(open('distill/state.json'))['champion'])")
+       python3 remote_play.py confirm "$CH" distill_cand3.pt 2000
+   Use the champion from state.json -- `distill/weekend_champion.pt` exists only
+   once weekend.sh finishes. remote_play uploads local checkpoints itself
+   (nothing to commit); the default seed_base 150M is disjoint from earlier
+   matches. Then go to step 2 on that result. (Results to 10-24: it6 +0.114
+   PROMOTE, it7 keep, it8 keep, it9 +0.080 PROMOTE, it10 +0.096 PROMOTE.)
 2. **Ship decision.** If the weekend champion's 95% CI is clear of 0: optionally
    firm it up first on GitHub (`python3 remote_play.py confirm
    distill/weekend_champion.pt distill_cand3.pt 2000`, ~20 min), then ship it the
