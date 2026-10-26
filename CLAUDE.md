@@ -1088,6 +1088,17 @@ shards; workflow mode `relabel`, added to main's cloud-play.yml; the local
 labeller was dropped as ~13 h too slow, local only fills gaps), then students from cand_13 on
 h1 / h2 / h4 labels (8 epochs, lr 2e-5, td-w 0.5) and 2,000-pair confirms vs
 cand_13 (seeds 170M/172M/174M) + h4 vs h1 (176M). Results -> `rollout/RESULT.txt`.
+**Label noise (block 0, 1,200 decisions):** h4 picks differently from h1 in 41.5%
+(h2 33.8%), but the within-decision spread of h4 values is 0.047 pts against a
+per-decision playout SE of 0.067 at N=4 -- the h4 labels are noise-dominated
+per decision (unbiased, so training averages it, slowly). Extra playouts:
+`ROLL_I0=4` runs a DISJOINT playout range; build/stats pool ranges per decision
+(N-weighted). Running locally at nice 19 into `rollout/extra_i4.jsonl` (~40
+decisions/h); not used by round 1 (the driver only globs relabel_*).
+**Soups of the distilled champions vs cand_13 (300 pairs, seeds 180M, local):**
+cand_11..13 equal -0.088 (-0.241..+0.064); cand_6/9/10/11/12/13 equal -0.160
+(-0.329..+0.009); same, cand_13 at 0.5 -0.073 (-0.222..+0.075). No soup gain on
+this lineage -- don't repeat. offgoal_probe on cand_13: RIGHT (lead 0.002).
 From iteration 7 on, training uses the new default
 `--cache fp16` (pulled mid-run; fp16 differs from fp32 in the 8th decimal of MSE).
 **Capacity test armed (2026-10-23 evening): `nice -n 19 zsh closecall/fit_test.sh`
