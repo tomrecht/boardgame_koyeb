@@ -35,6 +35,7 @@ os.environ.setdefault('GATE_PREFILTER', '12,40,5')
 ROLLS = [(a, b, (1 if a == b else 2) / 36.0) for a in range(1, 7) for b in range(a, 7)]
 H = int(os.environ.get('ROLL_H', '4'))
 N = int(os.environ.get('ROLL_N', '4'))
+I0 = int(os.environ.get('ROLL_I0', '0'))   # first playout index (extra playouts: a disjoint range)
 N_WORKERS = int(os.environ.get('N_WORKERS', '8'))
 DRAW_PAIR = ((1, 1, 1), (0, 0, 0))
 _AG = {}
@@ -120,7 +121,7 @@ def _cand(path, raw_state, mover, dec_key):
     s1 = 1.0 if p1 == mover else -1.0
     e1 = s1 * _expect(vals1)
     per = []                                   # per playout: [est_1..est_H]
-    for i in range(N):
+    for i in range(I0, I0 + N):
         rng = random.Random(zlib.crc32(f'{dec_key}#{i}'.encode()))
         b = fresh()
         b.switch_turn()
@@ -162,7 +163,7 @@ def _decision(task):
     for c in rec['cands']:
         m, last = _cand(path, c['raw_state'], rec['player'], rec['decision'])
         out.append({'est': m, 'lastH': last})
-    return {'idx': rec['idx'], 'decision': rec['decision'], 'H': H, 'N': N,
+    return {'idx': rec['idx'], 'decision': rec['decision'], 'H': H, 'N': N, 'i0': I0,
             'cands': out, 'secs': round(time.time() - t0, 1)}
 
 
@@ -235,14 +236,31 @@ def run(path, dpath, out, count=None):
 
 
 def _relabels(paths):
-    got = {}
+    """idx -> relabel record. Records of one decision over DISJOINT playout ranges
+    (ROLL_I0) are pooled: est averaged weighted by N, lastH concatenated; a
+    repeated range is counted once."""
+    parts = {}
     for p in paths:
         for l in open(p):
             try:
                 r = json.loads(l)
             except ValueError:
                 continue
-            got[r['idx']] = r
+            parts.setdefault(r['idx'], {})[r.get('i0', 0)] = r
+    got = {}
+    for idx, by in parts.items():
+        rs = list(by.values())
+        if len(rs) == 1:
+            got[idx] = rs[0]
+            continue
+        n = sum(r['N'] for r in rs)
+        h = min(r['H'] for r in rs)
+        cands = []
+        for k in range(len(rs[0]['cands'])):
+            est = [sum(r['N'] * r['cands'][k]['est'][j] for r in rs) / n for j in range(h)]
+            last = [x for r in rs for x in r['cands'][k]['lastH']] if all(r['H'] == h for r in rs) else []
+            cands.append({'est': est, 'lastH': last})
+        got[idx] = dict(rs[0], N=n, H=h, cands=cands)
     return got
 
 
