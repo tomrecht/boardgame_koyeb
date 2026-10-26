@@ -383,6 +383,16 @@ async function selectWithLookahead(engine, W, moves, player, o) {
 const CC_ROLL_ORDER = [[3, 4], [1, 6], [2, 5], [5, 6], [1, 2], [3, 3], [2, 6], [1, 4], [4, 5],
                        [6, 6], [1, 3], [2, 4], [3, 6], [1, 1], [4, 6], [2, 3], [5, 5], [1, 5],
                        [3, 5], [2, 2], [4, 4]];
+/* Hand the browser a turn between searches. The search runs on the page's main
+   thread and an await on ORT resolves as a microtask, so without a macrotask
+   yield the whole close-call search is one long task (3.8 s measured on desktop,
+   2026-10-23) and Chrome offers to kill the page. */
+// A macrotask via MessageChannel: unlike setTimeout it is not throttled in a
+// background tab (1 s+ per call there), so a hidden game still moves.
+const ccYield = () => new Promise(r => {
+    if (typeof MessageChannel === 'undefined') { setTimeout(r, 0); return; }
+    const ch = new MessageChannel(); ch.port1.onmessage = () => { ch.port1.close(); r(); }; ch.port2.postMessage(0);
+});
 const ccNow = () => (typeof performance !== 'undefined' && performance.now) ? performance.now() : Date.now();
 
 /* close_call._outcome: the end position with same-colour blanks
@@ -481,26 +491,39 @@ async function selectWithCloseCall(engine, W, moves, player, o) {
     const opp = engine.other(player);
     const maxRounds = Math.min(21, Math.floor(o.closeCallMaxReplies / top.length));
     const totals = top.map(() => 0);
-    let mass = 0, rounds = 0;
+    let mass = 0, rounds = 0, capped = false;
     const t0 = ccNow();
     try {
         for (const [d1, d2] of CC_ROLL_ORDER) {
-            if (rounds >= maxRounds) break;
+            if (rounds >= maxRounds || capped) break;
             const spent = ccNow() - t0;
             if (rounds > 0 && spent + spent / rounds > o.closeCallBudgetMs) break;
             const pr = (d1 === d2 ? 1 : 2) / 36;
+            // HARD TIME CAP (owner, 2026-10-23: 2 s): checked before every reply
+            // search; a round cut short is discarded whole (candidates must be
+            // compared on the same rolls), so with the 1-round cap an overrun
+            // plays the plain move.
+            const roundVals = [];
             for (let i = 0; i < top.length; i++) {
+                // start a reply search only if it should FINISH inside the cap:
+                // its cost is estimated as the mean reply so far, or, before
+                // the first, the plain search just run (about the same size)
+                const el = ccNow() - t0, done = rounds * top.length + i;
+                if (el + (done ? el / done : plainMs) > o.closeCallCapMs) { capped = true; break; }
+                await ccYield();
                 const root = engine.moves.length;
                 for (const m of top[i]) if (!isPass(m)) engine.applyMove(m, false);
                 const winValue = -(LOOKAHEAD_PIECES - engine.savedRack(player).length) / LOOKAHEAD_PIECES * SCORE_SCALE;
                 const snap = ccEnterOpponentTurn(engine);
                 try {
-                    totals[i] += pr * await ccReplyValue(engine, W, opp, d1, d2, winValue, o);
+                    roundVals.push(pr * await ccReplyValue(engine, W, opp, d1, d2, winValue, o));
                 } finally {
                     ccRestoreTurnState(engine, snap);
                     while (engine.moves.length > root) engine.undoLastMove();
                 }
             }
+            if (capped) break;
+            roundVals.forEach((v, i) => { totals[i] += v; });
             mass += pr;
             rounds += 1;
         }
@@ -512,6 +535,7 @@ async function selectWithCloseCall(engine, W, moves, player, o) {
         st.rounds = (st.rounds || 0) + rounds;
         st.ms = (st.ms || 0) + (ccNow() - t0);
         st.maxMs = Math.max(st.maxMs || 0, ccNow() - t0);
+        if (capped) st.capped = (st.capped || 0) + 1;
     }
     if (!rounds) return plain;
     let best = 0;
@@ -537,7 +561,7 @@ async function selectMovePair(engine, W, moves, player, opts = {}) {
         lookahead: true, _inLookahead: false,
         closeCall: false, closeCallT: 3, closeCallK: 3,
         closeCallBudgetMs: 1500, closeCallMaxReplies: Infinity, closeCallStats: null,
-        closeCallGuardMs: Infinity,
+        closeCallGuardMs: Infinity, closeCallCapMs: Infinity,
         scoreFor: null, _rankOut: null,
     }, opts);
     const score = o.score;
