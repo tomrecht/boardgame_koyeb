@@ -43,8 +43,12 @@ quahuru.com. Major features still stage on `testing`. The old
 cherry-pick-to-both rule is GONE — the branches share one history now. See
 "`testing` IS A STAGING BRANCH" below.
 
-**WORKSPACE CONSTRAINT (owner, 2026-07-21): Ownder works on two machines, iMac and MacBook. 
-Work only inside this folder (`/Users/tomrecht/game/boardgame_koyeb` on MacBook, `/Users/tom/Game/BoardGame` on iMac).** Reads/writes outside it trigger permission prompts. Do NOT create git worktrees or files in sibling dirs; run new experiments from a branch checked out *in this folder* (or keep files here).
+**WORKSPACE CONSTRAINT (owner, 2026-07-21; machines corrected 2026-10-23): THREE machines --
+the HOME iMac (Intel i5-7500, 4 cores, no usable training GPU; `/Users/tom/Game/BoardGame`), the
+WORK iMac (2024, Apple Silicon; runs the long training jobs; folder: ask owner) and a MacBook Pro
+M3 (`/Users/tomrecht/game/boardgame_koyeb`, the "MacBook" of older notes). Work only inside the
+repo folder on whichever machine.** Training plans live in `train-features-v2`'s CLAUDE.md
+("MONDAY 2026-10-26 PLAN"). Reads/writes outside it trigger permission prompts. Do NOT create git worktrees or files in sibling dirs; run new experiments from a branch checked out *in this folder* (or keep files here).
 When you must inspect another branch's file, use `git show <branch>:<path>`;
 when you must read an out-of-folder artifact (e.g. a running worktree's log),
 `cp` it in first. (Some existing runs — e.g. the symmetry-aug worktree — predate
@@ -144,7 +148,16 @@ sideways scroll, game paused, back returns to How to Play.
 
 ## AI and model — current status
 
-- **Deployed model: `model.onnx` = `distill_cand3.pt` (main 2026-10-23), file
+- **Deployed model: `model.onnx` = `distill_cand13.pt` (main 2026-10-26), file
+  `model-9121be40.onnx`.** The weekend's continuation of the distillation
+  (train-features-v2: distill_run iterations 6-13 from cand_3, 600 games each,
+  500-pair gates; checkpoint committed there as `distill_cand13.pt`). **vs the
+  previous live net distill_cand3, plain search, app config, fresh seeds, 1,000
+  pairs: +0.185 pts/game (95% CI +0.096..+0.275), 52.7%.** Same AB2 afterstate
+  inputs, no runtime cost. `sw.js` v12, `REC_MODEL_TAG` 'distill_cand13_Oct26'.
+  Verified: page scores = Python 280/280 (max diff 1.8e-7); worker handover from
+  the live v11 build: first reload, second reload, offline all play.
+- **Previous: `distill_cand3.pt` (main 2026-10-23), file
   `model-8ee32fcb.onnx`.** fv2C_it55 DISTILLED from the close-call search
   (train-features-v2: `distill_run.py`, 6 iterations, full 21-roll search labels
   on close calls + TD; checkpoint committed there as `distill_cand3.pt`). **vs
@@ -155,6 +168,12 @@ sideways scroll, game paused, back returns to How to Play.
   worker handover from the live v10 build: first reload, second reload and
   offline all play. The close-call search on top of it (+0.103, 95% CI
   +0.013..+0.194) is on `testing` for owner's phone check.
+  **CLOSE-CALL STAYS OFF MAIN (owner, 2026-10-23): "I prefer the instantaneous
+  feel."** On his phone it felt slightly slower (it ~2-4x the thinking time on
+  the ~40% of moves it triggers on, capped at 2 s extra). Revisit only if it
+  can be made near-free; the preferred route to its strength is DISTILLATION
+  (zero runtime cost; round 1 captured +0.14 of its +0.19; the weekend run on
+  train-features-v2 continues it).
 - **Previous: `fv2C_it55.pt` (LIVE on quahuru.com
   2026-10-19; owner played it on testing, phone included -- no felt slowdown)** -- the first net with the v2 inputs (AB2) and
   AFTERSTATE training, from the fv2C run (branch `train-features-v2`, where the
@@ -255,6 +274,22 @@ sideways scroll, game paused, back returns to How to Play.
   parent-only gating), and the fix is a fixed-panel gate.
 - `?dev=1` unlocks debug / eval / setup modes and un-silences `console.log`.
   **Any harness that reads console output must pass it.**
+
+## FREE PARALLEL COMPUTE: GitHub Actions (2026-10-23)
+
+The repo is PUBLIC, so GitHub-hosted runners are free with no minute cap: ~20
+concurrent jobs x 4 cores, 6 h per job. **Use them for anything that splits by
+seed** instead of tying up the iMac / work Mac (owner: suggest this kind of
+thing unprompted). `.github/workflows/confirm.yml` (on main, so it can be
+dispatched) runs `confirm_match.py` from a branch (default `train-features-v2`)
+across N shards on disjoint seed blocks and merges the result into the run
+summary + a `confirm-merged` artifact:
+
+    gh workflow run confirm.yml -f a=<ckpt A> -f b=<ckpt B> [-f pairs=1000 -f shards=20 -f seed_base=120000000]
+
+Keep seed blocks disjoint from earlier matches (81M-100M used). GitHub's terms
+want Actions used for the project itself -- training/testing the shipped AI is
+that, but keep it to bursts, not a 24/7 farm.
 
 ## Prefilter latency, measured 2026-10-04 (`latency_probe.mjs`, 104 moves, desktop Chrome)
 
@@ -804,6 +839,12 @@ with it in mind.** Assessment and the concrete implications:
      to Play] same as before; after game 1 ends 12-0, reload -> Resume match ->
      game 2, gamesPlayed 1, scores 12-0, black (the alternate starter) to move,
      and it plays.
+     **A new game of a match keeps the MATCH saved (owner, 2026-10-23):** create()
+     cleared the save for any new game, and the position is first saved at the
+     first turn switch -- so a reload during a match game's first turn lost the
+     match. Mid-match it now writes the between-games save instead. Measured:
+     start a match, reload in turn 1 -> old: no save, no Resume; new: Resume
+     match -> the match restarts that game (gamesPlayed 0, unfrozen).
   4. **Android app: `@capacitor/app` installed** (8.1.2; `cap sync` wired it into
      `capacitor.settings.gradle` / `capacitor.build.gradle`; `assembleDebug`
      builds). Back no longer reaches the WebView history: during a game the first
@@ -856,6 +897,16 @@ with it in mind.** Assessment and the concrete implications:
   numbered 2 to G2 beside a blank on G2 (6-2) stopped -> banks; numbered 4 to G4
   while the 4 could move a blank onto a goal (4-1) stopped -> banks. Control:
   same 4-1 with the white 2 on 5.22 (4 from G2) still stops on G4, both versions.
+  **A piece that STARTS on a goal never stops halfway (owner, 2026-10-23):** blank
+  on G1, roll 6-4, it walked to G6 and stopped because a field blank could use the
+  6 -- a goal-to-goal step that banks nothing. Now it always banks. Measured in the
+  page: old code `x@G6`, 6 unused; new code banked, both dice spent.
+  **A numbered piece on a WRONG goal is an alternative (owner, 2026-10-23):** 4
+  three from G4, 3 on G5, roll 3-4 -> it banked the 4, but the 4 could take the 3
+  G5 -> G3 (its own goal). `_dieHasOtherGoalUse` skipped every piece already on a
+  goal; now only blanks and numbered pieces on their OWN goal are skipped there.
+  Measured in the page: old banked the 4; new stops the 4 on G4, the 4 unused;
+  control (3 on G3) banks in both.
 - **ENDGAME MARK ON THE SAVED RACK (owner, 2026-10-07; on `testing`).** A
   player in the endgame gets a faint accent ground and accent edge on their SAVED
   rack, plus a one-off double pulse when they enter it. `_endgameMarkTick` runs in

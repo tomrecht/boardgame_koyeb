@@ -2577,7 +2577,7 @@ const REC_TOKEN = 'rec-quahuru-7f3a';
 // WHICH NET THE GAMES WERE PLAYED AGAINST. **Update this whenever model.onnx is
 // re-exported** -- a stats table that silently mixes two champions is worse than
 // no table, and nothing else in the shipped bundle carries a version.
-const REC_MODEL_TAG = 'distill_cand3_Oct23';
+const REC_MODEL_TAG = 'distill_cand13_Oct26';
 const REC_KEY = 'recGames';           // localStorage buffer, one JSON line per game
 const REC_DEVICE_KEY = 'recDevice';   // stable random id for this browser
 const REC_WARN_BYTES = 2000000;       // localStorage tops out near 5MB
@@ -9150,14 +9150,18 @@ class Game {
         // Prefer a goal that leaves the other die no other use, so the gesture
         // banks rather than stopping when it can.
         const target = bankable.find(g => !leftUse(g)) || bankable[0];
+        const fromGoal = piece.currentTile.type === 'save';
         if (!this.movePiece(piece, target)) return false;
         // Second half of the same rule (owner, 2026-10-08): if the die left over
         // could ALSO bank another piece, or put one onto a goal it can bank from,
         // banking this one is a choice -- so stop on the goal and leave that die.
         // A second double-tap banks it. Judged on the board AFTER the move, since
         // the move itself can open the endgame or change the highest goal.
+        // Not for a piece that STARTED on a goal (owner, 2026-10-23: blank on G1,
+        // roll 6-4, it stopped on G6): stopping there is a goal-to-goal step that
+        // banks nothing and leaves it on a worse goal, so it always banks.
         const left = this.dice.find(d => !d.used);
-        if (opts.uniqueGoal && left && this._dieHasOtherGoalUse(piece, left)) return 'moved';
+        if (opts.uniqueGoal && left && !fromGoal && this._dieHasOtherGoalUse(piece, left)) return 'moved';
         return piece.save();
     }
 
@@ -9190,7 +9194,10 @@ class Game {
                     (die.value === t.number ||
                      (q.number > 6 && phase === 'endgame' && die.value > t.number &&
                       !this.isHigherNumberedGoalOccupied(player, t.number)))) return true;
-                continue;
+                // A goal-to-goal step banks nothing -- unless it takes a NUMBERED
+                // piece off a wrong goal onto its own (owner, 2026-10-23: 3 on G5,
+                // roll 3-4; the 4 should take it to G3, not bank the double-tapped 4).
+                if (q.number > 6 || t.number === q.number) continue;
             }
             const r = this.getReachableTilesByDice(q);
             if (!r) continue;
@@ -10518,7 +10525,13 @@ class MainGameScene extends Phaser.Scene {
         // On the first-load welcome, hold the game (no AI) until the player hits
         // Play; a real, freshly-rolled game is started then.
         _gameFrozen = !!(this._coinFlipOnStart && !matchTracker);
-        if (!_gameFrozen && !_pendingResume) _savedGameClear();   // a new game replaces any saved one
+        // A new game replaces any saved one -- but mid-match it keeps the MATCH
+        // (owner, 2026-10-23: reloaded during a match's first turn, no Resume).
+        // The position is first saved at the first turn switch, so until then
+        // Resume match restarts this game from its start.
+        if (!_gameFrozen && !_pendingResume) {
+            if (matchTracker && !matchTracker.over) _savedBetweenWrite(); else _savedGameClear();
+        }
         this.game = new Game(this, this.startingPlayer, debugMode);
         // A restart destroys every game object, but this.game keeps pointing at
         // the old Game until create() runs again -- so anything deferred (the
@@ -11716,6 +11729,11 @@ const config = {
         ? { mode: Phaser.Scale.NONE }
         : { mode: Phaser.Scale.FIT, autoCenter: Phaser.Scale.CENTER_BOTH },
     scene: [MainGameScene, EndGameScene],
+    // No Phaser audio: the game's sounds are SFX's own WebAudio. Phaser made an
+    // AudioContext at boot regardless, and on owner's iMac (2026-10-23) creating
+    // one blocked the page for 20 s (a stuck macOS audio service), so every
+    // load froze. SFX still creates its context on the first sound.
+    audio: { noAudio: true },
 };
 
 const gameInstance = new Phaser.Game(config);
