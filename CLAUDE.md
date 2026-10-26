@@ -1048,7 +1048,16 @@ distill_cand3, plain search, app config, seeds 100M, 1,000 pairs: +0.185 (95% CI
 parents; ~40% of it is real -- BAR=0 lets noise through, but a clear gain
 survives. **Capacity test (fit_test.sh, from scratch on all labels, 2,000-game
 sample, 5,374 held-out decisions):** 64x6 corr +0.292 / top-1 52.8%; 128x6
-+0.338 / 55.0%; 128x9 and warm-start running (Mon 2026-10-26). From iteration 7 on, training uses the new default
++0.338 / 55.0%; 128x9 and warm-start running (Mon 2026-10-26).
+**Monday 2026-10-26 on the work iMac:** cand_13 SHIPPED to main (live,
+model-9121be40.onnx, sw v12) and to testing with close-call (merged with the home
+session's 2 s hard cap). `gh` installed via Homebrew (/opt/homebrew/bin -- not on
+the default PATH) and authenticated; `remote_play.py smoke` OK (2.1 min). **MPS
+check (step 3): works (no scatter abort) but SLOWER for this net: 2 epochs on 50
+games 36 s MPS vs 21 s CPU (CPU shared with the capacity test) -- train on CPU;
+MPS only worth re-testing for a 128-wide net / bigger batches.** Teacher gauge
+(close-call on cand_13, 2,000 pairs on GitHub) launched; log
+closecall/gauge_cand13.log. From iteration 7 on, training uses the new default
 `--cache fp16` (pulled mid-run; fp16 differs from fp32 in the 8th decimal of MSE).
 **Capacity test armed (2026-10-23 evening): `nice -n 19 zsh closecall/fit_test.sh`
 is waiting for weekend.sh and starts the moment it ends** (Monday plan step 6,
