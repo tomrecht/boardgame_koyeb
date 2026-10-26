@@ -1056,8 +1056,12 @@ the default PATH) and authenticated; `remote_play.py smoke` OK (2.1 min). **MPS
 check (step 3): works (no scatter abort) but SLOWER for this net: 2 epochs on 50
 games 36 s MPS vs 21 s CPU (CPU shared with the capacity test) -- train on CPU;
 MPS only worth re-testing for a 128-wide net / bigger batches.** Teacher gauge
-(close-call on cand_13, 2,000 pairs on GitHub) launched; log
-closecall/gauge_cand13.log. From iteration 7 on, training uses the new default
+(close-call on cand_13, 2,000 pairs on GitHub, seeds 160M):
+**+0.057 (95% CI -0.009..+0.122), 51.1%.** The search's remaining gain over its
+student shrinks round by round: fv2C +0.189 -> cand_3 +0.103 -> cand_13 +0.057.
+Not launched the scaled run (owner decides): scaling the same teacher can win
+back at most ~the remaining +0.06. Close-call on testing is now worth ~+0.06 on
+the live net, against its phone cost. From iteration 7 on, training uses the new default
 `--cache fp16` (pulled mid-run; fp16 differs from fp32 in the 8th decimal of MSE).
 **Capacity test armed (2026-10-23 evening): `nice -n 19 zsh closecall/fit_test.sh`
 is waiting for weekend.sh and starts the moment it ends** (Monday plan step 6,
