@@ -148,7 +148,16 @@ sideways scroll, game paused, back returns to How to Play.
 
 ## AI and model — current status
 
-- **Deployed model: `model.onnx` = `distill_cand3.pt` (main 2026-10-23), file
+- **Deployed model: `model.onnx` = `distill_cand13.pt` (main 2026-10-26), file
+  `model-9121be40.onnx`.** The weekend's continuation of the distillation
+  (train-features-v2: distill_run iterations 6-13 from cand_3, 600 games each,
+  500-pair gates; checkpoint committed there as `distill_cand13.pt`). **vs the
+  previous live net distill_cand3, plain search, app config, fresh seeds, 1,000
+  pairs: +0.185 pts/game (95% CI +0.096..+0.275), 52.7%.** Same AB2 afterstate
+  inputs, no runtime cost. `sw.js` v12, `REC_MODEL_TAG` 'distill_cand13_Oct26'.
+  Verified: page scores = Python 280/280 (max diff 1.8e-7); worker handover from
+  the live v11 build: first reload, second reload, offline all play.
+- **Previous: `distill_cand3.pt` (main 2026-10-23), file
   `model-8ee32fcb.onnx`.** fv2C_it55 DISTILLED from the close-call search
   (train-features-v2: `distill_run.py`, 6 iterations, full 21-roll search labels
   on close calls + TD; checkpoint committed there as `distill_cand3.pt`). **vs
