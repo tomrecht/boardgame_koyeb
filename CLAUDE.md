@@ -1066,21 +1066,26 @@ the live net, against its phone cost.
 / 57.6%, held-out MSE 0.00011 vs 0.00024-0.00025 from scratch. Width helps a
 little on ranking, depth not at all; not worth the phone cost alone.
 **ROLLOUT TEACHER EXPERIMENT (2026-10-26 13:45, running unattended; owner away
-till ~Wed).** `luck_probe.py` (559 calibration positions, cand_13, 8 playouts,
-interim at 119 positions): luck-adjusted truncated rollouts carry SD(B-A) per
-playout 0.11 / 0.22 / 0.31 / 0.43 pts at 2 / 4 / 6 / 10 plies (plain truncated
-0.38 / 0.60 / 0.80 / 1.08; October's full plain playouts 2.78); corr with
-October's playouts 0.31 at 1 ply (= the close-call teacher) -> 0.37 / 0.39 /
-0.39 at 4 / 6 / 8, gain vs 1 ply +0.06..+0.08 with 95% CI ~-0.05..+0.2; deeper
-plies pick a different best move on 23% of positions. `rollout_label.py`:
+till ~Wed).** `luck_probe.py` (200 of the 559 calibration positions, cand_13,
+8 playouts each; FINAL): luck-adjusted truncated rollouts carry SD(B-A) per
+playout 0.10 / 0.21 / 0.29 / 0.36 / 0.41 pts at 2 / 4 / 6 / 8 / 10 plies (plain
+truncated 0.36 / 0.57 / 0.75 / 0.87 / 1.02; October's full plain playouts 2.78);
+luck terms average ~-0.01 (unbiased). Corr with October's playouts 0.286 at 1 ply
+(= the close-call teacher) -> 0.296 / 0.341 / 0.365 / 0.352 / 0.351 at
+2 / 4 / 6 / 8 / 10; paired bootstrap gain vs 1 ply: 2 +0.010 (-0.039..+0.060),
+4 +0.054 (-0.024..+0.130), 6 +0.078 (-0.010..+0.166), 8-10 ~+0.065 (CI to
+-0.04) -- a lean to depth 4-6, not settled (October's labels carry SE ~0.6,
+which caps any corr). The pick differs from 1 ply on 17% / 24% / 26% of
+positions at 2 / 4 / 6. So the match (below) is the real test. `rollout_label.py`:
 relabels close-call decisions, storing est_h for h=1..ROLL_H; est_1 reproduces
 close_call's labels (23 cands, max diff 0.0005 raw, mostly exact). ~150-236
 core-s per decision at H=4 N=4 (one ply-1 evaluation shared by a candidate's N
 playouts; rolls shared across a decision's candidates). `rollout_run.py`
 (state `rollout/state.json`, log `rollout/run.log`): 300 games / 5,444
-decisions from labels_13 (`rollout/decisions_A.jsonl.gz`), idx 0-3599 on GitHub
-(3 blocks of 1,200; workflow mode `relabel`, added to main's cloud-play.yml),
-3600+ here (`rollout_local.sh`, after the probe), then students from cand_13 on
+decisions from labels_13 (`rollout/decisions_A.jsonl.gz`), ALL on GitHub
+(blocks 0/1200/2400 of 1,200 + 3600 of 1,844; ~80 min per 1,200-block on 20
+shards; workflow mode `relabel`, added to main's cloud-play.yml; the local
+labeller was dropped as ~13 h too slow, local only fills gaps), then students from cand_13 on
 h1 / h2 / h4 labels (8 epochs, lr 2e-5, td-w 0.5) and 2,000-pair confirms vs
 cand_13 (seeds 170M/172M/174M) + h4 vs h1 (176M). Results -> `rollout/RESULT.txt`.
 From iteration 7 on, training uses the new default
