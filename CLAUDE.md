@@ -1040,7 +1040,15 @@ sw v11); distill_cand3 + close-call (with a slow-device guard) on testing.**
 iterations 6-13 from cand_3, GAMES=600 REPLAY=3 CONFIRM_PAIRS=500, then the final
 champion vs distill_cand3 (live) on 1,000 fresh pairs (seeds 100M).** ~6.5 h per
 iteration. Progress: it6 +0.114 (95% CI -0.016..+0.244, 500 pairs) PROMOTE (fit
-to labels corr 0.23 -> 0.26, top-1 58%). it7 -0.025 (-0.147..+0.097) keep (fit 0.27 -> 0.30, 59%). it8 -0.055 (-0.179..+0.069) keep (fit 0.24 -> 0.34, 59%). it9 +0.080 (-0.040..+0.200) PROMOTE (fit 0.24 -> 0.33, 59%). it10 +0.096 (-0.019..+0.211) PROMOTE (fit 0.31 -> 0.30, 58%). it11 +0.075 (-0.051..+0.201) PROMOTE (fit 0.30 -> 0.31, 57%). From iteration 7 on, training uses the new default
+to labels corr 0.23 -> 0.26, top-1 58%). it7 -0.025 (-0.147..+0.097) keep (fit 0.27 -> 0.30, 59%). it8 -0.055 (-0.179..+0.069) keep (fit 0.24 -> 0.34, 59%). it9 +0.080 (-0.040..+0.200) PROMOTE (fit 0.24 -> 0.33, 59%). it10 +0.096 (-0.019..+0.211) PROMOTE (fit 0.31 -> 0.30, 58%). it11 +0.075 (-0.051..+0.201) PROMOTE (fit 0.30 -> 0.31, 57%). it12 +0.048
+(-0.086..+0.182) PROMOTE, it13 +0.033 (-0.086..+0.152) PROMOTE. **FINAL (Sun
+2026-10-25): weekend champion cand_13 (`distill/weekend_champion.pt`) vs the LIVE
+distill_cand3, plain search, app config, seeds 100M, 1,000 pairs: +0.185 (95% CI
++0.096..+0.275), 52.7%.** The six promotions sum to +0.446 nominal vs their
+parents; ~40% of it is real -- BAR=0 lets noise through, but a clear gain
+survives. **Capacity test (fit_test.sh, from scratch on all labels, 2,000-game
+sample, 5,374 held-out decisions):** 64x6 corr +0.292 / top-1 52.8%; 128x6
++0.338 / 55.0%; 128x9 and warm-start running (Mon 2026-10-26). From iteration 7 on, training uses the new default
 `--cache fp16` (pulled mid-run; fp16 differs from fp32 in the 8th decimal of MSE).
 **Capacity test armed (2026-10-23 evening): `nice -n 19 zsh closecall/fit_test.sh`
 is waiting for weekend.sh and starts the moment it ends** (Monday plan step 6,
