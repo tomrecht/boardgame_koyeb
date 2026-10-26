@@ -1048,7 +1048,7 @@ distill_cand3, plain search, app config, seeds 100M, 1,000 pairs: +0.185 (95% CI
 parents; ~40% of it is real -- BAR=0 lets noise through, but a clear gain
 survives. **Capacity test (fit_test.sh, from scratch on all labels, 2,000-game
 sample, 5,374 held-out decisions):** 64x6 corr +0.292 / top-1 52.8%; 128x6
-+0.338 / 55.0%; 128x9 and warm-start running (Mon 2026-10-26).
++0.338 / 55.0%; 128x9 +0.319 / 52.9%; warm start +0.292 / 57.6% (below).
 **Monday 2026-10-26 on the work iMac:** cand_13 SHIPPED to main (live,
 model-9121be40.onnx, sw v12) and to testing with close-call (merged with the home
 session's 2 s hard cap). `gh` installed via Homebrew (/opt/homebrew/bin -- not on
@@ -1061,7 +1061,29 @@ MPS only worth re-testing for a 128-wide net / bigger batches.** Teacher gauge
 student shrinks round by round: fv2C +0.189 -> cand_3 +0.103 -> cand_13 +0.057.
 Not launched the scaled run (owner decides): scaling the same teacher can win
 back at most ~the remaining +0.06. Close-call on testing is now worth ~+0.06 on
-the live net, against its phone cost. From iteration 7 on, training uses the new default
+the live net, against its phone cost.
+**Capacity test, final:** 128x9 +0.319 / 52.9%; warm start (distill_cand3) +0.292
+/ 57.6%, held-out MSE 0.00011 vs 0.00024-0.00025 from scratch. Width helps a
+little on ranking, depth not at all; not worth the phone cost alone.
+**ROLLOUT TEACHER EXPERIMENT (2026-10-26 13:45, running unattended; owner away
+till ~Wed).** `luck_probe.py` (559 calibration positions, cand_13, 8 playouts,
+interim at 119 positions): luck-adjusted truncated rollouts carry SD(B-A) per
+playout 0.11 / 0.22 / 0.31 / 0.43 pts at 2 / 4 / 6 / 10 plies (plain truncated
+0.38 / 0.60 / 0.80 / 1.08; October's full plain playouts 2.78); corr with
+October's playouts 0.31 at 1 ply (= the close-call teacher) -> 0.37 / 0.39 /
+0.39 at 4 / 6 / 8, gain vs 1 ply +0.06..+0.08 with 95% CI ~-0.05..+0.2; deeper
+plies pick a different best move on 23% of positions. `rollout_label.py`:
+relabels close-call decisions, storing est_h for h=1..ROLL_H; est_1 reproduces
+close_call's labels (23 cands, max diff 0.0005 raw, mostly exact). ~150-236
+core-s per decision at H=4 N=4 (one ply-1 evaluation shared by a candidate's N
+playouts; rolls shared across a decision's candidates). `rollout_run.py`
+(state `rollout/state.json`, log `rollout/run.log`): 300 games / 5,444
+decisions from labels_13 (`rollout/decisions_A.jsonl.gz`), idx 0-3599 on GitHub
+(3 blocks of 1,200; workflow mode `relabel`, added to main's cloud-play.yml),
+3600+ here (`rollout_local.sh`, after the probe), then students from cand_13 on
+h1 / h2 / h4 labels (8 epochs, lr 2e-5, td-w 0.5) and 2,000-pair confirms vs
+cand_13 (seeds 170M/172M/174M) + h4 vs h1 (176M). Results -> `rollout/RESULT.txt`.
+From iteration 7 on, training uses the new default
 `--cache fp16` (pulled mid-run; fp16 differs from fp32 in the 8th decimal of MSE).
 **Capacity test armed (2026-10-23 evening): `nice -n 19 zsh closecall/fit_test.sh`
 is waiting for weekend.sh and starts the moment it ends** (Monday plan step 6,
