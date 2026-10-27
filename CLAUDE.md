@@ -1111,6 +1111,19 @@ playouts per candidate on GitHub (ROLL_I0=8 ROLL_N=8, ~3 h per 1,200-block,
 run killed at build time); h4 and h2 students from cand_13; matches h4 vs cand_13
 (178M), h4 vs round 1's h1 student (180M), h2 vs cand_13 (182M). Launch needs
 `PATH=/opt/homebrew/bin:$PATH` (gh) -- without it every block "fails" instantly.
+**ROUND 2 RESULT (2026-10-27 11:50, `rollout/RESULT2.txt`; pooled N=16 playouts per
+candidate, label SE 0.033 pts; 60 decisions of block 1200 at N=8 -- one shard lost):
+h4 vs cand_13 -0.022 (95% CI -0.081..+0.037), h4 vs round 1's h1 student +0.001
+(-0.051..+0.053), h2 vs cand_13 +0.001 (-0.058..+0.060).** Held-out fit: h4 corr
+0.170 -> 0.157, h2 0.213 -> 0.210 -- still no learnable signal beyond the warm
+start. Why: as noise falls, the h4 within-decision spread drops 0.046 -> 0.039,
+i.e. a TRUE spread of only ~0.02 pts (h1: 0.025) -- deeper rollouts shrink the
+differences between close-call candidates rather than sharpen them, and what is
+left is below what 5,444 decisions can teach. **Settled at this scale: luck-adjusted
+rollouts (2-4 plies) are no better a teacher than the 1-ply close-call search;
+neither moves cand_13 in one 300-game round.** With the close-call gauge at
++0.06, distillation on this lineage looks near saturation. Not pursued further
+without owner.
 **Soups of the distilled champions vs cand_13 (300 pairs, seeds 180M, local):**
 cand_11..13 equal -0.088 (-0.241..+0.064); cand_6/9/10/11/12/13 equal -0.160
 (-0.329..+0.009); same, cand_13 at 0.5 -0.073 (-0.222..+0.075). No soup gain on
