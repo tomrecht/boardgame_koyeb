@@ -43,7 +43,7 @@ _AG = {}
 
 def load_games(paths=None):
     # local exports + the phone's GitHub-synced games (clone of the private
-    # tom-recht/quahuru-games repo at ./games_sync, one JSON file per game)
+    # tomrecht/quahuru-games repo at ./games_sync, one JSON file per game)
     paths = paths or (sorted(glob.glob(os.path.join(REPO, 'quahuru-games-*.jsonl'))) +
                       sorted(glob.glob(os.path.join(REPO, 'games_sync', 'games', '*', '*.json'))))
     games = {}
