@@ -2227,6 +2227,20 @@ function applyPlayerRoles(triggerAI = true) {
     }
 }
 
+// The renderer clears every frame to the colour in the GAME config, fixed at
+// page load. A live switch repainted only the running scene's camera, so the end
+// card and every later game (each with a fresh camera) showed the load-time
+// theme's ground again (owner, 2026-10-27). Point the clear colour at THEME.
+function _syncThemeClearColor() {
+    try {
+        const g = (typeof gameInstance !== 'undefined') ? gameInstance : null;
+        if (!g) return;
+        const c = Phaser.Display.Color.ValueToColor(THEME.bg);
+        if (g.config) g.config.backgroundColor = c;
+        if (g.renderer && g.renderer.config) g.renderer.config.backgroundColor = c;
+    } catch (e) {}
+}
+
 // Apply a theme instantly — no reload, no new game. Mutate the live THEME palette
 // in place and redraw every themed object (board tiles, background, goal numbers,
 // HUD buttons, score line). Pieces and dice are theme-neutral, so they stay.
@@ -2236,6 +2250,7 @@ function applyThemeLive(key) {
     Object.assign(THEME, pal);
     BACKGROUND_COLOR = THEME.bg; GOAL_COLOR = THEME.goal; TILE_BORDER = THEME.border;
     const scene = _setupScene(), game = _setupGame();
+    _syncThemeClearColor();
     if (scene && scene.cameras && scene.cameras.main) scene.cameras.main.setBackgroundColor(THEME.bg);
     if (game && game.tiles)  game.tiles.forEach(t => { if (t.applyThemeColors) t.applyThemeColors(); });
     if (game && game.pieces) game.pieces.forEach(p => { if (p.updateColor) p.updateColor(); });
