@@ -47,3 +47,4 @@ prefilter_data2/
 
 # the start pool travels with the code (work Mac pulls it)
 !start_pool.jsonl
+games_sync/
