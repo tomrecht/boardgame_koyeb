@@ -686,7 +686,7 @@ with it in mind.** Assessment and the concrete implications:
   before any JS shipping work.
 - **RECORDER: OPT-IN GITHUB SYNC (owner, 2026-10-27).** Settings > Game log >
   "GitHub sync..." takes a fine-grained token (Contents read/write on the PRIVATE
-  repo `tom-recht/quahuru-games` only) into this browser's localStorage
+  repo `tomrecht/quahuru-games` only) into this browser's localStorage
   (`recSyncToken`); each pending game is PUT as `games/<device>/<id>-<turns><c|a>.json`
   and leaves the buffer only on a 2xx (or 422 = already there). Retries on load,
   on `online`, after each game. No token = nothing sent, so the "no endpoint for
