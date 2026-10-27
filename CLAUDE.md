@@ -1095,6 +1095,22 @@ per decision (unbiased, so training averages it, slowly). Extra playouts:
 `ROLL_I0=4` runs a DISJOINT playout range; build/stats pool ranges per decision
 (N-weighted). Running locally at nice 19 into `rollout/extra_i4.jsonl` (~40
 decisions/h); not used by round 1 (the driver only globs relabel_*).
+**ROUND 1 RESULT (2026-10-26 22:23, `rollout/RESULT.txt`; students from cand_13 on
+the same 5,444 decisions, 2,000 pairs each, app config): h4 vs cand_13 +0.021
+(95% CI -0.038..+0.080), h2 +0.018 (-0.040..+0.077), h1 -0.064 (-0.126..-0.002);
+HEAD TO HEAD h4 vs h1 -0.011 (-0.060..+0.037).** No teacher effect: one round of
+300 games moves the net by < ~0.06 whichever teacher. Held-out fit to the arm's
+own labels: h1 corr 0.22 -> 0.27, but h2 0.22 -> 0.19 and h4 0.17 -> 0.14 (top-1
+also down) -- the deep labels at N=4 are too noisy to learn from at this size.
+(h1's dip vs cand_13 is probably a repeat pass on decisions cand_13 was already
+trained on -- labels_13.)
+**ROUND 2 (launched 22:26, `rollout_run2.py`, log `rollout/run2.log`, state
+`rollout/state2.json`, results `rollout/RESULT2.txt`):** same decisions, +8
+playouts per candidate on GitHub (ROLL_I0=8 ROLL_N=8, ~3 h per 1,200-block,
+4 blocks sequential, ~13 h) plus extra_i4 where it got to (pooled N 12-16; local
+run killed at build time); h4 and h2 students from cand_13; matches h4 vs cand_13
+(178M), h4 vs round 1's h1 student (180M), h2 vs cand_13 (182M). Launch needs
+`PATH=/opt/homebrew/bin:$PATH` (gh) -- without it every block "fails" instantly.
 **Soups of the distilled champions vs cand_13 (300 pairs, seeds 180M, local):**
 cand_11..13 equal -0.088 (-0.241..+0.064); cand_6/9/10/11/12/13 equal -0.160
 (-0.329..+0.009); same, cand_13 at 0.5 -0.073 (-0.222..+0.075). No soup gain on
