@@ -198,6 +198,9 @@ let _agentTurnHeld = false;
 // would vanish, so white pieces use a defined rim + slight off-white body).
 const PIECE_WHITE_BODY = 0xf1f4f8;
 const PIECE_WHITE_RIM  = 0x5b6472;
+// Rim widths: white a touch thicker so it holds against pale tiles (owner, 2026-10-27).
+const PIECE_WHITE_RIM_W = 3.0;
+const PIECE_BLACK_RIM_W = 2.5;
 const PIECE_BLACK_BODY = 0x000000;   // solid black (no sheen highlight)
 const PIECE_BLACK_RIM  = 0x0a0b0d;
 const colorFirstDie = 0x40E0D0; // Turquoise
@@ -2227,6 +2230,20 @@ function applyPlayerRoles(triggerAI = true) {
     }
 }
 
+// The renderer clears every frame to the colour in the GAME config, fixed at
+// page load. A live switch repainted only the running scene's camera, so the end
+// card and every later game (each with a fresh camera) showed the load-time
+// theme's ground again (owner, 2026-10-27). Point the clear colour at THEME.
+function _syncThemeClearColor() {
+    try {
+        const g = (typeof gameInstance !== 'undefined') ? gameInstance : null;
+        if (!g) return;
+        const c = Phaser.Display.Color.ValueToColor(THEME.bg);
+        if (g.config) g.config.backgroundColor = c;
+        if (g.renderer && g.renderer.config) g.renderer.config.backgroundColor = c;
+    } catch (e) {}
+}
+
 // Apply a theme instantly — no reload, no new game. Mutate the live THEME palette
 // in place and redraw every themed object (board tiles, background, goal numbers,
 // HUD buttons, score line). Pieces and dice are theme-neutral, so they stay.
@@ -2236,6 +2253,7 @@ function applyThemeLive(key) {
     Object.assign(THEME, pal);
     BACKGROUND_COLOR = THEME.bg; GOAL_COLOR = THEME.goal; TILE_BORDER = THEME.border;
     const scene = _setupScene(), game = _setupGame();
+    _syncThemeClearColor();
     if (scene && scene.cameras && scene.cameras.main) scene.cameras.main.setBackgroundColor(THEME.bg);
     if (game && game.tiles)  game.tiles.forEach(t => { if (t.applyThemeColors) t.applyThemeColors(); });
     if (game && game.pieces) game.pieces.forEach(p => { if (p.updateColor) p.updateColor(); });
@@ -2408,6 +2426,7 @@ function createSettingsPanel() {
     };
     if (_recFileSupported()) recBtn('Log to file\u2026', () => _recPickFile());
     recBtn('Download', () => _recDownload());
+    recBtn('GitHub sync\u2026', () => _recSyncSetup());
     recBtn('Clear', () => {
         const n = _recBuffer().length;
         if (!n) { flashNotice('Nothing pending.', 2000); return; }
@@ -2830,7 +2849,77 @@ function _recPersist(line) {
         _recBufferWrite(lines);
         console.log('[rec] game buffered locally, ' + lines.length + ' pending');
         _recRefreshRow();
+        _recSync();
     });
+}
+
+// ── GitHub sync (owner, 2026-10-27) ─────────────────────────────────────────
+// OPT-IN, OWNER ONLY: with a token pasted under Settings > Game log, every
+// pending game is committed as its own file to a PRIVATE repo, and leaves the
+// buffer only once GitHub has confirmed it -- offline, it simply waits for the
+// next game, load or 'online' event. The token lives in this browser's
+// localStorage, never in the bundle; without one nothing is ever sent, so other
+// players are untouched and privacy.html stays true. One file per game (named
+// by id, turn count and completion) so no two writes touch the same path and no
+// sha is ever needed; merge_games.py keeps the copy of an id that got furthest.
+const REC_SYNC_REPO = 'tom-recht/quahuru-games';
+const REC_SYNC_TOKEN_KEY = 'recSyncToken';
+let _recSyncBusy = false, _recSyncState = '';
+function _recSyncToken() {
+    try { return localStorage.getItem(REC_SYNC_TOKEN_KEY) || ''; } catch (e) { return ''; }
+}
+function _recSyncSetup() {
+    const has = !!_recSyncToken();
+    const v = window.prompt(has
+        ? 'GitHub sync is ON. Paste a new token, or clear the box to turn sync off.'
+        : 'Paste a GitHub token with write access to ' + REC_SYNC_REPO + ':', '');
+    if (v === null) return;
+    try {
+        if (v.trim()) localStorage.setItem(REC_SYNC_TOKEN_KEY, v.trim());
+        else localStorage.removeItem(REC_SYNC_TOKEN_KEY);
+    } catch (e) {}
+    _recSyncState = '';
+    _recRefreshRow();
+    if (v.trim()) _recSync(true);
+}
+function _b64utf8(str) {
+    const bytes = new TextEncoder().encode(str);
+    let bin = '';
+    for (let i = 0; i < bytes.length; i += 0x8000)
+        bin += String.fromCharCode.apply(null, bytes.subarray(i, i + 0x8000));
+    return btoa(bin);
+}
+async function _recSync(announce) {
+    const token = _recSyncToken();
+    if (!token || _recSyncBusy || !getRecordingEnabled()) return;
+    _recSyncBusy = true;
+    let sent = 0, failed = '';
+    try {
+        for (const line of _recBuffer()) {
+            let g;
+            try { g = JSON.parse(line); } catch (e) { continue; }
+            const name = 'games/' + (g.device || _recDeviceId()) + '/' + g.id + '-' +
+                (g.turns ? g.turns.length : 0) + (g.completed ? 'c' : 'a') + '.json';
+            let res;
+            try {
+                res = await fetch('https://api.github.com/repos/' + REC_SYNC_REPO + '/contents/' + name, {
+                    method: 'PUT',
+                    headers: { 'Authorization': 'Bearer ' + token,
+                               'Accept': 'application/vnd.github+json' },
+                    body: JSON.stringify({ message: 'game ' + g.id, content: _b64utf8(line + '\n') }),
+                });
+            } catch (e) { failed = 'offline'; break; }
+            // 422 = that exact file already exists: an earlier upload whose
+            // reply was lost. Already off the device, so drop it too.
+            if (!(res.ok || res.status === 422)) { failed = 'HTTP ' + res.status; break; }
+            _recBufferWrite(_recBuffer().filter(l => l !== line));
+            sent++;
+        }
+    } finally { _recSyncBusy = false; }
+    _recSyncState = failed ? 'sync failed (' + failed + ')' : 'synced';
+    if (announce || (failed && failed !== 'offline'))
+        flashNotice(failed ? 'GitHub sync: ' + failed + '.' : 'GitHub sync: ' + sent + ' game' + (sent === 1 ? '' : 's') + ' sent.', 3000);
+    _recRefreshRow();
 }
 
 // ── the picked file, and its permission ─────────────────────────────────────
@@ -2929,7 +3018,8 @@ function _recRefreshRow() {
     const lines = _recBuffer();
     const bytes = lines.reduce((a, l) => a + l.length + 1, 0);
     const kb = (bytes / 1024).toFixed(1);
-    const filed = _recFileSupported() && _recFileHandle ? ' · logging to file' : '';
+    const filed = (_recFileSupported() && _recFileHandle ? ' · logging to file' : '') +
+        (_recSyncToken() ? ' · GitHub ' + (_recSyncState || 'sync on') : '');
     st.textContent = lines.length
         ? lines.length + ' game' + (lines.length === 1 ? '' : 's') + ' pending · ' + kb + ' KB' + filed
         : 'Nothing pending' + filed;
@@ -4673,7 +4763,8 @@ function _tutEnd(startGame) {
 function _initChrome() { _recUnlockFromUrl(); _seedFirstRunDefaults(); setInterval(_ruleTipTick, 300);
                         createSettingsPanel(); createLegendButton(); createHintButton();
                         maybeShowFirstRunNudge(); _armFullscreenOnFirstGesture();
-                        _recArmPermissionOnFirstGesture(); _recRefreshRow(); }
+                        _recArmPermissionOnFirstGesture(); _recRefreshRow();
+                        _recSync(); window.addEventListener('online', () => _recSync()); }
 // A game left unfinished when the tab goes is recorded as abandoned rather than
 // lost, so it cannot be mistaken for a defeat in the stats. `pagehide` rather
 // than `beforeunload`: it is the one that actually fires on mobile Safari.
@@ -7242,7 +7333,7 @@ class Piece {
         this.obligatory = v;
         const rim = this.color === 0xffffff ? PIECE_WHITE_RIM : PIECE_BLACK_RIM;
         if (v) this.circle.setStrokeStyle(4.5, 0xff8c1a, 1);   // bright orange ring
-        else this.circle.setStrokeStyle(2.5, rim, 1);
+        else this.circle.setStrokeStyle(this.color === 0xffffff ? PIECE_WHITE_RIM_W : PIECE_BLACK_RIM_W, rim, 1);
     }
 
 
@@ -7397,7 +7488,7 @@ class Piece {
 
         // transparent interactive circle carries the border + pointer events.
         this.circle = this.scene.add.circle(this.x, this.y, this.radius, 0xffffff, 0)
-            .setStrokeStyle(2.5, rimColor, 1)
+            .setStrokeStyle(isWhite ? PIECE_WHITE_RIM_W : PIECE_BLACK_RIM_W, rimColor, 1)
             .setInteractive()
             .on('pointerover', () => this.onHover())
             .on('pointerout', () => this.onOut())

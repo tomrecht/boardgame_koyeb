@@ -2,7 +2,7 @@
 # Driven by remote_play.py (train-features-v2), which uploads checkpoints to the
 # `cloud-scratch` release, dispatches this with a JSON spec, waits, and
 # concatenates the shards' outputs locally. Not meant to be started by hand.
-#   spec = {mode: label|confirm|ccmatch, ckpts: [asset...], n, shards, seed_base, env: {...}}
+#   spec = {mode: label|confirm|ccmatch|relabel, ckpts: [asset...], n, shards, seed_base, env: {...}}
 name: cloud-play
 on:
   workflow_dispatch:
@@ -56,6 +56,8 @@ jobs:
               cmd = ['confirm_match.py', c[0], c[1], str(n), 'shard.out']
           elif s['mode'] == 'ccmatch':
               cmd = ['close_call.py', 'match', c[0], env['T'], env['K'], str(n), 'shard.out']
+          elif s['mode'] == 'relabel':      # SEED_BASE = first decision index of this shard
+              cmd = ['rollout_label.py', 'run', c[0], c[1], 'shard.out', str(n)]
           else:
               sys.exit('unknown mode ' + s['mode'])
           print('shard', k, 'seeds', env['SEED_BASE'], 'n', n, ' '.join(cmd), flush=True)
