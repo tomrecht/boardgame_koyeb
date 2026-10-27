@@ -2862,7 +2862,7 @@ function _recPersist(line) {
 // players are untouched and privacy.html stays true. One file per game (named
 // by id, turn count and completion) so no two writes touch the same path and no
 // sha is ever needed; merge_games.py keeps the copy of an id that got furthest.
-const REC_SYNC_REPO = 'tom-recht/quahuru-games';
+const REC_SYNC_REPO = 'tomrecht/quahuru-games';
 const REC_SYNC_TOKEN_KEY = 'recSyncToken';
 let _recSyncBusy = false, _recSyncState = '';
 function _recSyncToken() {
