@@ -603,6 +603,22 @@ with it in mind.** Assessment and the concrete implications:
 
 ## Current state
 
+- **RECORDER: OPT-IN GITHUB SYNC (owner, 2026-10-27).** Settings > Game log >
+  "GitHub sync..." takes a fine-grained token (Contents read/write on the PRIVATE
+  repo `tom-recht/quahuru-games` only) into this browser's localStorage
+  (`recSyncToken`); each pending game is PUT as `games/<device>/<id>-<turns><c|a>.json`
+  and leaves the buffer only on a 2xx (or 422 = already there). Retries on load,
+  on `online`, after each game. No token = nothing sent, so the "no endpoint for
+  other players" argument below still holds; the token is never in the bundle.
+  Clone that repo to `./games_sync` (gitignored); `review_games.py` and the merge
+  read it. Shipped on the code path, not driven in a browser (needs owner's token).
+- **MISTAKE REVIEW (`review_games.py`, train-features-v2, 2026-10-27).** scan (the
+  champion's shallow search on every human turn, ~0.2 s/turn CPU) -> verify (both
+  moves' exact 21-roll one-ply value, ~6 s/turn) -> report (themes, pts/game).
+  First scan, cand13 over owner's 513 games / 13,023 turns: same move 48.4%;
+  shallow gap >= 0.15 on 2,391, >= 0.5 on 232; shallow cost 1.93 pts/game
+  (known to be inflated by value noise -- verify decides).
+
 - **A PIECE'S PHONE TAP TARGET NO LONGER REACHES INTO THE NEXT RING (owner,
   2026-10-21: "sometimes thinks I'm tapping one ring further out").** `_applyHitArea`
   grows a lone piece's target to 2.4r (60) on a 60-deep tile, and pieces sit above
