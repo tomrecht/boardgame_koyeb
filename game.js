@@ -198,6 +198,9 @@ let _agentTurnHeld = false;
 // would vanish, so white pieces use a defined rim + slight off-white body).
 const PIECE_WHITE_BODY = 0xf1f4f8;
 const PIECE_WHITE_RIM  = 0x5b6472;
+// Rim widths: white a touch thicker so it holds against pale tiles (owner, 2026-10-27).
+const PIECE_WHITE_RIM_W = 3.0;
+const PIECE_BLACK_RIM_W = 2.5;
 const PIECE_BLACK_BODY = 0x000000;   // solid black (no sheen highlight)
 const PIECE_BLACK_RIM  = 0x0a0b0d;
 const colorFirstDie = 0x40E0D0; // Turquoise
@@ -7257,7 +7260,7 @@ class Piece {
         this.obligatory = v;
         const rim = this.color === 0xffffff ? PIECE_WHITE_RIM : PIECE_BLACK_RIM;
         if (v) this.circle.setStrokeStyle(4.5, 0xff8c1a, 1);   // bright orange ring
-        else this.circle.setStrokeStyle(2.5, rim, 1);
+        else this.circle.setStrokeStyle(this.color === 0xffffff ? PIECE_WHITE_RIM_W : PIECE_BLACK_RIM_W, rim, 1);
     }
 
 
@@ -7412,7 +7415,7 @@ class Piece {
 
         // transparent interactive circle carries the border + pointer events.
         this.circle = this.scene.add.circle(this.x, this.y, this.radius, 0xffffff, 0)
-            .setStrokeStyle(2.5, rimColor, 1)
+            .setStrokeStyle(isWhite ? PIECE_WHITE_RIM_W : PIECE_BLACK_RIM_W, rimColor, 1)
             .setInteractive()
             .on('pointerover', () => this.onHover())
             .on('pointerout', () => this.onOut())
