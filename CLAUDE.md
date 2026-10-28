@@ -618,6 +618,20 @@ with it in mind.** Assessment and the concrete implications:
   First scan, cand13 over owner's 513 games / 13,023 turns: same move 48.4%;
   shallow gap >= 0.15 on 2,391, >= 0.5 on 232; shallow cost 1.93 pts/game
   (known to be inflated by value noise -- verify decides).
+  **Full result, 742 games (all 229 phone games), 19,086 turns:** 3,551 verified,
+  2,606 confirmed (deep gap >= 0.15); shallow/deep gap corr 0.78; confirm rate 63%
+  at gap 0.15-0.3, 90% at 0.3-0.5, ~100% above 0.5. Confirmed cost **1.17
+  pts/game** (opening 0.42, midgame 0.74, endgame 0.01). Top themes, pts/game:
+  numbered piece to its goal 0.24, wall not needed 0.18, build a wall 0.13,
+  numbered-to-goal not the priority 0.12, opening placement 0.11, goal choice
+  0.09, missed save 0.08. **Owner's mistake cost is flat across opponents** (1.10
+  vs symaug, 1.15 cand3, 1.19 blend, 1.21 cand13 -- all judged by cand13), so his
+  losses to cand13 are its stronger play, not worse play by him. **Record vs cand13
+  (`distill_cand13_Oct26`): 88 games, 34 won (39%), avg margin -0.70 +- 0.57** --
+  vs cand3 -0.04, blend +0.09, symaug +0.39. Report page:
+  https://claude.ai/artifact/HyeJfk3nH1oPJ49f1q5ULV (built from review/*.jsonl +
+  `review_render.py` images; the deep check is the champion's own judgement, not
+  independent truth).
 
 - **A PIECE'S PHONE TAP TARGET NO LONGER REACHES INTO THE NEXT RING (owner,
   2026-10-21: "sometimes thinks I'm tapping one ring further out").** `_applyHitArea`
