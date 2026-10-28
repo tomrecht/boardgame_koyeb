@@ -226,19 +226,19 @@ def describe(board, side, pair):
 
 
 THEMES = [
-    # (name, test on best-minus-owner differences)
-    ('missed save', lambda d: d['saves'] > 0),
-    ('saved instead of something better', lambda d: d['saves'] < 0),
-    ('missed capture', lambda d: d['captures'] > 0),
-    ('capture was wrong', lambda d: d['captures'] < 0),
-    ('numbered piece to its goal', lambda d: d['num_to_goal'] > 0),
-    ('numbered piece left its goal / not needed there', lambda d: d['num_to_goal'] < 0),
-    ('wall: build one', lambda d: d['walls'] > 0),
-    ('wall: break / do not build', lambda d: d['walls'] < 0),
-    ('exposed numbered piece', lambda d: d['exposed_num'] < 0),
-    ('left a die unused', lambda d: d['passes'] < 0),
-    ('used a die where pass/hold was better', lambda d: d['passes'] > 0),
-    ('goal placement', lambda d: d['onto_goal'] != 0),
+    # (name, test on best-minus-owner differences); first match wins
+    ('Bring a numbered piece to its goal', lambda d: d['num_to_goal'] > 0),
+    ('Missed a save', lambda d: d['saves'] > 0),
+    ('Missed a capture', lambda d: d['captures'] > 0),
+    ('Banked when another move was better', lambda d: d['saves'] < 0),
+    ('Captured when another move was better', lambda d: d['captures'] < 0),
+    ('Numbered piece to its goal was not the priority', lambda d: d['num_to_goal'] < 0),
+    ('Build a wall', lambda d: d['walls'] > 0),
+    ('Wall not needed (or break it)', lambda d: d['walls'] < 0),
+    ('Left a numbered piece exposed', lambda d: d['exposed_num'] < 0),
+    ('Left a die unused', lambda d: d['passes'] < 0),
+    ('Should have held a die', lambda d: d['passes'] > 0),
+    ('Different goal choice', lambda d: d['onto_goal'] != 0),
 ]
 
 
@@ -246,7 +246,7 @@ def theme(diff, stage):
     for name, test in THEMES:
         if test(diff):
             return name
-    return 'piece placement (%s)' % stage
+    return 'Piece placement (%s)' % stage
 
 
 GOAL_AT = {(7, 2): 4, (7, 4): 2, (7, 6): 5, (7, 8): 3, (7, 10): 6, (7, 12): 1}
@@ -255,6 +255,8 @@ GOAL_AT = {(7, 2): 4, (7, 4): 2, (7, 6): 5, (7, 8): 3, (7, 10): 6, (7, 12): 1}
 def _where(dest):
     if dest == 'save':
         return 'bank'
+    if dest == 0:
+        return 'block-save'
     if isinstance(dest, tuple) and len(dest) == 2:
         if dest in GOAL_AT:
             return 'G%d' % GOAL_AT[dest]
@@ -269,6 +271,8 @@ def pair_str(pair):
     for m in pair:
         if m == (0, 0, 0):
             out.append('pass')
+        elif m == (1, 1, 1):
+            out.append('call a draw')
         else:
             pid, dest, roll = m
             n = pid[1] if pid[1] <= 6 else 'x'
