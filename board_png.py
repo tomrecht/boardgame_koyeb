@@ -158,6 +158,7 @@ def render(board, moves=(), colour='#2b8a48'):
             mx = x0 + ux * 34 - uy * off if from_rack else (x0 + hx) / 2
             my = y0 + uy * 34 + ux * off if from_rack else (y0 + hy) / 2
             _piece(d, mx, my, 25, who, lab, edge=colour)
+    _dice(d, board)
     img = img.resize((size // SS, size // SS), Image.LANCZOS)
     buf = io.BytesIO()
     img.save(buf, 'PNG', optimize=True)
@@ -176,3 +177,28 @@ def _piece(d, x, y, r, side, n, edge=None):
 def _ring(d, x, y, r, colour):
     (cx, cy), k = _xy(x, y), SCALE * SS
     d.ellipse([cx - r * k, cy - r * k, cx + r * k, cy + r * k], outline=colour, width=int(7 * k))
+
+
+PIPS = {1: [(0, 0)], 2: [(-1, -1), (1, 1)], 3: [(-1, -1), (0, 0), (1, 1)],
+        4: [(-1, -1), (1, -1), (-1, 1), (1, 1)], 5: [(-1, -1), (1, -1), (0, 0), (-1, 1), (1, 1)],
+        6: [(-1, -1), (1, -1), (-1, 0), (1, 0), (-1, 1), (1, 1)]}
+
+
+def _dice(d, board):
+    """The roll, top left, in the mover's colours; a spent die is faded."""
+    k = SCALE * SS
+    s, gap, x, y = 70 * k, 16 * k, 24 * k, 24 * k
+    w = board.current_player == 'white'
+    d.text((x, y), ('White' if w else 'Black') + ' to move', fill=C['ink'], font=_font(30 * k), anchor='lt')
+    y += 46 * k
+    for i, die in enumerate(board.dice):
+        n = int(die.number)
+        x0 = x + i * (s + gap)
+        face, pip = ((C['wpiece'], '#1d232b') if w else (C['bpiece'], '#ffffff'))
+        if die.used:
+            face, pip = '#d8d0c0', '#9a9184'
+        d.rounded_rectangle([x0, y, x0 + s, y + s], radius=12 * k, fill=face,
+                            outline=C['wline'], width=max(1, int(3 * k)))
+        for px, py in PIPS.get(n, []):
+            cx, cy, r = x0 + s / 2 + px * s * 0.27, y + s / 2 + py * s * 0.27, s * 0.085
+            d.ellipse([cx - r, cy - r, cx + r, cy + r], fill=pip)
