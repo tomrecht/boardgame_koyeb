@@ -238,6 +238,18 @@ ARCHIVE.md under "Current benchmark".
   Caveats: heuristic policy tuned on today's layout (mean T today 10.11 vs
   others 10.25-10.43 may be that), no opponent, fixed
   4-turn seals, midgame starts only.
+  **Lone-blank heat maps (exact DP, `layout_heat.py`; sheet `layout_heat.png`,
+  `layout_heat_png.py`; evenness `layout_evenness.py` -> `layout_evenness.json`):**
+  expected turns for a side's last piece, a blank, to bank from every tile, game.py
+  generating each roll's outcomes (goals reproduce 1.000..1.644). The board's full
+  D3 symmetry (3 rotations x mirror) verified by identical value multisets. Mean
+  SD over each field tile's 6 symmetric images: swapall 0.081, B 0.084, A 0.088,
+  sum7 0.095, swap16 0.111, today 0.116. Ring 5+6 GOAL-SPOKE tiles (all 6 spokes
+  one orbit), mean SD across the 6 spokes: B 0.041, A 0.048, swap16 0.068,
+  swapall 0.106, sum7 0.112, today 0.132 (today ring 6: 1.49 beside G4 .. 1.99
+  beside G3). So for a LONE BLANK the trio-balanced layouts are the most even --
+  the opposite of the playout probe, whose region differences were within ~2-3 SE
+  and cover whole midgames with numbered pieces.
 - **A goal tile can never be blocked** (`is_blocked` requires `type == 'field'`)
   — only the routes to it. Sealing a goal from home takes 2 walls (4 pieces),
   and those same 2 walls seal its whole 4-apart pair.
