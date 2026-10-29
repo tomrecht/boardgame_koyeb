@@ -158,6 +158,14 @@ Whenever a new net ships, re-run (cheapest first; GitHub = free):
      cost's CI clears 0, refit: `GAMES=sync PREFILTER_DATA=... NET=<net>
      prefilter_fit.py extract 2`, then `prefilter_fit.py cv2`.
   3. `rule_probe.py <net> out.jsonl` -- the three hand rules on vs off, deep-checked.
+     **cand13 (2026-10-29, 12,000 turns of owner's games, `review/rules/`): the net
+     has learned all three; the rules are near-inert.** never-waste-a-save fired on
+     4,225 turns and changed the move on 3 (deep check sides with the rule, +0.03
+     mean, max +0.07; no sign the net wants a spare capturer); keep-last-piece:
+     93 candidate turns, 0 changes; bank-the-most: 83 fired, 39 changed, all with
+     the same number of banks (the change is only the quiet-pair filter -- pass
+     instead of a pointless move -- deep value identical). Kept: they cost
+     nothing and never hurt.
   4. Difficulty knots: `remote_play('difficulty', [<net>], 750, 0, out,
      env={'LEVELS': '0.65,0.74,0.80,0.93,1.0'})`, then `difficulty_fine.py analyze
      out` -- the knots were spaced for ~4/15/26/37/50% vs full strength.
