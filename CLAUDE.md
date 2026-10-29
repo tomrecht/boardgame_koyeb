@@ -253,7 +253,7 @@ ARCHIVE.md under "Current benchmark".
   **Who seals which pair today (`seal_census.py`, owner's 516 logged games,
   a pair = both goals cut off from home by one side's walls):** the COMPUTER
   builds 2&4 seals 74 times vs 3&5 35 and 1&6 31 (chi-square p ~1e-5; games
-  with one 66/31/28); OWNER 29 / 43 / 43 (p 0.17). Owner's hunch confirmed. 2&4
+  with one 66/31/28); OWNER 29 / 43 / 43 (p 0.18; computer vs owner differ, p 4e-5). Owner's hunch confirmed. 2&4
   is the fast region of today's heat map (ring-6 tile beside G4 1.49 turns,
   G2 1.03), yet the solitaire seal costs were level -- so the dominance comes
   from region x seal (or from where its own pieces travel), which the averaged
