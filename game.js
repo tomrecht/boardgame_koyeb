@@ -21,6 +21,20 @@ const _DEV_CONSOLE = (function () {
     try { return new URLSearchParams(location.search).get('dev') === '1'; }
     catch (e) { return false; }
 })();
+// PLAY-TEST GOAL LAYOUTS (owner, 2026-10-29; dev only): ?dev=1&layout=sum7|B
+// renumbers the six goals (ring order from sector 2, partners 4 apart in
+// pairs). The board, the rules and the computer all read it; the computer's net
+// was trained on today's numbering only, so on another layout it plays OUT OF
+// ITS TRAINING (legal, likely weaker). Recorded games carry 'layout'.
+const GOAL_LAYOUTS = { sum7: [1, 6, 2, 5, 3, 4], B: [1, 4, 5, 2, 3, 6] };
+const GOAL_LAYOUT_NAME = (function () {
+    try {
+        const n = new URLSearchParams(location.search).get('layout');
+        return (_DEV_CONSOLE && n && GOAL_LAYOUTS[n]) ? n : null;
+    } catch (e) { return null; }
+})();
+window.QUAHURU_GOAL_LAYOUT = GOAL_LAYOUT_NAME
+    ? { name: GOAL_LAYOUT_NAME, numbers: GOAL_LAYOUTS[GOAL_LAYOUT_NAME] } : null;
 if (!DEBUG_MODE && !_DEV_CONSOLE) {
     const _quiet = function () {};
     console.log = _quiet;
@@ -2686,6 +2700,7 @@ function _recStart(game) {
             device: _recDeviceId(),
             at: new Date().toISOString(),
             model: REC_MODEL_TAG,
+            ...(GOAL_LAYOUT_NAME ? { layout: GOAL_LAYOUT_NAME } : {}),
             // BOTH, because they are different quantities and only the effective
             // one means anything analytically (see the slider remap in CLAUDE.md).
             difficulty: +getAIDifficulty().toFixed(4),
@@ -2936,6 +2951,7 @@ function _playoutQueue() { try { return JSON.parse(localStorage.getItem(PLAYOUT_
 function _playoutQueueWrite(q) { try { localStorage.setItem(PLAYOUT_QUEUE_KEY, JSON.stringify(q)); } catch (e) {} }
 function _playoutTag() {
     const game = _currentGame();
+    if (GOAL_LAYOUT_NAME) { flashNotice('Playouts assume the standard goal numbers.', 3000); return; }
     if (!_recSyncToken()) { flashNotice('Set up GitHub sync first (Game log > GitHub sync).', 3500); return; }
     if (!game || _tut.active || (game.currentPlayerIsHuman && !game.currentPlayerIsHuman())) {
         flashNotice('Tag a turn while it is your move.', 3000); return;
@@ -5927,7 +5943,7 @@ function loadPositionNotation(str, game, blankIds) {
 // same dice, so nothing can be re-rolled by leaving. Cleared when the game ends or
 // a new one starts. The recorder's open entry rides along, so a resumed game
 // keeps recording under the same id (merge_games keeps the longest copy).
-const SAVED_GAME_KEY = 'savedGame';
+const SAVED_GAME_KEY = 'savedGame' + (GOAL_LAYOUT_NAME ? '_' + GOAL_LAYOUT_NAME : '');
 function _savedGameRead() {
     try {
         const g = JSON.parse(localStorage.getItem(SAVED_GAME_KEY) || 'null');
@@ -8656,7 +8672,7 @@ class Game {
         this.tiles.push(new Tile(this.scene, this,  'home', 0, 0, 0, 2 * Math.PI, 0, innerRadius));
  
     
-        const goalTileNumbers = [4, 2, 5, 3, 6, 1];
+        const goalTileNumbers = GOAL_LAYOUT_NAME ? GOAL_LAYOUTS[GOAL_LAYOUT_NAME] : [4, 2, 5, 3, 6, 1];
 
     
         for (let r = 0; r < numRings; r++) {

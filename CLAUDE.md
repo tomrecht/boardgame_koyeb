@@ -146,6 +146,21 @@ max-age, so a CHANGED picture needs a NEW file name. Text mirrored in
 WORDING.md section 10. Measured headless, desktop + phone: 4/4 images load, no
 sideways scroll, game paused, back returns to How to Play.
 
+- **PLAY-TEST GOAL LAYOUTS: `?dev=1&layout=sum7` or `&layout=B` (owner,
+  2026-10-29).** Renumbers the six goals (ring order from sector 2): sum7
+  1-6-2-5-3-4, B 1-4-5-2-3-6; today 4-2-5-3-6-1. game.js `GOAL_LAYOUTS` draws
+  the board; local_agent.js `applyGoalLayout` patches the computer's static data
+  (tile_numbers + base tile feature 6) and loads `endgame_table_<name>.json`
+  (built by train-features-v2's `endgame_table.py --layout`; pair distances
+  differ). Recorded games carry `layout`; autosave is per layout; playout tags
+  are refused. **The net was trained on today's numbering only -- on these it
+  plays out of its training.** Tutorial / strategy positions assume today's
+  numbers. Measured in the browser: board and engine goal numbers agree for
+  sum7 / B / default, self-play runs with 0 errors, the layout's table is loaded,
+  agent_test ALL MATCH. Why these two: train-features-v2 CLAUDE.md, "GOAL
+  LAYOUT PROBE" (sum7 = best compromise; B = most even for a lone blank; the
+  computer seals 2&4 twice as often as other pairs today).
+
 ## AI and model — current status
 
 **PROMOTION CHECKLIST -- RE-CHECK EVERYTHING TUNED FOR THE OLD NET (owner, 2026-10-29).**

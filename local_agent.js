@@ -164,6 +164,7 @@ const LocalAgent = (function () {
                 getJSON('encoder_static.json'),
                 getJSON('heuristic_weights.json'),
             ]);
+            applyGoalLayout(sd);
             staticData = sd;
             weights = w;
             graph = window.buildGraph(staticData);
@@ -172,6 +173,9 @@ const LocalAgent = (function () {
                 ort: window.ort,
                 modelUrl: 'model.onnx',
                 staticUrl: 'encoder_static.json',
+                patchStatic: applyGoalLayout,
+                tableUrl: window.QUAHURU_GOAL_LAYOUT
+                    ? 'endgame_table_' + window.QUAHURU_GOAL_LAYOUT.name + '.json' : 'endgame_table.json',
                 wasmPath: ortPath(),
             });
             status = 'ready';
@@ -409,6 +413,23 @@ const LocalAgent = (function () {
     function comparing() {
         if (!compare.on) compare.on = param('aicompare') === '1';
         return compare.on;
+    }
+
+    /* Play-test goal layouts (game.js, ?dev=1&layout=): renumber the six goal
+       tiles in the static data -- tile_numbers (rules, routes, features_v2) and
+       base tile feature 6 = goal number / 6 (encoder.py) -- by sector, the same
+       ring order game.js numbers them in (sectors 2, 4, ..., 12 of ring 7). */
+    function applyGoalLayout(sd) {
+        const L = window.QUAHURU_GOAL_LAYOUT;
+        if (!L) return sd;
+        const SECTORS = [2, 4, 6, 8, 10, 12];
+        sd.tile_types.forEach((ty, i) => {
+            if (ty !== 'save') return;
+            const n = L.numbers[SECTORS.indexOf(sd.tile_coords[i][1])];
+            sd.tile_numbers[i] = n;
+            sd.base_tile_feats[i][6] = n / 6;
+        });
+        return sd;
     }
 
     /* Geometry only, no inference runtime -- what state_test.html needs to
