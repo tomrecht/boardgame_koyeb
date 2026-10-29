@@ -146,7 +146,54 @@ max-age, so a CHANGED picture needs a NEW file name. Text mirrored in
 WORDING.md section 10. Measured headless, desktop + phone: 4/4 images load, no
 sideways scroll, game paused, back returns to How to Play.
 
+- **PLAY-TEST GOAL LAYOUTS: `?dev=1&layout=sum7` or `&layout=B` (owner,
+  2026-10-29).** Renumbers the six goals (ring order from sector 2): sum7
+  1-6-2-5-3-4, B 1-4-5-2-3-6; today 4-2-5-3-6-1. game.js `GOAL_LAYOUTS` draws
+  the board; local_agent.js `applyGoalLayout` patches the computer's static data
+  (tile_numbers + base tile feature 6) and loads `endgame_table_<name>.json`
+  (built by train-features-v2's `endgame_table.py --layout`; pair distances
+  differ). Recorded games carry `layout`; autosave is per layout; playout tags
+  are refused. **The net was trained on today's numbering only -- on these it
+  plays out of its training.** Tutorial / strategy positions assume today's
+  numbers. Measured in the browser: board and engine goal numbers agree for
+  sum7 / B / default, self-play runs with 0 errors, the layout's table is loaded,
+  agent_test ALL MATCH. Why these two: train-features-v2 CLAUDE.md, "GOAL
+  LAYOUT PROBE" (sum7 = best compromise; B = most even for a lone blank; the
+  computer seals 2&4 twice as often as other pairs today).
+
 ## AI and model — current status
+
+**PROMOTION CHECKLIST -- RE-CHECK EVERYTHING TUNED FOR THE OLD NET (owner, 2026-10-29).**
+The prefilter's component scales were fitted for blend4way (Oct 6) and never
+refitted through two net changes; found by accident, it cost cand13 ~0.16 pts/game.
+Whenever a new net ships, re-run (cheapest first; GitHub = free):
+  1. `offgoal_probe.py <net>` (RIGHT/wrong).
+  2. `filter_probe.py <net> <tag> out.jsonl` -- keep-rate and deep-check cost of
+     the prefilter (EXCLUDE full passes: its all-moves set omits the pass); if the
+     cost's CI clears 0, refit: `GAMES=sync PREFILTER_DATA=... NET=<net>
+     prefilter_fit.py extract 2`, then `prefilter_fit.py cv2` / `cv3` / `final2`,
+     `filter_ab.py` (old vs new scales, deep-checked) and a GitHub match
+     (`remote_play('confirm', [net, net], ..., env={'SCALES_A': new, 'SCALES_B': old})`).
+  3. `rule_probe.py <net> out.jsonl` -- the three hand rules on vs off, deep-checked.
+     **cand13 (2026-10-29, 12,000 turns of owner's games, `review/rules/`): the net
+     has learned all three; the rules are near-inert.** never-waste-a-save fired on
+     4,225 turns and changed the move on 3 (deep check sides with the rule, +0.03
+     mean, max +0.07; no sign the net wants a spare capturer); keep-last-piece:
+     93 candidate turns, 0 changes; bank-the-most: 83 fired, 39 changed, all with
+     the same number of banks (the change is only the quiet-pair filter -- pass
+     instead of a pointless move -- deep value identical). Kept: they cost
+     nothing and never hurt.
+  4. Difficulty knots: `remote_play('difficulty', [<net>], 750, 0, out,
+     env={'LEVELS': '0.65,0.74,0.80,0.93,1.0'})`, then `difficulty_fine.py analyze
+     out` -- the knots were spaced for ~4/15/26/37/50% vs full strength.
+     **cand13 (2026-10-29, 150 pairs each, `review/difficulty/cand13.jsonl`):**
+     Easiest 0.65 9.0% (6-13), Gentle 0.74 15.7% (12-20), Medium 0.80 24.7%
+     (20-30), Strong 0.93 39.3% (34-45), Max 50% -- margins -2.99 / -2.11 /
+     -1.58 / -0.76. Knots still hold, except EASIEST is now ~9% not ~4% (Oct:
+     0.70 gave 7.5%, 0.60 0.8%); lowering its knot to ~0.60 would restore it
+     (owner's call). Ignore analyze's 'slider' column (old 0.8-1.0 mapping).
+  5. Close-call gauge (`remote_play.py ccmatch <net> 2000`) and calib_bench.
+  6. Endgame lookahead and prefilter sizes (12/40): only if 2-4 moved.
 
 - **Deployed model: `model.onnx` = `distill_cand13.pt` (main 2026-10-26), file
   `model-9121be40.onnx`.** The weekend's continuation of the distillation
@@ -724,6 +771,87 @@ with it in mind.** Assessment and the concrete implications:
   verify + `quiz_build.py`, which writes only NEW chunks to review/quiz/ and keeps
   review/quiz/index.json -- untracked, this iMac), then ArtifactData `set` each new
   chunk file into `positions`. Never rewrite an old chunk's items under a new id.
+  **Quiz since 2026-10-28:** owner PLAYS the move on the board (tap piece / rack
+  front, tap tile; captures automatic; Bank / Block-save buttons), Check compares the
+  resulting position's canonical key (`quiz_best.canon`, mirrored in the page's
+  `canon()`) with the champion's (`kb`), his game move's (`ko`) and, once
+  `quiz_best.py` results are merged, a table of the top outcomes. Racks drawn as
+  pieces, stage badge (Opening loud), both moves' deep values on reveal (`eb`/`eo`),
+  Save (progress `sv`) + "Saved only", arrows ring the actual moving piece with a copy
+  of it on the arrow. Page source: scratchpad quiz.html + board geometry
+  (`board_geo.json`, extracted from game.js) -- republish = same artifact URL.
+  **The quiz's "champion's move" came through the app PREFILTER (12/40/5):** owner
+  found a near-best move it had culled (400e4d22 t25, wall on 6.12: best by quick
+  look, 0.03 behind by the 21-roll check). `quiz_best.py` re-solves every position over
+  ALL legal moves (top 4 distinct by quick value + filtered best + his, 21-roll
+  checked; outcome table) -- 2,606 positions on GitHub (`remote_play` mode `quizbest`).
+  **`filter_probe.py`, cand13, 300 of the computer's turns in owner's games (2026-10-28;
+  CORRECTED same day -- the first reading counted 15 FULL PASSES as filter drops: the
+  probe's all-moves set omits the pass, so they were not drops; drop them):** the filter
+  keeps the net's all-moves favourite on 92.6% (264/285); on the 21 it drops, the
+  21-roll check rates the favourite better by +0.078 per drop (95% CI +0.036..+0.123;
+  > 0.15 in 5, pick better in 6) -- **~+0.16 pts/game (CI +0.08..+0.25) lost to the
+  filter**, by the net's own deep check (not playouts). THEME: 10 of the 11 drops worth
+  > 0.05 are WALL BUILDING the heuristic cannot see -- walls with a numbered piece (its
+  only wall terms: a flat bonus for ALL-BLANK walls, and opponent pieces fully sealed,
+  which happened once), often by stepping a blank OFF A GOAL (4; the heavy goal_pieces
+  term) or walling instead of banking (2). Pictures: `review/filter/pics/`. Fix to try:
+  an "opponent route lengthening" component (numbered pieces, incl. those <= 6 away)
+  + refit the component scales to cand13 (fitted for blend4way at 96% keep; never
+  refitted since). Judge by keep-rate on held-out games, then the deep-check cost.
+  **DONE, READY ON BRANCH `filter-v2` (off main, NOT merged; owner to approve,
+  2026-10-29).** Two new scaled-only components, ROUTE LENGTHS (`numbered_route`:
+  own-goal distance of each unsaved numbered piece on the board, capped 16;
+  `blank_route`: nearest-goal distance of field blanks) + all 25 scales refitted
+  to cand13 (`prefilter_fit.py final2`, rescaled to the shipped scores' spread so
+  GAME_OVER_SCORE keeps its margin). Held-out keep-rate (5-fold by game, 200 synced
+  games, 5,199 positions): shipped 0.953, refit of the old 23 0.964, **+ routes
+  0.973**; also tried (`cv3`): rack routes by place in line (owner's route + n x
+  slot, cap 7+12n) and threatened numbered blots (near/far) -- add nothing (0.972-
+  0.973), Python-only, left out. Deep check (`filter_ab.py`, 1,997 turns, hand
+  rules + lookahead on): the move changes on 90, **+0.065 per change (CI
+  +0.033..+0.098)**, new better 53 / old 21, ~+0.08 pts/game. **GitHub match, cand13
+  both sides, new vs old filter (`confirm_match.py` SCALES_A/SCALES_B), seeds 190M,
+  2,000 pairs: +0.055 (95% CI -0.005..+0.115), 50.7%** -- not worse, agrees with the
+  deep check. JS = Python 100/100 (stub-net fixture regenerated with the v2 scales;
+  the old fixture under v2 weights diverges, so the check is live); stub-search
+  time 9.8 s -> 9.3 s (no slowdown). The branch changes agent.py, heuristic.js
+  (route terms, already twinned), prefilter_scales.json, heuristic_weights.json
+  (component_scale only); all network-first, no sw bump. Ship = `git merge --ff-only
+  filter-v2` on main (fast-forwards today; rebase if main moved).
+  **PLAYOUT CHECK of the quiz (`quiz_playout.py`, mode `quizroll`):** 1,203 positions
+  with cost >= 0.3, his move vs the champion's played to the END 32x each, champion
+  both sides, common dice. First single position (3b19f3bf t39, capture vs G4,
+  64 pairs): claim +0.46, playouts +0.06 +- 0.32 -- costs look overstated.
+  **RESULT (2026-10-29, all 1,203, `review/playout/out.jsonl`): the champion's
+  quiz verdicts HOLD.** Playouts (his - champion's, 32 each, common dice) mean
+  +0.288 +- 0.029 vs claimed +0.462; slope 0.85, intercept -0.105, corr +0.29
+  (per-position SE ~0.45). By claim: 0.3-0.5 (869) playouts +0.21, champion ahead
+  66%, clearly behind 1%; 0.5-1.0 (312) +0.46, 83%, 0%; > 1.0 (22) +1.08, 95%.
+  Opening 0.73 of claim, midgame 0.56. 11 positions clearly favour his move --
+  about chance at 1,203 tests; tagged in the quiz, not dropped. Far better than
+  the October benchmark (slope 0.29, corr 0.09 for blend4way vs owner).
+  **MERGED INTO THE QUIZ (2026-10-29, `quiz_merge.py best.jsonl out.jsonl`, chunks
+  at db version 4):** the all-moves re-solve (quiz_best, 2,606 positions) changed
+  the champion's move in 464 (18%; the prefilter had culled it), gap 0.333 -> 0.346
+  mean; his move was never the best. Each item: corrected b/bm/kb/g/eb, an outcome
+  table of HASHED keys (`h` = 32-bit FNV-1a base 36 of the canonical key, twin of
+  the page's fnv(); all deep-checked entries + top 8 others) and `pl` = [champion -
+  his, SE] from the 32 playouts (1,034 items; dropped where the move changed). The
+  reveal shows the playout line. **A db document is capped at 256 KB** -- chunks
+  now 230-250 KB, so new games need NEW chunks, not growth of old ones.
+- **"PLAY THIS TURN OUT" (owner-only, 2026-10-28).** Settings > Game log > Play this
+  turn out (needs GitHub sync): at the turn's end the start + end positions
+  (getGameState format) go to quahuru-games `playouts/req/<id>.json` (queue in
+  localStorage `playoutQueue`, retried on load/online). Workflow
+  `.github/workflows/playout-requests.yml` (every 30 min; 2 API calls when idle)
+  runs `playout_requests.py` from train-features-v2: every legal move scored, the
+  champion's top 3 + his played out 64x with common dice, results to
+  `playouts/res/<id>.{json,md,-k.png}` (pictures by `board_png.py`, PIL only) and an
+  ISSUE in quahuru-games (GitHub notifies owner). Secret `GAMES_TOKEN` (fine-grained,
+  quahuru-games only, Contents + Issues RW) set 2026-10-28. Model: release asset
+  `11f363793239-distill_cand13.pt` -- update the workflow when the champion changes.
+  It queues behind other cloud runs (20-job concurrency).
 
 - **A PIECE'S PHONE TAP TARGET NO LONGER REACHES INTO THE NEXT RING (owner,
   2026-10-21: "sometimes thinks I'm tapping one ring further out").** `_applyHitArea`

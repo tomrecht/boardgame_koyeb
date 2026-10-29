@@ -22,7 +22,8 @@ const Infer = (() => {
     let meta = null;
 
     async function init({ ort, modelUrl = 'model.onnx', staticUrl = 'encoder_static.json',
-                          wasmPath = '/ort/', tableUrl = 'endgame_table.json' } = {}) {
+                          wasmPath = '/ort/', tableUrl = 'endgame_table.json',
+                          patchStatic = null } = {}) {
         ort.env.wasm.numThreads = 1;          // see header: no COOP/COEP needed
         // Must be root-absolute (or a full URL): the loader dynamically IMPORTS
         // the .mjs beside the wasm, and a bare relative path is not a valid
@@ -30,6 +31,7 @@ const Infer = (() => {
         // reads like a missing build rather than a bad path.
         ort.env.wasm.wasmPaths = wasmPath;
         staticData = await (await fetch(staticUrl)).json();
+        if (patchStatic) patchStatic(staticData);
         meta = null;
         try {
             const r = await fetch(modelUrl.replace(/\.onnx$/, '.json'));

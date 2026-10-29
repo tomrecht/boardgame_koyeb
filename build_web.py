@@ -118,8 +118,12 @@ MODEL_FILE = _model_file()
 # An A/AB net reads the exact endgame table (features_v2); a v1 net does not,
 # so it ships only then -- 1.3 MB raw, ~0.4 MB compressed.
 NEEDS_TABLE = _model_meta().get('features', 'v1') != 'v1'
+# Play-test goal layouts (?dev=1&layout=, game.js): each needs its own table
+# (goal-to-goal distances differ). Not precached -- dev only, online is fine.
+LAYOUT_TABLES = ['endgame_table_sum7.json', 'endgame_table_B.json']
 BUNDLE = SHELL + ASSETS + STRATEGY + ICONS + PORT + RUNTIME + [MODEL_FILE] + \
-    (['endgame_table.json'] if NEEDS_TABLE else [])
+    (['endgame_table.json'] if NEEDS_TABLE else []) + \
+    (LAYOUT_TABLES if NEEDS_TABLE else [])
 
 
 def sw_precache_list():
