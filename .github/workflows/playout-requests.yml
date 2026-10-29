@@ -1,0 +1,52 @@
+# Owner's "Play this turn out" requests (game.js, Settings > Game log) land in
+# the private games repo under playouts/req/. Every 30 minutes this checks for
+# unanswered ones (cheap: two API calls, no setup) and, if there are any, plays
+# them out with playout_requests.py from train-features-v2 and posts the report
+# as an issue in the games repo. Needs the secret GAMES_TOKEN (fine-grained,
+# quahuru-games only: Contents + Issues read/write).
+name: playout-requests
+on:
+  schedule: [{ cron: '*/30 * * * *' }]
+  workflow_dispatch: {}
+concurrency: { group: playout-requests, cancel-in-progress: false }
+permissions: { contents: read }
+jobs:
+  run:
+    runs-on: ubuntu-latest
+    timeout-minutes: 300
+    steps:
+      - id: check
+        env: { GAMES_TOKEN: '${{ secrets.GAMES_TOKEN }}' }
+        run: |
+          python3 - <<'PY' >> "$GITHUB_OUTPUT"
+          import json, os, urllib.request, urllib.error
+          tok = os.environ.get('GAMES_TOKEN')
+          def ls(p):
+              r = urllib.request.Request('https://api.github.com/repos/tomrecht/quahuru-games/contents/' + p,
+                                         headers={'Authorization': 'Bearer ' + tok, 'User-Agent': 'q'})
+              try:
+                  return json.load(urllib.request.urlopen(r))
+              except urllib.error.HTTPError as e:
+                  if e.code == 404: return []
+                  raise
+          if not tok:
+              print('pending=0'); raise SystemExit
+          done = {f['name'].rsplit('.', 1)[0] for f in ls('playouts/res')}
+          n = sum(1 for f in ls('playouts/req') if f['name'].endswith('.json') and f['name'][:-5] not in done)
+          print('pending=%d' % n)
+          PY
+      - if: steps.check.outputs.pending != '0'
+        uses: actions/checkout@v4
+        with: { ref: train-features-v2 }
+      - if: steps.check.outputs.pending != '0'
+        uses: actions/setup-python@v5
+        with: { python-version: '3.11', cache: 'pip' }
+      - if: steps.check.outputs.pending != '0'
+        env: { GH_TOKEN: '${{ github.token }}' }
+        run: |
+          pip install torch==2.2.2 --index-url https://download.pytorch.org/whl/cpu
+          pip install "numpy<2" scipy
+          gh release download cloud-scratch -p 11f363793239-distill_cand13.pt -R "${{ github.repository }}"
+      - if: steps.check.outputs.pending != '0'
+        env: { GAMES_TOKEN: '${{ secrets.GAMES_TOKEN }}', MODEL: 11f363793239-distill_cand13.pt, PYTHONHASHSEED: '0' }
+        run: python3 -u playout_requests.py 6
