@@ -643,6 +643,37 @@ with it in mind.** Assessment and the concrete implications:
   verify + `quiz_build.py`, which writes only NEW chunks to review/quiz/ and keeps
   review/quiz/index.json -- untracked, this iMac), then ArtifactData `set` each new
   chunk file into `positions`. Never rewrite an old chunk's items under a new id.
+  **Quiz since 2026-10-28:** owner PLAYS the move on the board (tap piece / rack
+  front, tap tile; captures automatic; Bank / Block-save buttons), Check compares the
+  resulting position's canonical key (`quiz_best.canon`, mirrored in the page's
+  `canon()`) with the champion's (`kb`), his game move's (`ko`) and, once
+  `quiz_best.py` results are merged, a table of the top outcomes. Racks drawn as
+  pieces, stage badge (Opening loud), both moves' deep values on reveal (`eb`/`eo`),
+  Save (progress `sv`) + "Saved only", arrows ring the actual moving piece with a copy
+  of it on the arrow. Page source: scratchpad quiz.html + board geometry
+  (`board_geo.json`, extracted from game.js) -- republish = same artifact URL.
+  **The quiz's "champion's move" came through the app PREFILTER (12/40/5):** owner
+  found a near-best move it had culled (400e4d22 t25, wall on 6.12: best by quick
+  look, 0.03 behind by the 21-roll check). `quiz_best.py` re-solves every position over
+  ALL legal moves (top 4 distinct by quick value + filtered best + his, 21-roll
+  checked; outcome table) -- 2,606 positions on GitHub (`remote_play` mode `quizbest`).
+  `filter_probe.py` measures the filter on the computer's own turns (cand13 games).
+  **PLAYOUT CHECK of the quiz (`quiz_playout.py`, mode `quizroll`):** 1,203 positions
+  with cost >= 0.3, his move vs the champion's played to the END 32x each, champion
+  both sides, common dice. First single position (3b19f3bf t39, capture vs G4,
+  64 pairs): claim +0.46, playouts +0.06 +- 0.32 -- costs look overstated.
+- **"PLAY THIS TURN OUT" (owner-only, 2026-10-28).** Settings > Game log > Play this
+  turn out (needs GitHub sync): at the turn's end the start + end positions
+  (getGameState format) go to quahuru-games `playouts/req/<id>.json` (queue in
+  localStorage `playoutQueue`, retried on load/online). Workflow
+  `.github/workflows/playout-requests.yml` (every 30 min; 2 API calls when idle)
+  runs `playout_requests.py` from train-features-v2: every legal move scored, the
+  champion's top 3 + his played out 64x with common dice, results to
+  `playouts/res/<id>.{json,md,-k.png}` (pictures by `board_png.py`, PIL only) and an
+  ISSUE in quahuru-games (GitHub notifies owner). Secret `GAMES_TOKEN` (fine-grained,
+  quahuru-games only, Contents + Issues RW) set 2026-10-28. Model: release asset
+  `11f363793239-distill_cand13.pt` -- update the workflow when the champion changes.
+  It queues behind other cloud runs (20-job concurrency).
 
 - **A PIECE'S PHONE TAP TARGET NO LONGER REACHES INTO THE NEXT RING (owner,
   2026-10-21: "sometimes thinks I'm tapping one ring further out").** `_applyHitArea`
