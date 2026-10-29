@@ -16,12 +16,39 @@ for r in rows:
 order = sorted(by, key=lambda t: -sum(r['deep_gap'] for r in by[t]))[:TOPN]
 
 
-def dests(s):
-    out = []
-    for m in re.finditer(r'>([^ (]+)\(', s):
-        d = m.group(1)
-        if d not in ('bank', 'H') and not d.startswith('call'):
-            out.append(d)
+import ast
+GAMES = {g['id']: g for g in RG.load_games()}
+CHAMP, OWN = '#2e9e4f', '#7b4fe0'
+
+
+def _loc(b, t):
+    if t is None:
+        return 'H'
+    if t.type == 'save':
+        return 'G%d' % t.number
+    if t is b.home_tile:
+        return 'H'
+    return '%d.%d' % (t.ring, t.pos)
+
+
+def arrows(r, key, col):
+    """from>to:col per half of the pair, origins read off the rebuilt board."""
+    b = RG._state_at(GAMES[r['game']], r['turn'])
+    if b is None:
+        return []
+    out, moved = [], {}
+    for m in ast.literal_eval(r[key]):
+        if m in ((0, 0, 0), (1, 1, 1)):
+            continue
+        pid, dest, _ = m
+        p = next((q for q in b.pieces if (q.player, q.number) == tuple(pid)), None)
+        if p is None:
+            continue
+        frm = moved.get(tuple(pid)) or _loc(b, p.tile)
+        to = '' if dest in ('save', 0) else RG._where(dest)
+        out.append('%s>%s:%s' % (frm, to, col))
+        if to:
+            moved[tuple(pid)] = to
     return out
 
 
@@ -30,13 +57,10 @@ env = dict(os.environ, PATH='/usr/local/bin:' + os.environ['PATH'])
 for t in order:
     for r in sorted(by[t], key=lambda r: -r['deep_gap'])[:PER]:
         name = 'review/img/%s_t%d.png' % (r['game'][:8], r['turn'])
-        champ = dests(r['best'])
-        mine = [d for d in dests(r['own'])]
+        arr = arrows(r, 'best_pair', CHAMP) + arrows(r, 'own_pair', OWN)
         args = ['node', 'pos_image.mjs', r['pos'], name]
-        if champ:
-            args += ['--fill', ';'.join('%s:#5fae6a' % d for d in dict.fromkeys(champ))]
-        if mine:
-            args += ['--ring', ','.join(dict.fromkeys(mine))]
+        if arr:
+            args += ['--arrows', ';'.join(arr)]
         if not os.path.exists(name):
             p = subprocess.run(args, env=env, capture_output=True, text=True)
             print(t, name, p.returncode, (p.stdout + p.stderr).strip()[-120:], flush=True)

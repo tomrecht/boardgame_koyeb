@@ -3,6 +3,7 @@
 //
 //   node pos_image.mjs "<notation>" out.png [--phone] [--caption "text"]
 //        [--fill "5.4,5.6:#e0b040;G2:#7fb069"] [--ring "6.4,G3"] [--labels]
+//        [--arrows "5.4>G2:#5fae6a;H>3.2:#8a5cc9;G4>:#5fae6a"]
 //
 // --fill tints tiles (the tutorial's target fill; default colour amber), --ring
 // draws a static ring round tiles (hint colour), --labels writes every tile's
@@ -29,7 +30,7 @@ const args = process.argv.slice(2);
 const flag = (name) => { const i = args.indexOf(name); if (i < 0) return null; const v = args[i + 1]; args.splice(i, 2); return v; };
 const phone = args.includes('--phone'); if (phone) args.splice(args.indexOf('--phone'), 1);
 const caption = flag('--caption');
-const fillArg = flag('--fill'), ringArg = flag('--ring');
+const fillArg = flag('--fill'), ringArg = flag('--ring'), arrowArg = flag('--arrows');
 const labels = args.includes('--labels'); if (labels) args.splice(args.indexOf('--labels'), 1);
 const [notation, out] = args;
 if (!notation || !out) {
@@ -79,7 +80,7 @@ try {
                 'padding:9px 14px;border-radius:10px;box-shadow:0 4px 18px rgba(0,0,0,.2);z-index:999;text-align:center';
             c.textContent = text; document.body.appendChild(c);
         }, caption);
-        if (fillArg || ringArg || labels) {
+        if (fillArg || ringArg || labels || arrowArg) {
             // game.js globals live in the page's MAIN world; page.evaluate cannot
             // see them, so the drawing goes in through a script tag.
             const fills = [];
@@ -88,9 +89,16 @@ try {
                 for (const l of locs.split(',')) fills.push([l.trim(), col || '#e0b040']);
             }
             const rings = (ringArg || '').split(',').map(x => x.trim()).filter(Boolean);
+            // --arrows "from>to:#col;from>:#col" -- a ring on the moving piece's tile and an
+            // arrow to its destination (no destination = ring only, e.g. a piece banked).
+            const arrows = (arrowArg || '').split(';').filter(Boolean).map(g => {
+                const [mv, col] = g.split(':'); const [a, b] = mv.split('>');
+                return [a.trim(), (b || '').trim(), col || '#5fae6a'];
+            });
             await page.addScriptTag({ content: `(() => {
                 const game = _currentGame(), scene = _setupScene();
                 const fills = ${JSON.stringify(fills)}, rings = ${JSON.stringify(rings)}, labels = ${labels};
+                const arrows = ${JSON.stringify(arrows)};
                 const bad = [];
                 for (const [loc, col] of fills) {
                     const t = _posTileFor(game, loc); if (!t) { bad.push(loc); continue; }
@@ -101,6 +109,26 @@ try {
                     const depth = (t.outerRadius != null) ? t.outerRadius - t.innerRadius : 80;
                     scene.add.circle(c.x, c.y, Math.max(20, Math.min(62, depth * 0.42)), 0, 0)
                          .setStrokeStyle(6, HINT_COLOR, 1).setDepth(76);
+                }
+                const cols = [...new Set(arrows.map(a => a[2]))];
+                for (const [from, to, col] of arrows) {
+                    const tf = _posTileFor(game, from), a = _hintTileCentre(tf);
+                    if (!a) { bad.push(from); continue; }
+                    const c = parseInt(col.replace('#', ''), 16);
+                    const off = cols.length > 1 ? (cols.indexOf(col) - (cols.length - 1) / 2) * 9 : 0;
+                    scene.add.circle(a.x, a.y, 30, 0, 0).setStrokeStyle(5, c, 1).setDepth(77);
+                    if (!to) continue;
+                    const b = _hintTileCentre(_posTileFor(game, to));
+                    if (!b) { bad.push(to); continue; }
+                    const dx = b.x - a.x, dy = b.y - a.y, L = Math.hypot(dx, dy) || 1;
+                    const ux = dx / L, uy = dy / L, px = -uy * off, py = ux * off;
+                    const x0 = a.x + ux * 30 + px, y0 = a.y + uy * 30 + py;
+                    const x1 = b.x - ux * 26 + px, y1 = b.y - uy * 26 + py;
+                    const g = scene.add.graphics().setDepth(78);
+                    g.lineStyle(10, 0xffffff, 0.8).lineBetween(x0, y0, x1 - ux * 14, y1 - uy * 14);
+                    g.lineStyle(6, c, 1).lineBetween(x0, y0, x1 - ux * 14, y1 - uy * 14);
+                    g.fillStyle(c, 1).fillTriangle(x1, y1, x1 - ux * 24 - uy * 13, y1 - uy * 24 + ux * 13,
+                                                   x1 - ux * 24 + uy * 13, y1 - uy * 24 - ux * 13);
                 }
                 if (labels) for (const t of game.tiles) {
                     if (t.type === 'nogo') continue;
