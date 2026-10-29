@@ -225,18 +225,18 @@ ARCHIVE.md under "Current benchmark".
   (relabelled so each numbered piece keeps its goal TILE; opponent stripped),
   the heuristic agent plays alone, score = turns to bank 12; x 3 rotations
   (240-degree symmetry) x {no seal, a 2-wall seal of physical pair 0/1/2 lifted
-  after 4 turns}; common dice per playout index; 25,806 playouts (run of 36k
-  still finishing). **Region spread** (per-position SD of the 3 rotations, no
-  seal), paired vs today: swap16 +0.02, swapall -0.00, A +0.13 +- 0.06, B +0.13
-  +- 0.06, sum7 -0.10 +- 0.06 (today 0.92 -- mostly playout noise; playout SD of
-  T 2.1 turns). **Seal-cost spread** (max - min over the 3 labelled pairs; a
-  4-turn seal costs +0.4..0.7 turns): today 0.07 (95% boot 0.02..0.21), sum7
-  0.07, swapall 0.13, swap16 0.15, A 0.20, B 0.21 (0.10..0.35); per-pair SE
-  ~0.06, so the floor of this max-min is ~0.1. So the trio-optimal layouts (A,
-  B) are, if anything, WORSE on both counts in play -- the static trio arithmetic
-  does not predict region balance; sum7 is level with today on seals and at most
-  slightly better on regions. Caveats: heuristic policy tuned on today's layout
-  (mean T today 10.12 vs others 10.2-10.4 may be that), no opponent, fixed
+  after 4 turns}; common dice per playout index; 35,604 playouts (complete,
+  2 per cell). **Region spread** (per-position SD of the 3 rotations, no seal),
+  paired vs today (0.78, mostly playout noise; playout SD of T 2.1 turns):
+  swap16 +0.05 +- 0.04, swapall -0.01, A +0.10 +- 0.05, B +0.16 +- 0.05, sum7
+  -0.05 +- 0.04. **Seal-cost spread** (max - min over the 3 labelled pairs; a
+  4-turn seal costs +0.4..0.7 turns, per-pair SE ~0.05, so the floor of this
+  max-min is ~0.1): today 0.05 (95% boot 0.01..0.17), sum7 0.07, swap16 0.12,
+  swapall 0.13, B 0.18, A 0.21 (0.11..0.32). So the trio-optimal layouts (A, B)
+  are WORSE on both counts in play -- the static trio arithmetic does not
+  predict region balance -- and nothing beats today; sum7 is level with it.
+  Caveats: heuristic policy tuned on today's layout (mean T today 10.11 vs
+  others 10.25-10.43 may be that), no opponent, fixed
   4-turn seals, midgame starts only.
 - **A goal tile can never be blocked** (`is_blocked` requires `type == 'field'`)
   — only the routes to it. Sealing a goal from home takes 2 walls (4 pieces),
