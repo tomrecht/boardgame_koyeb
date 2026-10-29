@@ -713,6 +713,17 @@ with it in mind.** Assessment and the concrete implications:
   https://claude.ai/artifact/HyeJfk3nH1oPJ49f1q5ULV (built from review/*.jsonl +
   `review_render.py` images; the deep check is the champion's own judgement, not
   independent truth).
+  **QUIZ "Find the Move" (2026-10-28): https://claude.ai/artifact/K8UkcU2pTrQ5NvQ61Qb9d2**
+  -- every confirmed mistake (2,606) as a position to solve, then a choice between
+  owner's move and the champion's (random order), drop-a-slip, simple spaced review
+  (wrong -> due after 10 min, then 3 days). Board drawn in SVG from the notation
+  (tile geometry extracted from game.js), so new positions are DATA ONLY: the db
+  collection `positions` holds chunk docs of ~250 items; `progress/<chunk>` holds
+  owner's answers and drops keyed by item id (`<game8>_<turn>`). **To update after
+  new games sync:** `./review_update.sh` on train-features-v2 (resumable scan +
+  verify + `quiz_build.py`, which writes only NEW chunks to review/quiz/ and keeps
+  review/quiz/index.json -- untracked, this iMac), then ArtifactData `set` each new
+  chunk file into `positions`. Never rewrite an old chunk's items under a new id.
 
 - **A PIECE'S PHONE TAP TARGET NO LONGER REACHES INTO THE NEXT RING (owner,
   2026-10-21: "sometimes thinks I'm tapping one ring further out").** `_applyHitArea`
