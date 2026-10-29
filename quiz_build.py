@@ -61,7 +61,8 @@ def main(paths):
     rows = []
     for p in paths:
         rows += [json.loads(l) for l in open(p)]
-    seen, new = set(index['items']), []
+    refresh = os.environ.get('REFRESH') == '1'
+    seen, new = (set() if refresh else set(index['items'])), []
     for r in rows:
         iid = '%s_%d' % (r['game'][:8], r['turn'])
         if 'deep_gap' not in r or r['deep_gap'] < RG.CONFIRM_MIN or iid in seen:
@@ -72,12 +73,25 @@ def main(paths):
         if b is None:
             print('skip (no replay)', iid, file=sys.stderr)
             continue
+        import quiz_best as QBest
         new.append({'i': iid, 'p': r['pos'], 'b': r['best'], 'o': r['own'],
                     'bm': moves(b, r['best_pair']), 'om': moves(b, r['own_pair']),
+                    'kb': QBest._key(b, ast.literal_eval(r['best_pair'])),
+                    'ko': QBest._key(b, ast.literal_eval(r['own_pair'])),
                     'g': round(r['deep_gap'], 2), 'st': r['stage'][0],
                     'm': r.get('model', ''), 'd': (g.get('at') or '')[:10]})
         if len(new) % 200 == 0:
             print('built', len(new), flush=True)
+    if refresh:
+        by = {}
+        for it in new:
+            if it['i'] in index['items']:
+                by.setdefault(index['items'][it['i']], []).append(it)
+        for cid, part in by.items():
+            json.dump({'items': part, 'n': len(part)}, open(os.path.join(OUT, cid + '.json'), 'w'),
+                      separators=(',', ':'))
+        print('refreshed', sum(map(len, by.values())), 'items in', len(by), 'chunks')
+        return
     stamp = datetime.date.today().strftime('%Y%m%d')
     written = []
     for k in range(0, len(new), CHUNK):
