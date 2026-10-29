@@ -39,6 +39,7 @@ afterstate=True encodes the end-of-turn position with the dice blanked.
 import json
 import os
 import numpy as np
+import goal_layout
 
 ROW_CACHE_MAX = int(os.environ.get('ROW_CACHE_MAX', '100000'))
 
@@ -70,7 +71,7 @@ def build_tile_index(tile_neighbors_path='tile_neighbors.json'):
     Nogo tiles excluded.
     """
     with open(tile_neighbors_path) as f:
-        raw = json.load(f)
+        raw = goal_layout.patch_tile_info(json.load(f))
 
     tile_keys, tile_info = [], {}
     for key, val in raw.items():

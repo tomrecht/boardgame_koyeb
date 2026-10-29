@@ -33,6 +33,7 @@ import re
 import time
 
 import torch
+import goal_layout
 
 import network
 from network import BoardGNN
@@ -234,7 +235,7 @@ def main():
     start_pool = []
     if C['START_POOL'] and C['START_FRAC'] > 0:
         with open(C['START_POOL']) as fh:
-            start_pool = [json.loads(line)['state'] for line in fh if line.strip()]
+            start_pool = [goal_layout.relabel_state(json.loads(line)['state']) for line in fh if line.strip()]
         print(f"Start pool: {len(start_pool)} positions from {C['START_POOL']}, "
               f"{C['START_FRAC']:.0%} of games, rotate {C['START_ROTATE']}")
 

@@ -26,10 +26,13 @@ Knobs (env; defaults are a first guess):
               Same seeds as a local run, so the two are interchangeable.
     START_POOL / START_FRAC (labelling games from owner's positions; default
     start_pool.jsonl at 0.3 if present)
+    DISTILL_DIR (default distill)  run directory: state.json, labels, cands
+    GOAL_LAYOUT (goal_layout.py)   train on another goal numbering; passed on
+              to every step, local and GitHub. Start pool relabelled.
 """
 import json, math, os, shlex, subprocess, sys
 
-D = 'distill'
+D = os.environ.get('DISTILL_DIR', 'distill')
 PY = sys.executable
 E = os.environ
 START = E.get('START', 'fv2C_it55.pt')
@@ -102,9 +105,16 @@ def main():
     st = json.load(open(sp)) if os.path.exists(sp) else \
         {'champion': os.path.abspath(START), 'iter': 0, 'done': {}, 'history': []}
     save = lambda: json.dump(st, open(sp, 'w'), indent=1)
+    lay = E.get('GOAL_LAYOUT', '') or 'today'
+    if st.setdefault('goal_layout', lay) != lay:     # labels/cands are layout-specific
+        sys.exit(f"{sp} was started with GOAL_LAYOUT={st['goal_layout']}, not {lay}")
     pool = E.get('START_POOL', 'start_pool.jsonl' if os.path.exists('start_pool.jsonl') else '')
     lab_env = {'START_POOL': pool, 'START_FRAC': E.get('START_FRAC', '0.3'),
                'MAX_REPLIES': E.get('MAX_REPLIES', '0')}
+    # GOAL_LAYOUT (goal_layout.py) must reach the GitHub shards too; local
+    # steps inherit it from this process's environment.
+    lay_env = {'GOAL_LAYOUT': E['GOAL_LAYOUT']} if E.get('GOAL_LAYOUT') else {}
+    lab_env.update(lay_env)
     while st['iter'] < ITERS:
         k = st['iter']
         done = st['done'].setdefault(str(k), {})
@@ -127,7 +137,7 @@ def main():
         conf = os.path.join(D, f'confirm_{k}.jsonl')
         if not done.get('confirm'):
           if not try_remote(st, save, 'confirm', [cand, champ], CONFIRM_PAIRS,
-                            93_000_000 + 10_000 * k, conf):
+                            93_000_000 + 10_000 * k, conf, env=lay_env or None):
             run([PY, '-u', 'confirm_match.py', cand, champ, CONFIRM_PAIRS, conf],
                 {'SEED_BASE': str(93_000_000 + 10_000 * k)}, os.path.join(D, f'confirm_{k}.log'))
           done['confirm'] = True; save()

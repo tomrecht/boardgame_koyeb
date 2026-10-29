@@ -376,7 +376,8 @@ def _start_state(seed):
         return None
     if _POOL_STATES is None:
         with open(pool_path) as fh:
-            _POOL_STATES = [json.loads(l)['state'] for l in fh if l.strip()]
+            import goal_layout
+            _POOL_STATES = [goal_layout.relabel_state(json.loads(l)['state']) for l in fh if l.strip()]
     import random
     rng = random.Random((seed << 8) ^ 0x5157)
     if rng.random() >= frac:

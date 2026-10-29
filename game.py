@@ -3,6 +3,7 @@ import os
 from collections import deque
 import json
 import itertools
+import goal_layout
 
 NUM_PIECES = 12
 # Hard ceiling on the per-position caches, in entries. A busy midgame turn adds
@@ -182,6 +183,8 @@ class Board:
             ring, sector = map(int, key.replace('ring', '').replace('sector', '').split('_'))
             tile_type = value['type']
             number = value.get('number')
+            if tile_type == 'save' and goal_layout.ACTIVE:
+                number = goal_layout.number_at_sector(sector)
             tile = Tile(tile_type, ring, sector, self, number)
             self.add_tile(tile)
         for key, value in data.items():

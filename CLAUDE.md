@@ -258,6 +258,24 @@ ARCHIVE.md under "Current benchmark".
   G2 1.03), yet the solitaire seal costs were level -- so the dominance comes
   from region x seal (or from where its own pieces travel), which the averaged
   seal cost misses.
+- **TRAINING ON ANOTHER GOAL LAYOUT: `GOAL_LAYOUT=sum7|B` (owner, 2026-10-29;
+  READY, NOT LAUNCHED).** `goal_layout.py` (unset = today, nothing changes) is
+  read by game.Board (goal tile numbers), encoder (tile input [6]), features_v2
+  (`endgame_table_<name>.json` + lone-blank bank times from it), symmetry (PI
+  derived from the layout) and the start pool in league_run / close_call
+  (RELABELLED: a numbered piece keeps its goal TILE). distill_run passes it to
+  every step, local and GitHub; `DISTILL_DIR` gives each layout its own run dir,
+  and state.json records the layout (a resume under another one refuses).
+  **Launch (work iMac, both at once -- 10 GitHub shards each):
+  `zsh layout_train.sh sum7` and `zsh layout_train.sh B`** -> `distill_<L>/run.log`.
+  Warm start distill_cand13, weekend settings (8 iters, 600 games, REPLAY 3,
+  500-pair confirms, 8 epochs lr 2e-5). Iteration 0's confirm = first
+  layout-trained net vs cand_13 ON that layout.
+  Checked: board / encoder goals follow the layout; own-goal distance and
+  can_be_saved of every numbered piece identical to today's board on 300 pool
+  positions x 3 rotations (900/900 both layouts); td_returns / test_starts_late
+  / test_explore pass unset. **Checkpoints do not carry the layout** -- keep
+  them in their run dir; shipping one = app's `?layout=` + a per-layout model.
 - **A goal tile can never be blocked** (`is_blocked` requires `type == 'field'`)
   — only the routes to it. Sealing a goal from home takes 2 walls (4 pieces),
   and those same 2 walls seal its whole 4-apart pair.

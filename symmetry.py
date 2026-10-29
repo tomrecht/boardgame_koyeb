@@ -18,6 +18,8 @@ import json, math
 
 # goal-number permutation for ONE 240-degree step (2->1->3->2, 4->6->5->4)
 PI = {1: 3, 2: 1, 3: 2, 4: 6, 5: 4, 6: 5}
+import goal_layout as _gl
+PI = _gl.rotation_pi()          # = the line above unless GOAL_LAYOUT is set
 
 
 def _tile_angles(numsegs=12, numrings=7):

@@ -54,6 +54,12 @@ NO_SAVE_TURNS_FOR_DRAW = 10
 # a blank by goal 1-6, a numbered piece on its own goal (exact match needed).
 BLANK_BANK = {1: 1.000, 2: 1.029, 3: 1.125, 4: 1.303, 5: 1.462, 6: 1.644}
 NUMBERED_BANK = 3.273
+import os
+import goal_layout as _gl
+if _gl.ACTIVE:   # the layout changes which goals are partners: lone-blank times from its exact table
+    import json as _json
+    _t = _json.load(open(_gl.table_path(os.path.dirname(os.path.abspath(__file__)))))
+    BLANK_BANK = {g: _t['0:' + ''.join('1' if h == g else '0' for h in range(1, 7))] for g in range(1, 7)}
 BLANK_BANK_MEAN = sum(BLANK_BANK.values()) / 6
 PIPS_PER_TURN = 7.0          # mean of two dice
 HOME_TO_GOAL = 7             # every goal is exactly 7 from home
@@ -182,7 +188,8 @@ def endgame_turns(board, player):
         mask = 0
     if _TABLE is None:
         import json, os
-        path = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'endgame_table.json')
+        import goal_layout
+        path = goal_layout.table_path(os.path.dirname(os.path.abspath(__file__)))
         _TABLE = json.load(open(path))
     return _TABLE.get(f'{mask}:' + ''.join(map(str, b)))
 
