@@ -10,6 +10,7 @@ Actions (free on this public repo: ~20 parallel 4-core jobs), keep training loca
                       from index seed_base; ROLL_H / ROLL_N in env)
          'quizroll' -> quiz_playout.py run <net> <tasks> <out> <n>  (n = tasks from
                       index seed_base; QP_N in env)
+         'quizbest' -> quiz_best.py run <net> <tasks> <out> <n>  (all legal moves)
   ckpts  local checkpoint paths, uploaded to the `cloud-scratch` release under
          a content-hashed name, so a rerun reuses them and nothing lands in git
   out    the local file the shards' outputs are concatenated into (label files
@@ -99,7 +100,7 @@ def _salvage(mode, path):
 
 
 def _missing(mode, recs, n, seed_base):
-    if mode in ('relabel', 'quizroll'):   # one record per task index
+    if mode in ('relabel', 'quizroll', 'quizbest'):   # one record per task index
         have = {r.get('idx') for r in recs}
         return sum(seed_base + k not in have for k in range(n))
     if mode == 'label':
