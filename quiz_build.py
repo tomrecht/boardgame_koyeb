@@ -32,7 +32,8 @@ def _loc(b, t):
 
 
 def moves(b, pair_repr):
-    """[[from, to], ...]; to '' = banked; a block-save is [wall tile, 'B']."""
+    """[[from, to, piece], ...]; to '' = banked; a block-save is [wall tile, 'B', piece];
+    piece = its number or 'x' for a blank."""
     out, moved = [], {}
     for m in ast.literal_eval(pair_repr):
         if m in ((0, 0, 0), (1, 1, 1)):
@@ -42,6 +43,7 @@ def moves(b, pair_repr):
         if p is None:
             continue
         frm = moved.get(tuple(pid)) or _loc(b, p.tile)
+        lab = str(p.number) if p.number <= 6 else 'x'
         if dest == 'save':
             to = ''
         elif dest == 0:
@@ -49,7 +51,7 @@ def moves(b, pair_repr):
         else:
             to = RG._where(dest)
             moved[tuple(pid)] = to
-        out.append([frm, to])
+        out.append([frm, to, lab])
     return out
 
 
@@ -79,6 +81,7 @@ def main(paths):
                     'kb': QBest._key(b, ast.literal_eval(r['best_pair'])),
                     'ko': QBest._key(b, ast.literal_eval(r['own_pair'])),
                     'g': round(r['deep_gap'], 2), 'st': r['stage'][0],
+                    'eb': round(r['deep_best'], 2), 'eo': round(r['deep_own'], 2),
                     'm': r.get('model', ''), 'd': (g.get('at') or '')[:10]})
         if len(new) % 200 == 0:
             print('built', len(new), flush=True)
