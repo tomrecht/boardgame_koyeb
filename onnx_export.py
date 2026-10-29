@@ -213,6 +213,12 @@ def export(ckpt, out_path):
     shutil.copyfile(out_path, hashed)
     meta['onnx'] = os.path.basename(hashed)
     print(f'wrote {hashed} (the name the web app loads)')
+    import goal_layout
+    if goal_layout.ACTIVE:
+        # A net trained under GOAL_LAYOUT: main's app loads it only for that
+        # layout (model_<name>.json; local_agent.js checks this field).
+        meta['layout'] = goal_layout.NAME
+        meta['source'] = goal_layout.NAME + '_' + meta['source']
     if features in ('A2', 'AB2'):
         # the new columns' factors (input_scales.json): features_v2.js refuses
         # to encode A2/AB2 without them, so they travel with the net

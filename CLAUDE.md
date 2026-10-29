@@ -275,7 +275,13 @@ ARCHIVE.md under "Current benchmark".
   can_be_saved of every numbered piece identical to today's board on 300 pool
   positions x 3 rotations (900/900 both layouts); td_returns / test_starts_late
   / test_explore pass unset. **Checkpoints do not carry the layout** -- keep
-  them in their run dir; shipping one = app's `?layout=` + a per-layout model.
+  them in their run dir. **SHIPPING ONE for owner to play (app side on main,
+  c7251a9):** `GOAL_LAYOUT=<name> BOARDGAME_DEVICE=cpu python3 onnx_export.py
+  distill_<name>/<champion>.pt export/<name>/model_<name>.onnx` -> sidecar gets
+  `"layout"` and source `<name>_<ckpt>`; copy `model_<name>.json` + its
+  `model-<hash>.onnx` to main and push (no sw bump: dev only, not precached).
+  Owner picks the layout in Settings > Goal layout, which says which net plays.
+  Tested: export of cand13 under sum7 matches torch (1.3e-7), sidecar correct.
 - **A goal tile can never be blocked** (`is_blocked` requires `type == 'field'`)
   — only the routes to it. Sealing a goal from home takes 2 walls (4 pieces),
   and those same 2 walls seal its whole 4-apart pair.
