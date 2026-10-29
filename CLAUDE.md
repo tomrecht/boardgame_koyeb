@@ -657,7 +657,12 @@ with it in mind.** Assessment and the concrete implications:
   look, 0.03 behind by the 21-roll check). `quiz_best.py` re-solves every position over
   ALL legal moves (top 4 distinct by quick value + filtered best + his, 21-roll
   checked; outcome table) -- 2,606 positions on GitHub (`remote_play` mode `quizbest`).
-  `filter_probe.py` measures the filter on the computer's own turns (cand13 games).
+  **`filter_probe.py`, cand13, 300 of the computer's turns in owner's games (2026-10-28):
+  the filter keeps the net's all-moves favourite on 88.0%; on the other 36 the 21-roll
+  check rates the filtered pick no worse (favourite - pick -0.062, 95% CI
+  -0.155..+0.031; pick better in 19, favourite better by > 0.15 in 5, > 0.3 in 1) --
+  per game -0.21 (CI -0.52..+0.10). No measurable cost: a culled "favourite" is
+  mostly a quick-look near-tie the deeper check does not back. Leave the filter.**
   **PLAYOUT CHECK of the quiz (`quiz_playout.py`, mode `quizroll`):** 1,203 positions
   with cost >= 0.3, his move vs the champion's played to the END 32x each, champion
   both sides, common dice. First single position (3b19f3bf t39, capture vs G4,
