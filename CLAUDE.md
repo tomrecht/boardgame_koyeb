@@ -216,6 +216,28 @@ ARCHIVE.md under "Current benchmark".
   search-frame B-A should drop to ~-0.1). Bringing a BLANK in
   is dominated (owner), not played out. A 177-position run (identity-swapped
   positions) is set up, NOT yet run: `probe_save56/README.md`.
+- **GOAL LAYOUT PROBE: NO RENUMBERING BEATS TODAY'S (owner's question,
+  2026-10-28/29; `layout_probe.py`, report `layout_probe_report.json`).** Six
+  numberings of the goal tiles in ring order (partners = positions 01/23/45):
+  today 4-2-5-3-6-1, swap16 4-2-5-3-1-6, swapall 2-4-3-5-1-6, A 1-6-3-2-5-4,
+  B 1-4-5-2-3-6 (the brute-force best on TRIO balance), sum7 1-6-2-5-3-4 (best
+  seal balance by DP). Method: solitaire from 250 of owner's midgame positions
+  (relabelled so each numbered piece keeps its goal TILE; opponent stripped),
+  the heuristic agent plays alone, score = turns to bank 12; x 3 rotations
+  (240-degree symmetry) x {no seal, a 2-wall seal of physical pair 0/1/2 lifted
+  after 4 turns}; common dice per playout index; 25,806 playouts (run of 36k
+  still finishing). **Region spread** (per-position SD of the 3 rotations, no
+  seal), paired vs today: swap16 +0.02, swapall -0.00, A +0.13 +- 0.06, B +0.13
+  +- 0.06, sum7 -0.10 +- 0.06 (today 0.92 -- mostly playout noise; playout SD of
+  T 2.1 turns). **Seal-cost spread** (max - min over the 3 labelled pairs; a
+  4-turn seal costs +0.4..0.7 turns): today 0.07 (95% boot 0.02..0.21), sum7
+  0.07, swapall 0.13, swap16 0.15, A 0.20, B 0.21 (0.10..0.35); per-pair SE
+  ~0.06, so the floor of this max-min is ~0.1. So the trio-optimal layouts (A,
+  B) are, if anything, WORSE on both counts in play -- the static trio arithmetic
+  does not predict region balance; sum7 is level with today on seals and at most
+  slightly better on regions. Caveats: heuristic policy tuned on today's layout
+  (mean T today 10.12 vs others 10.2-10.4 may be that), no opponent, fixed
+  4-turn seals, midgame starts only.
 - **A goal tile can never be blocked** (`is_blocked` requires `type == 'field'`)
   — only the routes to it. Sealing a goal from home takes 2 walls (4 pieces),
   and those same 2 walls seal its whole 4-apart pair.
