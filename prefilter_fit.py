@@ -512,3 +512,62 @@ def crossval2(k=5):
 
 if __name__ == '__main__' and len(sys.argv) > 1 and sys.argv[1] == 'cv2':
     crossval2()
+
+
+def crossval3(k=5):
+    """Ablation of the new components: which subsets carry the refit's gain.
+    Variants via SUBSETS env (semicolon-separated, comma lists of NEW names)."""
+    games = load()
+    ids = sorted(games)
+    random.Random(7).shuffle(ids)
+    folds = [ids[i::k] for i in range(k)]
+    subsets = os.environ.get('SUBSETS', 'numbered_route,blank_route;'
+                             'numbered_route,blank_route,rack_route_n2;'
+                             'numbered_route,blank_route,rack_route_n2,blot_threat_far;'
+                             'numbered_route,blank_route,rack_route_n1,rack_route_n2,rack_route_n3').split(';')
+    ws = _shipped_w()
+    res = {s: [] for s in subsets}
+    for fi in range(k):
+        te = [p for g in folds[fi] for p in games[g]]
+        tr = [p for j in range(k) if j != fi for g in folds[j] for p in games[g]]
+        for s in subsets:
+            use = [COMPONENTS.index(c) for c in s.split(',')]
+            off = [COMPONENTS.index(c) for c in NEW if c not in s.split(',')]
+            drop = lambda P: [dict(p, F1=np.delete(p['F1'], off, 1), F2=np.delete(p['F2'], off, 1)) for p in P]
+            w0 = ws.copy()
+            w0[use] = 1e-9
+            w = _fit_on(drop(tr), np.delete(w0, off))
+            res[s].append(keep_rate(drop(te), w))
+        print(f'fold {fi + 1}/{k}: ' + ', '.join(f'{r[-1]:.3f}' for r in res.values()), flush=True)
+    for s, r in res.items():
+        print(f'  {np.mean(r):.3f}  ({min(r):.3f}..{max(r):.3f})  {s}')
+
+
+if __name__ == '__main__' and len(sys.argv) > 1 and sys.argv[1] == 'cv3':
+    crossval3()
+
+
+def final2(subset, out):
+    """Fit on ALL positions from the shipped scales with the NEW components in
+    `subset` (comma list; '' = old 23 only); others stay 0. Writes `out`."""
+    games = load()
+    allp = [p for g in games.values() for p in g]
+    use = [c for c in subset.split(',') if c]
+    off = [COMPONENTS.index(c) for c in NEW if c not in use]
+    keep = [c for c in COMPONENTS if c not in [COMPONENTS[i] for i in off]]
+    drop = lambda P: [dict(p, F1=np.delete(p['F1'], off, 1), F2=np.delete(p['F2'], off, 1)) for p in P]
+    ws = _shipped_w()
+    w0 = ws.copy()
+    w0[[COMPONENTS.index(c) for c in use]] = 1e-9
+    P = drop(allp)
+    w = _fit_on(P, np.delete(w0, off))
+    print(f'final2 [{subset}] on {len(allp)} positions: keep-rate {keep_rate(P, w):.3f} in-sample '
+          f'(shipped {keep_rate(allp, ws):.3f})')
+    scales = {c: round(float(v), 5) for c, v in zip(keep, w)}
+    json.dump(scales, open(out, 'w'), indent=1)
+    for c, v in scales.items():
+        print(f'    {c:<30} x{v}')
+
+
+if __name__ == '__main__' and len(sys.argv) > 1 and sys.argv[1] == 'final2':
+    final2(sys.argv[2], sys.argv[3])

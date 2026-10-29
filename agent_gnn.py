@@ -342,8 +342,8 @@ class GNNAgent:
             # Prefilter-only component scales (prefilter_fit.py, 2026-10-05):
             # the net's best move survives the cut ~96% of the time instead of
             # ~88%. PREFILTER_SCALES=0 restores the old ranking.
-            sc_path = os.path.join(os.path.dirname(os.path.abspath(__file__)),
-                                   'prefilter_scales.json')
+            sc_path = os.environ.get('PREFILTER_SCALES_FILE') or os.path.join(
+                os.path.dirname(os.path.abspath(__file__)), 'prefilter_scales.json')
             if os.environ.get('PREFILTER_SCALES', '1') != '0' and os.path.exists(sc_path):
                 with open(sc_path) as f:
                     self.heuristic.weights['component_scale'] = json.load(f)
