@@ -366,186 +366,6 @@ async function selectWithLookahead(engine, W, moves, player, o) {
     return dedupeSavePair(cands[best]);
 }
 
-/* --- close-call deeper search (owner + Claude, 2026-10-21) --------------
-   Twin of close_call.py. Where the shallow search is unsure -- the best two
-   DISTINCT end positions within T score units -- the top K candidates within T
-   are rescored one opponent turn deeper: enter the opponent's turn, and for each
-   roll let it pick its reply with this same shallow search; a candidate is worth
-   minus the opponent's expected best score (a winning reply is exact). An
-   afterstate net scores the opponent's end-of-turn position in the frame it was
-   trained in. Full strength only; off unless opts.closeCall.
-   PHONE BUDGET: rolls are searched ROLL-MAJOR in CC_ROLL_ORDER -- every
-   candidate on one roll, then the next -- and only COMPLETE rounds count, so the
-   candidates are always compared on the same rolls; a round is started only if
-   the time spent so far plus one more round's average fits closeCallBudgetMs.
-   closeCallMaxReplies caps the count instead (close_call.py's MAX_REPLIES, the
-   device-independent twin used for the parity check). */
-const CC_ROLL_ORDER = [[3, 4], [1, 6], [2, 5], [5, 6], [1, 2], [3, 3], [2, 6], [1, 4], [4, 5],
-                       [6, 6], [1, 3], [2, 4], [3, 6], [1, 1], [4, 6], [2, 3], [5, 5], [1, 5],
-                       [3, 5], [2, 2], [4, 4]];
-/* Hand the browser a turn between searches. The search runs on the page's main
-   thread and an await on ORT resolves as a microtask, so without a macrotask
-   yield the whole close-call search is one long task (3.8 s measured on desktop,
-   2026-10-23) and Chrome offers to kill the page. */
-// A macrotask via MessageChannel: unlike setTimeout it is not throttled in a
-// background tab (1 s+ per call there), so a hidden game still moves.
-const ccYield = () => new Promise(r => {
-    if (typeof MessageChannel === 'undefined') { setTimeout(r, 0); return; }
-    const ch = new MessageChannel(); ch.port1.onmessage = () => { ch.port1.close(); r(); }; ch.port2.postMessage(0);
-});
-const ccNow = () => (typeof performance !== 'undefined' && performance.now) ? performance.now() : Date.now();
-
-/* close_call._outcome: the end position with same-colour blanks
-   interchangeable, so two orders of the same moves -- or the same move with
-   either of two blanks -- are one candidate, not a close call. */
-function ccOutcome(engine, pair) {
-    const root = engine.moves.length;
-    for (const m of pair) if (!isPass(m)) engine.applyMove(m, false);
-    const key = engine.pieces.map(p => p.player + ',' + (p.number <= 6 ? p.number : 0) + ','
-                                       + (p.tile >= 0 ? p.tile : (p.rack === 'saved' ? -2 : -1)))
-                             .sort().join('|');
-    while (engine.moves.length > root) engine.undoLastMove();
-    return key;
-}
-
-/* agent_gnn._enter_opponent_turn_deterministic: switchTurn's side effects,
-   reversibly and without rolling -- the no-save counter, firstMove, the
-   player flip and the last-piece rule (tracked, since it has no undo). */
-function ccEnterOpponentTurn(engine) {
-    const saved = {
-        player: engine.currentPlayer,
-        dice: engine.dice.map(d => [d.value, d.used]),
-        firstMove: engine.firstMove,
-        noSave: [engine.noSaveTurns, engine.halfTurns, engine.lastTotalSaved, engine.drawCallable],
-        stages: Object.assign({}, engine.stages),
-        movesLen: engine.moves.length,
-    };
-    engine.updateNoSaveCounter();
-    engine.firstMove = null;
-    engine.currentPlayer = engine.other(engine.currentPlayer);
-    const before = new Map(engine.pieces.filter(p => p.number <= 6).map(p => [p, p.number]));
-    engine.applyLastPieceRule();
-    saved.renumbered = [...before].filter(([p, n]) => p.number !== n);
-    return saved;
-}
-
-function ccRestoreTurnState(engine, saved) {
-    while (engine.moves.length > saved.movesLen) engine.undoLastMove();
-    for (const [p, n] of saved.renumbered) {
-        if (engine.lookup.get(p.player + ',' + p.number) === p) engine.lookup.delete(p.player + ',' + p.number);
-        p.number = n;
-        engine.lookup.set(p.player + ',' + n, p);
-    }
-    engine.currentPlayer = saved.player;
-    engine.dice.forEach((d, i) => { d.value = saved.dice[i][0]; d.used = saved.dice[i][1]; });
-    engine.firstMove = saved.firstMove;
-    [engine.noSaveTurns, engine.halfTurns, engine.lastTotalSaved, engine.drawCallable] = saved.noSave;
-    Object.assign(engine.stages, saved.stages);
-}
-
-/* One opponent roll, its turn already entered: the mover-frame value, minus
-   the opponent's best reply score (close_call._reply_value). */
-async function ccReplyValue(engine, W, opp, d1, d2, winValue, o) {
-    engine.dice[0].value = d1; engine.dice[0].used = false;
-    engine.dice[1].value = d2; engine.dice[1].used = false;
-    const moves = engine.getValidMoves();
-    const r = await selectMovePair(engine, W, moves, opp, Object.assign({}, o, {
-        returnScores: true, closeCall: false, lookahead: false, difficulty: null,
-        _rankOut: null, score: o.scoreFor(opp),
-    }));
-    if (!Array.isArray(r) || !r.length || r[0].pair === undefined) return 0.0;
-    const best = Math.max(...r.map(x => x.score));
-    return best === Infinity ? winValue : -best;
-}
-
-async function selectWithCloseCall(engine, W, moves, player, o) {
-    const ranked = [];
-    const tPlain = ccNow();
-    const plain = await selectMovePair(engine, W, moves, player,
-                                       Object.assign({}, o, { closeCall: false, _rankOut: ranked }));
-    const st = o.closeCallStats;
-    if (st) st.moves = (st.moves || 0) + 1;
-    if (ranked.length < 2 || ranked.some(r => r.score === Infinity)) return plain;
-    const stages0 = Object.assign({}, engine.stages);
-    const cands = [], seen = new Set();
-    for (const r of ranked) {
-        if (isDraw(r.pair[0]) || !isFinite(r.score)) continue;
-        const k = ccOutcome(engine, r.pair);
-        if (!seen.has(k)) { seen.add(k); cands.push(r); }
-    }
-    Object.assign(engine.stages, stages0);
-    if (cands.length < 2) return plain;
-    const T = o.closeCallT;
-    if (cands[0].score - cands[1].score >= T) return plain;
-    const top = cands.slice(0, o.closeCallK).filter(r => cands[0].score - r.score < T).map(r => r.pair);
-    // SLOW-DEVICE GUARD (2026-10-23): one round of rolls is top.length opponent
-    // searches, each about as costly as the plain search just run. If that
-    // predicts more than closeCallGuardMs on THIS device, play the plain move:
-    // a slow phone must never sit for many seconds. Desktop never trips it.
-    const plainMs = ccNow() - tPlain;
-    if (plainMs * top.length > o.closeCallGuardMs) {
-        if (st) st.skippedSlow = (st.skippedSlow || 0) + 1;
-        return plain;
-    }
-
-    const opp = engine.other(player);
-    const maxRounds = Math.min(21, Math.floor(o.closeCallMaxReplies / top.length));
-    const totals = top.map(() => 0);
-    let mass = 0, rounds = 0, capped = false;
-    const t0 = ccNow();
-    try {
-        for (const [d1, d2] of CC_ROLL_ORDER) {
-            if (rounds >= maxRounds || capped) break;
-            const spent = ccNow() - t0;
-            if (rounds > 0 && spent + spent / rounds > o.closeCallBudgetMs) break;
-            const pr = (d1 === d2 ? 1 : 2) / 36;
-            // HARD TIME CAP (owner, 2026-10-23: 2 s): checked before every reply
-            // search; a round cut short is discarded whole (candidates must be
-            // compared on the same rolls), so with the 1-round cap an overrun
-            // plays the plain move.
-            const roundVals = [];
-            for (let i = 0; i < top.length; i++) {
-                // start a reply search only if it should FINISH inside the cap:
-                // its cost is estimated as the mean reply so far, or, before
-                // the first, the plain search just run (about the same size)
-                const el = ccNow() - t0, done = rounds * top.length + i;
-                if (el + (done ? el / done : plainMs) > o.closeCallCapMs) { capped = true; break; }
-                await ccYield();
-                const root = engine.moves.length;
-                for (const m of top[i]) if (!isPass(m)) engine.applyMove(m, false);
-                const winValue = -(LOOKAHEAD_PIECES - engine.savedRack(player).length) / LOOKAHEAD_PIECES * SCORE_SCALE;
-                const snap = ccEnterOpponentTurn(engine);
-                try {
-                    roundVals.push(pr * await ccReplyValue(engine, W, opp, d1, d2, winValue, o));
-                } finally {
-                    ccRestoreTurnState(engine, snap);
-                    while (engine.moves.length > root) engine.undoLastMove();
-                }
-            }
-            if (capped) break;
-            roundVals.forEach((v, i) => { totals[i] += v; });
-            mass += pr;
-            rounds += 1;
-        }
-    } finally {
-        Object.assign(engine.stages, stages0);
-    }
-    if (st) {
-        st.triggered = (st.triggered || 0) + 1;
-        st.rounds = (st.rounds || 0) + rounds;
-        st.ms = (st.ms || 0) + (ccNow() - t0);
-        st.maxMs = Math.max(st.maxMs || 0, ccNow() - t0);
-        if (capped) st.capped = (st.capped || 0) + 1;
-    }
-    if (!rounds) return plain;
-    let best = 0;
-    for (let i = 1; i < totals.length; i++) if (totals[i] > totals[best]) best = i;
-    const pick = dedupeSavePair(top[best]);
-    if (st && cmpPairKey(pick, plain) !== 0) st.changed = (st.changed || 0) + 1;
-    if (st) st.lastDeep = totals.map(t => t / mass);
-    return pick;
-}
-
 /* --- the search ------------------------------------------------------- */
 
 /* Returns the chosen [move1, move2], or the full ranking when returnScores.
@@ -559,19 +379,11 @@ async function selectMovePair(engine, W, moves, player, opts = {}) {
         prefilterFrac: null, prefilterScoreAlpha: null,
         difficulty: null, returnScores: false, rand: null,
         lookahead: true, _inLookahead: false,
-        closeCall: false, closeCallT: 3, closeCallK: 3,
-        closeCallBudgetMs: 1500, closeCallMaxReplies: Infinity, closeCallStats: null,
-        closeCallGuardMs: Infinity, closeCallCapMs: Infinity,
-        scoreFor: null, _rankOut: null,
     }, opts);
     const score = o.score;
 
     if (o.lookahead && !o._inLookahead && opponentNearFinish(engine, player))
         return selectWithLookahead(engine, W, moves, player, o);
-
-    if (o.closeCall && !o.returnScores && o.scoreFor
-            && (o.difficulty === null || o.difficulty === undefined || o.difficulty >= 1))
-        return selectWithCloseCall(engine, W, moves, player, o);
 
     const drawLegal = moves.some(isDraw);
     const lossCertain = opponentWinsNextTurnRegardless(engine, player);
@@ -771,12 +583,11 @@ async function selectMovePair(engine, W, moves, player, opts = {}) {
         if (quiet.length) keepOnly(quiet);
     }
 
-    if (o.returnScores || o._rankOut) {
+    if (o.returnScores) {
         const ranked = finalScores.map((s, i) => ({ score: s, pair: moveKeys[i] }));
         if (drawLegal) ranked.push({ score: 0.0, pair: drawPair });
         ranked.sort((a, b) => (b.score - a.score) || cmpPairKey(a.pair, b.pair));
-        if (o.returnScores) return ranked;
-        o._rankOut.push(...ranked);     // the close-call search's view of this ranking
+        return ranked;
     }
 
     let bestIdx = 0;
@@ -814,7 +625,7 @@ async function selectMovePair(engine, W, moves, player, opts = {}) {
 }
 
 (function () {
-    const api = { selectMovePair, selectFiltered, selectWithCloseCall, ccOutcome, oppFinishProb, opponentNearFinish, pickMoveIndex, dedupeSavePair,
+    const api = { selectMovePair, selectFiltered, oppFinishProb, opponentNearFinish, pickMoveIndex, dedupeSavePair,
                   pieceLocs, positionKey, pairRelocations, cmpPairKey,
                   PASS, DRAW, isPass, isDraw, isSave, SCORE_SCALE };
     if (typeof module !== 'undefined' && module.exports) module.exports = api;

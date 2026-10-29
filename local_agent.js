@@ -244,8 +244,6 @@ const LocalAgent = (function () {
             draw_called: false,
             // features_v2's no-save input (A/AB nets); update_state reads the same.
             no_save_turns: gs.noSaveTurns || 0,
-            half_turns: gs.halfTurnsSinceRound || 0,
-            last_total_saved: gs.lastTotalSaved,
             // The frontend owns the no-save counter; update_state adopts what it
             // reports, falling back to the threshold only when it is absent.
             draw_callable: gs.drawCallable === undefined
@@ -269,51 +267,6 @@ const LocalAgent = (function () {
         return [[m.piece[0], m.piece[1]], m.dest, m.roll];
     }
 
-    /* The close-call deeper search (agent.js selectWithCloseCall): ON at full
-       strength, capped at ONE round of rolls (3 reply searches) -- the setting
-       measured at +0.189 pts/game over 1,000 pairs vs the plain search
-       (close_call.py, MAX_REPLIES=3, 2026-10-22). One round is always played,
-       so the cap, not the device, decides how deep it looks.
-       ?cc=0 turns it off; ?ccr=<reply cap> (3; 0 = no cap, then the time
-       budget ?ccms=<ms> (1500) decides), ?cct=<T score units> (3),
-       ?cck=<K> (3). Stats in window._closeCallStats. */
-    // A macrotask via MessageChannel: unlike setTimeout it is not throttled in a
-    // background tab (1 s+ per call there), so a hidden game still moves.
-    const yieldToPage = () => new Promise(r => {
-        if (typeof MessageChannel === 'undefined') { setTimeout(r, 0); return; }
-        const ch = new MessageChannel(); ch.port1.onmessage = () => { ch.port1.close(); r(); }; ch.port2.postMessage(0);
-    });
-    // Score in chunks of SCORE_CHUNK with a yield before each: one batch costs
-    // ~8-10 ms a position on desktop, and endgame searches send 100-270 at once
-    // (1.9 s blocked, measured 2026-10-23). Batch values do not depend on the
-    // batch they ride in, so chunking changes nothing but the blocking.
-    const SCORE_CHUNK = 48;
-    async function scoreChunked(snaps, pl) {
-        if (!Array.isArray(snaps)) { await yieldToPage(); return window.Infer.score(window.ort, snaps, pl); }
-        const out = [];
-        for (let i = 0; i < snaps.length; i += SCORE_CHUNK) {
-            await yieldToPage();
-            out.push(...await window.Infer.score(window.ort, snaps.slice(i, i + SCORE_CHUNK), pl));
-        }
-        return out;
-    }
-    const ccStats = {};
-    if (typeof window !== 'undefined') window._closeCallStats = ccStats;
-    function closeCallOpts() {
-        if (param('cc') === '0') return {};
-        const num = (k, d) => { const v = parseFloat(param(k)); return isFinite(v) ? v : d; };
-        const cap = num('ccr', 3);
-        return { closeCall: true, closeCallBudgetMs: num('ccms', 1500),
-                 closeCallMaxReplies: cap > 0 ? cap : Infinity,
-                 // skip the search where one round is predicted to take longer
-                 // than this (?ccguard=<ms>, 2500): slow phones play plain
-                 closeCallGuardMs: num('ccguard', 2500),
-                 // hard cap on the extra search's wall time (?cccap=<ms>, 2000,
-                 // owner 2026-10-23): past it the plain move is played
-                 closeCallCapMs: num('cccap', 2000),
-                 closeCallT: num('cct', 3), closeCallK: num('cck', 3), closeCallStats: ccStats };
-    }
-
     /* Returns the move pair in wire format, or null when there is nothing to
        play (the server answers that with no `move` key). Rejects on any
        internal failure so the caller can fall back to the server. */
@@ -323,18 +276,12 @@ const LocalAgent = (function () {
         const player = engine.currentPlayer;
         const moves = engine.getValidMoves();
         if (!moves.length) return null;
-        const pair = await window.selectMovePair(engine, weights, moves, player, Object.assign({
+        const pair = await window.selectMovePair(engine, weights, moves, player, {
             difficulty: gs.difficulty === undefined ? 1.0 : gs.difficulty,
             snapshot: (eng) => eng.snapshot(),
             // One batched call per turn, as the search intends.
-            // Yield to the browser before every network batch: the search runs on
-            // the main thread and awaits on ORT resolve as microtasks, so without
-            // this a whole turn's search is one long task (2-4 s measured on
-            // desktop) and Chrome offers to kill the page.
-            score: (snaps) => scoreChunked(snaps, player),
-            // The close-call search scores the OPPONENT's replies too.
-            scoreFor: (pl) => (snaps) => scoreChunked(snaps, pl),
-        }, closeCallOpts()));
+            score: async (snaps) => window.Infer.score(window.ort, snaps, player),
+        });
         if (!Array.isArray(pair) || pair.length !== 2) throw new Error('agent returned ' + JSON.stringify(pair));
         moveCount++;
         return pair.map(toWire);
@@ -384,11 +331,7 @@ const LocalAgent = (function () {
         const ranked = await window.selectMovePair(engine, weights, moves, player, {
             returnScores: true,
             snapshot: (e) => e.snapshot(),
-            // Yield to the browser before every network batch: the search runs on
-            // the main thread and awaits on ORT resolve as microtasks, so without
-            // this a whole turn's search is one long task (2-4 s measured on
-            // desktop) and Chrome offers to kill the page.
-            score: (snaps) => scoreChunked(snaps, player),
+            score: async (snaps) => window.Infer.score(window.ort, snaps, player),
         });
         if (!ranked.length) return null;
         const best = ranked[0];

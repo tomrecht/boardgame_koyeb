@@ -258,59 +258,6 @@ Whenever a new net ships, re-run (cheapest first; GitHub = free):
   save-die rule were written for turn-start nets; an afterstate net may not need
   them (CLAUDE.md "Re-check main's `_strands_last_piece` rule on the first
   afterstate net").
-- **CLOSE-CALL SEARCH, ON BY DEFAULT (on `testing` 2026-10-22, for owner to play
-  before main; branch `close-call-ship`).**
-  **"PAGE UNRESPONSIVE" ON KOYEB DESKTOP (owner, 2026-10-23), FIXED.** The search
-  runs on the main thread and ORT's awaits resolve as microtasks, so a whole
-  search was ONE task: close-call made it up to 3.8 s (main 2.1 s), and endgame
-  searches sent 100-270 positions in one batch (1.9 s). Now `local_agent.js`
-  scores in chunks of 48 with a MessageChannel yield before each (not throttled
-  in a background tab, unlike setTimeout), and agent.js yields between reply
-  searches. Measured (headless desktop, self-play from load, `PerformanceObserver`
-  longtask): in-game worst block 3.8 s -> 0.82 s; every block > 1 s is now in the
-  first 16 s of load (model start-up, board bake -- main has the same); chunked
-  scores bit-identical to whole batches, 76/76 checks; close_call_test 90/90,
-  agent_test 50/50.
-  **HARD 2 s CAP on the extra search (owner, 2026-10-23; `closeCallCapMs`,
-  `?cccap=<ms>`).** The plainMs x K guard UNDERESTIMATES (reply searches can
-  cost more than the plain one: one triggered move took 3.5 s on desktop with
-  the guard passing). A reply search now starts only if it should finish inside
-  the cap (estimate: mean reply so far, else plainMs); a round cut short is
-  discarded whole, so with the 1-round cap an overrun plays the plain move.
-  Owner's bar: ~2-3 s is where a wait gets noticeable. Measured (headless
-  self-play): cap 1 ms -> 13/13 triggers capped, 0 changed, max 0 ms; cap 600 ->
-  max 449 ms; default 2 s -> 12 triggers, 9 completed, 3 capped, max 2.1 s
-  (headless desktop is slower than a fast phone); cap check BEFORE each reply alone (first cut) let one run 1.86 s
-  past a 1 ms cap. close_call_test 90/90, agent_test 50/50. When the shallow search's top two
-  DISTINCT positions are within T=3 score units (~0.04 pts), the top K=3 are
-  rescored by ONE roll of the opponent (3-4, the first of agent.js's
-  CC_ROLL_ORDER): each candidate's value = minus the opponent's best reply score,
-  i.e. the net scores the opponent's end-of-turn position in the frame it was
-  trained in. `local_agent.js` passes `closeCallMaxReplies: 3`, so exactly one
-  round on every device (the time budget never cuts below one round).
-  `?cc=0` off; `?ccr=<cap>` (0 = no cap, then `?ccms` budget), `?cct`, `?cck`;
-  stats in `window._closeCallStats`. Full strength only (difficulty >= 1), so the
-  HINT gets it too. **Measured (train-features-v2, close_call.py, same net both
-  sides, app config): 1-roll cap +0.189 pts/game (95% CI +0.095..+0.283), 53.6%,
-  1,000 pairs on fresh seeds; full 21-roll search +0.14 (1,000 pairs pooled) at
-  18x the cost.** JS = Python 90/90 (stub net, caps incl.). **Latency, desktop
-  Chrome, 101 moves (2 games, `close_call_latency.mjs`):** all moves median 155 /
-  p90 375 / max 1,524 ms vs plain 87 / 273 / 621; the 36 triggered moves 272 /
-  727 / 1,524 vs plain on the same moves 80 / 191. A phone (~4x) ~1 s median,
-  ~3 s p90, ~6 s worst, on about a third of the computer's moves -- **owner to
-  judge by feel**. A complete self-play game in the page: 54 decisions, 26
-  triggered, 1 round each, max 0.8 s, 15 changed, 0 errors; `?cc=0` the same
-  game shape with empty stats. If too slow on a phone: K=2 (`?cck=2`) cuts a
-  third of the search; nothing between 0 and 1 round exists.
-  **Now on top of the DISTILLED net (testing 2026-10-23): close-call adds +0.103
-  (95% CI +0.013..+0.194, 1,000 pairs) over distill_cand3 plain.** **SLOW-DEVICE
-  GUARD (owner's question: is his Pixel representative? No -- minSdk 24 reaches
-  phones 3-5x slower):** one round = K opponent searches, each about the cost of
-  the plain search just run, so if plain_ms x K > `closeCallGuardMs` (app 2,500,
-  `?ccguard=<ms>`) the move is played plain and `skippedSlow` counts it. Measured
-  in the page: default, a whole game 26 triggered / 0 skipped (desktop max 1.4 s);
-  `?ccguard=1`, a whole game 0 triggered / 17 skipped. Parity 90/90 unchanged
-  (agent.js's default guard is off; only the app sets it).
 - **Previous: `blend4way_Oct6.pt` (shipped 2026-10-06)**,
   the plain AVERAGE of four nets' weights: symaug iter6 (the previous champion),
   iter10, iter14 and symaug iter11 (one lineage, so they share a basin).
@@ -703,34 +650,6 @@ with it in mind.** Assessment and the concrete implications:
 
 ## Current state
 
-- **CLOSE-CALL SEARCH IN JS, OFF BY DEFAULT (branch `close-call-js`, 2026-10-21;
-  waiting on the work Mac's close_call queue).** `selectWithCloseCall` in agent.js,
-  twin of close_call.py (copied here as the parity reference): where the best two
-  DISTINCT end positions are within T score units, the top K within T are rescored
-  as minus the opponent's expected best reply over its rolls. Phone budget: rolls
-  searched ROLL-MAJOR in `CC_ROLL_ORDER`, complete rounds only (all candidates on
-  the same rolls), a round started only if it fits `closeCallBudgetMs`;
-  `closeCallMaxReplies` = close_call.py's `MAX_REPLIES` count cap. Full strength
-  only; skipped when the endgame lookahead applies. Enabled by `?cc=1` (`ccms`,
-  `cct`, `cck`; stats in `window._closeCallStats`). Needs `scoreFor(player)` (the
-  replies are the OPPONENT's) and the no-save counter's half-round state in the
-  engine (`updateNoSaveCounter`, fed `halfTurnsSinceRound` / `lastTotalSaved`,
-  which getGameState already sent). **Parity (stub net, `close_call_fixture.py` ->
-  `node close_call_test.js`): 30 positions x caps full/9/3 -> trigger 90/90, deep
-  values 63/63, chosen pair 90/90**; `agent_test.js` 50/50, lookahead 176/176.
-  Latency: `node close_call_latency.mjs [moves]` (configs off / full / 3000 / 1500 /
-  800 ms). **Harness trap:** agent.js's functions are page globals, so a wrapper on
-  `window.selectMovePair` also catches the search's own inner calls -- pass
-  `_rankOut` / `closeCall: false` / `returnScores` calls straight through.
-  Before shipping: a Python match with `MAX_REPLIES` set to what the phone budget
-  buys (a partial search is a different agent), then the latency run.
-  **First latency (desktop Chrome, 4 moves -- a smoke, not a measurement):** plain
-  236-315 ms; on the 3 triggered moves the FULL search took 13.8-15.4 s, i.e. ~0.7 s
-  per round of 3 replies; budgets 3000 / 1500 / 800 ms got 4 / 1-2 / 1 rounds of 21.
-  A phone is slower, so **a 1.5 s budget buys ~1 roll of 21** -- the phone version
-  lives or dies on whether a 1-3 roll search keeps the gain (Python: `MAX_REPLIES`
-  3-12) or the cheap reply search (INNER_PREFILTER) is much faster. Measure both
-  before any JS shipping work.
 - **RECORDER: OPT-IN GITHUB SYNC (owner, 2026-10-27).** Settings > Game log >
   "GitHub sync..." takes a fine-grained token (Contents read/write on the PRIVATE
   repo `tomrecht/quahuru-games` only) into this browser's localStorage

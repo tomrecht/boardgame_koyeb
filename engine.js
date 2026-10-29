@@ -90,14 +90,6 @@ class Engine {
         // reads it; it rides into snapshot() for the A/AB encoder (features_v2),
         // unchanged through a search exactly as game.py's is until switch_turn.
         e.noSaveTurns = st.no_save_turns || 0;
-        // The rest of the counter's state (game.js lastTotalSaved /
-        // _halfTurnsSinceRound), read only by updateNoSaveCounter, which only the
-        // close-call search calls when it enters the opponent's turn. Absent, it
-        // defaults as game.py's update_state does: no half-round, and the saved
-        // count as it stands.
-        e.halfTurns = st.half_turns || 0;
-        e.lastTotalSaved = (st.last_total_saved === undefined || st.last_total_saved === null)
-            ? e.racks.white_saved.length + e.racks.black_saved.length : st.last_total_saved;
         // reindex() BEFORE resolving first_move: it is what builds `lookup`, and
         // find() against an empty lookup returned null, so firstMove.piece was
         // always null. That is silent -- `firstMove.piece === piece` simply never
@@ -453,25 +445,6 @@ class Engine {
     /* Alone in the endgame, a numbered piece loses its number (becoming
        saveable by any die of that number or more). It is RENUMBERED to 13,
        which changes its lookup key. */
-    /* game.py update_no_save_counter, at a turn boundary: a save during the
-       turn just ended resets the streak, otherwise once both sides are out of
-       the opening every two player-turns add a round. */
-    updateNoSaveCounter() {
-        const cur = this.racks.white_saved.length + this.racks.black_saved.length;
-        if (cur > this.lastTotalSaved) {
-            this.noSaveTurns = 0;
-            this.halfTurns = 0;
-        } else if (!this.racks.white_unentered.length && !this.racks.black_unentered.length) {
-            this.halfTurns += 1;
-            if (this.halfTurns >= 2) {
-                this.halfTurns = 0;
-                this.noSaveTurns = (this.noSaveTurns || 0) + 1;
-            }
-        }
-        this.lastTotalSaved = cur;
-        this.drawCallable = (this.noSaveTurns || 0) >= ENGINE_NO_SAVE_TURNS_FOR_DRAW;
-    }
-
     applyLastPieceRule() {
         for (const player of ['white', 'black']) {
             // Stage computed FRESH (game.py's twin says why): `stages` is not
