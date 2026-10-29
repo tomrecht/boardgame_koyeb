@@ -103,6 +103,11 @@ function shortestRoutes(engine) {
     return d;
 }
 
+// Components that count only through a fitted component_scale (agent.py twin).
+const SCALED_ONLY = new Set(['numbered_route', 'blank_route', 'rack_route_n1', 'rack_route_n2',
+    'rack_route_n3', 'blot_threat_near', 'blot_threat_far']);
+const ROUTE_CAP = 16;
+
 function evaluatePlayer(engine, W, player, distances) {
     const g = engine.graph;
     const opponent = engine.other(player);
@@ -157,6 +162,20 @@ function evaluatePlayer(engine, W, player, distances) {
     let totalDistance = Math.min(notNear.reduce((s, p) => s + distances.get(p), 0), 100);
     totalDistance += notNear.filter(p => p.number <= 6)
         .reduce((s, p) => s + wget(W.goal_bonuses, p.number, 0), 0) / 10;
+
+    // Route lengths (twin of agent.py, 2026-10-29): count only through a fitted
+    // component_scale (SCALED_ONLY), so the plain heuristic is unchanged.
+    // Computed only when a fitted scale uses them (else 0): they cost time.
+    const sc0 = W.component_scale || {};
+    let numberedRoute = 0, blankRoute = 0;
+    if ([...SCALED_ONLY].some(k => sc0[k])) {
+        const rl = p => { const d = distances.get(p); return d > ROUTE_CAP ? ROUTE_CAP : d; };
+        numberedRoute = playerPieces.filter(p => p.number <= 6 && p.tile >= 0 && !engine.canBeSaved(p))
+            .reduce((s, p) => s + rl(p), 0);
+        blankRoute = playerPieces.filter(p => p.number > 6 && p.tile >= 0 && g.types[p.tile] === 'field')
+            .reduce((s, p) => s + rl(p), 0);
+    }
+    // (rack_route_n*, blot_threat_*: Python only until the fit says they help.)
 
     // > 1000 is how agent.py spells "unreachable": the distance is Infinity.
     const blockedPieces = playerPieces.filter(p => distances.get(p) > 1000);
@@ -238,6 +257,8 @@ function evaluatePlayer(engine, W, player, distances) {
         game_stage_bonus: stageBonus,
         dice_spread_bonus: diceSpreadBonus,
         permanent_block_bonus: permanentBlockBonus,
+        numbered_route: numberedRoute,
+        blank_route: blankRoute,
     };
     // Python sums dict.values() in insertion order; the key order above is
     // agent.py's, so the float rounding matches term for term.
@@ -246,7 +267,8 @@ function evaluatePlayer(engine, W, player, distances) {
     const scale = W.component_scale;
     let total = 0;
     for (const k of Object.keys(components)) {
-        total += scale && scale[k] !== undefined ? components[k] * scale[k] : components[k];
+        if (scale) total += components[k] * (scale[k] !== undefined ? scale[k] : (SCALED_ONLY.has(k) ? 0 : 1));
+        else if (!SCALED_ONLY.has(k)) total += components[k];
     }
     return { total, components };
 }
