@@ -8,6 +8,32 @@ import logging
 logger = logging.getLogger(__name__)
 
 GAME_OVER_SCORE = 10000
+# Components that count only through a fitted 'component_scale' (prefilter);
+# the plain heuristic sum leaves them out. ROUTE_CAP caps a route length.
+def _enemy_distance(start, enemy_at, walls, limit):
+    """Steps from a tile to the nearest tile in enemy_at (index set), moving over
+    field tiles not in walls; home and goal tiles end a route (not passed
+    through). Larger than limit if none within it."""
+    seen, frontier, d = {start}, [start], 0
+    while frontier and d < limit:
+        d += 1
+        nxt = []
+        for t in frontier:
+            for n in t.neighbors:
+                if n in seen or n.type == 'nogo':
+                    continue
+                seen.add(n)
+                if n.index in enemy_at:
+                    return d
+                if n.type == 'field' and n.index not in walls:
+                    nxt.append(n)
+        frontier = nxt
+    return limit + 1
+
+
+SCALED_ONLY = ('numbered_route', 'blank_route', 'rack_route_n1', 'rack_route_n2', 'rack_route_n3',
+               'blot_threat_near', 'blot_threat_far')
+ROUTE_CAP = 16
 LOG_TO_FILE = False
 
 INITIAL_WEIGHTS = {
@@ -88,6 +114,13 @@ class Agent():
                 pass
         return expanded
 
+    def _extra_terms(self):
+        if not hasattr(self, '_extra'):
+            sc = self.weights.get('component_scale') or {}
+            self._extra = (os.environ.get('HEUR_EXTRA') == '1' or
+                           any(sc.get(k, 0) for k in SCALED_ONLY))
+        return self._extra
+
     def evaluate(self, board, player):
         winner, score = board.check_game_over()
         if winner:
@@ -156,6 +189,52 @@ class Agent():
         total_distance = min(sum(distances[p] for p in pieces_not_near_goal), 100)
         total_distance += sum(self.weights['goal_bonuses'].get(p.number, 0)
                             for p in pieces_not_near_goal if p.number <= 6) / 10
+
+        # The new terms cost time; they are computed only when a fitted scale
+        # uses them or HEUR_EXTRA=1 (prefilter_fit extraction). Else all 0.
+        numbered_route = blank_route = blot_threat_near = blot_threat_far = 0
+        rack_route = {1: 0, 2: 0, 3: 0}
+        if self._extra_terms():
+            # ROUTE LENGTHS (2026-10-29, prefilter only): what a wall costs the side
+            # it blocks. Numbered pieces off their goal (own-goal route) and blanks on
+            # the field (nearest goal), each capped at ROUTE_CAP (sealed = cap). They
+            # count ONLY through a fitted component_scale: absent from the plain sum,
+            # so the heuristic as a player is unchanged.
+            def _rl(p):
+                d = distances[p]
+                return ROUTE_CAP if d > ROUTE_CAP else d
+            numbered_route = sum(_rl(p) for p in player_pieces
+                                 if p.number <= 6 and p.tile is not None and not p.can_be_saved())
+            blank_route = sum(_rl(p) for p in player_pieces
+                              if p.number > 6 and p.tile is not None and p.tile.type == 'field')
+
+            # Rack pieces by place in line (owner, 2026-10-29): each numbered rack
+            # piece counts route-from-home + n x its place (0 = front), capped at
+            # 7 + 12n (sealed = cap) -- so a seal is worth 12n - n x place, most
+            # against the front piece, falling evenly to ~0 at the back of the rack.
+            # n = 1, 2, 3 stored; the fit picks.
+            rack_num = [(i, distances[p]) for i, p in enumerate(unentered_rack) if p.number <= 6]
+            rack_route = {n: sum(min(d + n * i, 7 + 12 * n) for i, d in rack_num) for n in (1, 2, 3)}
+            # Threatened numbered blots: a lone numbered piece on the field with an
+            # enemy piece (or the enemy's rack, entering from home) within 6 / 7-12
+            # steps by a route the enemy may use (our walls block it).
+            blot_threat_near = blot_threat_far = 0
+            lone_numbered = [p for p in board_pieces if p.number <= 6 and p.tile.type == 'field'
+                             and len(p.tile.pieces) == 1]
+            if lone_numbered:
+                enemy_at = {}
+                for q in opponent_pieces:
+                    if q.tile is not None:
+                        enemy_at[q.tile.index] = True
+                if opponent_unentered:
+                    enemy_at[board.home_tile.index] = True
+                walls = board._get_blocked_key(opponent)
+                for p in lone_numbered:
+                    d = _enemy_distance(p.tile, enemy_at, walls, 12)
+                    if d <= 6:
+                        blot_threat_near += 1
+                    elif d <= 12:
+                        blot_threat_far += 1
 
         blocked_pieces = [p for p in player_pieces if distances[p] > 1000]
         blocked_piece_bonus = sum(self.weights['blocked_piece_penalties'].get(p.number, 0)
@@ -236,6 +315,13 @@ class Agent():
             'game_stage_bonus': game_stage_bonus,
             'dice_spread_bonus': dice_spread_bonus,
             'permanent_block_bonus': permanent_block_bonus,
+            'numbered_route': numbered_route,
+            'blank_route': blank_route,
+            'rack_route_n1': rack_route[1],
+            'rack_route_n2': rack_route[2],
+            'rack_route_n3': rack_route[3],
+            'blot_threat_near': blot_threat_near,
+            'blot_threat_far': blot_threat_far,
         }
         # Per-component scales (weights['component_scale'], prefilter only --
         # see agent_gnn): fitted 2026-10-05 so the net's favourite move
@@ -243,9 +329,10 @@ class Agent():
         # the heuristic as a player is unchanged.
         scale = self.weights.get('component_scale')
         if scale:
-            total_score = sum(v * scale.get(k, 1.0) for k, v in score_components.items())
+            total_score = sum(v * scale.get(k, 0.0 if k in SCALED_ONLY else 1.0)
+                              for k, v in score_components.items())
         else:
-            total_score = sum(score_components.values())
+            total_score = sum(v for k, v in score_components.items() if k not in SCALED_ONLY)
         score_components['_total_score'] = total_score
         score_components['_player'] = player
         score_components['_goal_pieces'] = [(piece.number, piece.player, distances[piece]) for piece in pieces_near_goal]

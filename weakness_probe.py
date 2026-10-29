@@ -58,10 +58,11 @@ def agent():
         torch.set_grad_enabled(False)
         import network
         network.DEVICE = torch.device('cpu')
-        from network import BoardGNN
+        from network import model_from_state
         from agent_gnn import GNNAgent
-        m = BoardGNN()
-        m.load_state_dict(torch.load(NET, map_location='cpu'), strict=False)
+        # model_from_state: builds the net's own feature set / frame (v1, AB2,
+        # afterstate) from the checkpoint, so any net can be probed.
+        m = model_from_state(torch.load(NET, map_location='cpu'), strict=False)
         m.eval()
         _MODEL = m
         _AG = GNNAgent(model=m)

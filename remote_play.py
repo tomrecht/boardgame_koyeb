@@ -103,6 +103,12 @@ def _missing(mode, recs, n, seed_base):
     if mode in ('relabel', 'quizroll', 'quizbest'):   # one record per task index
         have = {r.get('idx') for r in recs}
         return sum(seed_base + k not in have for k in range(n))
+    if mode == 'difficulty':                            # two games per task index
+        have = {(r.get('idx'), r.get('weak_white')) for r in recs}
+        return sum((seed_base + k, w) not in have for k in range(n) for w in (True, False))
+    if False:
+        have = {r.get('idx') for r in recs}
+        return sum(seed_base + k not in have for k in range(n))
     if mode == 'label':
         have = {r['seed'] for r in recs if r.get('kind') == 'game'}
         return sum(seed_base + k not in have for k in range(n))

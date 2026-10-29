@@ -35,6 +35,12 @@ COMPONENTS = ['saved_pieces', 'saved_bonus', 'goal_pieces', 'goal_bonus', 'captu
               'total_distance', 'unentered_pieces', 'off_goal_penalty', 'far_from_goal_penalty',
               'high_goal_penalty', 'high_goal_proximity_penalty', 'enemy_blot_penalty',
               'game_stage_bonus', 'dice_spread_bonus', 'permanent_block_bonus']
+# Two more (2026-10-29), scaled-only (agent.SCALED_ONLY: 0 unless fitted):
+# route lengths of numbered pieces and field blanks -- what a wall costs the side
+# it blocks. Extraction stores all 25; COMPONENTS_FIT picks the fitted set.
+NEW = ['numbered_route', 'blank_route', 'rack_route_n1', 'rack_route_n2', 'rack_route_n3',
+       'blot_threat_near', 'blot_threat_far']
+COMPONENTS = COMPONENTS + NEW
 # A 24th, 'goal_layout_cost' (exact endgame-table banking turns of the pieces on
 # goals), was tried 2026-10-05 and dropped: 5-fold CV keep-rate 0.957 with or
 # without it. Its extraction lives in prefilter_data2/ (column 23).
@@ -172,7 +178,14 @@ def _extract_game(task):
 def extract(every=2, workers=2):
     os.makedirs(DATA, exist_ok=True)
     recs, seen = [], set()
-    for f in LOGS:
+    if os.environ.get('GAMES') == 'sync':        # every game in the synced log
+        import review_games as RG
+        recs = [r for r in RG.load_games() if r.get('completed')]
+        n = int(os.environ.get('MAX_GAMES', '0'))
+        if n:
+            random.Random(5).shuffle(recs)
+            recs = recs[:n]
+    for f in ([] if recs else LOGS):
         for line in open(os.path.join(REPO, f)):
             r = json.loads(line)
             if r.get('completed') and r['id'] not in seen:
@@ -460,3 +473,42 @@ if __name__ == '__main__' and len(sys.argv) > 1 and sys.argv[1] == 'final':
     final()
 if __name__ == '__main__' and len(sys.argv) > 1 and sys.argv[1] == 'ood':
     ood()
+
+
+# ---------------------------------------------------------------- refit for a new net (2026-10-29)
+def _shipped_w():
+    """Today's shipped scales (prefilter_scales.json), new components at 0."""
+    sc = json.load(open(os.path.join(REPO, 'prefilter_scales.json')))
+    return np.array([float(sc.get(c, 0.0 if c in NEW else 1.0))
+                     for c in COMPONENTS])
+
+
+def crossval2(k=5):
+    """Held-out keep-rate (folds by game): shipped scales vs a refit of the 23
+    old components vs a refit with the two route components."""
+    games = load()
+    ids = sorted(games)
+    random.Random(7).shuffle(ids)
+    folds = [ids[i::k] for i in range(k)]
+    new = [COMPONENTS.index(c) for c in NEW]
+    ws = _shipped_w()
+    res = {'shipped': [], 'refit 23': [], 'refit 29': []}
+    for fi in range(k):
+        te = [p for g in folds[fi] for p in games[g]]
+        tr = [p for j in range(k) if j != fi for g in folds[j] for p in games[g]]
+        res['shipped'].append(keep_rate(te, ws))
+        drop = lambda P: [dict(p, F1=np.delete(p['F1'], new, 1), F2=np.delete(p['F2'], new, 1)) for p in P]
+        w23 = _fit_on(drop(tr), np.delete(ws, new))
+        res['refit 23'].append(keep_rate(drop(te), w23))
+        w0 = ws.copy()
+        w0[new] = 1e-9
+        w25 = _fit_on(tr, w0)
+        res['refit 29'].append(keep_rate(te, w25))
+        print(f'fold {fi + 1}/{k}: ' + ', '.join(f'{v} {r[-1]:.3f}' for v, r in res.items()),
+              ' new scales', np.round(w25[new], 3), flush=True)
+    for v, r in res.items():
+        print(f'  {v:<10} {np.mean(r):.3f}  ({min(r):.3f}..{max(r):.3f})')
+
+
+if __name__ == '__main__' and len(sys.argv) > 1 and sys.argv[1] == 'cv2':
+    crossval2()

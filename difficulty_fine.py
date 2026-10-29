@@ -32,6 +32,7 @@ def _agent():
         from agent_gnn import GNNAgent
         _AG = GNNAgent(weights_path=MODEL, use_prefilter=True, prefilter_top_k=40,
                        prefilter_min_k=5, first_move_prefilter=12)
+        _AG.endgame_lookahead = True          # as agent.js
     return _AG
 
 
@@ -76,8 +77,8 @@ def _worker(task):
             'weak_margin': m, 'turns': turns}
 
 
-def analyze():
-    rows = [json.loads(l) for l in open(OUT)]
+def analyze(path=None):
+    rows = [json.loads(l) for l in open(path or OUT)]
     print(f'{"d":>5} {"slider":>7} {"games":>6} {"win%":>6} {"95% CI":>13} {"margin":>8} {"95% CI":>16}')
     for d in sorted({r['d'] for r in rows}, reverse=True):
         rs = [r for r in rows if r['d'] == d]
@@ -99,9 +100,46 @@ def analyze():
               f'{m:>+8.2f} {m - 1.96 * se:>+7.2f}..{m + 1.96 * se:>+5.2f}')
 
 
+def run_tasks(ckpt, out, n):
+    """Cloud mode (remote_play 'difficulty'): task index i = SEED_BASE + k runs
+    one colour-swapped PAIR at level LEVELS[i % L], seed 200M + i // L, with the
+    net `ckpt` (any checkpoint; the app's prefilter, hand rules and endgame
+    lookahead). One record per game, tagged idx."""
+    global MODEL
+    MODEL = ckpt
+    base = int(os.environ.get('SEED_BASE', '0'))
+    done = set()
+    if os.path.exists(out):
+        done = {(r['idx'], r['weak_white']) for r in map(json.loads, open(out))}
+    L = len(LEVELS)
+    tasks = []
+    for i in range(base, base + n):
+        for w in (True, False):
+            if (i, w) not in done:
+                tasks.append((LEVELS[i % L], 200_000_000 + i // L, w, i))
+    ctx = mp.get_context('spawn')
+    with ctx.Pool(N_WORKERS, initializer=_set_model, initargs=(ckpt,)) as pool, open(out, 'a') as f:
+        for r in pool.imap_unordered(_worker_idx, tasks, chunksize=1):
+            f.write(json.dumps(r) + '\n'); f.flush()
+
+
+def _set_model(ckpt):
+    global MODEL
+    MODEL = ckpt
+
+
+def _worker_idx(task):
+    d, seed, w, i = task
+    r = _worker((d, seed, w))
+    r['idx'] = i
+    return r
+
+
 def main():
     if sys.argv[1:2] == ['analyze']:
-        return analyze()
+        return analyze(sys.argv[2] if len(sys.argv) > 2 else None)
+    if sys.argv[1:2] == ['run']:
+        return run_tasks(sys.argv[2], sys.argv[3], int(sys.argv[4]))
     pairs = int(sys.argv[1]) if len(sys.argv) > 1 else 60
     done = set()
     if os.path.exists(OUT):
