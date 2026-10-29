@@ -33,6 +33,20 @@ GOAL_DIST = {
 }
 
 
+def goal_dist_for(layout):
+    """GOAL_DIST for goal numbers placed in ring order (positions 0..5, partners
+    (0,1) (2,3) (4,5)): partner 4, else ring distance 1/2/3 -> 7/11/14."""
+    pos = {n: i for i, n in enumerate(layout)}
+    def d(i, j):
+        if i // 2 == j // 2:
+            return 4
+        return {1: 7, 2: 11, 3: 14}[min(abs(i - j), 6 - abs(i - j))]
+    return {g: {h: d(pos[g], pos[h]) for h in range(1, 7) if h != g} for g in range(1, 7)}
+
+
+assert goal_dist_for((4, 2, 5, 3, 6, 1)) == GOAL_DIST, 'layout formula disagrees with the measured distances'
+
+
 def canon(s):
     """Last-piece rule: a lone numbered piece becomes a blank on its goal."""
     mask, b = s
@@ -151,6 +165,11 @@ def key(s):
 
 
 def main():
+    global GOAL_DIST
+    out = 'endgame_table.json'
+    if '--layout' in sys.argv:          # e.g. --layout 1,6,2,5,3,4 --out endgame_table_sum7.json
+        GOAL_DIST = goal_dist_for(tuple(int(x) for x in sys.argv[sys.argv.index('--layout') + 1].split(',')))
+        out = sys.argv[sys.argv.index('--out') + 1]
     t0 = time.time()
     V = build()
     print(f'{len(V)} states in {time.time() - t0:.0f}s')
@@ -162,8 +181,8 @@ def main():
     for n in (2, 5):
         b = [0] * 6; b[0] = 1
         print(f'  numbered {n} + blank on goal 1: {V[canon((1 << (n - 1), tuple(b)))]:.3f}')
-    json.dump({key(s): round(v, 5) for s, v in V.items()}, open('endgame_table.json', 'w'))
-    print('saved endgame_table.json')
+    json.dump({key(s): round(v, 5) for s, v in V.items()}, open(out, 'w'))
+    print('saved', out)
 
 
 if __name__ == '__main__':
