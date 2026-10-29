@@ -732,7 +732,11 @@ with it in mind.** Assessment and the concrete implications:
   +0.033..+0.098)**, new better 53 / old 21, ~+0.08 pts/game. **GitHub match, cand13
   both sides, new vs old filter (`confirm_match.py` SCALES_A/SCALES_B), seeds 190M,
   2,000 pairs: +0.055 (95% CI -0.005..+0.115), 50.7%** -- not worse, agrees with the
-  deep check. JS = Python 100/100 (stub-net fixture regenerated with the v2 scales;
+  deep check. **Same 300 turns as filter_probe, v2 scales (`review/filter/cand13_v2.jsonl`):
+  keeps the all-moves favourite 92.6% -> 95.1% (264 -> 271 of 285); 21-roll cost of
+  the drops 1.64 -> 0.57 pts over the 285 turns (~0.16 -> ~0.06 pts/game).** The
+  probe's % (final pick incl. hand rules, computer's turns) is not the fit's
+  keep-rate (net's best survives the cut, both sides' turns): 95.3 -> 97.3 there. JS = Python 100/100 (stub-net fixture regenerated with the v2 scales;
   the old fixture under v2 weights diverges, so the check is live); stub-search
   time 9.8 s -> 9.3 s (no slowdown). The branch changes agent.py, heuristic.js
   (route terms, already twinned), prefilter_scales.json, heuristic_weights.json
@@ -752,7 +756,7 @@ with it in mind.** Assessment and the concrete implications:
   the October benchmark (slope 0.29, corr 0.09 for blend4way vs owner).
   **MERGED INTO THE QUIZ (2026-10-29, `quiz_merge.py best.jsonl out.jsonl`, chunks
   at db version 4):** the all-moves re-solve (quiz_best, 2,606 positions) changed
-  the champion's move in 464 (18%; the prefilter had culled it), gap 0.333 -> 0.346
+  the champion's move in 464 (18%; CORRECTED 2026-10-29: only 92 of them -- 3.5% of all -- were moves the prefilter or hand rules had dropped; the other 372 are the 21-roll check preferring another of the net's top-4 quick moves, mean +0.07), gap 0.333 -> 0.346
   mean; his move was never the best. Each item: corrected b/bm/kb/g/eb, an outcome
   table of HASHED keys (`h` = 32-bit FNV-1a base 36 of the canonical key, twin of
   the page's fnv(); all deep-checked entries + top 8 others) and `pl` = [champion -
