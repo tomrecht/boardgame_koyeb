@@ -657,12 +657,20 @@ with it in mind.** Assessment and the concrete implications:
   look, 0.03 behind by the 21-roll check). `quiz_best.py` re-solves every position over
   ALL legal moves (top 4 distinct by quick value + filtered best + his, 21-roll
   checked; outcome table) -- 2,606 positions on GitHub (`remote_play` mode `quizbest`).
-  **`filter_probe.py`, cand13, 300 of the computer's turns in owner's games (2026-10-28):
-  the filter keeps the net's all-moves favourite on 88.0%; on the other 36 the 21-roll
-  check rates the filtered pick no worse (favourite - pick -0.062, 95% CI
-  -0.155..+0.031; pick better in 19, favourite better by > 0.15 in 5, > 0.3 in 1) --
-  per game -0.21 (CI -0.52..+0.10). No measurable cost: a culled "favourite" is
-  mostly a quick-look near-tie the deeper check does not back. Leave the filter.**
+  **`filter_probe.py`, cand13, 300 of the computer's turns in owner's games (2026-10-28;
+  CORRECTED same day -- the first reading counted 15 FULL PASSES as filter drops: the
+  probe's all-moves set omits the pass, so they were not drops; drop them):** the filter
+  keeps the net's all-moves favourite on 92.6% (264/285); on the 21 it drops, the
+  21-roll check rates the favourite better by +0.078 per drop (95% CI +0.036..+0.123;
+  > 0.15 in 5, pick better in 6) -- **~+0.16 pts/game (CI +0.08..+0.25) lost to the
+  filter**, by the net's own deep check (not playouts). THEME: 10 of the 11 drops worth
+  > 0.05 are WALL BUILDING the heuristic cannot see -- walls with a numbered piece (its
+  only wall terms: a flat bonus for ALL-BLANK walls, and opponent pieces fully sealed,
+  which happened once), often by stepping a blank OFF A GOAL (4; the heavy goal_pieces
+  term) or walling instead of banking (2). Pictures: `review/filter/pics/`. Fix to try:
+  an "opponent route lengthening" component (numbered pieces, incl. those <= 6 away)
+  + refit the component scales to cand13 (fitted for blend4way at 96% keep; never
+  refitted since). Judge by keep-rate on held-out games, then the deep-check cost.
   **PLAYOUT CHECK of the quiz (`quiz_playout.py`, mode `quizroll`):** 1,203 positions
   with cost >= 0.3, his move vs the champion's played to the END 32x each, champion
   both sides, common dice. First single position (3b19f3bf t39, capture vs G4,
