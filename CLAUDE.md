@@ -713,6 +713,15 @@ with it in mind.** Assessment and the concrete implications:
   Opening 0.73 of claim, midgame 0.56. 11 positions clearly favour his move --
   about chance at 1,203 tests; tagged in the quiz, not dropped. Far better than
   the October benchmark (slope 0.29, corr 0.09 for blend4way vs owner).
+  **MERGED INTO THE QUIZ (2026-10-29, `quiz_merge.py best.jsonl out.jsonl`, chunks
+  at db version 4):** the all-moves re-solve (quiz_best, 2,606 positions) changed
+  the champion's move in 464 (18%; the prefilter had culled it), gap 0.333 -> 0.346
+  mean; his move was never the best. Each item: corrected b/bm/kb/g/eb, an outcome
+  table of HASHED keys (`h` = 32-bit FNV-1a base 36 of the canonical key, twin of
+  the page's fnv(); all deep-checked entries + top 8 others) and `pl` = [champion -
+  his, SE] from the 32 playouts (1,034 items; dropped where the move changed). The
+  reveal shows the playout line. **A db document is capped at 256 KB** -- chunks
+  now 230-250 KB, so new games need NEW chunks, not growth of old ones.
 - **"PLAY THIS TURN OUT" (owner-only, 2026-10-28).** Settings > Game log > Play this
   turn out (needs GitHub sync): at the turn's end the start + end positions
   (getGameState format) go to quahuru-games `playouts/req/<id>.json` (queue in
