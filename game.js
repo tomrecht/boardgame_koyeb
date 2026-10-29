@@ -2427,6 +2427,7 @@ function createSettingsPanel() {
     if (_recFileSupported()) recBtn('Log to file\u2026', () => _recPickFile());
     recBtn('Download', () => _recDownload());
     recBtn('GitHub sync\u2026', () => _recSyncSetup());
+    recBtn('Play this turn out', () => _playoutTag());
     recBtn('Clear', () => {
         const n = _recBuffer().length;
         if (!n) { flashNotice('Nothing pending.', 2000); return; }
@@ -2920,6 +2921,71 @@ async function _recSync(announce) {
     if (announce || (failed && failed !== 'offline'))
         flashNotice(failed ? 'GitHub sync: ' + failed + '.' : 'GitHub sync: ' + sent + ' game' + (sent === 1 ? '' : 's') + ' sent.', 3000);
     _recRefreshRow();
+}
+
+// ── playout requests (owner, 2026-10-28) ───────────────────────────────────
+// "Play this turn out" marks the human's current turn; when the turn ends, its
+// start and end positions (getGameState format, which game.py's update_state
+// reads) go to playouts/req/<id>.json in the private games repo, over the same
+// token as the game sync. A scheduled job on the public repo
+// (.github/workflows/playout-requests.yml) plays the champion's top moves and
+// this one out to the end and posts the report as an issue in the games repo.
+const PLAYOUT_QUEUE_KEY = 'playoutQueue';
+let _playoutBusy = false;
+function _playoutQueue() { try { return JSON.parse(localStorage.getItem(PLAYOUT_QUEUE_KEY) || '[]'); } catch (e) { return []; } }
+function _playoutQueueWrite(q) { try { localStorage.setItem(PLAYOUT_QUEUE_KEY, JSON.stringify(q)); } catch (e) {} }
+function _playoutTag() {
+    const game = _currentGame();
+    if (!_recSyncToken()) { flashNotice('Set up GitHub sync first (Game log > GitHub sync).', 3500); return; }
+    if (!game || _tut.active || (game.currentPlayerIsHuman && !game.currentPlayerIsHuman())) {
+        flashNotice('Tag a turn while it is your move.', 3000); return;
+    }
+    let start = game.turnStartState && game.turnStartState.currentTurn === game.turn ? game.turnStartState : null;
+    if (!start && game.dice.every(d => !d.used)) {   // first turn, a resumed game: nothing moved yet, so now IS the start
+        start = getGameState(game);
+        delete start.firstMove;
+        (start.boardPieces || []).forEach(p => { delete p.reachableBySum; });
+    }
+    if (!start) { flashNotice('Tag the turn before your first move, then play it.', 3500); return; }
+    game._playoutTag = { start: JSON.parse(JSON.stringify(start)), turn: game.turn };
+    flashNotice('Tagged: this turn will be played out once you end it.', 3000);
+}
+function _playoutFinishTurn(game) {
+    const tag = game._playoutTag;
+    game._playoutTag = null;
+    if (!tag || tag.turn === game.turn) return;      // only once the turn has passed
+    const end = getGameState(game);
+    end.currentTurn = tag.turn;                      // the mover, before the hand-over
+    delete end.firstMove;
+    (end.boardPieces || []).forEach(p => { delete p.reachableBySum; });
+    const id = new Date().toISOString().replace(/[-:]/g, '').slice(0, 15) + '-' + Math.random().toString(36).slice(2, 7);
+    const q = _playoutQueue();
+    q.push({ id, at: new Date().toISOString(), device: _recDeviceId(), model: REC_MODEL_TAG,
+             mover: tag.turn, start: tag.start, end });
+    _playoutQueueWrite(q);
+    _playoutSync(true);
+}
+async function _playoutSync(announce) {
+    const token = _recSyncToken();
+    if (!token || _playoutBusy) return;
+    _playoutBusy = true;
+    let failed = '';
+    try {
+        for (const r of _playoutQueue()) {
+            let res;
+            try {
+                res = await fetch('https://api.github.com/repos/' + REC_SYNC_REPO + '/contents/playouts/req/' + r.id + '.json', {
+                    method: 'PUT',
+                    headers: { 'Authorization': 'Bearer ' + token, 'Accept': 'application/vnd.github+json' },
+                    body: JSON.stringify({ message: 'playout request ' + r.id, content: _b64utf8(JSON.stringify(r) + '\n') }),
+                });
+            } catch (e) { failed = 'offline'; break; }
+            if (!(res.ok || res.status === 422)) { failed = 'HTTP ' + res.status; break; }
+            _playoutQueueWrite(_playoutQueue().filter(x => x.id !== r.id));
+        }
+    } finally { _playoutBusy = false; }
+    if (announce) flashNotice(failed ? 'Playout request not sent yet (' + failed + '); it will retry.'
+                                     : 'Playout request sent. The report arrives as an issue in your games repo.', 3500);
 }
 
 // ── the picked file, and its permission ─────────────────────────────────────
@@ -4764,7 +4830,7 @@ function _initChrome() { _recUnlockFromUrl(); _seedFirstRunDefaults(); setInterv
                         createSettingsPanel(); createLegendButton(); createHintButton();
                         maybeShowFirstRunNudge(); _armFullscreenOnFirstGesture();
                         _recArmPermissionOnFirstGesture(); _recRefreshRow();
-                        _recSync(); window.addEventListener('online', () => _recSync()); }
+                        _recSync(); _playoutSync(); window.addEventListener('online', () => { _recSync(); _playoutSync(); }); }
 // A game left unfinished when the tab goes is recorded as abandoned rather than
 // lost, so it cannot be mistaken for a defeat in the stats. `pagehide` rather
 // than `beforeunload`: it is the one that actually fires on mobile Safari.
@@ -9694,6 +9760,8 @@ switchTurn() {
                 p.justMovedHome = false;
             }
         });
+
+        if (this._playoutTag) _playoutFinishTurn(this);
 
         this.rollDice();
         this.movedOnce = false;
