@@ -98,7 +98,10 @@ def solve(r, model):
     if not any(a['yours'] for a in arms):
         arms.append({'key': k_own, 'name': RG.pair_str(rep[k_own]) if k_own in rep else '(your move)',
                      'pair': None, 'yours': True, 'legal': k_own in rep})
+    import quiz_build as QBuild
     for a in arms:
+        pr = a['pair'] or (repr(rep[a['key']]) if a['key'] in rep else None)
+        a['moves'] = QBuild.moves(b, pr) if pr else []
         a['quick'] = round(quick.get(a['key'], float('nan')), 3)
         if a['key'] in rep:
             a['deep'] = round(ag._deep_value(b, mover, rep[a['key']]) / SCORE_SCALE * NUM_PIECES, 3)
@@ -121,29 +124,50 @@ def solve(r, model):
         d = M - Y
         a['vs_yours'] = round(float(d.mean()), 3)
         a['vs_ci'] = round(float(1.96 * d.std(ddof=1) / np.sqrt(N)) if d.std() > 0 else 0.0, 3)
+    import board_png
+    for a in arms:
+        a['png'] = board_png.render(b, a['moves'], '#7b4fe0' if a['yours'] else '#2b8a48')
     return {'id': r['id'], 'mover': mover, 'notation': RG.notation(b), 'n_moves': len(quick),
             'playouts': N, 'arms': arms, 'sec': round(time.time() - t0)}
 
 
-def report(res):
-    lines = ['Position (%s to move, %d legal results): `%s`' % (res['mover'], res['n_moves'], res['notation']), '',
-             '%d playouts per move, to the end of the game, the champion playing both sides; '
-             'playout i throws the same dice for every move.' % res['playouts'], '',
-             '| move | champion quick / deep | avg final margin | won | vs your move |',
-             '|---|---|---|---|---|']
-    for a in sorted(res['arms'], key=lambda a: -a['mean']):
-        name = ('**%s** (yours)' % a['name']) if a['yours'] else a['name']
-        qd = '%+.2f / %s' % (a['quick'], ('%+.2f' % a['deep']) if 'deep' in a else '-')
-        vs = '-' if a['yours'] else '%+.2f ± %.2f' % (a['vs_yours'], a['vs_ci'])
-        lines.append('| %s | %s | %+.2f ± %.2f | %.0f%% | %s |' % (name, qd, a['mean'], a['ci'], 100 * a['win'], vs))
+def say(name):
+    """'x>3.2(2) x>G1(5)' -> 'blank → 3.2 (2), blank → G1 (5)'."""
+    import re
+    out = []
+    for h in name.split():
+        m = re.match(r'^(\w+)>([^()]+)\((\d+)\)$', h)
+        if h == 'pass':
+            out.append('no move')
+        elif not m:
+            out.append(h)
+        else:
+            pc = 'blank' if m.group(1) == 'x' else m.group(1)
+            out.append('block-save' if m.group(2) == '0' else
+                       ('bank %s (%s)' % (pc, m.group(3)) if m.group(2) == 'bank' else '%s → %s (%s)' % (pc, m.group(2), m.group(3))))
+    return ', '.join(out)
+
+
+def report(res, img=lambda k: '%s-%d.png' % ('ID', k)):
+    """Markdown report; img(k) is the URL of arm k's picture."""
+    arms = sorted(enumerate(res['arms']), key=lambda ka: -ka[1]['mean'])
     best = max((a for a in res['arms'] if not a['yours']), key=lambda a: a['vs_yours'], default=None)
-    lines.append('')
     if best is None or best['vs_yours'] - best['vs_ci'] <= 0:
-        lines.append('Verdict: no move beats yours clearly in the playouts.')
+        verdict = 'No move beats yours clearly when played out.'
     else:
-        lines.append('Verdict: %s beats your move by %+.2f ± %.2f points a game.' % (best['name'], best['vs_yours'], best['vs_ci']))
-    lines.append('')
-    lines.append('Quick / deep = the champion\'s own estimate (points, mover\'s side); ± = 95%% range. %d s.' % res['sec'])
+        verdict = '**%s** beats your move by %+.2f ± %.2f points a game.' % (say(best['name']), best['vs_yours'], best['vs_ci'])
+    lines = [verdict, '',
+             '%s to move. Each move below was played to the end of the game %d times, the champion playing both sides; '
+             'playout i throws the same dice for every move. ± = 95%% range.' % (res['mover'].capitalize(), res['playouts']), '']
+    for rank, (k, a) in enumerate(arms, 1):
+        tag = ' — **your move**' if a['yours'] else ''
+        lines += ['### %d. %s%s' % (rank, say(a['name']), tag), '',
+                  'Average final margin **%+.2f ± %.2f**, won %.0f%%%s. Champion\'s estimate %+.2f (quick) / %s (21-roll check).'
+                  % (a['mean'], a['ci'], 100 * a['win'],
+                     '' if a['yours'] else ', vs your move %+.2f ± %.2f' % (a['vs_yours'], a['vs_ci']),
+                     a['quick'], ('%+.2f' % a['deep']) if 'deep' in a else '-'),
+                  '', '![%s](%s)' % (say(a['name']), img(k)), '']
+    lines += ['Position: `%s` · %d legal results · %d s' % (res['notation'], res['n_moves'], res['sec'])]
     return '\n'.join(lines)
 
 
@@ -157,12 +181,18 @@ def main(maxn=4):
         r = json.loads(base64.b64decode(meta['content']).decode())
         r['id'] = rid
         res = solve(r, model)
-        md = report(res)
+        for k, a in enumerate(res['arms']):
+            api('PUT', 'contents/playouts/res/%s-%d.png' % (rid, k),
+                {'message': 'playout picture ' + rid, 'content': base64.b64encode(a.pop('png')).decode()})
+        md = report(res, lambda k: '%s-%d.png' % (rid, k))
         print(md, flush=True)
         for name, body in (('%s.json' % rid, json.dumps(res)), ('%s.md' % rid, md)):
             api('PUT', 'contents/playouts/res/' + name,
                 {'message': 'playout result ' + rid, 'content': base64.b64encode(body.encode()).decode()})
-        api('POST', 'issues', {'title': 'Playout result %s' % rid, 'body': md})
+        page = 'https://github.com/%s/blob/main/playouts/res/%s.md' % (REPO, rid)
+        body = report(res, lambda k: 'https://github.com/%s/blob/main/playouts/res/%s-%d.png?raw=true' % (REPO, rid, k))
+        api('POST', 'issues', {'title': 'Playout: ' + say(next(a for a in res['arms'] if a['yours'])['name']),
+                               'body': body + '\n\n[Report page with pictures](%s)' % page})
 
 
 if __name__ == '__main__':
@@ -170,7 +200,11 @@ if __name__ == '__main__':
         r = json.load(open(sys.argv[2]))
         r.setdefault('id', 'local')
         res = solve(r, os.environ.get('MODEL', 'distill_cand13.pt'))
-        open(sys.argv[3], 'w').write(report(res))
-        print(report(res))
+        base = sys.argv[3].rsplit('.', 1)[0]
+        for k, a in enumerate(res['arms']):
+            open('%s-%d.png' % (base, k), 'wb').write(a.pop('png'))
+        md = report(res, lambda k: '%s-%d.png' % (os.path.basename(base), k))
+        open(sys.argv[3], 'w').write(md)
+        print(md)
     else:
         main(int(sys.argv[1]) if len(sys.argv) > 1 else 4)
