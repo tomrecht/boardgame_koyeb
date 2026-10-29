@@ -148,6 +148,22 @@ sideways scroll, game paused, back returns to How to Play.
 
 ## AI and model — current status
 
+**PROMOTION CHECKLIST -- RE-CHECK EVERYTHING TUNED FOR THE OLD NET (owner, 2026-10-29).**
+The prefilter's component scales were fitted for blend4way (Oct 6) and never
+refitted through two net changes; found by accident, it cost cand13 ~0.16 pts/game.
+Whenever a new net ships, re-run (cheapest first; GitHub = free):
+  1. `offgoal_probe.py <net>` (RIGHT/wrong).
+  2. `filter_probe.py <net> <tag> out.jsonl` -- keep-rate and deep-check cost of
+     the prefilter (EXCLUDE full passes: its all-moves set omits the pass); if the
+     cost's CI clears 0, refit: `GAMES=sync PREFILTER_DATA=... NET=<net>
+     prefilter_fit.py extract 2`, then `prefilter_fit.py cv2`.
+  3. `rule_probe.py <net> out.jsonl` -- the three hand rules on vs off, deep-checked.
+  4. Difficulty knots: `remote_play('difficulty', [<net>], 750, 0, out,
+     env={'LEVELS': '0.65,0.74,0.80,0.93,1.0'})`, then `difficulty_fine.py analyze
+     out` -- the knots were spaced for ~4/15/26/37/50% vs full strength.
+  5. Close-call gauge (`remote_play.py ccmatch <net> 2000`) and calib_bench.
+  6. Endgame lookahead and prefilter sizes (12/40): only if 2-4 moved.
+
 - **Deployed model: `model.onnx` = `distill_cand13.pt` (main 2026-10-26), file
   `model-9121be40.onnx`.** The weekend's continuation of the distillation
   (train-features-v2: distill_run iterations 6-13 from cand_3, 600 games each,
