@@ -60,6 +60,11 @@ def _board(state, mover=None):
     return b
 
 
+def _one_thread():
+    import torch
+    torch.set_num_threads(1)
+
+
 def _arm_job(a):
     """One playout of one arm. a = (model, state, mover, pair_repr|None, key)."""
     import ast
@@ -79,7 +84,6 @@ def solve(r, model):
     import review_games as RG
     import quiz_best as QB
     from agent_gnn import SCORE_SCALE, NUM_PIECES
-    from multiprocessing import Pool
     t0 = time.time()
     mover = r['mover']
     b = _board(r['start'])
@@ -110,7 +114,11 @@ def solve(r, model):
         state, pair = (r['end'], None) if (a['yours'] and a['pair'] is None) else (r['start'], a['pair'])
         for i in range(N):
             jobs.append((model, state, mover, pair, '%s:%d' % (r['id'], i)))
-    with Pool(N_WORKERS) as pool:
+    # SPAWN, not fork: the net is already loaded here, and forking after torch has
+    # started its thread pool deadlocks on Linux (the GitHub job hung for hours;
+    # macOS spawns by default, so the local test passed). One torch thread each.
+    import multiprocessing as mp
+    with mp.get_context('spawn').Pool(N_WORKERS, initializer=_one_thread) as pool:
         out = pool.map(_arm_job, jobs, chunksize=1)
     for ai, a in enumerate(arms):
         a['margins'] = out[ai * N:(ai + 1) * N]
