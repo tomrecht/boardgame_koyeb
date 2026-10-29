@@ -36,7 +36,7 @@ jobs:
       - name: checkpoints
         env: { SPEC: '${{ inputs.spec }}', GH_TOKEN: '${{ github.token }}' }
         run: |
-          for a in $(python3 -c "import json,os; print(' '.join(json.loads(os.environ['SPEC'])['ckpts']))"); do
+          for a in $(python3 -c "import json,os; print(' '.join(dict.fromkeys(json.loads(os.environ['SPEC'])['ckpts'])))"); do
             gh release download cloud-scratch -p "$a" -R "${{ github.repository }}"
           done
       - name: play
