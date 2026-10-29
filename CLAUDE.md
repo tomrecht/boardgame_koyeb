@@ -156,7 +156,9 @@ Whenever a new net ships, re-run (cheapest first; GitHub = free):
   2. `filter_probe.py <net> <tag> out.jsonl` -- keep-rate and deep-check cost of
      the prefilter (EXCLUDE full passes: its all-moves set omits the pass); if the
      cost's CI clears 0, refit: `GAMES=sync PREFILTER_DATA=... NET=<net>
-     prefilter_fit.py extract 2`, then `prefilter_fit.py cv2`.
+     prefilter_fit.py extract 2`, then `prefilter_fit.py cv2` / `cv3` / `final2`,
+     `filter_ab.py` (old vs new scales, deep-checked) and a GitHub match
+     (`remote_play('confirm', [net, net], ..., env={'SCALES_A': new, 'SCALES_B': old})`).
   3. `rule_probe.py <net> out.jsonl` -- the three hand rules on vs off, deep-checked.
      **cand13 (2026-10-29, 12,000 turns of owner's games, `review/rules/`): the net
      has learned all three; the rules are near-inert.** never-waste-a-save fired on
@@ -701,6 +703,26 @@ with it in mind.** Assessment and the concrete implications:
   an "opponent route lengthening" component (numbered pieces, incl. those <= 6 away)
   + refit the component scales to cand13 (fitted for blend4way at 96% keep; never
   refitted since). Judge by keep-rate on held-out games, then the deep-check cost.
+  **DONE, READY ON BRANCH `filter-v2` (off main, NOT merged; owner to approve,
+  2026-10-29).** Two new scaled-only components, ROUTE LENGTHS (`numbered_route`:
+  own-goal distance of each unsaved numbered piece on the board, capped 16;
+  `blank_route`: nearest-goal distance of field blanks) + all 25 scales refitted
+  to cand13 (`prefilter_fit.py final2`, rescaled to the shipped scores' spread so
+  GAME_OVER_SCORE keeps its margin). Held-out keep-rate (5-fold by game, 200 synced
+  games, 5,199 positions): shipped 0.953, refit of the old 23 0.964, **+ routes
+  0.973**; also tried (`cv3`): rack routes by place in line (owner's route + n x
+  slot, cap 7+12n) and threatened numbered blots (near/far) -- add nothing (0.972-
+  0.973), Python-only, left out. Deep check (`filter_ab.py`, 1,997 turns, hand
+  rules + lookahead on): the move changes on 90, **+0.065 per change (CI
+  +0.033..+0.098)**, new better 53 / old 21, ~+0.08 pts/game. **GitHub match, cand13
+  both sides, new vs old filter (`confirm_match.py` SCALES_A/SCALES_B), seeds 190M,
+  2,000 pairs: +0.055 (95% CI -0.005..+0.115), 50.7%** -- not worse, agrees with the
+  deep check. JS = Python 100/100 (stub-net fixture regenerated with the v2 scales;
+  the old fixture under v2 weights diverges, so the check is live); stub-search
+  time 9.8 s -> 9.3 s (no slowdown). The branch changes agent.py, heuristic.js
+  (route terms, already twinned), prefilter_scales.json, heuristic_weights.json
+  (component_scale only); all network-first, no sw bump. Ship = `git merge --ff-only
+  filter-v2` on main (fast-forwards today; rebase if main moved).
   **PLAYOUT CHECK of the quiz (`quiz_playout.py`, mode `quizroll`):** 1,203 positions
   with cost >= 0.3, his move vs the champion's played to the END 32x each, champion
   both sides, common dice. First single position (3b19f3bf t39, capture vs G4,
