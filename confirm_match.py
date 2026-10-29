@@ -17,10 +17,31 @@ N_WORKERS = int(os.environ.get('N_WORKERS', '3'))
 os.environ.setdefault('GATE_PREFILTER', '12,40,5')
 
 
+_SIDES = {}
+
+
+def _side(path, tag):
+    """The app agent for one side. SCALES_A / SCALES_B (a prefilter scales file)
+    give that side its own prefilter ranking -- same net, two filters."""
+    f = os.environ.get('SCALES_' + tag)
+    if not f:
+        from arena import _agent
+        return _agent(path, hand_rules=True)
+    if tag not in _SIDES:
+        import torch
+        from network import model_from_state
+        from agent_gnn import GNNAgent, prefilter_kwargs
+        os.environ['PREFILTER_SCALES_FILE'] = os.path.abspath(f)
+        m = model_from_state(torch.load(path, map_location='cpu'), strict=False)
+        _SIDES[tag] = GNNAgent(model=m, hand_rules=True, **prefilter_kwargs(os.environ['GATE_PREFILTER']))
+        del os.environ['PREFILTER_SCALES_FILE']
+    return _SIDES[tag]
+
+
 def _game(task):
     a, b, seed, a_white = task
-    from arena import _agent, _play
-    wa, wb = _agent(a, hand_rules=True), _agent(b, hand_rules=True)
+    from arena import _play
+    wa, wb = _side(a, 'A'), _side(b, 'B')
     winner, score = _play(seed, wa if a_white else wb, wb if a_white else wa)
     if winner is None:
         m = 0
