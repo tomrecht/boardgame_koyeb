@@ -705,6 +705,14 @@ with it in mind.** Assessment and the concrete implications:
   with cost >= 0.3, his move vs the champion's played to the END 32x each, champion
   both sides, common dice. First single position (3b19f3bf t39, capture vs G4,
   64 pairs): claim +0.46, playouts +0.06 +- 0.32 -- costs look overstated.
+  **RESULT (2026-10-29, all 1,203, `review/playout/out.jsonl`): the champion's
+  quiz verdicts HOLD.** Playouts (his - champion's, 32 each, common dice) mean
+  +0.288 +- 0.029 vs claimed +0.462; slope 0.85, intercept -0.105, corr +0.29
+  (per-position SE ~0.45). By claim: 0.3-0.5 (869) playouts +0.21, champion ahead
+  66%, clearly behind 1%; 0.5-1.0 (312) +0.46, 83%, 0%; > 1.0 (22) +1.08, 95%.
+  Opening 0.73 of claim, midgame 0.56. 11 positions clearly favour his move --
+  about chance at 1,203 tests; tagged in the quiz, not dropped. Far better than
+  the October benchmark (slope 0.29, corr 0.09 for blend4way vs owner).
 - **"PLAY THIS TURN OUT" (owner-only, 2026-10-28).** Settings > Game log > Play this
   turn out (needs GitHub sync): at the turn's end the start + end positions
   (getGameState format) go to quahuru-games `playouts/req/<id>.json` (queue in
