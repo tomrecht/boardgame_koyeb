@@ -45,7 +45,7 @@ jobs:
         env: { GH_TOKEN: '${{ github.token }}' }
         run: |
           pip install torch==2.2.2 --index-url https://download.pytorch.org/whl/cpu
-          pip install "numpy<2" scipy
+          pip install "numpy<2" scipy pillow
           gh release download cloud-scratch -p 11f363793239-distill_cand13.pt -R "${{ github.repository }}"
       - if: steps.check.outputs.pending != '0'
         env: { GAMES_TOKEN: '${{ secrets.GAMES_TOKEN }}', MODEL: 11f363793239-distill_cand13.pt, PYTHONHASHSEED: '0' }
