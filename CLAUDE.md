@@ -169,6 +169,12 @@ Whenever a new net ships, re-run (cheapest first; GitHub = free):
   4. Difficulty knots: `remote_play('difficulty', [<net>], 750, 0, out,
      env={'LEVELS': '0.65,0.74,0.80,0.93,1.0'})`, then `difficulty_fine.py analyze
      out` -- the knots were spaced for ~4/15/26/37/50% vs full strength.
+     **cand13 (2026-10-29, 150 pairs each, `review/difficulty/cand13.jsonl`):**
+     Easiest 0.65 9.0% (6-13), Gentle 0.74 15.7% (12-20), Medium 0.80 24.7%
+     (20-30), Strong 0.93 39.3% (34-45), Max 50% -- margins -2.99 / -2.11 /
+     -1.58 / -0.76. Knots still hold, except EASIEST is now ~9% not ~4% (Oct:
+     0.70 gave 7.5%, 0.60 0.8%); lowering its knot to ~0.60 would restore it
+     (owner's call). Ignore analyze's 'slider' column (old 0.8-1.0 mapping).
   5. Close-call gauge (`remote_play.py ccmatch <net> 2000`) and calib_bench.
   6. Endgame lookahead and prefilter sizes (12/40): only if 2-4 moved.
 
