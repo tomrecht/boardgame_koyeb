@@ -250,6 +250,14 @@ ARCHIVE.md under "Current benchmark".
   beside G3). So for a LONE BLANK the trio-balanced layouts are the most even --
   the opposite of the playout probe, whose region differences were within ~2-3 SE
   and cover whole midgames with numbered pieces.
+  **Who seals which pair today (`seal_census.py`, owner's 516 logged games,
+  a pair = both goals cut off from home by one side's walls):** the COMPUTER
+  builds 2&4 seals 74 times vs 3&5 35 and 1&6 31 (chi-square p ~1e-5; games
+  with one 66/31/28); OWNER 29 / 43 / 43 (p 0.17). Owner's hunch confirmed. 2&4
+  is the fast region of today's heat map (ring-6 tile beside G4 1.49 turns,
+  G2 1.03), yet the solitaire seal costs were level -- so the dominance comes
+  from region x seal (or from where its own pieces travel), which the averaged
+  seal cost misses.
 - **A goal tile can never be blocked** (`is_blocked` requires `type == 'field'`)
   — only the routes to it. Sealing a goal from home takes 2 walls (4 pieces),
   and those same 2 walls seal its whole 4-apart pair.
