@@ -23,14 +23,24 @@ const _DEV_CONSOLE = (function () {
 })();
 // PLAY-TEST GOAL LAYOUTS (owner, 2026-10-29; dev only): ?dev=1&layout=sum7|B
 // renumbers the six goals (ring order from sector 2, partners 4 apart in
-// pairs). The board, the rules and the computer all read it; the computer's net
-// was trained on today's numbering only, so on another layout it plays OUT OF
-// ITS TRAINING (legal, likely weaker). Recorded games carry 'layout'.
+// pairs). The board, the rules and the computer all read it. The computer uses
+// the layout's OWN net if model_<name>.json is shipped (local_agent.js), else
+// today's net OUT OF ITS TRAINING (legal, likely weaker). Recorded games carry
+// 'layout', and 'model' names the layout net when one played.
 const GOAL_LAYOUTS = { sum7: [1, 6, 2, 5, 3, 4], B: [1, 4, 5, 2, 3, 6] };
+// Owner's switch (Settings > Goal layout): shown with ?dev=1 or in a browser
+// with the recorder unlocked; kept in localStorage 'goalLayout'. A ?layout= in
+// the URL (dev) wins over it.
+const _LAYOUT_MENU = (function () {
+    try { return _DEV_CONSOLE || localStorage.getItem('recEnabled') === '1'; }
+    catch (e) { return false; }
+})();
 const GOAL_LAYOUT_NAME = (function () {
     try {
         const n = new URLSearchParams(location.search).get('layout');
-        return (_DEV_CONSOLE && n && GOAL_LAYOUTS[n]) ? n : null;
+        if (_DEV_CONSOLE && n) return GOAL_LAYOUTS[n] ? n : null;
+        const st = _LAYOUT_MENU ? localStorage.getItem('goalLayout') : null;
+        return (st && GOAL_LAYOUTS[st]) ? st : null;
     } catch (e) { return null; }
 })();
 window.QUAHURU_GOAL_LAYOUT = GOAL_LAYOUT_NAME
@@ -2451,6 +2461,45 @@ function createSettingsPanel() {
     recRow.appendChild(recBtns);
     panel.appendChild(recRow);
 
+    // Goal layout (owner only): switching reloads; each layout keeps its own
+    // autosaved game.
+    if (_LAYOUT_MENU) {
+        const lrow = mk('div', 'margin-top:12px; padding-top:10px; border-top:1px solid #e6e9ee;');
+        lrow.appendChild(mk('div', 'font-weight:600; margin-bottom:6px;', 'Goal layout'));
+        const lb = mk('div', 'display:flex; gap:6px;');
+        const cur = GOAL_LAYOUT_NAME || 'today';
+        [['today', 'Today'], ['sum7', 'sum7'], ['B', 'B']].forEach(([key, label]) => {
+            const on = key === cur;
+            const b = mk('button',
+                'flex:1 1 auto; padding:6px 10px; border-radius:7px; cursor:pointer;' +
+                'font-family:' + HUD_FONT + '; font-weight:600; font-size:12px;' +
+                (on ? 'background:#b5623b; color:#fff; border:1px solid #b5623b;'
+                    : 'background:#fff; color:#5a6473; border:1px solid #cfd6e0;'), label);
+            b.onclick = () => {
+                if (on) return;
+                try { if (key === 'today') localStorage.removeItem('goalLayout');
+                      else localStorage.setItem('goalLayout', key); } catch (e) {}
+                const u = new URL(location.href);
+                u.searchParams.delete('layout');
+                location.replace(u.toString());
+            };
+            lb.appendChild(b);
+        });
+        lrow.appendChild(lb);
+        const L = window.QUAHURU_GOAL_LAYOUT;
+        const note = mk('div', 'margin-top:5px; font-size:11.5px; color:#5a6473;', '');
+        // The panel is built before the net loads; fill the note once it has.
+        const fill = () => {
+            if (!L || !L.model) return false;
+            note.textContent = L.model !== 'today' ? 'Computer: net trained on ' + L.name + ' (' + L.model + ')'
+                                                   : 'Computer: today\'s net, not trained on ' + L.name;
+            return true;
+        };
+        if (L && !fill()) { const iv = setInterval(() => { if (fill()) clearInterval(iv); }, 500); }
+        lrow.appendChild(note);
+        panel.appendChild(lrow);
+    }
+
     // Position notation (dev only): copy the live position, or paste one in.
     if (_DEV_CONSOLE) {
         const prow = mk('div', 'margin-top:12px; padding-top:10px; border-top:1px solid #e6e9ee;');
@@ -2699,7 +2748,9 @@ function _recStart(game) {
             id: _recUuid(),
             device: _recDeviceId(),
             at: new Date().toISOString(),
-            model: REC_MODEL_TAG,
+            model: (window.QUAHURU_GOAL_LAYOUT && window.QUAHURU_GOAL_LAYOUT.model
+                    && window.QUAHURU_GOAL_LAYOUT.model !== 'today')
+                ? window.QUAHURU_GOAL_LAYOUT.model : REC_MODEL_TAG,
             ...(GOAL_LAYOUT_NAME ? { layout: GOAL_LAYOUT_NAME } : {}),
             // BOTH, because they are different quantities and only the effective
             // one means anything analytically (see the slider remap in CLAUDE.md).

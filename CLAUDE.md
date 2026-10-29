@@ -160,6 +160,16 @@ sideways scroll, game paused, back returns to How to Play.
   agent_test ALL MATCH. Why these two: train-features-v2 CLAUDE.md, "GOAL
   LAYOUT PROBE" (sum7 = best compromise; B = most even for a lone blank; the
   computer seals 2&4 twice as often as other pairs today).
+  **Owner's switch: Settings > Goal layout (Today / sum7 / B)**, shown with
+  `?dev=1` or where the recorder is unlocked (`recEnabled`); stored in
+  `goalLayout`, reloads on switch; a URL `?layout=` (dev) wins. **A layout's
+  OWN net:** ship `model_<name>.json` (sidecar with `"layout": "<name>"`, from
+  train-features-v2's `onnx_export.py` under `GOAL_LAYOUT=<name>`) + its hashed
+  .onnx to main; build_web.py bundles them, local_agent.js loads them for that
+  layout, else today's net. The Settings row says which net plays; recorded
+  games' `model` = the sidecar's `source`. Measured headless with a stand-in
+  sidecar: sum7 loaded it and played; B (none) fell back; a browser without
+  `recEnabled` shows no row and ignores a stored `goalLayout`.
 
 ## AI and model — current status
 

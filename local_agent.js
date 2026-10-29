@@ -169,9 +169,28 @@ const LocalAgent = (function () {
             weights = w;
             graph = window.buildGraph(staticData);
 
+            // A layout's OWN net, if one has been shipped (model_<name>.json,
+            // whose sidecar must say that layout); otherwise today's net, out
+            // of its training. window.QUAHURU_GOAL_LAYOUT.model says which.
+            let modelUrl = 'model.onnx';
+            const L = window.QUAHURU_GOAL_LAYOUT;
+            if (L) {
+                L.model = 'today';
+                try {
+                    const r = await fetch('model_' + L.name + '.json', { cache: 'no-cache' });
+                    if (r.ok) {
+                        const m = await r.json();
+                        if (m.onnx && m.layout === L.name) {
+                            modelUrl = 'model_' + L.name + '.onnx';
+                            L.model = m.source || ('model_' + L.name);
+                        }
+                    }
+                } catch (e) { /* no layout net: today's */ }
+                console.log('[local-ai] layout ' + L.name + ': net ' + L.model);
+            }
             await window.Infer.init({
                 ort: window.ort,
-                modelUrl: 'model.onnx',
+                modelUrl,
                 staticUrl: 'encoder_static.json',
                 patchStatic: applyGoalLayout,
                 tableUrl: window.QUAHURU_GOAL_LAYOUT

@@ -121,9 +121,19 @@ NEEDS_TABLE = _model_meta().get('features', 'v1') != 'v1'
 # Play-test goal layouts (?dev=1&layout=, game.js): each needs its own table
 # (goal-to-goal distances differ). Not precached -- dev only, online is fine.
 LAYOUT_TABLES = ['endgame_table_sum7.json', 'endgame_table_B.json']
+# A layout's own net, once trained (onnx_export.py under GOAL_LAYOUT=<name> on
+# train-features-v2 writes model_<name>.json + its hashed .onnx). Dev only, not
+# precached. local_agent.js falls back to today's net when absent.
+LAYOUT_MODELS = []
+for _n in ('sum7', 'B'):
+    _p = os.path.join(HERE, 'model_%s.json' % _n)
+    if os.path.exists(_p):
+        _m = json.load(open(_p))
+        assert _m.get('layout') == _n and _m.get('onnx'), _p + ' must name its layout and hashed .onnx'
+        LAYOUT_MODELS += ['model_%s.json' % _n, _m['onnx']]
 BUNDLE = SHELL + ASSETS + STRATEGY + ICONS + PORT + RUNTIME + [MODEL_FILE] + \
     (['endgame_table.json'] if NEEDS_TABLE else []) + \
-    (LAYOUT_TABLES if NEEDS_TABLE else [])
+    (LAYOUT_TABLES if NEEDS_TABLE else []) + LAYOUT_MODELS
 
 
 def sw_precache_list():
