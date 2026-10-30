@@ -282,6 +282,13 @@ ARCHIVE.md under "Current benchmark".
   `model-<hash>.onnx` to main and push (no sw bump: dev only, not precached).
   Owner picks the layout in Settings > Goal layout, which says which net plays.
   Tested: export of cand13 under sum7 matches torch (1.3e-7), sidecar correct.
+  **LAUNCHED 2026-10-30 08:30, work iMac, both at once** (GitHub shards confirmed
+  to receive GOAL_LAYOUT in their SPEC). Times: labelling 600 games ~2 h on 10
+  shards; training 7-18 min here (M4); confirm 13 min on GitHub (sum7 it0's hit a
+  GitHub 502 -> played locally, 40 min). Results (vs champion, 500 pairs):
+  sum7 it0 -0.001 (-0.120..+0.118) keep; fit to labels corr 0.253 -> 0.243, top-1 56.2 -> 54.7%.
+  B    it0 -0.061 (-0.179..+0.057) keep; fit 0.253 -> 0.242, top-1 56.4 -> 55.7%.
+  (cand13's baseline fit on the new layouts, 0.25 / 56%, is the same as on today's -- the net transfers.)
 - **A goal tile can never be blocked** (`is_blocked` requires `type == 'field'`)
   — only the routes to it. Sealing a goal from home takes 2 walls (4 pieces),
   and those same 2 walls seal its whole 4-apart pair.
