@@ -728,8 +728,8 @@ with it in mind.** Assessment and the concrete implications:
   an "opponent route lengthening" component (numbered pieces, incl. those <= 6 away)
   + refit the component scales to cand13 (fitted for blend4way at 96% keep; never
   refitted since). Judge by keep-rate on held-out games, then the deep-check cost.
-  **DONE, READY ON BRANCH `filter-v2` (off main, NOT merged; owner to approve,
-  2026-10-29).** Two new scaled-only components, ROUTE LENGTHS (`numbered_route`:
+  **SHIPPED: `filter-v2` is merged into main (live since 2026-10-29, c7251a9;
+  confirmed 2026-10-30).** Two new scaled-only components, ROUTE LENGTHS (`numbered_route`:
   own-goal distance of each unsaved numbered piece on the board, capped 16;
   `blank_route`: nearest-goal distance of field blanks) + all 25 scales refitted
   to cand13 (`prefilter_fit.py final2`, rescaled to the shipped scores' spread so
@@ -750,8 +750,8 @@ with it in mind.** Assessment and the concrete implications:
   the old fixture under v2 weights diverges, so the check is live); stub-search
   time 9.8 s -> 9.3 s (no slowdown). The branch changes agent.py, heuristic.js
   (route terms, already twinned), prefilter_scales.json, heuristic_weights.json
-  (component_scale only); all network-first, no sw bump. Ship = `git merge --ff-only
-  filter-v2` on main (fast-forwards today; rebase if main moved).
+  (component_scale only); all network-first, no sw bump. Merged into
+  main; the branch is kept only as history.
   **PLAYOUT CHECK of the quiz (`quiz_playout.py`, mode `quizroll`):** 1,203 positions
   with cost >= 0.3, his move vs the champion's played to the END 32x each, champion
   both sides, common dice. First single position (3b19f3bf t39, capture vs G4,
