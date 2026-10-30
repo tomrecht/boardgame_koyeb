@@ -45,8 +45,8 @@ cherry-pick-to-both rule is GONE — the branches share one history now. See
 
 **WORKSPACE CONSTRAINT (owner, 2026-07-21; machines corrected 2026-10-23): THREE machines --
 the HOME iMac (Intel i5-7500, 4 cores, no usable training GPU: MPS hard-aborts; folder
-`/Users/tom/Game/BoardGame`), the WORK iMac (2024, Apple Silicon; runs the long jobs with
-N_WORKERS=8, often free for 2-3 days at a time; folder: ask owner) and a MacBook Pro M3
+`/Users/tom/Game/BoardGame`), the WORK iMac (2024, Apple M4, 8 cores, 16 GB; runs the long jobs with
+N_WORKERS=8, often free for 2-3 days at a time; folder `/Users/tomrecht/quahuru-train`) and a MacBook Pro M3
 (folder `/Users/tomrecht/game/boardgame_koyeb`, which older notes call "the MacBook").
 Work only inside the repo folder on whichever machine.** The two Apple Silicon machines should
 be able to train on MPS (`BOARDGAME_DEVICE=mps`) -- unverified, see the Monday plan. Reads/writes outside it trigger permission prompts. Do NOT create git worktrees or files in sibling dirs; run new experiments from a branch checked out *in this folder* (or keep files here).
