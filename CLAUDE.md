@@ -288,6 +288,8 @@ ARCHIVE.md under "Current benchmark".
   GitHub 502 -> played locally, 40 min). Results (vs champion, 500 pairs):
   sum7 it0 -0.001 (-0.120..+0.118) keep; fit to labels corr 0.253 -> 0.243, top-1 56.2 -> 54.7%.
   B    it0 -0.061 (-0.179..+0.057) keep; fit 0.253 -> 0.242, top-1 56.4 -> 55.7%.
+  sum7 it1 +0.095 (-0.031..+0.221) PROMOTE (confirm hit a transient GitHub 500 on one shard's checkpoint download -> local); fit corr AFTER 0.294, top-1 56.7%.
+  B    it1 -0.027 (-0.152..+0.098) keep; fit AFTER 0.318, top-1 57.0%.
   (cand13's baseline fit on the new layouts, 0.25 / 56%, is the same as on today's -- the net transfers.)
 - **A goal tile can never be blocked** (`is_blocked` requires `type == 'field'`)
   — only the routes to it. Sealing a goal from home takes 2 walls (4 pieces),
