@@ -311,6 +311,7 @@ ARCHIVE.md under "Current benchmark".
   **sum7 ROUND 2 (owner, 2026-11-02 ~12:15): `layout_round2.sh sum7`** -- iterations 8-15 from cand_7,
   same settings, REMOTE_QUEUE_MIN 90, then the final check vs cand13 (2,000 pairs, seeds 204M) ->
   `layout_final/sum7_r2.log`, all in one shell chain. B: no round 2 (flat).
+  sum7 it8 +0.090 (-0.035..+0.215) PROMOTE (fit AFTER 0.276/56.7%, below its 0.294/57.6% baseline).
 - **A goal tile can never be blocked** (`is_blocked` requires `type == 'field'`)
   — only the routes to it. Sealing a goal from home takes 2 walls (4 pieces),
   and those same 2 walls seal its whole 4-apart pair.
