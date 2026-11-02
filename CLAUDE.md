@@ -301,8 +301,16 @@ ARCHIVE.md under "Current benchmark".
   died with the VS Code session on Fri evening** (session-only cron) -- final checks, export and
   second rounds were not run until Mon 2026-11-02. Lesson: CronCreate jobs do not survive the
   editor closing; for a multi-day job, chain the follow-up steps into the shell driver itself.
-  Final checks (2,000 pairs on GitHub, champion vs cand13 on that layout; seeds 200M sum7 / 202M B):
-  launched 2026-11-02, `layout_final/<L>.log`.
+  **FINAL CHECKS (2026-11-02, 2,000 pairs on GitHub, champion vs cand13 ON that layout, app config):
+  sum7 cand_7 +0.102 (95% CI +0.037..+0.167), 51.7%** (seeds 200M; nominal +0.55 -> ~19% real);
+  **B cand_6 +0.023 (-0.042..+0.088), 49.1% -- level, NOT shipped** (cand13 plays B).
+  **sum7 cand_7 SHIPPED to main + testing (fd162e2): model_sum7.json + model-e36af44d.onnx**,
+  committed with git plumbing (main not checked out here while the round-2 run uses this folder).
+  Build check passed on a scratch copy of main; not driven in a browser (app path tested with a
+  stand-in sidecar on c7251a9).
+  **sum7 ROUND 2 (owner, 2026-11-02 ~12:15): `layout_round2.sh sum7`** -- iterations 8-15 from cand_7,
+  same settings, REMOTE_QUEUE_MIN 90, then the final check vs cand13 (2,000 pairs, seeds 204M) ->
+  `layout_final/sum7_r2.log`, all in one shell chain. B: no round 2 (flat).
 - **A goal tile can never be blocked** (`is_blocked` requires `type == 'field'`)
   — only the routes to it. Sealing a goal from home takes 2 walls (4 pieces),
   and those same 2 walls seal its whole 4-apart pair.
