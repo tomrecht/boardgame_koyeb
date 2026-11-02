@@ -291,6 +291,18 @@ ARCHIVE.md under "Current benchmark".
   sum7 it1 +0.095 (-0.031..+0.221) PROMOTE (confirm hit a transient GitHub 500 on one shard's checkpoint download -> local); fit corr AFTER 0.294, top-1 56.7%.
   B    it1 -0.027 (-0.152..+0.098) keep; fit AFTER 0.318, top-1 57.0%.
   (cand13's baseline fit on the new layouts, 0.25 / 56%, is the same as on today's -- the net transfers.)
+  Iterations 2-7 (vs champion, 500 pairs; fit AFTER corr / top-1):
+  sum7 it2 -0.053 keep (0.279/56.4%); it3 +0.069 PROMOTE (0.339/58.0%); it4 +0.156 (+0.026..+0.286)
+       PROMOTE (0.281/56.7%); it5 -0.050 keep; it6 +0.191 (+0.057..+0.325) PROMOTE (0.299/56.5%);
+       it7 +0.042 PROMOTE (0.307/57.9%). 5 promotions, nominal sum +0.55 -> champion cand_7.
+  B    it2 -0.042, it3 -0.063, it4 -0.014 keep; it5 +0.022 PROMOTE; it6 +0.023 PROMOTE; it7 -0.022
+       keep. Nominal sum +0.045 -> champion cand_6 (effectively still cand13).
+  Both rounds finished Sat 2026-10-31 ~07:00 (sum7 06:30, B 07:11). **The unattended check-ins
+  died with the VS Code session on Fri evening** (session-only cron) -- final checks, export and
+  second rounds were not run until Mon 2026-11-02. Lesson: CronCreate jobs do not survive the
+  editor closing; for a multi-day job, chain the follow-up steps into the shell driver itself.
+  Final checks (2,000 pairs on GitHub, champion vs cand13 on that layout; seeds 200M sum7 / 202M B):
+  launched 2026-11-02, `layout_final/<L>.log`.
 - **A goal tile can never be blocked** (`is_blocked` requires `type == 'field'`)
   — only the routes to it. Sealing a goal from home takes 2 walls (4 pieces),
   and those same 2 walls seal its whole 4-apart pair.
