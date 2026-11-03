@@ -318,6 +318,11 @@ ARCHIVE.md under "Current benchmark".
   sum7 it12 +0.006 (-0.122..+0.134) PROMOTE (fit AFTER 0.268/56.7%).
   sum7 it13 +0.098 (-0.028..+0.224) PROMOTE (fit AFTER 0.287/57.6%). Iterations take ~3 h each (not ~2 h).
   sum7 it14 -0.147 (-0.268..-0.026) keep (fit AFTER 0.280/56.5%).
+  sum7 it15 -0.020 (-0.148..+0.108) keep (fit AFTER 0.244/57.1%). Round 2: 5 promotions (it8/9/10/12/13, it10 and it12 ~0), champion distill_sum7/cand_13.
+  **ROUND 2 FINAL (2026-11-03, 2,000 pairs on GitHub, seeds 204M): sum7 cand_13 vs distill_cand13 on sum7 +0.148 (95% CI
+  +0.082..+0.215), 52.9%** (round 1 cand_7: +0.102, other seeds). **SHIPPED to main + testing (ab7b127):
+  model_sum7.json -> model-dffd8d8f.onnx (source sum7_r2_cand_13.pt), replacing model-e36af44d.onnx**; build check passed.
+  Head to head r2 vs r1 (cand_13 vs cand_7 on sum7, 2,000 pairs, seeds 206M) -> `layout_final/sum7_r2_vs_r1.log`.
 - **A goal tile can never be blocked** (`is_blocked` requires `type == 'field'`)
   — only the routes to it. Sealing a goal from home takes 2 walls (4 pieces),
   and those same 2 walls seal its whole 4-apart pair.
