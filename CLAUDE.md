@@ -233,7 +233,7 @@ ARCHIVE.md under "Current benchmark".
   **This reverses the October lean** (blend-played, 36 positions: -0.07 overall, late -0.63 on 3-4
   positions). Two things changed at once -- the playout policy (cand13 vs the blend) and the
   sample -- so it does not say which. Read as: with today's net playing, bring-N-in is worth
-  ~+0.15 on average and more the further N's goal is from goals 5/6's numbers (N=4 > N=1); the
+  ~+0.15 on average, more for higher N (N=4 > N=1; cause untested); the
   late "save" lead did not survive 17 positions. Rule for STRATEGY.md, if owner agrees: on a 5-6
   with the 5 and 6 on their goals and N 11 out, bring N in, especially N=3-4; late it is a coin
   toss.
