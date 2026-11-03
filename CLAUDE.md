@@ -214,8 +214,17 @@ ARCHIVE.md under "Current benchmark".
   -0.11; corr with playouts 0.28 -> 0.41. So NOT an upweighting case: the fix
   is afterstate training -- rerun frames.py on the first afterstate net (its
   search-frame B-A should drop to ~-0.1). Bringing a BLANK in
-  is dominated (owner), not played out. A 177-position run (identity-swapped
-  positions) is set up, NOT yet run: `probe_save56/README.md`.
+  is dominated (owner), not played out.
+  **Rerun on cand13, the afterstate net (2026-11-03, `frames.py` -> `frames_cand13.json`):
+  search-frame B-A +0.10 (blend: +0.25), corr with the playouts 0.37 (blend 0.28).** It moved
+  ~60% of the way to the playouts' -0.11, so the lean to bringing N in is smaller but not gone.
+  (The script's "trained frame" column means nothing for an afterstate net: it feeds it
+  opponent-turn-start dice inputs it never saw.) Caveat: the 36 playout labels were played by
+  the blend's policy. `rungen.jsonl` is not in git; frames.py now reads the playout means from
+  `frames_blend4way.json` (the first run's output) when it is missing.
+  **The 177-position run on cand13 is RUNNING (2026-11-03 ~13:40, work iMac, 6 workers):**
+  `TAG=_cand13 NET=distill_cand13.pt N=40 PER=40 N_WORKERS=6 probe_save56/runswap.py` ->
+  `swap_prefs_cand13.json`, `runswap_cand13.jsonl`; `TAG=_cand13 python3 probe_save56/analyze.py`.
 - **GOAL LAYOUT PROBE: NO RENUMBERING BEATS TODAY'S (owner's question,
   2026-10-28/29; `layout_probe.py`, report `layout_probe_report.json`).** Six
   numberings of the goal tiles in ring order (partners = positions 01/23/45):

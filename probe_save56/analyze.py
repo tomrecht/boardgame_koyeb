@@ -10,9 +10,10 @@ import json, os, random, statistics as st
 from collections import defaultdict
 
 D = os.path.dirname(os.path.abspath(__file__))
-prefs = {(p['game'], p['turn'], p['n']): p for p in json.load(open(f'{D}/swap_prefs.json'))}
+TAG = os.environ.get('TAG', '')
+prefs = {(p['game'], p['turn'], p['n']): p for p in json.load(open(f'{D}/swap_prefs{TAG}.json'))}
 runs = defaultdict(dict)
-for line in open(f'{D}/runswap.jsonl'):
+for line in open(f'{D}/runswap{TAG}.jsonl'):
     r = json.loads(line)
     runs[(r['game'], r['turn'], r['n'])].setdefault(r['i'], {})[r['opt']] = r['margin']
 

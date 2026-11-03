@@ -4,6 +4,7 @@ from multiprocessing import Pool
 import s56, sswap, splace, rollout_probe as RP, weakness_probe as W
 N = int(os.environ.get('N', '40')); PER = int(os.environ.get('PER', '40'))
 D = os.path.dirname(os.path.abspath(__file__))
+TAG = os.environ.get('TAG', '')   # output suffix, e.g. _cand13 (default: the original names)
 
 def pref(item):
     r, n, A, B, swapped = item
@@ -49,12 +50,12 @@ if __name__ == '__main__':
             used.add(x[0]['game']); used_turn.add((x[0]['game'], x[0]['turn']))
     pick += [x for x in splace.positions() if late(x) and (x[0]['game'], x[0]['turn']) not in used_turn]
     print('positions', len(pick), 'late', sum(map(late, pick)), flush=True)
-    with Pool(3, initializer=W.agent) as pool:
+    with Pool(int(os.environ.get('N_WORKERS', '3')), initializer=W.agent) as pool:
         prefs = pool.map(pref, pick)
-        json.dump(prefs, open(f'{D}/swap_prefs.json', 'w'))
+        json.dump(prefs, open(f'{D}/swap_prefs{TAG}.json', 'w'))
         print('prefs', len(prefs), flush=True)
         tasks = [(p, o, i) for i in range(N) for p in prefs for o in 'AB']
-        with open(f'{D}/runswap.jsonl', 'a') as f:
+        with open(f'{D}/runswap{TAG}.jsonl', 'a') as f:
             for res in pool.imap_unordered(job, tasks):
                 f.write(json.dumps(res) + '\n'); f.flush()
     print('done', flush=True)

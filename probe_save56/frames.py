@@ -9,10 +9,15 @@ D = os.path.dirname(os.path.abspath(__file__))
 play = {('3c25f709', 1): -0.24, ('506cc169', 1): -1.26, ('48c9e1c7', 1): -0.01}
 Bfirst = {k: "((('%s', 1), (5, 10), 5), (('%s', 1), (7, 12), 6))" for k in play}
 runs = defaultdict(dict)
-for l in open(f'{D}/rungen.jsonl'):
-    r = json.loads(l); runs[(r['game'], r['n'])].setdefault(r['i'], {})[r['opt']] = r['margin']
-for k, v in runs.items():
-    play[k] = st.mean(x['B'] - x['A'] for x in v.values())
+if os.path.exists(f'{D}/rungen.jsonl'):
+    for l in open(f'{D}/rungen.jsonl'):
+        r = json.loads(l); runs[(r['game'], r['n'])].setdefault(r['i'], {})[r['opt']] = r['margin']
+    for k, v in runs.items():
+        play[k] = st.mean(x['B'] - x['A'] for x in v.values())
+else:   # rungen.jsonl is not in git: take the playout means saved by the first run
+    for r in json.load(open(f'{D}/frames_blend4way.json')):
+        play[tuple(r['k'])] = r['play']
+OUT = os.environ.get('OUT', f'{D}/frames.json')
 P = {(p['game'], p['n']): p for p in json.load(open(f'{D}/gen_prefs.json'))}
 ag = F.agent()
 rows = []
@@ -31,7 +36,7 @@ for r, n, A, B in sgen.positions():
         b.game_stages.update(st0)
         vals[tag] = (cur, tr)
     rows.append({'k': k, 'play': play[k], 'cur': vals['B'][0] - vals['A'][0], 'tr': vals['B'][1] - vals['A'][1]})
-json.dump(rows, open(f'{D}/frames.json', 'w'))
+json.dump(rows, open(OUT, 'w'))
 print(len(rows), 'positions')
 for f in ('cur', 'tr'):
     xs = [r[f] for r in rows]; ys = [r['play'] for r in rows]
