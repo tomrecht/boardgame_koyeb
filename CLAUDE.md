@@ -222,9 +222,21 @@ ARCHIVE.md under "Current benchmark".
   opponent-turn-start dice inputs it never saw.) Caveat: the 36 playout labels were played by
   the blend's policy. `rungen.jsonl` is not in git; frames.py now reads the playout means from
   `frames_blend4way.json` (the first run's output) when it is missing.
-  **The 177-position run on cand13 is RUNNING (2026-11-03 ~13:40, work iMac, 6 workers):**
-  `TAG=_cand13 NET=distill_cand13.pt N=40 PER=40 N_WORKERS=6 probe_save56/runswap.py` ->
-  `swap_prefs_cand13.json`, `runswap_cand13.jsonl`; `TAG=_cand13 python3 probe_save56/analyze.py`.
+  **177-POSITION RUN ON cand13 (2026-11-03, work iMac, 6 workers, ~2 h; cand13 1-ply plays both
+  sides, 40 pairs per position, CIs by game; `swap_prefs_cand13.json`, `runswap_cand13.jsonl`,
+  `TAG=_cand13 python3 probe_save56/analyze.py`): BRINGING N IN WINS, +0.156 (95% CI
+  +0.083..+0.226), rising with N:** N=1 -0.002, N=2 +0.135, N=3 +0.158 (+0.020..+0.288), N=4
+  +0.330 (+0.176..+0.479). Late (mover <= 8 unsaved, 17 positions) level, +0.028 (-0.18..+0.21);
+  early +0.170. Unmodified positions (35) +0.113, identity-swapped (142) +0.167 -- the swap does
+  not bias it. The net's own B-A +0.093 overall (late -0.21, i.e. it leans to SAVING late),
+  per-position corr with the playouts 0.255, sign agreement 104/177.
+  **This reverses the October lean** (blend-played, 36 positions: -0.07 overall, late -0.63 on 3-4
+  positions). Two things changed at once -- the playout policy (cand13 vs the blend) and the
+  sample -- so it does not say which. Read as: with today's net playing, bring-N-in is worth
+  ~+0.15 on average and more the further N's goal is from goals 5/6's numbers (N=4 > N=1); the
+  late "save" lead did not survive 17 positions. Rule for STRATEGY.md, if owner agrees: on a 5-6
+  with the 5 and 6 on their goals and N 11 out, bring N in, especially N=3-4; late it is a coin
+  toss.
 - **GOAL LAYOUT PROBE: NO RENUMBERING BEATS TODAY'S (owner's question,
   2026-10-28/29; `layout_probe.py`, report `layout_probe_report.json`).** Six
   numberings of the goal tiles in ring order (partners = positions 01/23/45):
@@ -271,7 +283,8 @@ ARCHIVE.md under "Current benchmark".
   DONE 2026-11-03).** **SUMMARY FOR OWNER:** sum7 has its own net, live on main for Settings >
   Goal layout: round 2's champion, **+0.148 (95% CI +0.082..+0.215) vs cand13 on sum7**, 2,000
   pairs (round 1's was +0.102). B trained flat (+0.023, level) -- cand13 plays B, no round 2.
-  Round 2 vs round 1 head to head: `layout_final/sum7_r2_vs_r1.log`. Details below.
+  Round 2 vs round 1 head to head on sum7: **+0.093 (95% CI +0.028..+0.158)**, 50.9%, 2,000
+  pairs (seeds 206M) -- round 2 really is better. Details below.
   `goal_layout.py` (unset = today, nothing changes) is
   read by game.Board (goal tile numbers), encoder (tile input [6]), features_v2
   (`endgame_table_<name>.json` + lone-blank bank times from it), symmetry (PI
@@ -335,7 +348,7 @@ ARCHIVE.md under "Current benchmark".
   **ROUND 2 FINAL (2026-11-03, 2,000 pairs on GitHub, seeds 204M): sum7 cand_13 vs distill_cand13 on sum7 +0.148 (95% CI
   +0.082..+0.215), 52.9%** (round 1 cand_7: +0.102, other seeds). **SHIPPED to main + testing (ab7b127):
   model_sum7.json -> model-dffd8d8f.onnx (source sum7_r2_cand_13.pt), replacing model-e36af44d.onnx**; build check passed.
-  Head to head r2 vs r1 (cand_13 vs cand_7 on sum7, 2,000 pairs, seeds 206M) -> `layout_final/sum7_r2_vs_r1.log`.
+  Head to head r2 vs r1 (cand_13 vs cand_7 on sum7, 2,000 pairs, seeds 206M): +0.093 (+0.028..+0.158), 50.9%.
 - **A goal tile can never be blocked** (`is_blocked` requires `type == 'field'`)
   — only the routes to it. Sealing a goal from home takes 2 walls (4 pieces),
   and those same 2 walls seal its whole 4-apart pair.
