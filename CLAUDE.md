@@ -268,7 +268,11 @@ ARCHIVE.md under "Current benchmark".
   from region x seal (or from where its own pieces travel), which the averaged
   seal cost misses.
 - **TRAINING ON ANOTHER GOAL LAYOUT: `GOAL_LAYOUT=sum7|B` (owner, 2026-10-29;
-  READY, NOT LAUNCHED).** `goal_layout.py` (unset = today, nothing changes) is
+  DONE 2026-11-03).** **SUMMARY FOR OWNER:** sum7 has its own net, live on main for Settings >
+  Goal layout: round 2's champion, **+0.148 (95% CI +0.082..+0.215) vs cand13 on sum7**, 2,000
+  pairs (round 1's was +0.102). B trained flat (+0.023, level) -- cand13 plays B, no round 2.
+  Round 2 vs round 1 head to head: `layout_final/sum7_r2_vs_r1.log`. Details below.
+  `goal_layout.py` (unset = today, nothing changes) is
   read by game.Board (goal tile numbers), encoder (tile input [6]), features_v2
   (`endgame_table_<name>.json` + lone-blank bank times from it), symmetry (PI
   derived from the layout) and the start pool in league_run / close_call
