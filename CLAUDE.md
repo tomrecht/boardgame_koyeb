@@ -316,6 +316,7 @@ ARCHIVE.md under "Current benchmark".
   sum7 it10 +0.007 (-0.107..+0.121) PROMOTE (fit AFTER 0.245/55.7%).
   sum7 it11 -0.070 (-0.194..+0.054) keep (fit AFTER 0.263/55.9%).
   sum7 it12 +0.006 (-0.122..+0.134) PROMOTE (fit AFTER 0.268/56.7%).
+  sum7 it13 +0.098 (-0.028..+0.224) PROMOTE (fit AFTER 0.287/57.6%). Iterations take ~3 h each (not ~2 h).
 - **A goal tile can never be blocked** (`is_blocked` requires `type == 'field'`)
   — only the routes to it. Sealing a goal from home takes 2 walls (4 pieces),
   and those same 2 walls seal its whole 4-apart pair.
