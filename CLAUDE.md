@@ -443,6 +443,29 @@ net to play the playouts** -- today's 1-ply policy has the frame mismatch that
 biases it toward bringing pieces in (frames.py); trained-frame scoring works now
 but costs ~21x.
 
+**DONE 2026-11-04 (`probe_savebring/`: sb.py screen -> prefs -> play, analyze.py --tree;
+cand13 = distill_cand13 plays everything).** Screen: 105,416 (position, roll) of owner's
+start pool with a save legal and an arrival reachable; net prefs on 2,980 (A = net's best
+max-save pair, B = net's best pair with fewer saves that brings a piece onto a bankable goal;
+the net's top pair is B in ~37%); 400 positions stratified by what B brings in x saves given
+up x late (mover <= 8 unsaved), 40 paired playouts each (32,000 games). B - A, CIs by game:
+
+        all             400  -0.102 (-0.163..-0.043)   net -0.147
+        B numbered      180  +0.090 (+0.005..+0.175)   net +0.080
+        B blank         220  -0.259 (-0.334..-0.181)   net -0.333
+        early / late         +0.006 / -0.232
+        blank-1 early/late   -0.005 / -0.279           num-1 early/late  +0.087 / -0.047
+        blank-2 early/late   -0.240 / -0.510           num-2 early/late  +0.185 / +0.234 (n=17)
+
+**Rule: bringing a NUMBERED piece onto its goal is worth giving up a save (~+0.1, even two
+saves early); bringing a BLANK onto a goal is not (-0.26, worse late and for two saves);
+when the opponent has <= 4 pieces left, save.** Depth-2 tree, held out by game (GroupKFold 5):
+MSE -13.5% vs a constant (depth 1 -5.5%, depth 3 -12.8%): opp unsaved <= 4 -> save (-0.49,
+-0.71 if opp in endgame); else B numbered +0.18 / B blank -0.20. **The net already knows it:**
+per-position corr of its B-A with the playouts +0.67 (playouts by the same net, so partly
+shared judgement), stratum means within ~0.1, slightly over-favouring saves on blanks early
+(net -0.14 vs -0.01). No training target here. Consistent with save56 (bring N in +0.156).
+
 ## Next training run: encoder changes (owner + Claude, 2026-10-04)
 
 Any new input reshapes the input layer, so these need a **from-scratch** run, not
