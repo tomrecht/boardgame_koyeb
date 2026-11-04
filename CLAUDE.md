@@ -349,6 +349,11 @@ ARCHIVE.md under "Current benchmark".
   +0.082..+0.215), 52.9%** (round 1 cand_7: +0.102, other seeds). **SHIPPED to main + testing (ab7b127):
   model_sum7.json -> model-dffd8d8f.onnx (source sum7_r2_cand_13.pt), replacing model-e36af44d.onnx**; build check passed.
   Head to head r2 vs r1 (cand_13 vs cand_7 on sum7, 2,000 pairs, seeds 206M): +0.093 (+0.028..+0.158), 50.9%.
+  **LAUNCHED 2026-11-04 13:05 (owner), side by side, `after_savebring.sh`:** today's layout
+  `TAG=r1 layout_round2.sh today 22 210000000` (iterations 14-21 from distill/cand_13 = live net,
+  final check vs distill_cand13 -> `layout_final/today_r1.log`) and sum7 round 3
+  `TAG=r3 layout_round2.sh sum7 24 208000000` (iterations 16-23 -> `layout_final/sum7_r3.log`; its
+  final check is vs distill_cand13, so ship only after a head to head vs distill_sum7/cand_13).
 - **A goal tile can never be blocked** (`is_blocked` requires `type == 'field'`)
   — only the routes to it. Sealing a goal from home takes 2 walls (4 pieces),
   and those same 2 walls seal its whole 4-apart pair.
