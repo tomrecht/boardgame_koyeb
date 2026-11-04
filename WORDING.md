@@ -241,6 +241,8 @@ Button in How to Play, under the tutorial button: **Strategy tips**. Panel title
 
 **Save a numbered piece before a blank**, especially a high one. While it sits on a high goal, your blanks on lower goals can’t bank with a higher die in the endgame: they need exact rolls.
 
+**Bringing a numbered piece home can beat saving two.** With your 5 and 6 on their goals and another numbered piece 11 from its own, a roll of 5-6 is usually better spent taking that piece home than saving the 5 and the 6 — especially a 3 or a 4. Late in the game it’s a toss-up.
+
 **Don’t leave a numbered piece alone where it can be captured.** A lone blank is fine — it’s often the first piece of a wall.
 
 **Park numbered pieces behind a wall.**

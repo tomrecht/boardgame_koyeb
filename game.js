@@ -5482,6 +5482,7 @@ function showStrategy() {
         ['Numbered pieces',
          '<p><b>Get your numbered pieces home early.</b> A blank can use any goal; a numbered piece needs its own, then an exact roll to bank. Get each one onto its goal, or within one die of it — unless it’s holding a wall, especially against a higher-numbered piece.</p>' +
          '<p><b>Save a numbered piece before a blank</b>, especially a high one. While it sits on a high goal, your blanks on lower goals can’t bank with a higher die in the endgame: they need exact rolls.</p>' +
+         '<p><b>Bringing a numbered piece home can beat saving two.</b> With your 5 and 6 on their goals and another numbered piece 11 from its own, a roll of 5-6 is usually better spent taking that piece home than saving the 5 and the 6 — especially a 3 or a 4. Late in the game it’s a toss-up.</p>' +
          '<p><b>Don’t leave a numbered piece alone where it can be captured.</b> A lone blank is fine — it’s often the first piece of a wall.</p>' +
          '<p><b>Park numbered pieces behind a wall.</b></p>' +
          fig('park.webp', 'White’s 3 sits behind its own wall on ring 5, so Black can’t get at it.')],

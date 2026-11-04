@@ -11,6 +11,9 @@ where they support or qualify a tip.
 1. **Get numbered pieces to their goal early** (the most important tip), or
    at least within one die of it — unless one is holding a wall, especially a
    wall against a higher-numbered piece.
+   - **On a 5-6, bring a numbered N home rather than save the 5 and 6**
+     (owner agreed, 2026-11-04): the 5 and 6 on their goals, N 11 from its
+     goal. Measured below; shipped in the panel.
 2. **Don't leave numbered blots.** A lone BLANK on an outer ring is fine: it
    is often the first step of a wall there.
 3. **Park numbered pieces behind a wall** so they can't be captured.
@@ -92,6 +95,12 @@ numbered piece is still out (numbered 6: 3.46 spread vs 3.85 all on G1).
   with a numbered 1 or 2, put blanks on its goal; with a 4, a mix (G1 + G4);
   with a 5 or 6, all under it. E.g. a numbered 6 + 3 blanks: G1/G2/G3 banks
   out in 3.46 turns, all on G1 3.85, all on G6 6.08. Details in CLAUDE.md.
+- **(1, save vs bring on a 5-6) Measured 2026-11-03** (`probe_save56/`, 177
+  of owner's positions, cand13 1-ply both sides, 40 paired playouts each, CI
+  by game): bring - save **+0.156 (95% CI +0.083..+0.226)**; by N: 1 0.00,
+  2 +0.14, 3 +0.16, 4 +0.33 (+0.18..+0.48); late (mover <= 8 unsaved, 17
+  positions) +0.03, level. An October run with the older net (36 positions)
+  leaned the other way; the two differ in net and sample.
 - **(2) No measurement of blot danger exists.** The opening rollouts
   (-0.02 pts, CI -0.16..+0.11) measured how BLOCKABLE the computer left its
   numbered pieces, not capture exposure; `weakness_probe` found owner's and
