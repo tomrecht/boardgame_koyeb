@@ -5,7 +5,7 @@
 #   hcap  = net vs the same net playing select_move_pair_fast (WEAK_B=1), 1,000 pairs
 # Every game carries its trajectory (LAYOUT_STATS=1). Analysis: layout_cmp/analyze.py
 cd "$(dirname "$0")/.."
-export PATH=/opt/homebrew/bin:$PATH
+export PATH=/opt/homebrew/bin:$PATH REMOTE_QUEUE_MIN=240 REMOTE_TIMEOUT_MIN=480
 run() {  # layout net mode pairs seed
   local L=$1 NET=$2 M=$3 P=$4 S=$5 W=0; [[ $M == hcap ]] && W=1
   .venv/bin/python -u -c "
