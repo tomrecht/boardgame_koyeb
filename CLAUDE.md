@@ -364,6 +364,24 @@ ARCHIVE.md under "Current benchmark".
   it22 +0.055 P, it23 -0.145 (-0.268..-0.022) keep -> champion distill_sum7/cand_22; **FINAL vs
   distill_cand13 on sum7 (seeds 208M): +0.125 (+0.058..+0.191), 51.9%** -- below r2's +0.148
   (other seeds). Head to head r3 vs r2: `layout_final/sum7_r3_vs_r2.log` (seeds 212M).
+- **WHICH LAYOUT TO PLAY: today / sum7 / B COMPARISON (owner, 2026-11-06; running unattended,
+  owner away to ~11-13).** A game-design question: each layout with its own net (today cand13,
+  sum7 = distill_sum7/cand_13 (r2, shipped), B cand13 -- B's own training was level).
+  PASS 1 (`layout_cmp/run.sh`, `analyze.py` -> REPORT1.txt): 1,500 self-play games
+  (`LAYOUT_STATS=1` trajectories) + 1,000 pairs full vs handicapped (`WEAK_B=1` =
+  select_move_pair_fast) per layout. PASS 2 (`layout_cmp/run2.sh` -> `analyze2.py` ->
+  REPORT2.txt, committed automatically when done): `layout_play.py` also values all 21 rolls
+  each turn with the full agent (luck = thrown - expected; ~120 core-s per game), so it
+  reports skill reward and first-player margin LUCK-ADJUSTED (2-3x tighter), luck share of
+  outcome variance, dead time (turns after the net gives the eventual winner a 95%-won
+  value), lead changes, close-call / forced turns, captures, walls, seals by physical pair,
+  margin spread, length, comebacks. Self-play with A = B: the colour-swapped twin game is
+  IDENTICAL (same seed, same agent), so `SELF_ONLY=1` plays white only. Seal masks checked
+  against seal_census.cut_goals on 6,000 pool positions (0 mismatches). Precision (pass 1,
+  raw): skill +-0.09 per layout, first player +-0.25, comebacks +-2.5 pts.
+  Decision rule agreed with owner: weight skill reward + seal evenness; "level on
+  everything" is an answer (then learnability -- sum7's partners add to 7 -- and his feel).
+  Pass-1 skill (full vs handicapped): sum7 +1.617 (+1.534..+1.700), others in REPORT1.
 - **A goal tile can never be blocked** (`is_blocked` requires `type == 'field'`)
   — only the routes to it. Sealing a goal from home takes 2 walls (4 pieces),
   and those same 2 walls seal its whole 4-apart pair.
