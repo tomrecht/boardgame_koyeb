@@ -45,7 +45,8 @@ def _side(path, tag):
 # statistics are by PHYSICAL tile whatever GOAL_LAYOUT numbers them.
 # WEAK_B=1: side B plays select_move_pair_fast (first move by the net, second
 # greedy after it) -- a handicap that does not depend on the layout.
-LAYOUT_STATS = os.environ.get('LAYOUT_STATS') == '1'
+LAYOUT_STATS = os.environ.get('LAYOUT_STATS', '0')     # '1' trajectory, '2' + roll values (layout_play.py)
+SELF_ONLY = os.environ.get('SELF_ONLY') == '1'         # A white only: for A = B, the twin game is identical
 WEAK_B = os.environ.get('WEAK_B') == '1'
 
 
@@ -114,7 +115,11 @@ def _game(task):
     if WEAK_B:
         wb = _Fast(wb)
     traj = None
-    if LAYOUT_STATS:
+    if LAYOUT_STATS == '2':
+        import layout_play
+        winner, score, traj = layout_play.play(seed, wa if a_white else wb, wb if a_white else wa,
+                                               judge=_side(a, 'A'))
+    elif LAYOUT_STATS == '1':
         winner, score, traj = _play_traj(seed, wa if a_white else wb, wb if a_white else wa)
     else:
         winner, score = _play(seed, wa if a_white else wb, wb if a_white else wa)
@@ -159,7 +164,7 @@ def main():
         for l in open(out):
             r = json.loads(l)
             done.add((r['seed'], r['a_white']))
-    tasks = [(a, b, SEED_BASE + k, w) for k in range(pairs) for w in (True, False)
+    tasks = [(a, b, SEED_BASE + k, w) for k in range(pairs) for w in ((True,) if SELF_ONLY else (True, False))
              if (SEED_BASE + k, w) not in done]
     print(f'{len(tasks)} games to play ({len(done)} done), A={a} B={b}, '
           f'prefilter {os.environ["GATE_PREFILTER"]}, hand rules on', flush=True)
