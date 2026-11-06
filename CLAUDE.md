@@ -363,7 +363,9 @@ ARCHIVE.md under "Current benchmark".
   SUM7 r3: it16 +0.037 P, it17 -0.014, it18 +0.002 P, it19 -0.052, it20 -0.031, it21 +0.040 P,
   it22 +0.055 P, it23 -0.145 (-0.268..-0.022) keep -> champion distill_sum7/cand_22; **FINAL vs
   distill_cand13 on sum7 (seeds 208M): +0.125 (+0.058..+0.191), 51.9%** -- below r2's +0.148
-  (other seeds). Head to head r3 vs r2: `layout_final/sum7_r3_vs_r2.log` (seeds 212M).
+  (other seeds). **Head to head r3 (cand_22) vs r2 (cand_13) on sum7, 2,000 pairs, seeds 212M: -0.014
+  (95% CI -0.082..+0.054), 49.1% -- LEVEL, NOT SHIPPED; r2 stays.** sum7 distillation has
+  saturated too (as today's did). Don't run a round 4.
 - **WHICH LAYOUT TO PLAY: today / sum7 / B COMPARISON (owner, 2026-11-06; running unattended,
   owner away to ~11-13).** A game-design question: each layout with its own net (today cand13,
   sum7 = distill_sum7/cand_13 (r2, shipped), B cand13 -- B's own training was level).
