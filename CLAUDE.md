@@ -383,7 +383,18 @@ ARCHIVE.md under "Current benchmark".
   raw): skill +-0.09 per layout, first player +-0.25, comebacks +-2.5 pts.
   Decision rule agreed with owner: weight skill reward + seal evenness; "level on
   everything" is an answer (then learnability -- sum7's partners add to 7 -- and his feel).
-  Pass-1 skill (full vs handicapped): sum7 +1.617 (+1.534..+1.700), others in REPORT1.
+  **PASS 1 RESULT (2026-11-06, `layout_cmp/REPORT1.txt`; raw, no luck adjustment):**
+
+        layout  skill (full vs hcap)   first player   comeback   length   seals/game  by pair (chi2)
+        today   +1.544 +- 0.088        +0.280 +-0.12   40.4%      55.9     0.94   4&2 623 / 5&3 394 / 6&1 397 (73)
+        sum7    +1.617 +- 0.083        +0.288 +-0.12   40.4%      56.5     0.94   1&6 420 / 2&5 443 / 3&4 540 (17)
+        B       +1.585 +- 0.086        +0.224 +-0.12   41.8%      56.3     1.11   1&4 664 / 5&2 503 / 3&6 496 (33)
+
+  Skill, first-player edge (~+0.25 for white everywhere), comebacks and length are LEVEL across
+  the three (sum7 - today skill +0.07 +- 0.12). The one clear difference is SEALS: today's 2&4
+  takes 44% of all seals in self-play (as in owner's games: computer 74 vs 35/31), sum7 is the
+  most even (largest share 38%), B in between with 1&4 at 40%. All three are uneven beyond
+  chance (chi2 > 5.99), but today most. Pass 2 (luck-adjusted) is running.
 - **A goal tile can never be blocked** (`is_blocked` requires `type == 'field'`)
   — only the routes to it. Sealing a goal from home takes 2 walls (4 pieces),
   and those same 2 walls seal its whole 4-apart pair.
