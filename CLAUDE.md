@@ -354,6 +354,16 @@ ARCHIVE.md under "Current benchmark".
   final check vs distill_cand13 -> `layout_final/today_r1.log`) and sum7 round 3
   `TAG=r3 layout_round2.sh sum7 24 208000000` (iterations 16-23 -> `layout_final/sum7_r3.log`; its
   final check is vs distill_cand13, so ship only after a head to head vs distill_sum7/cand_13).
+  **RESULTS (finished 2026-11-05 ~13:50).** TODAY r1: it14 +0.016 P, it15 +0.081 P, it16 -0.027 keep,
+  it17 +0.131 (+0.002..+0.260) P, it18 +0.035 P, it19 +0.045 P, it20 +0.089 P, it21 +0.038 P -- 7
+  promotions, nominal +0.44 -> champion distill/cand_21; **FINAL vs live distill_cand13 (2,000 pairs,
+  seeds 210M): +0.013 (95% CI -0.053..+0.079), 49.5% -- LEVEL, NOT SHIPPED.** None of the nominal
+  gain was real: distillation on today's layout has saturated at cand13 (consistent with the
+  +0.057 teacher gauge and the rollout-teacher rounds). Don't run it again with this teacher.
+  SUM7 r3: it16 +0.037 P, it17 -0.014, it18 +0.002 P, it19 -0.052, it20 -0.031, it21 +0.040 P,
+  it22 +0.055 P, it23 -0.145 (-0.268..-0.022) keep -> champion distill_sum7/cand_22; **FINAL vs
+  distill_cand13 on sum7 (seeds 208M): +0.125 (+0.058..+0.191), 51.9%** -- below r2's +0.148
+  (other seeds). Head to head r3 vs r2: `layout_final/sum7_r3_vs_r2.log` (seeds 212M).
 - **A goal tile can never be blocked** (`is_blocked` requires `type == 'field'`)
   — only the routes to it. Sealing a goal from home takes 2 walls (4 pieces),
   and those same 2 walls seal its whole 4-apart pair.
