@@ -38,16 +38,94 @@ def _side(path, tag):
     return _SIDES[tag]
 
 
+# LAYOUT_STATS=1 (layout comparison, owner 2026-11-06): each record also carries
+# the game's trajectory, one entry per turn end: [white unsaved, black unsaved,
+# goals cut off from home by WHITE's walls, by BLACK's] -- the last two as 6-bit
+# masks over the goal tiles in ring order (bit i = ring 7 sector 2i+2), so seal
+# statistics are by PHYSICAL tile whatever GOAL_LAYOUT numbers them.
+# WEAK_B=1: side B plays select_move_pair_fast (first move by the net, second
+# greedy after it) -- a handicap that does not depend on the layout.
+LAYOUT_STATS = os.environ.get('LAYOUT_STATS') == '1'
+WEAK_B = os.environ.get('WEAK_B') == '1'
+
+
+class _Fast:
+    def __init__(self, ag): self.ag = ag
+    def select_move_pair(self, moves, board, player):
+        return self.ag.select_move_pair_fast(moves, board, player)
+
+
+def _cut_mask(board, sealer):
+    from collections import deque
+    walls = {t for t in board.tiles if t.type == 'field'
+             and sum(1 for p in t.pieces if p.player == sealer) >= 2}
+    seen = {board.home_tile}; q = deque([board.home_tile])
+    while q:
+        t = q.popleft()
+        for n in t.neighbors:
+            if n in seen or n.type in ('nogo', 'home') or n in walls:
+                continue
+            seen.add(n); q.append(n)
+    m = 0
+    for t in board.tiles:
+        if t.type == 'save' and t not in seen:
+            m |= 1 << ((t.pos - 2) // 2)
+    return m
+
+
+def _play_traj(seed, wag, bag):
+    """arena._play, recording the trajectory."""
+    import random
+    from game import Board
+    from arena import MAX_TURNS, STUCK_LIMIT
+    random.seed(seed)
+    board = Board(); agents = {'white': wag, 'black': bag}
+    last_saved, since, traj = 0, 0, []
+    for t in range(MAX_TURNS):
+        winner, score = board.check_game_over()
+        if winner:
+            return winner, score, traj
+        if board.draw_callable:
+            return None, 0, traj
+        cur = len(board.white_saved) + len(board.black_saved)
+        if cur > last_saved:
+            last_saved, since = cur, 0
+        elif last_saved > 0:
+            since += 1
+        if last_saved > 0 and since >= STUCK_LIMIT:
+            return None, 0, traj
+        player = board.current_player
+        chosen = agents[player].select_move_pair(list(board.get_valid_moves()), board, player)
+        if isinstance(chosen, tuple) and len(chosen) == 3:
+            chosen = (chosen, (0, 0, 0))
+        for m in chosen:
+            if m != (0, 0, 0):
+                board.apply_move(m, switch_turn=False)
+        traj.append([12 - len(board.white_saved), 12 - len(board.black_saved),
+                     _cut_mask(board, 'white'), _cut_mask(board, 'black')])
+        board.switch_turn()
+    return None, 0, traj
+
+
 def _game(task):
     a, b, seed, a_white = task
     from arena import _play
     wa, wb = _side(a, 'A'), _side(b, 'B')
-    winner, score = _play(seed, wa if a_white else wb, wb if a_white else wa)
+    if WEAK_B:
+        wb = _Fast(wb)
+    traj = None
+    if LAYOUT_STATS:
+        winner, score, traj = _play_traj(seed, wa if a_white else wb, wb if a_white else wa)
+    else:
+        winner, score = _play(seed, wa if a_white else wb, wb if a_white else wa)
     if winner is None:
         m = 0
     else:
         m = score if (winner == 'white') == a_white else -score
-    return {'seed': seed, 'a_white': a_white, 'a_margin': m}
+    r = {'seed': seed, 'a_white': a_white, 'a_margin': m}
+    if traj is not None:
+        r['traj'] = traj
+    return r
 
 
 def analyze(path):
