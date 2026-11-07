@@ -3002,7 +3002,6 @@ function _playoutQueue() { try { return JSON.parse(localStorage.getItem(PLAYOUT_
 function _playoutQueueWrite(q) { try { localStorage.setItem(PLAYOUT_QUEUE_KEY, JSON.stringify(q)); } catch (e) {} }
 function _playoutTag() {
     const game = _currentGame();
-    if (GOAL_LAYOUT_NAME) { flashNotice('Playouts assume the standard goal numbers.', 3000); return; }
     if (!_recSyncToken()) { flashNotice('Set up GitHub sync first (Game log > GitHub sync).', 3500); return; }
     if (!game || _tut.active || (game.currentPlayerIsHuman && !game.currentPlayerIsHuman())) {
         flashNotice('Tag a turn while it is your move.', 3000); return;
@@ -3027,7 +3026,11 @@ function _playoutFinishTurn(game) {
     (end.boardPieces || []).forEach(p => { delete p.reachableBySum; });
     const id = new Date().toISOString().replace(/[-:]/g, '').slice(0, 15) + '-' + Math.random().toString(36).slice(2, 7);
     const q = _playoutQueue();
-    q.push({ id, at: new Date().toISOString(), device: _recDeviceId(), model: REC_MODEL_TAG,
+    // A request on another goal layout carries it; the job plays it out on that
+    // layout with that layout's own net (cand13 where it has none).
+    q.push({ id, at: new Date().toISOString(), device: _recDeviceId(),
+             model: (window.QUAHURU_GOAL_LAYOUT && window.QUAHURU_GOAL_LAYOUT.model) || REC_MODEL_TAG,
+             ...(GOAL_LAYOUT_NAME ? { layout: GOAL_LAYOUT_NAME } : {}),
              mover: tag.turn, start: tag.start, end });
     _playoutQueueWrite(q);
     _playoutSync(true);
