@@ -394,7 +394,37 @@ ARCHIVE.md under "Current benchmark".
   the three (sum7 - today skill +0.07 +- 0.12). The one clear difference is SEALS: today's 2&4
   takes 44% of all seals in self-play (as in owner's games: computer 74 vs 35/31), sum7 is the
   most even (largest share 38%), B in between with 1&4 at 40%. All three are uneven beyond
-  chance (chi2 > 5.99), but today most. Pass 2 (luck-adjusted) is running.
+  chance (chi2 > 5.99), but today most.
+  **PASS 2 RESULT (2026-11-07, `layout_cmp/REPORT2.txt`, commit 94a0caa; 1,500 self-play + 1,000
+  handicap pairs per layout, fresh seeds 240-250M).** Sane: luck per turn mean +0.0007 (SD 0.30),
+  unbiased; luck adjustment cuts the skill CI +-0.089 -> +-0.052; dead-time threshold found (2.2
+  pts); record counts complete. Values vs today (95% half-widths):
+
+        layout  skill adj        first adj      luck  dead   leads  captures       seals/game  largest pair
+        today   +1.545 +-0.052   +0.282 +-0.05  88%   2.2    1.93   16.1           1.05        4&2 42%
+        sum7    -0.019 +-0.074   +0.033 +-0.07  88%   +0.28  -0.06  +0.92 +-0.51   0.90        3&4 37%
+        B       -0.035 +-0.076   -0.034 +-0.07  90%   +0.05  -0.04  -0.41 +-0.49   1.11        1&4 39%
+
+  Close calls 67% / forced 2% of turns, comebacks 38-42%, length 56.3-56.5, draws 0.3-0.4% -- all
+  the same everywhere. (Margins are small by nature: <= 2 in ~65% of games, never >= 8 -- a win
+  is by the loser's unsaved pieces.) **Everything is LEVEL except seals; sum7 has slightly more
+  captures (+0.9/game, just clear).**
+  **SEAL EVENNESS, passes 1+2 pooled (`layout_cmp/seal_boot.py`, 3,000 games per layout, bootstrap
+  by game; share of all seals taken by the most-sealed pair, 1/3 = even):** today 0.431
+  (0.415..0.449), B 0.393 (0.377..0.410), sum7 0.375 (0.357..0.395). sum7 - today -0.056
+  (-0.081..-0.031), B - today -0.038 (-0.063..-0.013): both clearly more even than today.
+  sum7 - B -0.018 (-0.042..+0.007): unresolved -> **PASS 3 launched 2026-11-07 ~07:30
+  (`layout_cmp/run3.sh`): 4,500 more self-play games each for sum7 and B (seeds 260M/262M,
+  LAYOUT_STATS=1, white only), then seal_boot.py -> REPORT3.txt, committed automatically.**
+  **OWNER SUMMARY + RECOMMENDATION (provisional until pass 3):** the three layouts play the same
+  game -- skill reward, first-player edge, luck share, dead time, lead changes, decision richness,
+  length and comebacks are all level within ~0.07 pts. The only design difference is WHERE walls
+  seal: today concentrates seals on 4&2 (43% of them); sum7 and B spread them more evenly.
+  **Recommendation: switch to sum7** -- most even seals (or level with B), partners sum to 7
+  (easy to learn), slightly more captures, and its net is already trained (+0.148 vs cand13 on
+  sum7) and live in Settings. B has no advantage over sum7 and no net of its own. Staying with
+  today is defensible only on familiarity; its 4&2 bias is the one measured flaw. Owner decides;
+  nothing changed in the app.
 - **A goal tile can never be blocked** (`is_blocked` requires `type == 'field'`)
   — only the routes to it. Sealing a goal from home takes 2 walls (4 pieces),
   and those same 2 walls seal its whole 4-apart pair.
