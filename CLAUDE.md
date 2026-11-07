@@ -413,18 +413,22 @@ ARCHIVE.md under "Current benchmark".
   by game; share of all seals taken by the most-sealed pair, 1/3 = even):** today 0.431
   (0.415..0.449), B 0.393 (0.377..0.410), sum7 0.375 (0.357..0.395). sum7 - today -0.056
   (-0.081..-0.031), B - today -0.038 (-0.063..-0.013): both clearly more even than today.
-  sum7 - B -0.018 (-0.042..+0.007): unresolved -> **PASS 3 launched 2026-11-07 ~07:30
-  (`layout_cmp/run3.sh`): 4,500 more self-play games each for sum7 and B (seeds 260M/262M,
-  LAYOUT_STATS=1, white only), then seal_boot.py -> REPORT3.txt, committed automatically.**
-  **OWNER SUMMARY + RECOMMENDATION (provisional until pass 3):** the three layouts play the same
-  game -- skill reward, first-player edge, luck share, dead time, lead changes, decision richness,
+  sum7 - B -0.018 (-0.042..+0.007) was unresolved, so **PASS 3 (2026-11-07, `layout_cmp/run3.sh`,
+  REPORT3.txt, commit 3ca8931): 4,500 more self-play games each for sum7 and B (seeds 260M/262M).**
+  Pooled, 7,500 games each (today 3,000): sum7 0.366 (0.355..0.378), B 0.388 (0.378..0.399),
+  today 0.431. **sum7 - B -0.022 (95% -0.038..-0.007); sum7 - today -0.065 (-0.087..-0.044);
+  B - today -0.043 (-0.064..-0.022). Order settled: sum7 most even, then B, then today.** Seals per
+  game: sum7 0.90, today 0.99, B 1.14.
+  **OWNER SUMMARY + RECOMMENDATION (final, 2026-11-07):** the three layouts play the same game --
+  skill reward, first-player edge, luck share, dead time, lead changes, decision richness,
   length and comebacks are all level within ~0.07 pts. The only design difference is WHERE walls
-  seal: today concentrates seals on 4&2 (43% of them); sum7 and B spread them more evenly.
-  **Recommendation: switch to sum7** -- most even seals (or level with B), partners sum to 7
-  (easy to learn), slightly more captures, and its net is already trained (+0.148 vs cand13 on
-  sum7) and live in Settings. B has no advantage over sum7 and no net of its own. Staying with
-  today is defensible only on familiarity; its 4&2 bias is the one measured flaw. Owner decides;
-  nothing changed in the app.
+  seal: today concentrates seals on 4&2 (43% of them); B 39%; sum7 is the most even (37%, near
+  the 33% ideal), clear of both. **Recommendation: switch to sum7** -- most even seals, partners
+  sum to 7 (easy to learn), slightly more captures, and its net is already trained (+0.148 vs
+  cand13 on sum7) and live in Settings > Goal layout. Switching the default needs: sum7's net as
+  the main model.onnx (or the layout default flipped), tutorial / STRATEGY / How to Play text and
+  pictures that name goal numbers re-checked, and STRATEGY tips re-measured where they depend on
+  goal numbers. Owner decides; nothing changed in the app.
 - **A goal tile can never be blocked** (`is_blocked` requires `type == 'field'`)
   — only the routes to it. Sealing a goal from home takes 2 walls (4 pieces),
   and those same 2 walls seal its whole 4-apart pair.
