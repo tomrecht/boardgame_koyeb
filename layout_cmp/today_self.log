@@ -1,0 +1,5 @@
+[remote] confirm x1500 on 10 shards, seeds 220000000.., run https://github.com/tomrecht/boardgame_koyeb/actions/runs/42260115679
+[remote] run 42260115679 success after 91.6 min
+[remote] layout_cmp/today_self.jsonl: complete
+missing 0
+layout_cmp/today_self.jsonl: 3000 games, 1500 pairs: A wins 1499/3000 (50.0%), mean paired margin +0.000 (95% CI +0.000 .. +0.000)

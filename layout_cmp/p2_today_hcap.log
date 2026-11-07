@@ -1,0 +1,7 @@
+[remote] confirm x1000 on 20 shards, seeds 242000000.., run https://github.com/tomrecht/boardgame_koyeb/actions/runs/42263173730
+[remote] run 42263173730 success after 440.6 min
+[remote] layout_cmp/p2_today_hcap.jsonl: complete
+missing 0
+0 games to play (2000 done), A=/Users/tomrecht/quahuru-train/distill_cand13.pt B=/Users/tomrecht/quahuru-train/distill_cand13.pt, prefilter 12,40,5, hand rules on
+layout_cmp/p2_today_hcap.jsonl: 2000 games, 1000 pairs: A wins 1546/2000 (77.3%), mean paired margin +1.587 (95% CI +1.499 .. +1.676)
+done today hcap     2000 records

@@ -1,0 +1,40 @@
+dead-time threshold: |position value| >= 2.2 pts (95% won by the side ahead; 252476 positions)
+
+== today (4-2-5-3-6-1)  self-play games 1500, handicap games 2000
+  skill     raw +1.587 +- 0.089   luck-adjusted +1.545 +- 0.052
+  luck      88% of the outcome variance is dice luck
+  first     raw +0.233 +- 0.121   luck-adjusted +0.282 +- 0.051
+  dead      +2.20 +- 0.28 turns, 4.3% of the game
+  leads     +1.93 +- 0.09 lead changes per game
+  close     67.1% close calls, 2.1% forced
+  contact   captures +16.08 +- 0.35/game; walls standing +2.44 +- 0.01
+  seals     1.05/game: 4&2 664, 5&3 478, 6&1 428  (chi2 59.1; 5.99 = 5%)
+  margins   <=2: 67.1%  >=8: 0.0%  shutouts 0.0%  draws 0.4%
+  length    +56.4 +- 0.4 turn ends
+  comeback  41.5% of 867 (+- 3.3)
+
+== sum7 (1-6-2-5-3-4)  self-play games 1500, handicap games 2000
+  skill     raw +1.488 +- 0.090   luck-adjusted +1.526 +- 0.052   vs today -0.019 +- 0.074
+  luck      88% of the outcome variance is dice luck
+  first     raw +0.292 +- 0.125   luck-adjusted +0.315 +- 0.047   vs today +0.033 +- 0.070
+  dead      +2.48 +- 0.29 turns, 4.8% of the game   vs today +0.280 +- 0.406
+  leads     +1.88 +- 0.09 lead changes per game   vs today -0.055 +- 0.122
+  close     66.5% close calls, 2.2% forced
+  contact   captures +17.00 +- 0.37/game   vs today +0.924 +- 0.512; walls standing +2.45 +- 0.01
+  seals     0.90/game: 1&6 450, 2&5 410, 3&4 496  (chi2 8.2; 5.99 = 5%)
+  margins   <=2: 64.1%  >=8: 0.0%  shutouts 0.0%  draws 0.4%
+  length    +56.5 +- 0.4 turn ends   vs today +0.133 +- 0.586
+  comeback  39.8% of 904 (+- 3.2)
+
+== B (1-4-5-2-3-6)  self-play games 1500, handicap games 2000
+  skill     raw +1.480 +- 0.087   luck-adjusted +1.510 +- 0.055   vs today -0.035 +- 0.076
+  luck      90% of the outcome variance is dice luck
+  first     raw +0.291 +- 0.123   luck-adjusted +0.248 +- 0.049   vs today -0.034 +- 0.071
+  dead      +2.25 +- 0.29 turns, 4.4% of the game   vs today +0.053 +- 0.401
+  leads     +1.90 +- 0.08 lead changes per game   vs today -0.035 +- 0.120
+  close     67.0% close calls, 2.1% forced
+  contact   captures +15.67 +- 0.34/game   vs today -0.407 +- 0.486; walls standing +2.44 +- 0.01
+  seals     1.11/game: 1&4 647, 5&2 515, 3&6 509  (chi2 21.8; 5.99 = 5%)
+  margins   <=2: 65.6%  >=8: 0.0%  shutouts 0.0%  draws 0.3%
+  length    +56.3 +- 0.4 turn ends   vs today -0.097 +- 0.572
+  comeback  38.4% of 907 (+- 3.2)

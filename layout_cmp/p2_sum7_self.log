@@ -1,0 +1,7 @@
+[remote] confirm x1500 on 20 shards, seeds 244000000.., run https://github.com/tomrecht/boardgame_koyeb/actions/runs/42321297706
+[remote] run 42321297706 success after 179.0 min
+[remote] layout_cmp/p2_sum7_self.jsonl: 1500 game(s) missing
+missing 1500
+0 games to play (1500 done), A=/Users/tomrecht/quahuru-train/distill_sum7/cand_13.pt B=/Users/tomrecht/quahuru-train/distill_sum7/cand_13.pt, prefilter 12,40,5, hand rules on
+layout_cmp/p2_sum7_self.jsonl: 1500 games, too few pairs
+done sum7 self     1500 records
