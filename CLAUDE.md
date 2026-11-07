@@ -152,8 +152,8 @@ sideways scroll, game paused, back returns to How to Play.
   the board; local_agent.js `applyGoalLayout` patches the computer's static data
   (tile_numbers + base tile feature 6) and loads `endgame_table_<name>.json`
   (built by train-features-v2's `endgame_table.py --layout`; pair distances
-  differ). Recorded games carry `layout`; autosave is per layout; playout tags
-  are refused. **The net was trained on today's numbering only -- on these it
+  differ). Recorded games and playout requests carry `layout`; autosave is
+  per layout. **The net was trained on today's numbering only -- on these it
   plays out of its training.** Tutorial / strategy positions assume today's
   numbers. Measured in the browser: board and engine goal numbers agree for
   sum7 / B / default, self-play runs with 0 errors, the layout's table is loaded,
@@ -785,6 +785,12 @@ with it in mind.** Assessment and the concrete implications:
   quahuru-games only, Contents + Issues RW) set 2026-10-28. Model: release asset
   `11f363793239-distill_cand13.pt` -- update the workflow when the champion changes.
   It queues behind other cloud runs (20-job concurrency).
+  **Other goal layouts (2026-11-07):** a request made on sum7 / B carries `layout`
+  and is played out on that layout with its own net -- the parent runs one child per
+  layout under `GOAL_LAYOUT` with `MODEL_<layout>` (else `MODEL`); board pictures
+  carry the layout's numbers. sum7 = release asset `0ceeb450c0a3-cand_13.pt` (checked
+  = shipped model-dffd8d8f.onnx, 6e-8); B plays cand13. Issue titles start `[sum7]`.
+  A new layout net = add its asset + `MODEL_<name>` to the workflow.
 
 - **A PIECE'S PHONE TAP TARGET NO LONGER REACHES INTO THE NEXT RING (owner,
   2026-10-21: "sometimes thinks I'm tapping one ring further out").** `_applyHitArea`
