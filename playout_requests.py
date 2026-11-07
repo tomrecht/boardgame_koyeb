@@ -13,10 +13,17 @@ This script, run by .github/workflows/playout-requests.yml on a schedule:
   4. writes playouts/res/<id>.json + .md and opens an issue with the report
      (GitHub then notifies owner).
 
-    GAMES_TOKEN=... MODEL=<ckpt.pt> python3 playout_requests.py [max_requests=4]
-    python3 playout_requests.py local <request.json> <out.md>     (no GitHub)
+GOAL LAYOUTS (2026-11-07): a request made on another goal layout carries
+`layout` ('sum7', 'B'; absent = today). goal_layout.py is read at import, so
+main() groups the pending requests by layout and runs ONE CHILD PROCESS per
+layout with GOAL_LAYOUT set and that layout's net: MODEL_<layout> (e.g.
+MODEL_sum7) if given, else MODEL. Board, encoder, endgame table and the
+pictures (board_png) then all follow the layout.
+
+    GAMES_TOKEN=... MODEL=<ckpt.pt> [MODEL_sum7=<ckpt.pt>] python3 playout_requests.py [max_requests=4]
+    [GOAL_LAYOUT=sum7] python3 playout_requests.py local <request.json> <out.md>     (no GitHub)
 """
-import base64, copy, json, os, sys, time, urllib.error, urllib.request
+import base64, copy, json, os, subprocess, sys, time, urllib.error, urllib.request
 
 os.environ.setdefault('GATE_PREFILTER', '12,40,5')
 os.environ.setdefault('BOARDGAME_DEVICE', 'cpu')
@@ -135,7 +142,9 @@ def solve(r, model):
     import board_png
     for a in arms:
         a['png'] = board_png.render(b, a['moves'], '#7b4fe0' if a['yours'] else '#2b8a48')
+    import goal_layout
     return {'id': r['id'], 'mover': mover, 'notation': RG.notation(b), 'n_moves': len(quick),
+            'layout': goal_layout.NAME or 'today', 'net': os.path.basename(model),
             'playouts': N, 'arms': arms, 'sec': round(time.time() - t0)}
 
 
@@ -175,19 +184,58 @@ def report(res, img=lambda k: '%s-%d.png' % ('ID', k)):
                      '' if a['yours'] else ', vs your move %+.2f ± %.2f' % (a['vs_yours'], a['vs_ci']),
                      a['quick'], ('%+.2f' % a['deep']) if 'deep' in a else '-'),
                   '', '![%s](%s)' % (say(a['name']), img(k)), '']
-    lines += ['Position: `%s` · %d legal results · %d s' % (res['notation'], res['n_moves'], res['sec'])]
+    lay = res.get('layout', 'today')
+    lines += ['Position: `%s` · %d legal results · %d s%s' % (res['notation'], res['n_moves'], res['sec'],
+              '' if lay == 'today' else ' · goal layout **%s**, net `%s`' % (lay, res.get('net', '?')))]
     return '\n'.join(lines)
 
 
+def _fetch(f):
+    meta = api('GET', 'contents/playouts/req/' + f['name'])
+    r = json.loads(base64.b64decode(meta['content']).decode())
+    r['id'] = f['name'][:-5]
+    return r
+
+
+def _layout_of(r):
+    return r.get('layout') or 'today'
+
+
+def _model_for(layout):
+    return os.environ.get('MODEL_' + layout) or os.environ['MODEL']
+
+
 def main(maxn=4):
-    model = os.environ['MODEL']
+    """Parent: group pending requests by goal layout, one child per layout."""
+    import goal_layout
     todo = pending()[:maxn]
     print(len(todo), 'request(s)', flush=True)
+    by = {}
     for f in todo:
-        rid = f['name'][:-5]
-        meta = api('GET', 'contents/playouts/req/' + f['name'])
-        r = json.loads(base64.b64decode(meta['content']).decode())
-        r['id'] = rid
+        by.setdefault(_layout_of(_fetch(f)), []).append(f['name'][:-5])
+    failed = 0
+    for layout, ids in by.items():
+        if layout != 'today' and layout not in goal_layout.NAMED:
+            print('skipping %d request(s) on unknown layout %r' % (len(ids), layout), flush=True)
+            continue
+        env = dict(os.environ, PLAYOUT_IDS=','.join(ids), MODEL=_model_for(layout))
+        env.pop('GOAL_LAYOUT', None)
+        if layout != 'today':
+            env['GOAL_LAYOUT'] = layout
+        print('layout %s: %d request(s), net %s' % (layout, len(ids), env['MODEL']), flush=True)
+        failed += subprocess.call([sys.executable, '-u', os.path.abspath(__file__), 'child'], env=env) != 0
+    if failed:
+        sys.exit(1)
+
+
+def child():
+    """One layout's requests (PLAYOUT_IDS), under the GOAL_LAYOUT the parent set."""
+    import goal_layout
+    model = os.environ['MODEL']
+    want = (goal_layout.NAME or 'today')
+    for rid in os.environ['PLAYOUT_IDS'].split(','):
+        r = _fetch({'name': rid + '.json'})
+        assert _layout_of(r) == want, (rid, _layout_of(r), want)
         res = solve(r, model)
         for k, a in enumerate(res['arms']):
             api('PUT', 'contents/playouts/res/%s-%d.png' % (rid, k),
@@ -199,7 +247,8 @@ def main(maxn=4):
                 {'message': 'playout result ' + rid, 'content': base64.b64encode(body.encode()).decode()})
         page = 'https://github.com/%s/blob/main/playouts/res/%s.md' % (REPO, rid)
         body = report(res, lambda k: 'https://github.com/%s/blob/main/playouts/res/%s-%d.png?raw=true' % (REPO, rid, k))
-        api('POST', 'issues', {'title': 'Playout: ' + say(next(a for a in res['arms'] if a['yours'])['name']),
+        tag = '' if want == 'today' else '[%s] ' % want
+        api('POST', 'issues', {'title': tag + 'Playout: ' + say(next(a for a in res['arms'] if a['yours'])['name']),
                                'body': body + '\n\n[Report page with pictures](%s)' % page})
 
 
@@ -207,6 +256,9 @@ if __name__ == '__main__':
     if len(sys.argv) > 1 and sys.argv[1] == 'local':
         r = json.load(open(sys.argv[2]))
         r.setdefault('id', 'local')
+        import goal_layout
+        if _layout_of(r) != (goal_layout.NAME or 'today'):
+            sys.exit('request is on layout %s; run with GOAL_LAYOUT=%s' % (_layout_of(r), _layout_of(r)))
         res = solve(r, os.environ.get('MODEL', 'distill_cand13.pt'))
         base = sys.argv[3].rsplit('.', 1)[0]
         for k, a in enumerate(res['arms']):
@@ -214,5 +266,7 @@ if __name__ == '__main__':
         md = report(res, lambda k: '%s-%d.png' % (os.path.basename(base), k))
         open(sys.argv[3], 'w').write(md)
         print(md)
+    elif len(sys.argv) > 1 and sys.argv[1] == 'child':
+        child()
     else:
         main(int(sys.argv[1]) if len(sys.argv) > 1 else 4)

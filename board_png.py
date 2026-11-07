@@ -17,6 +17,17 @@ from PIL import Image, ImageDraw, ImageFont
 GEO = json.load(open(os.path.join(os.path.dirname(os.path.abspath(__file__)), 'board_geo.json')))
 CX, CY = GEO['cx'], GEO['cy']
 TILE = {t['loc']: t for t in GEO['tiles']}
+# board_geo.json names the goals by TODAY's numbers. On another goal layout
+# (goal_layout.py) a board's 'G<n>' is the layout's number, so map it to the
+# physical tile, and label each goal with the layout's number.
+import goal_layout as _gl
+if _gl.ACTIVE:
+    _PHYS = {'G%d' % n: 'G%d' % _gl.TODAY[i] for i, n in enumerate(_gl.NUMBERS)}
+    _LABEL = {'G%d' % _gl.TODAY[i]: n for i, n in enumerate(_gl.NUMBERS)}
+    TILE = {**{k: v for k, v in TILE.items() if not k.startswith('G')},
+            **{k: TILE[v] for k, v in _PHYS.items()}}
+else:
+    _LABEL = {}
 X0, Y0, W = 290, -10, 1220          # the quiz's viewBox
 SCALE = 0.62
 SS = 2                              # supersample, then shrink: smooth edges
@@ -103,7 +114,7 @@ def render(board, moves=(), colour='#2b8a48'):
         d.polygon(_sector(t), fill=C['goal'] if t['type'] == 'save' else C['tile'], outline=C['line'], width=lw)
         if t['type'] == 'save':
             x, y = _xy(*_pt(t['r1'] + 32, (t['a0'] + t['a1']) / 2))
-            d.text((x, y), str(t['number']), fill=C['ink'], font=_font(38 * SCALE * SS), anchor='mm')
+            d.text((x, y), str(_LABEL.get(t['loc'], t['number'])), fill=C['ink'], font=_font(38 * SCALE * SS), anchor='mm')
     by = {}
     for p in board.pieces:
         if p.tile is not None:
