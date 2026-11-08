@@ -11940,6 +11940,126 @@ function _turnFirstMove(game) {
 // no server-side game to abort (hosting audit, CLAUDE.md).
 
 
+// DRAW ONLY WHEN SOMETHING CHANGED (battery, owner 2026-11-08). Phaser redraws
+// the whole canvas every animation frame -- 60-120 a second at up to 3x device
+// resolution on a phone -- even when nothing moves, which keeps the GPU busy
+// for as long as the page is on screen. The loop still RUNS every frame (logic,
+// tweens, timers, input and update() are untouched); only the draw is skipped,
+// and an undrawn WebGL canvas keeps showing its last frame.
+// A frame is drawn when any of these holds, else skipped:
+//   - a tween is playing, or a camera moved / zoomed / has an effect running;
+//   - the scene's look changed: a cheap hash, every frame, of each display
+//     object's position, scale, alpha, visibility, depth, frame and colours, plus
+//     a flag set by any Graphics / Text / RenderTexture / canvas-texture redraw
+//     (their content is not in the hash);
+//   - within RENDER_WAKE_MS of a tap, key, wheel, resize or tab return;
+//   - RENDER_BEAT_MS since the last draw: a safety net, so a change the hash
+//     somehow misses shows within a second instead of never.
+// `?redraw=all` turns the gate off (every frame drawn, as before), for A/B.
+const RENDER_WAKE_MS = 500, RENDER_BEAT_MS = 1000;
+const _rg = { dirty: true, until: 0, last: 0, sig: 0, drawn: 0, skipped: 0, off: false, beat: RENDER_BEAT_MS };
+try { _rg.off = new URLSearchParams(location.search).get('redraw') === 'all'; } catch (e) {}
+window._renderGate = _rg;   // harness: counters + knobs
+function _wakeRender(ms = RENDER_WAKE_MS) { _rg.until = Math.max(_rg.until, performance.now() + ms); }
+(function _patchRedrawMarks() {
+    const mark = (proto, names) => {
+        if (!proto) return;
+        (names || Object.getOwnPropertyNames(proto)).forEach(n => {
+            if (n === 'constructor' || /^render(WebGL|Canvas)$|^preUpdate$|^preDestroy$/.test(n)) return;
+            const d = Object.getOwnPropertyDescriptor(proto, n);
+            if (!d || typeof d.value !== 'function') return;
+            const f = d.value;
+            proto[n] = function () { _rg.dirty = true; return f.apply(this, arguments); };
+        });
+    };
+    const G = Phaser.GameObjects;
+    mark(G.Graphics && G.Graphics.prototype);              // every draw command and clear()
+    mark(G.Text && G.Text.prototype, ['updateText']);       // every text / style change ends here
+    mark(G.RenderTexture && G.RenderTexture.prototype);     // the baked board: draw / clear / fill / erase
+    mark(Phaser.Textures.CanvasTexture && Phaser.Textures.CanvasTexture.prototype, ['refresh', 'update']);
+    ['Arc', 'Rectangle', 'Ellipse', 'Polygon', 'Triangle', 'Star', 'Line', 'Curve', 'IsoBox', 'Grid']
+        .forEach(k => mark(G[k] && G[k].prototype, ['updateData']));   // shape geometry
+})();
+['pointerdown', 'pointerup', 'pointercancel', 'wheel', 'keydown', 'keyup', 'resize', 'orientationchange']
+    .forEach(ev => window.addEventListener(ev, () => _wakeRender(), { capture: true, passive: true }));
+document.addEventListener('visibilitychange', () => _wakeRender(1000));
+document.addEventListener('pointermove', (e) => { if (e.buttons || e.pointerType === 'touch') _wakeRender(); },
+                          { capture: true, passive: true });
+
+function _rgHashObj(o, h) {
+    const n = (v) => { h = Math.imul(h ^ ((+v * 1000) | 0), 16777619); };
+    n(o.x); n(o.y); n(o.scaleX); n(o.scaleY); n(o.rotation); n(o.alpha); n(o.visible ? 1 : 2);
+    n(o.depth); n(o.width); n(o.height); n(o.originX); n(o.originY); n(o.blendMode | 0);
+    n(o.scrollFactorX); n(o.scrollFactorY);
+    if (o.fillColor !== undefined) { n(o.fillColor); n(o.fillAlpha); n(o.isFilled ? 1 : 2);
+        n(o.strokeColor); n(o.strokeAlpha); n(o.lineWidth); n(o.isStroked ? 1 : 2); }
+    if (o.radius !== undefined) n(o.radius);
+    if (o.tintTopLeft !== undefined) { n(o.tintTopLeft); n(o.tintBottomRight); n(o.tintFill ? 1 : 2); }
+    if (o.flipX !== undefined) n((o.flipX ? 1 : 0) + (o.flipY ? 2 : 0));
+    if (o.frame !== o._rgFrame) { o._rgFrame = o.frame; _rg.dirty = true; }
+    if (o.mask !== o._rgMask) { o._rgMask = o.mask; _rg.dirty = true; }
+    if (o.list && o.visible) for (let i = 0; i < o.list.length; i++) h = _rgHashObj(o.list[i], h);
+    return h;
+}
+function _rgSignature(game) {
+    let h = 2166136261 >>> 0;
+    const n = (v) => { h = Math.imul(h ^ ((+v * 1000) | 0), 16777619); };
+    const r = game.renderer, c = game.canvas;
+    if (r) { n(r.width); n(r.height); }
+    if (c) { n(c.width); n(c.height); }
+    const scenes = game.scene.scenes;
+    for (let s = 0; s < scenes.length; s++) {
+        const sc = scenes[s], sys = sc.sys;
+        if (!sys.settings.active && !sys.settings.visible) continue;
+        n(s); n(sys.settings.active ? 1 : 2); n(sys.settings.visible ? 1 : 2); n(sys.settings.status);
+        if (sc.tweens && sc.tweens._active && sc.tweens._active.some(t => t.isPlaying())) _rg.dirty = true;
+        const cams = sc.cameras ? sc.cameras.cameras : [];
+        for (const cam of cams) {
+            n(cam.scrollX); n(cam.scrollY); n(cam.zoom); n(cam.x); n(cam.y); n(cam.width); n(cam.height);
+            n(cam.rotation); n(cam.alpha); n(cam.visible ? 1 : 2);
+            const bg = cam.backgroundColor; if (bg) n(bg.color32 >>> 0);
+            if ((cam.fadeEffect && cam.fadeEffect.isRunning) || (cam.flashEffect && cam.flashEffect.isRunning) ||
+                (cam.shakeEffect && cam.shakeEffect.isRunning) || (cam.panEffect && cam.panEffect.isRunning) ||
+                (cam.zoomEffect && cam.zoomEffect.isRunning) || (cam.fadeEffect && cam.fadeEffect.alpha > 0)) _rg.dirty = true;
+        }
+        const list = sys.displayList ? sys.displayList.list : [];
+        n(list.length);
+        for (let i = 0; i < list.length; i++) h = _rgHashObj(list[i], h);
+    }
+    return h >>> 0;
+}
+(function _gateRenderStep() {
+    const step = Phaser.Game.prototype.step;
+    const E = (Phaser.Core && Phaser.Core.Events) || {};
+    const PRE_STEP = E.PRE_STEP || 'prestep', STEP = E.STEP || 'step', POST_STEP = E.POST_STEP || 'poststep',
+          PRE_RENDER = E.PRE_RENDER || 'prerender', POST_RENDER = E.POST_RENDER || 'postrender';
+    Phaser.Game.prototype.step = function (time, delta) {
+        if (_rg.off || this.pendingDestroy || !this.renderer) return step.call(this, time, delta);
+        // Phaser's own step, with the draw made conditional. The game-level
+        // PRE_RENDER / POST_RENDER events still fire EVERY frame: the input
+        // manager does its pointer-over processing on PRE_RENDER and the input
+        // plugins reset their per-frame state on POST_RENDER. PRE_RENDER is
+        // emitted before the decision so a hover it triggers counts this frame.
+        const ev = this.events, r = this.renderer;
+        ev.emit(PRE_STEP, time, delta);
+        ev.emit(STEP, time, delta);
+        this.scene.update(time, delta);
+        ev.emit(POST_STEP, time, delta);
+        ev.emit(PRE_RENDER, r, time, delta);
+        const now = performance.now();
+        const sig = _rgSignature(this);
+        const changed = _rg.dirty || sig !== _rg.sig;
+        if (changed || now < _rg.until || now - _rg.last >= _rg.beat) {
+            if (changed) _wakeRender(120);   // a few more frames after any change
+            _rg.dirty = false; _rg.sig = sig; _rg.last = now; _rg.drawn++;
+            r.preRender();
+            this.scene.render(r);
+            r.postRender();
+        } else _rg.skipped++;
+        ev.emit(POST_RENDER, r, time, delta);
+    };
+})();
+
 // WORLD_W/H stay the coordinate system everything is laid out in (the board is
 // drawn at 1800x1200 whatever the screen is). On a phone the canvas RESIZEs to
 // fill the viewport and the camera frames that world inside it -- otherwise FIT

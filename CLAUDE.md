@@ -660,6 +660,24 @@ with it in mind.** Assessment and the concrete implications:
 
 ## Current state
 
+- **DRAW ONLY WHEN SOMETHING CHANGED (owner, 2026-11-08: battery; on `testing`).**
+  Phaser drew every animation frame (60-120/s, up to 3x resolution on a phone)
+  even with nothing moving. `Phaser.Game.prototype.step` is patched in game.js
+  (`_gateRenderStep`, above `config`): logic, tweens, timers, input and the game
+  PRE/POST_RENDER events (input needs them) still run every frame; the DRAW is
+  skipped unless a tween plays, a camera moved, the display list's hash changed
+  (`_rgSignature`: position/scale/alpha/visibility/depth/frame/colours), a
+  Graphics / Text / RenderTexture / shape redraw set `_rg.dirty` (patched
+  prototypes, `_patchRedrawMarks`), it is < 500 ms after a tap/key/resize, or
+  1 s since the last draw (safety net). `?redraw=all` turns it off.
+  `window._renderGate` has counters. **Measured (headless phone):** idle welcome
+  and idle human turn 1 draw/s (was 60); self-play ~7/s; a pulsing hint draws
+  every frame. Staleness check (beat off; after each tap / move / end turn wait,
+  screenshot, force a draw, screenshot): 19/19 phone + 19/19 desktop canvases
+  identical (the one diff each run was a DOM notice fading). 0 page errors.
+  **New drawing code that changes a look without a tween, a Graphics/Text call
+  or a listed property must set `_rg.dirty = true`.**
+
 - **RECORDER: OPT-IN GITHUB SYNC (owner, 2026-10-27).** Settings > Game log >
   "GitHub sync..." takes a fine-grained token (Contents read/write on the PRIVATE
   repo `tomrecht/quahuru-games` only) into this browser's localStorage
