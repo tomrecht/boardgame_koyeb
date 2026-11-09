@@ -37,12 +37,23 @@ if (!notation || !out) {
     process.exit(2);
 }
 
-// patchright ships inside the CodeGPT VS Code extension; take the newest.
+// patchright ships inside the CodeGPT VS Code extension (owner's Macs); take the
+// newest and drive the system Chrome. Elsewhere (a cloud box) fall back to
+// Playwright's own Chromium: POS_PLAYWRIGHT = a node_modules dir holding it.
 const extDir = path.join(os.homedir(), '.vscode', 'extensions');
-const cg = fs.readdirSync(extDir).filter(d => d.startsWith('danielsanmedium.dscodegpt-')).sort().pop();
-if (!cg) { console.error('patchright not found (no CodeGPT extension under ' + extDir + ')'); process.exit(1); }
-const { chromium } = createRequire(path.join(extDir, cg, 'standalone') + '/')('patchright');
-const CHROME = '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome';
+const cg = fs.existsSync(extDir)
+    ? fs.readdirSync(extDir).filter(d => d.startsWith('danielsanmedium.dscodegpt-')).sort().pop() : null;
+let chromium, CHROME = null;
+if (cg) {
+    ({ chromium } = createRequire(path.join(extDir, cg, 'standalone') + '/')('patchright'));
+    CHROME = '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome';
+} else {
+    try { ({ chromium } = createRequire((process.env.POS_PLAYWRIGHT || '/opt/node-tools/node_modules') + '/')('playwright')); }
+    catch (e) { console.error('no patchright (CodeGPT extension) and no playwright: set POS_PLAYWRIGHT'); process.exit(1); }
+}
+// The board's goal numbering: the game's default (sum7) unless --layout says
+// otherwise (original / B).
+const layoutArg = flag('--layout');
 
 const TYPES = { '.html': 'text/html', '.js': 'text/javascript', '.mjs': 'text/javascript', '.json': 'application/json',
                 '.png': 'image/png', '.wasm': 'application/wasm', '.onnx': 'application/octet-stream', '.css': 'text/css' };
@@ -55,7 +66,7 @@ const server = http.createServer((req, res) => {
 await new Promise(r => server.listen(0, '127.0.0.1', r));
 const port = server.address().port;
 
-const browser = await chromium.launch({ executablePath: CHROME, headless: true,
+const browser = await chromium.launch({ ...(CHROME ? { executablePath: CHROME } : {}), headless: true,
     args: ['--use-gl=angle', '--use-angle=swiftshader', '--enable-unsafe-swiftshader'] });
 let code = 0;
 try {
@@ -66,7 +77,7 @@ try {
     // A first visit would seed hints and rule tips; keep the picture clean.
     await page.addInitScript(() => { try { localStorage.setItem('hintsEnabled', '0'); localStorage.setItem('ruleTips', '0');
                                            localStorage.setItem('seenNudge', '1'); } catch (e) {} });
-    const url = `http://127.0.0.1:${port}/index.html?dev=1&posshot=1&pos=${encodeURIComponent(notation)}`;
+    const url = `http://127.0.0.1:${port}/index.html?dev=1&posshot=1${layoutArg ? '&layout=' + layoutArg : ''}&pos=${encodeURIComponent(notation)}`;
     await page.goto(url);
     await page.waitForFunction(() => document.body.getAttribute('data-pos'), null, { timeout: 30000 });
     const status = await page.evaluate(() => document.body.getAttribute('data-pos'));

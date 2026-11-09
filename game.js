@@ -21,27 +21,32 @@ const _DEV_CONSOLE = (function () {
     try { return new URLSearchParams(location.search).get('dev') === '1'; }
     catch (e) { return false; }
 })();
-// PLAY-TEST GOAL LAYOUTS (owner, 2026-10-29; dev only): ?dev=1&layout=sum7|B
-// renumbers the six goals (ring order from sector 2, partners 4 apart in
-// pairs). The board, the rules and the computer all read it. The computer uses
-// the layout's OWN net if model_<name>.json is shipped (local_agent.js), else
-// today's net OUT OF ITS TRAINING (legal, likely weaker). Recorded games carry
-// 'layout', and 'model' names the layout net when one played.
+// GOAL LAYOUTS. SUM7 IS THE GAME'S LAYOUT SINCE 2026-11-09 (owner): goals in
+// ring order from sector 2 are 1-6-2-5-3-4, so the 4-apart partners add to 7
+// (1&6, 2&5, 3&4). The original numbering (4-2-5-3-6-1, "today" in older notes)
+// and B stay selectable by the owner. A layout renumbers the six goal tiles; the
+// board, the rules and the computer all read it, and the computer uses the
+// layout's OWN net if model_<name>.json is shipped (local_agent.js), else
+// model.json's net out of its training. Internally the unpatched static data is
+// the original numbering, so GOAL_LAYOUT_NAME null = 'original'. Recorded games
+// carry 'layout' (absent = original), and 'model' names the layout net.
 const GOAL_LAYOUTS = { sum7: [1, 6, 2, 5, 3, 4], B: [1, 4, 5, 2, 3, 6] };
+const GOAL_LAYOUT_DEFAULT = 'sum7';
 // Owner's switch (Settings > Goal layout): shown with ?dev=1 or in a browser
-// with the recorder unlocked; kept in localStorage 'goalLayout'. A ?layout= in
-// the URL (dev) wins over it.
+// with the recorder unlocked; kept in localStorage 'goalLayout' ('original' or
+// 'B'; absent = the default). A ?layout= in the URL (dev) wins over it.
 const _LAYOUT_MENU = (function () {
     try { return _DEV_CONSOLE || localStorage.getItem('recEnabled') === '1'; }
     catch (e) { return false; }
 })();
 const GOAL_LAYOUT_NAME = (function () {
+    const pick = (n) => (n === 'original' || n === 'today') ? null : (GOAL_LAYOUTS[n] ? n : GOAL_LAYOUT_DEFAULT);
     try {
         const n = new URLSearchParams(location.search).get('layout');
-        if (_DEV_CONSOLE && n) return GOAL_LAYOUTS[n] ? n : null;
+        if (_DEV_CONSOLE && n) return pick(n);
         const st = _LAYOUT_MENU ? localStorage.getItem('goalLayout') : null;
-        return (st && GOAL_LAYOUTS[st]) ? st : null;
-    } catch (e) { return null; }
+        return st ? pick(st) : GOAL_LAYOUT_DEFAULT;
+    } catch (e) { return GOAL_LAYOUT_DEFAULT; }
 })();
 window.QUAHURU_GOAL_LAYOUT = GOAL_LAYOUT_NAME
     ? { name: GOAL_LAYOUT_NAME, numbers: GOAL_LAYOUTS[GOAL_LAYOUT_NAME] } : null;
@@ -2467,8 +2472,8 @@ function createSettingsPanel() {
         const lrow = mk('div', 'margin-top:12px; padding-top:10px; border-top:1px solid #e6e9ee;');
         lrow.appendChild(mk('div', 'font-weight:600; margin-bottom:6px;', 'Goal layout'));
         const lb = mk('div', 'display:flex; gap:6px;');
-        const cur = GOAL_LAYOUT_NAME || 'today';
-        [['today', 'Today'], ['sum7', 'sum7'], ['B', 'B']].forEach(([key, label]) => {
+        const cur = GOAL_LAYOUT_NAME || 'original';
+        [['sum7', 'sum7'], ['original', 'Original'], ['B', 'B']].forEach(([key, label]) => {
             const on = key === cur;
             const b = mk('button',
                 'flex:1 1 auto; padding:6px 10px; border-radius:7px; cursor:pointer;' +
@@ -2477,7 +2482,7 @@ function createSettingsPanel() {
                     : 'background:#fff; color:#5a6473; border:1px solid #cfd6e0;'), label);
             b.onclick = () => {
                 if (on) return;
-                try { if (key === 'today') localStorage.removeItem('goalLayout');
+                try { if (key === GOAL_LAYOUT_DEFAULT) localStorage.removeItem('goalLayout');
                       else localStorage.setItem('goalLayout', key); } catch (e) {}
                 const u = new URL(location.href);
                 u.searchParams.delete('layout');
@@ -2492,7 +2497,7 @@ function createSettingsPanel() {
         const fill = () => {
             if (!L || !L.model) return false;
             note.textContent = L.model !== 'today' ? 'Computer: net trained on ' + L.name + ' (' + L.model + ')'
-                                                   : 'Computer: today\'s net, not trained on ' + L.name;
+                                                   : 'Computer: the original layout\'s net, not trained on ' + L.name;
             return true;
         };
         if (L && !fill()) { const iv = setInterval(() => { if (fill()) clearInterval(iv); }, 500); }
@@ -4039,7 +4044,7 @@ function _tutTurnEnd() {
     } else _tutNudge();
 }
 // The instruction bubble would otherwise sit on top of the bottom of the board
-// (goals 2 and 4 live down there, and most of the second half of the script
+// (goals 1 and 6 live down there, and most of the second half of the script
 // happens around them). Shrink Phaser's fit box by the bubble's height instead,
 // so the whole board stays visible — setParentSize is the supported path and
 // keeps pointer mapping correct, unlike a CSS transform on the canvas.
@@ -4076,7 +4081,7 @@ function _worldToCss(wx, wy) {
 // at Start. Where on the board depends on the layout -- on a portrait phone the
 // saved rack is ABOVE the board, so the piece's last flight crosses the top half --
 // so every position is scored against the demo's actual path (rack slot -> home ->
-// 4,6 -> goal 5 -> saved slot), the home tile and the four rack panels, and the
+// 4,6 -> goal 2 -> saved slot), the home tile and the four rack panels, and the
 // clear position nearest "just above the home tile" wins.
 function _tutPlaceIntro() {
     const b = _tut.bubble, step = _tutStep(), game = _setupGame();
@@ -4319,10 +4324,16 @@ function _tutNudge() {
 }
 
 // ── the script ───────────────────────────────────────────────────────────────
-// Tile shorthand: spokes run home -> ring1 .. ring7 goal. Spoke 2 -> goal 4,
-// 4 -> goal 2, 6 -> goal 5, 8 -> goal 3, 10 -> goal 6, 12 -> goal 1. Goals sit
-// at [7,2]=4 [7,4]=2 [7,6]=5 [7,8]=3 [7,10]=6 [7,12]=1.
-const _TUT_BLACK_MID = [[1, [2, 9]], [2, [3, 10]], [3, [1, 8]], [7, [5, 13]], [12, [3, 1]]];
+// Tile shorthand: spokes run home -> ring1 .. ring7 goal. With the sum7 layout
+// (the game's since 2026-11-09): spoke 2 -> goal 1, 4 -> goal 6, 6 -> goal 2,
+// 8 -> goal 5, 10 -> goal 3, 12 -> goal 4. Goals sit at [7,2]=1 [7,4]=6 [7,6]=2
+// [7,8]=5 [7,10]=3 [7,12]=4. The script was written for the original numbering
+// and moved over by TILE (every position and move dice unchanged, piece numbers
+// relabelled 4->1 2->6 5->2 3->5 6->3 1->4); only dice that BANK a piece follow
+// the numbers, and the endgame steps were re-laid so the higher-die lesson still
+// holds (white's 2 on goal 2, blanks onto goal 3). It assumes sum7: under the
+// owner's other layouts the numbers on the board will not match the text.
+const _TUT_BLACK_MID = [[4, [2, 9]], [6, [3, 10]], [5, [1, 8]], [7, [5, 13]], [12, [3, 1]]];
 
 const _tutSteps = [
     {
@@ -4343,85 +4354,85 @@ const _tutSteps = [
                 '…and is <b>saved</b> off it into your saved rack.'],
         text: '',
         dice: [3, 4],
-        pos: { white: { rack: [7, 8, 6, 9, 10, 11, 12, 1, 2, 3, 4, 5] },
-               black: { board: [[5, [4, 6]]], rack: [7, 8, 9, 10, 11, 12, 1, 2, 3, 4, 6] } },
+        pos: { white: { rack: [7, 8, 3, 9, 10, 11, 12, 4, 6, 5, 1, 2] },
+               black: { board: [[2, [4, 6]]], rack: [7, 8, 9, 10, 11, 12, 4, 6, 5, 1, 3] } },
         done: () => false,
     },
     {
         title: 'Send two pieces out',
-        text: 'You can start saving once you’ve brought all your pieces out. Send the front one out through home and spend the <b>5</b> on the highlighted tile near goal 5. Then bring a second piece out with the <b>3</b>. Pieces 1–6 each have one matching goal; blank pieces can use any.',
+        text: 'You can start saving once you’ve brought all your pieces out. Send the front one out through home and spend the <b>5</b> on the highlighted tile near goal 2. Then bring a second piece out with the <b>3</b>. Pieces 1–6 each have one matching goal; blank pieces can use any.',
         dice: [5, 3],
-        pos: { white: { rack: [7, 8, 6, 9, 10, 11, 12, 1, 2, 3, 4, 5] },
-               black: { rack: [5, 7, 8, 9, 10, 11, 12, 1, 2, 3, 4, 6] } },
+        pos: { white: { rack: [7, 8, 3, 9, 10, 11, 12, 4, 6, 5, 1, 2] },
+               black: { rack: [2, 7, 8, 9, 10, 11, 12, 4, 6, 5, 1, 3] } },
         seq: [_tutMoveTo(7, g => _tutTile(g, 5, 6)), _tutMoveTo(8, g => _tutTile(g, 3, 10))],
         done: g => !!_tutTile(g, 5, 6).pieces.length && !!_tutTile(g, 3, 10).pieces.length,
-        black: [{ n: 5, to: [4, 6] }],
+        black: [{ n: 2, to: [4, 6] }],
     },
     {
         title: 'Numbered pieces head for their goal',
-        text: 'Numbered pieces are the hardest to save — only their own goal will take them — so it pays to send them home early. Your next piece is the <b>6</b>, and goal 6 is exactly seven tiles away. Both dice can go on one piece: select the 6, then goal 6 (or drag it there).',
+        text: 'Numbered pieces are the hardest to save — only their own goal will take them — so it pays to send them home early. Your next piece is the <b>3</b>, and goal 3 is exactly seven tiles away. Both dice can go on one piece: select the 3, then goal 3 (or drag it there).',
         dice: [3, 4],
-        pos: { white: { board: [[7, [5, 6]], [8, [3, 10]]], rack: [6, 9, 10, 11, 12, 1, 2, 3, 4, 5] },
-               black: { board: [[5, [4, 6]]], rack: [7, 8, 9, 10, 11, 12, 1, 2, 3, 4, 6] } },
-        seq: [_tutMoveTo(6, g => _tutGoal(g, 6))],
-        done: g => _tutPiece(g, 'white', 6).currentTile === _tutGoal(g, 6),
+        pos: { white: { board: [[7, [5, 6]], [8, [3, 10]]], rack: [3, 9, 10, 11, 12, 4, 6, 5, 1, 2] },
+               black: { board: [[2, [4, 6]]], rack: [7, 8, 9, 10, 11, 12, 4, 6, 5, 1, 3] } },
+        seq: [_tutMoveTo(3, g => _tutGoal(g, 3))],
+        done: g => _tutPiece(g, 'white', 3).currentTile === _tutGoal(g, 3),
         black: [{ n: 7, to: [5, 10] }],
     },
     {
         title: 'Take what’s exposed',
-        text: 'A lone piece is exposed, and landing on it sends it back to the home tile. Black has left two. While you still have pieces on the rack, <b>one of your two moves must be that front rack piece</b>. Enter it with the <b>4</b> onto Black’s 5, and use the <b>2</b> to take the other with the piece already on the board. Black will have to move its captured pieces back out before doing anything else.',
+        text: 'A lone piece is exposed, and landing on it sends it back to the home tile. Black has left two. While you still have pieces on the rack, <b>one of your two moves must be that front rack piece</b>. Enter it with the <b>4</b> onto Black’s 2, and use the <b>2</b> to take the other with the piece already on the board. Black will have to move its captured pieces back out before doing anything else.',
         dice: [4, 2],
-        pos: { white: { board: [[7, [5, 6]], [8, [3, 10]], [6, [7, 10]]], rack: [9, 10, 11, 12, 1, 2, 3, 4, 5] },
-               black: { board: [[5, [4, 6]], [7, [5, 10]]], rack: [8, 9, 10, 11, 12, 1, 2, 3, 4, 6] } },
+        pos: { white: { board: [[7, [5, 6]], [8, [3, 10]], [3, [7, 10]]], rack: [9, 10, 11, 12, 4, 6, 5, 1, 2] },
+               black: { board: [[2, [4, 6]], [7, [5, 10]]], rack: [8, 9, 10, 11, 12, 4, 6, 5, 1, 3] } },
         seq: [_tutMoveTo(9, g => _tutTile(g, 4, 6)), _tutMoveTo(8, g => _tutTile(g, 5, 10))],
         done: g => _tutHub(g).pieces.filter(p => p.player === 'black').length === 2,
-        black: [{ n: 5, to: [4, 4] }, { n: 7, to: [2, 2] }],
+        black: [{ n: 2, to: [4, 4] }, { n: 7, to: [2, 2] }],
     },
     {
         title: 'Build a wall',
-        text: 'Walls are how you slow your opponent down. Two of your pieces on one tile make a <b>wall</b> — enemy pieces can’t land on it or pass through. Black’s 5 must reach goal 5, and its short way in runs over a tile you hold. Your dice sum to 5: bring your next piece out to join it and shut that route.',
+        text: 'Walls are how you slow your opponent down. Two of your pieces on one tile make a <b>wall</b> — enemy pieces can’t land on it or pass through. Black’s 2 must reach goal 2, and its short way in runs over a tile you hold. Your dice sum to 5: bring your next piece out to join it and shut that route.',
         dice: [3, 2],
-        pos: { white: { board: [[7, [5, 6]], [8, [5, 10]], [9, [4, 6]], [6, [7, 10]]], rack: [10, 11, 12, 1, 2, 3, 4, 5] },
-               black: { board: [[5, [4, 4]], [7, [2, 2]]], rack: [8, 9, 10, 11, 12, 1, 2, 3, 4, 6] } },
+        pos: { white: { board: [[7, [5, 6]], [8, [5, 10]], [9, [4, 6]], [3, [7, 10]]], rack: [10, 11, 12, 4, 6, 5, 1, 2] },
+               black: { board: [[2, [4, 4]], [7, [2, 2]]], rack: [8, 9, 10, 11, 12, 4, 6, 5, 1, 3] } },
         seq: [_tutMoveTo(10, g => _tutTile(g, 5, 6))],
         done: g => _tutTile(g, 5, 6).pieces.filter(p => p.player === 'white').length >= 2,
     },
     {
         title: 'Saving',
         fast: true,
-        text: '<b>⏩ A few turns later.</b> Saving is how you win, and it opens up once your rack is empty — as yours now is. A piece on a goal goes out on a die matching that goal’s number: your <b>6</b> is on goal 6 — double-click it, or drag it to your saved rack, and the 6 banks it for a point. Then do the same on <b>goal 1</b> with the 1 — a blank piece can be saved on any goal.',
-        dice: [6, 1],
-        pos: { white: { board: [[6, [7, 10]], [10, [7, 12]], [4, [3, 3]], [2, [3, 4]],
-                                [11, [5, 6]], [12, [3, 6]], [1, [3, 12]], [3, [3, 8]]],
-                        saved: [5, 7, 8, 9] },
+        text: '<b>⏩ A few turns later.</b> Saving is how you win, and it opens up once your rack is empty — as yours now is. A piece on a goal goes out on a die matching that goal’s number: your <b>3</b> is on goal 3 — double-click it, or drag it to your saved rack, and the 3 banks it for a point. Then do the same on <b>goal 4</b> with the 4 — a blank piece can be saved on any goal.',
+        dice: [3, 4],
+        pos: { white: { board: [[3, [7, 10]], [10, [7, 12]], [1, [3, 3]], [6, [3, 4]],
+                                [11, [5, 6]], [12, [3, 6]], [4, [3, 12]], [5, [3, 8]]],
+                        saved: [2, 7, 8, 9] },
                black: { board: [[8, [5, 2]], [9, [4, 2]], [10, [5, 21]], [11, [5, 22]]].concat(_TUT_BLACK_MID),
-                        saved: [4, 5, 6] } },
-        seq: [_tutSaveOf(6), _tutSaveOf(10)],
+                        saved: [1, 2, 3] } },
+        seq: [_tutSaveOf(3), _tutSaveOf(10)],
         done: g => _tutSavedCount(g, 'white') >= 6,
         black: [{ n: 9, to: [6, 2] }, { n: 8, to: [6, 2] }],
     },
     {
         title: 'The long way in',
-        text: 'A wall doesn’t stop you, but it can make you pay. Black has walled the tile in front of goal 4. A piece always takes the shortest route to where you send it — and your 4’s shortest route was <b>five</b> tiles, so a single 5 would have done it. Now the only way in is <b>nine</b>, round through goal 2 — and your dice sum to 9, so move your 4 to its goal.',
+        text: 'A wall doesn’t stop you, but it can make you pay. Black has walled the tile in front of goal 1. A piece always takes the shortest route to where you send it — and your 1’s shortest route was <b>five</b> tiles, so a single 5 would have done it. Now the only way in is <b>nine</b>, round through goal 6 — and your dice sum to 9, so move your 1 to its goal.',
         dice: [3, 6],
-        pos: { white: { board: [[4, [3, 3]], [2, [3, 4]], [11, [5, 6]], [12, [3, 6]], [1, [3, 12]], [3, [3, 8]]],
-                        saved: [5, 6, 7, 8, 9, 10] },
+        pos: { white: { board: [[1, [3, 3]], [6, [3, 4]], [11, [5, 6]], [12, [3, 6]], [4, [3, 12]], [5, [3, 8]]],
+                        saved: [2, 3, 7, 8, 9, 10] },
                black: { board: [[8, [6, 2]], [9, [6, 2]], [10, [5, 21]], [11, [5, 22]]].concat(_TUT_BLACK_MID),
-                        saved: [4, 5, 6] } },
-        seq: [_tutMoveTo(4, g => _tutGoal(g, 4))],
-        routeAnim: true,                 // show the nine-tile route through goal 2
-        done: g => _tutPiece(g, 'white', 4).currentTile === _tutGoal(g, 4),
+                        saved: [1, 2, 3] } },
+        seq: [_tutMoveTo(1, g => _tutGoal(g, 1))],
+        routeAnim: true,                 // show the nine-tile route through goal 6
+        done: g => _tutPiece(g, 'white', 1).currentTile === _tutGoal(g, 1),
         black: [{ n: 10, to: [6, 4] }, { n: 11, to: [6, 4] }],
         blackAfterCard: true,            // card 8 is about this wall: show it first
     },
     {
         title: 'Buy the door open',
-        text: 'Sometimes the only way past a wall is to buy it down. The two walled tiles are the only ways into goals 2 and 4, so both are sealed — your <b>2</b> has no route home on any roll. Spend your dice on the door: double-click one of the two black pieces on the wall <b>in front of goal 2</b> to <b>save it for Black</b>. It costs both dice and hands Black a point, but the wall drops to a single piece — your 2 has a path again.',
+        text: 'Sometimes the only way past a wall is to buy it down. The two walled tiles are the only ways into goals 1 and 6, so both are sealed — your <b>6</b> has no route home on any roll. Spend your dice on the door: double-click one of the two black pieces on the wall <b>in front of goal 6</b> to <b>save it for Black</b>. It costs both dice and hands Black a point, but the wall drops to a single piece — your 6 has a path again.',
         dice: [3, 5],
-        pos: { white: { board: [[4, [7, 2]], [2, [3, 4]], [11, [5, 6]], [12, [3, 6]], [1, [3, 12]], [3, [3, 8]]],
-                        saved: [5, 6, 7, 8, 9, 10] },
+        pos: { white: { board: [[1, [7, 2]], [6, [3, 4]], [11, [5, 6]], [12, [3, 6]], [4, [3, 12]], [5, [3, 8]]],
+                        saved: [2, 3, 7, 8, 9, 10] },
                black: { board: [[8, [6, 2]], [9, [6, 2]], [10, [6, 4]], [11, [6, 4]]].concat(_TUT_BLACK_MID),
-                        saved: [4, 5, 6] } },
+                        saved: [1, 2, 3] } },
         seq: [{ who: g => _tutTile(g, 6, 4).pieces.filter(p => p.player === 'black'), block: true,
                 done: g => _tutSavedCount(g, 'black') >= 4 }],
         done: g => _tutSavedCount(g, 'black') >= 4,
@@ -4431,25 +4442,25 @@ const _tutSteps = [
         fast: true,
         text: '<b>⏩ Later.</b> Once every piece is on a goal, saving gets easier. Use the <b>1</b> to step your last one onto goal 3. That’s the <b>endgame</b>, and your saved rack lights up to show it: a blank now goes out on any die <i>bigger</i> than its goal’s number, if you hold no higher goal. Your highest is goal 3, so the <b>5</b> takes a blank off it. Numbered pieces always need their own number.',
         dice: [1, 5],
-        pos: { white: { board: [[2, [7, 4]], [11, [7, 8]], [12, [6, 8]]],
+        pos: { white: { board: [[2, [7, 6]], [11, [7, 10]], [12, [6, 10]]],
                         saved: [1, 3, 4, 5, 6, 7, 8, 9, 10] },
-               black: { board: [[1, [6, 4]], [2, [6, 4]], [3, [3, 10]], [7, [2, 9]]],
-                        saved: [4, 5, 6, 8, 9, 10, 11, 12] } },
+               black: { board: [[4, [6, 4]], [6, [6, 4]], [5, [3, 10]], [7, [2, 9]]],
+                        saved: [1, 2, 3, 8, 9, 10, 11, 12] } },
         // Either blank on goal 3 may go: they are interchangeable.
         seq: [_tutMoveTo(12, g => _tutGoal(g, 3)),
               { who: g => _tutGoal(g, 3).pieces.filter(p => p.player === 'white' && p.number > 6), save: true,
                 done: g => _tutSavedCount(g, 'white') >= 10 }],
         done: g => _tutSavedCount(g, 'white') >= 10,
-        black: [{ n: 3, to: [3, 9] }],
+        black: [{ n: 5, to: [3, 9] }],
     },
     {
         title: 'Some dice do nothing',
         text: 'Not every roll can be used, and that’s fine. The <b>4</b> takes your last blank off goal 3. Your 2 can’t use the 5 — a numbered piece only ever goes out on its own number. Nothing else to do, so end your turn yourself: the right-hand arrow above the board (or the Enter key).',
         dice: [4, 5],
-        pos: { white: { board: [[2, [7, 4]], [11, [7, 8]]],
+        pos: { white: { board: [[2, [7, 6]], [11, [7, 10]]],
                         saved: [1, 3, 4, 5, 6, 7, 8, 9, 10, 12] },
-               black: { board: [[1, [6, 4]], [2, [6, 4]], [3, [3, 9]], [7, [2, 9]]],
-                        saved: [4, 5, 6, 8, 9, 10, 11, 12] } },
+               black: { board: [[4, [6, 4]], [6, [6, 4]], [5, [3, 9]], [7, [2, 9]]],
+                        saved: [1, 2, 3, 8, 9, 10, 11, 12] } },
         seq: [_tutSaveOf(11), { end: true, done: () => _tut.turnEnded }],
         allowEndTurn: true,
         done: g => _tutSavedCount(g, 'white') >= 11 && _tut.turnEnded,
@@ -4459,9 +4470,9 @@ const _tutSteps = [
         title: 'Your last piece',
         text: 'The rules help a straggler: your 2 has <b>lost its number</b>. With one piece left at the start of your turn, a numbered piece on its goal becomes blank — so it no longer has to wait for a 2, and any die of 2 or more brings it in. Save it and the game is yours.',
         dice: [5, 3],
-        pos: { white: { board: [[2, [7, 4]]], saved: [1, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12] },
-               black: { board: [[1, [6, 4]], [2, [6, 4]], [3, [3, 9]], [7, [2, 10]]],
-                        saved: [4, 5, 6, 8, 9, 10, 11, 12] } },
+        pos: { white: { board: [[2, [7, 6]]], saved: [1, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12] },
+               black: { board: [[4, [6, 4]], [6, [6, 4]], [5, [3, 9]], [7, [2, 10]]],
+                        saved: [1, 2, 3, 8, 9, 10, 11, 12] } },
         after: g => {                                // phase is endgame, so the 2 turns blank
             const two = _tutPiece(g, 'white', 2);
             g.applyLastPieceRule();
@@ -4490,7 +4501,7 @@ const _tutSteps = [
 
 // ── step 0's demo ────────────────────────────────────────────────────────────
 // One white piece's whole life, on a loop: out of the rack onto home, out along
-// spoke 6 capturing Black's lone 5 at ring 4, onto goal 5, and into the saved
+// spoke 6 capturing Black's lone 2 at ring 4, onto goal 2, and into the saved
 // rack. Each leg is a slow slide, and the matching clause of the card lights up. It moves the REAL pieces (the step's own position
 // is re-applied to reset the loop, and every later step lays out its own), so the
 // intro step also locks input -- see _inputLocked.
@@ -4552,8 +4563,8 @@ function _tutDemoStart(game) {
         try { fn(); } catch (e) { console.warn('[TUTORIAL] demo beat failed:', e); }
     }, ms));
     const rack = _tutRack(game, 'white', 'unentered'), saved = _tutRack(game, 'white', 'saved');
-    const piece = rack.pieces[0], enemy = _tutPiece(game, 'black', 5);
-    const home = _tutHub(game), mid = _tutTile(game, 4, 6), goal = _tutGoal(game, 5);
+    const piece = rack.pieces[0], enemy = _tutPiece(game, 'black', 2);
+    const home = _tutHub(game), mid = _tutTile(game, 4, 6), goal = _tutGoal(game, 2);
     if (!piece || !enemy || !home || !mid || !goal) return;
     // No arrows (owner, 2026-09-30: "too low-tech"): the slide itself shows the
     // way. The clause lights a beat before the piece sets off.
@@ -5488,21 +5499,21 @@ function showStrategy() {
          '<p><b>Bringing a numbered piece home can beat saving two.</b> With your 5 and 6 on their goals and another numbered piece 11 from its own, a roll of 5-6 is usually better spent taking that piece home than saving the 5 and the 6 — especially a 3 or a 4. Late in the game it’s a toss-up.</p>' +
          '<p><b>Don’t leave a numbered piece alone where it can be captured.</b> A lone blank is fine — it’s often the first piece of a wall.</p>' +
          '<p><b>Park numbered pieces behind a wall.</b></p>' +
-         fig('park.webp', 'White’s 3 sits behind its own wall on ring 5, so Black can’t get at it.')],
+         fig('park-s7.webp', 'White’s 5 sits behind its own wall on ring 5, so Black can’t get at it.')],
         ['Make every roll count',
          '<p><b>Aim for a position where every number does something</b>: saves a piece, brings one to its goal, builds a wall or captures.</p>' +
-         fig('every-roll.webp', '1 saves the blank on goal 1 · 2 saves the 2 · 3 takes the 3 to its goal · 4 and 5 bring blanks onto goals 4 and 5 · 6 captures.')],
+         fig('every-roll-s7.webp', '1 saves the blank on goal 1 · 2 saves the 2 · 3 takes the 5 to its goal · 4 and 5 bring blanks onto goals 1 and 2 · 6 captures.')],
         ['Walls',
-         '<p><b>Block goal pairs.</b> Goals 2 &amp; 4, 1 &amp; 6 and 3 &amp; 5 share their approaches, so two walls shut both.</p>' +
-         fig('pair-block.webp', 'Black’s two walls on ring 5 seal goals 2 and 4. White’s 2 and 4 are stuck until a wall opens.') +
+         '<p><b>Block goal pairs.</b> Neighbouring goals that add up to 7 — 1 &amp; 6, 2 &amp; 5, 3 &amp; 4 — share their approaches, so two walls shut both.</p>' +
+         fig('pair-block-s7.webp', 'Black’s two walls on ring 5 seal goals 1 and 6. White’s 1 and 6 are stuck until a wall opens.') +
          '<p><b>When you’re blocking a pair of goals, capture whenever you can.</b> A captured piece has to come back in first, so they can’t spend their dice breaking your wall.</p>' +
          '<p><b>If they’re blocking you, don’t spend your dice on breaking the wall while they have anything else useful to do.</b> Sooner or later they run out of moves and have to open it or pass.</p>' +
          '<p><b>Where to wall:</b> rings 5 and 6 are best, especially 5, where routes meet — then ring 3.</p>' +
          '<p><b>Walls of blanks are best.</b> If you have to build one with a numbered piece, swap a blank in later.</p>'],
         ['Endgame',
          '<p><b>Spread your blanks over different goals, favouring the low ones.</b> In the endgame a blank on your highest occupied goal banks on that number or anything higher; every other piece needs its exact number. So the lower your blanks sit, the more rolls bank them, and on different goals they use different numbers.</p>' +
-         '<p><b>Use a 4 to drop a blank to a lower goal.</b> A 4 moves a blank from a high goal to its partner: 6→1, 5→3, 4→2.</p>' +
-         fig('hop.webp', 'A 4 takes the blank on goal 5 to goal 3, where any roll of 3 or more banks it.')],
+         '<p><b>Use a 4 to drop a blank to a lower goal.</b> A 4 moves a blank from a high goal to its partner, the goal that adds up to 7 with it: 6→1, 5→2, 4→3.</p>' +
+         fig('hop-s7.webp', 'A 4 takes the blank on goal 5 to goal 2, where any roll of 2 or more banks it.')],
         ['Captures',
          '<p><b>Bringing a piece to goal usually beats a capture.</b> Capture when it’s cheap, or to prevent the opponent from breaking your wall.</p>'],
     ];
@@ -9252,7 +9263,7 @@ class Game {
             piece.isHovered = false;              // it is not under the pointer any more
             piece.move(targetTile);
             // A tutorial step can ask for the move to be shown along its actual
-            // route (step 7: the long way round, through goal 2).
+            // route (step 7: the long way round, through goal 6).
             const _st = _tut.active ? _tutStep() : null;
             const _route = _st && _st.routeAnim && _fromTile ? this._routeBetween(_fromTile, targetTile) : null;
             if (_route && _route.length > 2) piece.animateRoute(_ox, _oy, _route);

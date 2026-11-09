@@ -146,8 +146,8 @@ max-age, so a CHANGED picture needs a NEW file name. Text mirrored in
 WORDING.md section 10. Measured headless, desktop + phone: 4/4 images load, no
 sideways scroll, game paused, back returns to How to Play.
 
-- **PLAY-TEST GOAL LAYOUTS: `?dev=1&layout=sum7` or `&layout=B` (owner,
-  2026-10-29).** Renumbers the six goals (ring order from sector 2): sum7
+- **GOAL LAYOUTS (owner, 2026-10-29; sum7 the DEFAULT since 2026-11-09, see
+  Current state). Originally play-test only: `?dev=1&layout=sum7` or `&layout=B`.** Renumbers the six goals (ring order from sector 2): sum7
   1-6-2-5-3-4, B 1-4-5-2-3-6; today 4-2-5-3-6-1. game.js `GOAL_LAYOUTS` draws
   the board; local_agent.js `applyGoalLayout` patches the computer's static data
   (tile_numbers + base tile feature 6) and loads `endgame_table_<name>.json`
@@ -659,6 +659,32 @@ with it in mind.** Assessment and the concrete implications:
      twin later. Settings already live in localStorage, which a WebView keeps.
 
 ## Current state
+
+- **SUM7 IS THE GAME'S GOAL LAYOUT (owner, 2026-11-09; on `testing`).** Goals in
+  ring order from sector 2 read 1-6-2-5-3-4, so 4-apart partners add to 7 (1&6,
+  2&5, 3&4). Why: train-features-v2's layout comparison (most even seals, all else
+  level). `GOAL_LAYOUT_DEFAULT = 'sum7'` in game.js; the owner's Settings row
+  (recorder unlocked or `?dev=1`) still offers **Original** (4-2-5-3-6-1, stored as
+  `goalLayout = 'original'`; the unpatched static data, `GOAL_LAYOUT_NAME` null)
+  and B; `?dev=1&layout=original|sum7|B` wins. The computer plays sum7's own net
+  (model_sum7.json -> model-dffd8d8f.onnx, sum7_r2_cand_13); **sw.js v13 precaches
+  it, its sidecar and endgame_table_sum7.json**, and build_web.py refuses a build
+  whose default layout's net/table are not precached (tested: removing the .onnx
+  line fails the build). Recorded games carry `layout: 'sum7'`; the autosave key
+  is per layout, so an in-progress original-layout game resumes only under
+  Original. **The Python tools still default to the original numbering** --
+  set `GOAL_LAYOUT=sum7` (train-features-v2) for anything about play from now on.
+  **Tutorial** (`_tutSteps`): every position and move die kept, moved over by
+  TILE (pieces 4->1 2->6 5->2 3->5 6->3 1->4); banking dice follow the numbers
+  (Saving: 3 and 4); the endgame steps re-laid (white 2 on goal 2 = [7,6], blanks
+  onto goal 3 = [7,10]) so the higher-die lesson keeps its text. Played through
+  with the real handlers on phone and desktop: every scripted move legal, both
+  captures, the block-save, the last-piece blanking, "You win!", 0 page errors.
+  **Strategy panel:** pair text ("add up to 7"), hop 6->1 5->2 4->3, four pictures
+  redrawn as `*-s7.webp` (positions + checks in STRATEGY.md; `lab/die_uses.js`
+  lists what each die does in a position). How to Play and the rule tips name no
+  goal numbers. **Not redone:** STRATEGY.md's measurements (original layout) and
+  the Android package (still original layout until rebuilt).
 
 - **DRAW ONLY WHEN SOMETHING CHANGED (owner, 2026-11-08: battery; on `testing`).**
   Phaser drew every animation frame (60-120/s, up to 3x resolution on a phone)

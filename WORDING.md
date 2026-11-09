@@ -8,7 +8,7 @@ Edit here and ask Claude to carry the changes into `game.js`.
 Conventions: `{x}` is a value filled in at run time. `<b>`/`<i>` are bold/italic.
 `{dbl}` is "double-click" on desktop and "double-tap" on a phone.
 
-Snapshot taken 2026-09-30, on `testing`.
+Snapshot taken 2026-09-30, on `testing`; tutorial and strategy text moved to the sum7 goal layout 2026-11-09.
 
 ---
 
@@ -28,25 +28,25 @@ While Black replies: `Black plays…` · On completing a step: `✓ Nice!`
 On a landscape phone the header reads `Step 1 of 12 · What you’re playing for`.
 
 ### Step 2 — Send two pieces out
-You can start saving once you’ve brought all your pieces out. Send the front one out through home and spend the <b>5</b> on the highlighted tile near goal 5. Then bring a second piece out with the <b>3</b>. Pieces 1–6 each have one matching goal; blank pieces can use any.
+You can start saving once you’ve brought all your pieces out. Send the front one out through home and spend the <b>5</b> on the highlighted tile near goal 2. Then bring a second piece out with the <b>3</b>. Pieces 1–6 each have one matching goal; blank pieces can use any.
 
 ### Step 3 — Numbered pieces head for their goal
-Numbered pieces are the hardest to save — only their own goal will take them — so it pays to send them home early. Your next piece is the <b>6</b>, and goal 6 is exactly seven tiles away. Both dice can go on one piece: select the 6, then goal 6 (or drag it there).
+Numbered pieces are the hardest to save — only their own goal will take them — so it pays to send them home early. Your next piece is the <b>3</b>, and goal 3 is exactly seven tiles away. Both dice can go on one piece: select the 3, then goal 3 (or drag it there).
 
 ### Step 4 — Take what’s exposed
-A lone piece is exposed, and landing on it sends it back to the home tile. Black has left two. While you still have pieces on the rack, <b>one of your two moves must be that front rack piece</b>. Enter it with the <b>4</b> onto Black’s 5, and use the <b>2</b> to take the other with the piece already on the board. Black will have to move its captured pieces back out before doing anything else.
+A lone piece is exposed, and landing on it sends it back to the home tile. Black has left two. While you still have pieces on the rack, <b>one of your two moves must be that front rack piece</b>. Enter it with the <b>4</b> onto Black’s 2, and use the <b>2</b> to take the other with the piece already on the board. Black will have to move its captured pieces back out before doing anything else.
 
 ### Step 5 — Build a wall
-Walls are how you slow your opponent down. Two of your pieces on one tile make a <b>wall</b> — enemy pieces can’t land on it or pass through. Black’s 5 must reach goal 5, and its short way in runs over a tile you hold. Your dice sum to 5: bring your next piece out to join it and shut that route.
+Walls are how you slow your opponent down. Two of your pieces on one tile make a <b>wall</b> — enemy pieces can’t land on it or pass through. Black’s 2 must reach goal 2, and its short way in runs over a tile you hold. Your dice sum to 5: bring your next piece out to join it and shut that route.
 
 ### Step 6 — Saving
-<b>⏩ A few turns later.</b> Saving is how you win, and it opens up once your rack is empty — as yours now is. A piece on a goal goes out on a die matching that goal’s number: your <b>6</b> is on goal 6 — double-click it, or drag it to your saved rack, and the 6 banks it for a point. Then do the same on <b>goal 1</b> with the 1 — a blank piece can be saved on any goal.
+<b>⏩ A few turns later.</b> Saving is how you win, and it opens up once your rack is empty — as yours now is. A piece on a goal goes out on a die matching that goal’s number: your <b>3</b> is on goal 3 — double-click it, or drag it to your saved rack, and the 3 banks it for a point. Then do the same on <b>goal 4</b> with the 4 — a blank piece can be saved on any goal.
 
 ### Step 7 — The long way in
-A wall doesn’t stop you, but it can make you pay. Black has walled the tile in front of goal 4. A piece always takes the shortest route to where you send it — and your 4’s shortest route was <b>five</b> tiles, so a single 5 would have done it. Now the only way in is <b>nine</b>, round through goal 2 — and your dice sum to 9, so move your 4 to its goal.
+A wall doesn’t stop you, but it can make you pay. Black has walled the tile in front of goal 1. A piece always takes the shortest route to where you send it — and your 1’s shortest route was <b>five</b> tiles, so a single 5 would have done it. Now the only way in is <b>nine</b>, round through goal 6 — and your dice sum to 9, so move your 1 to its goal.
 
 ### Step 8 — Buy the door open
-Sometimes the only way past a wall is to buy it down. The two walled tiles are the only ways into goals 2 and 4, so both are sealed — your <b>2</b> has no route home on any roll. Spend your dice on the door: double-click one of the two black pieces on the wall <b>in front of goal 2</b> to <b>save it for Black</b>. It costs both dice and hands Black a point, but the wall drops to a single piece — your 2 has a path again.
+Sometimes the only way past a wall is to buy it down. The two walled tiles are the only ways into goals 1 and 6, so both are sealed — your <b>6</b> has no route home on any roll. Spend your dice on the door: double-click one of the two black pieces on the wall <b>in front of goal 6</b> to <b>save it for Black</b>. It costs both dice and hands Black a point, but the wall drops to a single piece — your 6 has a path again.
 
 ### Step 9 — The endgame
 <b>⏩ Later.</b> Once every piece is on a goal, saving gets easier. Use the <b>1</b> to step your last one onto goal 3. That’s the <b>endgame</b>, and your saved rack lights up to show it: a blank now goes out on any die <i>bigger</i> than its goal’s number, if you hold no higher goal. Your highest is goal 3, so the <b>5</b> takes a blank off it. Numbered pieces always need their own number.
@@ -246,15 +246,15 @@ Button in How to Play, under the tutorial button: **Strategy tips**. Panel title
 **Don’t leave a numbered piece alone where it can be captured.** A lone blank is fine — it’s often the first piece of a wall.
 
 **Park numbered pieces behind a wall.**
-*[park.webp]* White’s 3 sits behind its own wall on ring 5, so Black can’t get at it.
+*[park-s7.webp]* White’s 5 sits behind its own wall on ring 5, so Black can’t get at it.
 
 ### Make every roll count
 **Aim for a position where every number does something**: saves a piece, brings one to its goal, builds a wall or captures.
-*[every-roll.webp]* 1 saves the blank on goal 1 · 2 saves the 2 · 3 takes the 3 to its goal · 4 and 5 bring blanks onto goals 4 and 5 · 6 captures.
+*[every-roll-s7.webp]* 1 saves the blank on goal 1 · 2 saves the 2 · 3 takes the 5 to its goal · 4 and 5 bring blanks onto goals 1 and 2 · 6 captures.
 
 ### Walls
-**Block goal pairs.** Goals 2 & 4, 1 & 6 and 3 & 5 share their approaches, so two walls shut both.
-*[pair-block.webp]* Black’s two walls on ring 5 seal goals 2 and 4. White’s 2 and 4 are stuck until a wall opens.
+**Block goal pairs.** Neighbouring goals that add up to 7 — 1 & 6, 2 & 5, 3 & 4 — share their approaches, so two walls shut both.
+*[pair-block-s7.webp]* Black’s two walls on ring 5 seal goals 1 and 6. White’s 1 and 6 are stuck until a wall opens.
 
 **When you’re blocking a pair of goals, capture whenever you can.** A captured piece has to come back in first, so they can’t spend their dice breaking your wall.
 
@@ -267,8 +267,8 @@ Button in How to Play, under the tutorial button: **Strategy tips**. Panel title
 ### Endgame
 **Spread your blanks over different goals, favouring the low ones.** In the endgame a blank on your highest occupied goal banks on that number or anything higher; every other piece needs its exact number. So the lower your blanks sit, the more rolls bank them, and on different goals they use different numbers.
 
-**Use a 4 to drop a blank to a lower goal.** A 4 moves a blank from a high goal to its partner: 6→1, 5→3, 4→2.
-*[hop.webp]* A 4 takes the blank on goal 5 to goal 3, where any roll of 3 or more banks it.
+**Use a 4 to drop a blank to a lower goal.** A 4 moves a blank from a high goal to its partner, the goal that adds up to 7 with it: 6→1, 5→2, 4→3.
+*[hop-s7.webp]* A 4 takes the blank on goal 5 to goal 2, where any roll of 2 or more banks it.
 
 ### Captures
 **Bringing a piece to goal usually beats a capture.** Capture when it’s cheap, or to prevent the opponent from breaking your wall.

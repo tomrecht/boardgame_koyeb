@@ -62,12 +62,26 @@ whenever you can.
 
 `showStrategy` in game.js, wording in WORDING.md section 10. Pictures in
 `assets/strategy/`, from these positions (`node pos_image.mjs "<pos>" out.png
-<flags>`, then cropped to the board, 240,40,1040,832, and resized to 600 wide):
+<flags>`, then cropped to the board and resized to 600 wide; current crop below):
 
-- park.webp: `b 44 | W 3@6.8 x@5.8 x@5.8 x@3.2 5@4.6 r:6,x,x s:1,2,4,x | B x@4.8 x@3.9 x@5.30 r:1,2,x,x s:3,4,5,6,x` `--ring 6.8 --fill 5.8:#e0b040`
-- every-roll.webp: `w 36 | W x@G1 2@G2 3@4.8 x@5.13 x@2.6 r:- s:1,4,5,6,x,x,x | B x@3.11 r:3,4,5,6,x,x,x s:1,2,x,x` `--ring G1,G2,G3,G4,G5,3.11`
-- pair-block.webp: `w 52 | W 2@3.4 4@4.2 x@3.8 x@2.10 r:1,3,x,x s:5,6,x,x | B x@5.2 x@5.2 x@5.4 x@5.4 6@G6 r:1,x,x s:2,3,4,5` `--fill 5.2,5.4:#e0b040 --ring G2,G4`
-- hop.webp: `w 41 | W x@G1 x@G2 x@G5 r:- s:1,2,3,4,5,6,x,x,x | B x@G4 5@6.6 2@5.4 r:- s:1,3,4,6,x,x,x,x,x` `--ring G5,G3`
+**Since 2026-11-09 the game uses the sum7 goal layout** (goals 1-6-2-5-3-4 round the
+rim from sector 2; partners 4 apart add to 7: 1&6, 2&5, 3&4), and the pictures were
+redrawn for it under new names (`*-s7.webp`; `/assets/*` is cache-first). park and
+pair-block are the old positions moved over by TILE (pieces relabelled 4->1 2->6
+5->2 3->5 6->3 1->4); every-roll and hop rely on die = goal number, so they were
+re-laid and checked die by die with `node lab/die_uses.js` (main):
+
+- park-s7.webp: `b 44 | W 5@6.8 x@5.8 x@5.8 x@3.2 2@4.6 r:3,x,x s:4,6,1,x | B x@4.8 x@3.9 x@5.30 r:4,6,x,x s:5,1,2,3,x` `--ring 6.8 --fill 5.8:#e0b040`
+- every-roll-s7.webp: `w 36 | W x@G1 2@G2 5@4.8 x@5.13 x@2.6 r:- s:1,3,4,6,x,x,x | B x@3.11 r:3,4,5,6,x,x,x s:1,2,x,x` `--ring G1,G2,G5,3.11`
+  (die_uses: 1 saves x@G1, 2 saves the 2, 3 takes the 5 to G5, 4 takes x@5.13 to G1, 5 takes x@2.6 to G2, 6 captures on 3.11)
+- pair-block-s7.webp: `w 52 | W 6@3.4 1@4.2 x@3.8 x@2.10 r:4,5,x,x s:2,3,x,x | B x@5.2 x@5.2 x@5.4 x@5.4 3@G3 r:4,x,x s:1,2,5,6` `--fill 5.2,5.4:#e0b040 --ring G1,G6`
+- hop-s7.webp: `w 41 | W x@G1 x@G1 x@G5 r:- s:1,2,3,4,5,6,x,x,x | B x@G1 2@6.6 6@5.4 r:- s:1,3,4,5,x,x,x,x,x` `--ring G5,G2`
+  (die_uses: 4 takes x@G5 to G2; then G2 is the highest goal held, and 2-6 all bank it)
+
+Crop: 240,40,1040,870 with the score line (240,838..470,870) painted over in the
+ground colour, resized to 600 wide. The measurements quoted in this file were made
+on the ORIGINAL layout (4-2-5-3-6-1); the advice is about numbers and goal pairs,
+not tiles, so it carries over, but the numbers were not re-measured on sum7.
 
 Claims in the captions were checked against the tile graph
 (tile_neighbors.json), not the engine. Endgame table, blanks only: G1+G2+G5
@@ -81,7 +95,7 @@ numbered piece is still out (numbered 6: 3.46 spread vs 3.85 all on G1).
   their own goal (exact match, 11/36 a turn) against 1.00-1.64 for a blank.
   The net puts a numbered piece on its goal over a blank save in 871 of 1,002
   positions.
-- **(5) Two walls seal a whole 4-apart pair** (6&1, 5&3, 4&2): the pair shares
+- **(5) Two walls seal a whole 4-apart pair** (sum7: 1&6, 2&5, 3&4; original layout 6&1, 5&3, 4&2): the pair shares
   its approach corridors, so denying a pair costs no more than denying one
   goal. Sealing all six would take 12 pieces.
 - **(6) Mostly consistent with the blocking DP** (one lone piece, no

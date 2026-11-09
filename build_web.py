@@ -51,10 +51,10 @@ ASSETS = [
 # needed when the panel is opened, and cache-first after that. Served with a
 # week's max-age, so a changed picture needs a new file name.
 STRATEGY = [
-    'assets/strategy/park.webp',
-    'assets/strategy/every-roll.webp',
-    'assets/strategy/pair-block.webp',
-    'assets/strategy/hop.webp',
+    'assets/strategy/park-s7.webp',
+    'assets/strategy/every-roll-s7.webp',
+    'assets/strategy/pair-block-s7.webp',
+    'assets/strategy/hop-s7.webp',
 ]
 
 ICONS = [
@@ -119,7 +119,7 @@ MODEL_FILE = _model_file()
 # so it ships only then -- 1.3 MB raw, ~0.4 MB compressed.
 NEEDS_TABLE = _model_meta().get('features', 'v1') != 'v1'
 # Play-test goal layouts (?dev=1&layout=, game.js): each needs its own table
-# (goal-to-goal distances differ). Not precached -- dev only, online is fine.
+# (goal-to-goal distances differ). The DEFAULT layout's files are precached (check below).
 LAYOUT_TABLES = ['endgame_table_sum7.json', 'endgame_table_B.json']
 # A layout's own net, once trained (onnx_export.py under GOAL_LAYOUT=<name> on
 # train-features-v2 writes model_<name>.json + its hashed .onnx). Dev only, not
@@ -178,6 +178,19 @@ def check():
                             'would install and fail offline): ' + ', '.join(not_shipped))
         # The table is fetched at start-up by an A/AB net, so offline it must
         # come from the cache: refuse to build an A/AB model without it there.
+        # The DEFAULT goal layout (game.js GOAL_LAYOUT_DEFAULT) loads its own
+        # net and table at start-up: they must be precached too.
+        dm = re.search(r"const GOAL_LAYOUT_DEFAULT = '(\w+)'", open(os.path.join(HERE, 'game.js')).read())
+        if dm:
+            dl = dm.group(1)
+            need = ['endgame_table_%s.json' % dl]
+            mp = os.path.join(HERE, 'model_%s.json' % dl)
+            if os.path.exists(mp):
+                need += ['model_%s.json' % dl, json.load(open(mp))['onnx']]
+            lost = [f for f in need if f not in sw]
+            if lost:
+                problems.append('the default goal layout %s needs %s precached in sw.js '
+                                '(offline the computer could not move)' % (dl, ', '.join(lost)))
         if NEEDS_TABLE and 'endgame_table.json' not in sw:
             problems.append("model.json says an A/AB net but sw.js does not precache "
                             "'./endgame_table.json' (offline the computer could not "
