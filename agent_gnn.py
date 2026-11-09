@@ -187,6 +187,14 @@ def _opponent_near_finish(board, player):
     return NUM_PIECES - len(opp_saved) <= 2
 
 
+def _self_near_finish(board, player):
+    """TWO-SIDED LOOKAHEAD TRIGGER (owner, 2026-11-09): the mover itself has at
+    most two unsaved pieces, so its own NEXT turn may end the game. Twin of
+    selfNearFinish in agent.js."""
+    my_saved = board.white_saved if player == 'white' else board.black_saved
+    return NUM_PIECES - len(my_saved) <= 2
+
+
 def _own_saves(pair, player):
     return sum(1 for m in pair
                if isinstance(m, tuple) and len(m) == 3 and m[1] == 'save'
@@ -295,6 +303,9 @@ class GNNAgent:
         # Endgame lookahead (see _opponent_near_finish / _select_with_lookahead).
         # Off by default here so training and arena code are unchanged.
         self.endgame_lookahead = False
+        # Two-sided (owner, 2026-11-09): also count OUR chance to bank out on the
+        # turn after an opponent miss. Only acts with endgame_lookahead on.
+        self.lookahead_self = True
         self._in_lookahead = False
         # Diagnostic: when True, log whenever the chosen pair saves nothing yet a
         # save was legally available, distinguishing a value-head error (save
@@ -435,7 +446,8 @@ class GNNAgent:
             raise ValueError('Invalid moves format: expected a list or set of tuples.')
 
         if (self.endgame_lookahead and not self._in_lookahead
-                and _opponent_near_finish(board, player)):
+                and (_opponent_near_finish(board, player)
+                     or (self.lookahead_self and _self_near_finish(board, player)))):
             return self._select_with_lookahead(moves, board, player, return_scores,
                                                difficulty, deadline)
 
@@ -810,8 +822,9 @@ class GNNAgent:
 
         opp = 'white' if player == 'black' else 'black'
         my_saved = board.white_saved if player == 'white' else board.black_saved
+        opp_near = _opponent_near_finish(board, player)
         root_len = len(board.moves)
-        vals, cands, outcomes, shallow, memo = [], [], [], [], {}
+        vals, cands, outcomes, shallow, p_ms, memo = [], [], [], [], [], {}
         try:
             for v, pair in scored:
                 for m in pair:
@@ -819,12 +832,24 @@ class GNNAgent:
                         board.apply_move(m, switch_turn=False)
                 key = _piece_locs(board)
                 if key not in memo:
-                    memo[key] = (self._opp_finish_prob(board, opp),
-                                 -(NUM_PIECES - len(my_saved)) / NUM_PIECES * SCORE_SCALE)
+                    v_lose = -(NUM_PIECES - len(my_saved)) / NUM_PIECES * SCORE_SCALE
+                    if self.lookahead_self and _self_near_finish(board, player):
+                        opp_saved = board.white_saved if opp == 'white' else board.black_saved
+                        opp_left = NUM_PIECES - len(opp_saved)
+                        need_left = v > (opp_left - 2) / NUM_PIECES * SCORE_SCALE
+                        p_o, p_m, left = self._lookahead_stats(board, player, need_left)
+                        memo[key] = (p_o, v_lose, p_m, left / NUM_PIECES * SCORE_SCALE, True)
+                    else:
+                        memo[key] = (self._opp_finish_prob(board, opp) if opp_near else 0.0,
+                                     v_lose, 0.0, 0.0, False)
                 while len(board.moves) > root_len:
                     board.undo_last_move()
-                p_fin, v_fin = memo[key]
-                vals.append(p_fin * v_fin + (1.0 - p_fin) * v)
+                p_fin, v_fin, p_m, v_win, two = memo[key]
+                # Two-sided: a miss leaves a margin between -our unsaved and the
+                # opponent's leftover pieces, so the net is held to that range.
+                rest = min(v_win, max(v_fin, v)) if two else v
+                vals.append(p_fin * v_fin + (1.0 - p_fin) * (p_m * v_win + (1.0 - p_m) * rest))
+                p_ms.append(p_m)
                 shallow.append(v)
                 cands.append(pair)
                 outcomes.append(key)
@@ -848,7 +873,8 @@ class GNNAgent:
         if len(tied) > 1:
             # Certain to be over (P(finish) = 1) ties every pair with the same
             # saves; the net's own score then decides, as without the lookahead.
-            best = min(tied, key=lambda i: (-shallow[i], _pair_sort_key(cands[i])))
+            # Equal value: the likelier finish next turn first (two-sided), then the net.
+            best = min(tied, key=lambda i: (-p_ms[i], -shallow[i], _pair_sort_key(cands[i])))
         same = [i for i, k in enumerate(outcomes) if k == outcomes[best]]
         if len(same) > 1:
             best = min(same, key=lambda i: (_pair_relocations(cands[i]),
@@ -874,6 +900,103 @@ class GNNAgent:
                 board.undo_last_move()
             self._restore_turn_state(board, saved)
         return p
+
+    def _best_banks(self, board, side):
+        """Most of its own pieces `side`, to move with the dice as set, can bank
+        this turn (0-2). Board left as found. Twin of bestBanks in agent.js."""
+        base = len(board.moves)
+        saved_rack = board.white_saved if side == 'white' else board.black_saved
+        saved0 = len(saved_rack)
+        best = 0
+        # Exact pruning: a bank needs the piece ON a goal, so only a bank or a
+        # step onto a goal can lead to one this turn, and only a bank can follow.
+        # ...unless a first move is forced (a rack entry or a captured piece's
+        # return: no pass offered), after which a bank may still follow.
+        moves1 = board.get_valid_moves()
+        forced = (0, 0, 0) not in moves1
+
+        def first_ok(m):
+            if m in ((0, 0, 0), (1, 1, 1)) or not (isinstance(m, tuple) and len(m) == 3):
+                return False
+            if not isinstance(m[0], tuple) or m[0][0] != side:
+                return False
+            return forced or m[1] == 'save' or (isinstance(m[1], tuple) and board.get_tile(*m[1]).type == 'save')
+        for m in moves1:
+            if not first_ok(m):
+                continue
+            board.apply_move(m, switch_turn=False)
+            best = max(best, len(saved_rack) - saved0)
+            if not all(d.used for d in board.dice) and board.check_game_over()[0] != side:
+                mid = len(board.moves)
+                for m2 in board.get_valid_moves():
+                    if not (isinstance(m2, tuple) and len(m2) == 3 and m2[1] == 'save'
+                            and isinstance(m2[0], tuple) and m2[0][0] == side):
+                        continue
+                    board.apply_move(m2, switch_turn=False)
+                    best = max(best, len(saved_rack) - saved0)
+                    while len(board.moves) > mid:
+                        board.undo_last_move()
+                    if best >= 2:
+                        break
+            while len(board.moves) > base:
+                board.undo_last_move()
+            if best >= 2:
+                break
+        return best
+
+    @staticmethod
+    def _cannot_finish(board, side):
+        """Exact: a bank takes one die and needs the piece ON a goal, and a turn
+        has two dice -- so 3+ unsaved pieces never finish in one turn, and 2 only
+        if both already stand on goals. Twin of cannotFinish in agent.js."""
+        saved_rack = board.white_saved if side == 'white' else board.black_saved
+        left = [p for p in board.pieces if p.player == side and p.rack is not saved_rack]
+        if len(left) > 2:
+            return True
+        return len(left) == 2 and not all(p.tile is not None and p.tile.type == 'save' for p in left)
+
+    def _lookahead_stats(self, board, player, need_left=False):
+        """TWO-SIDED LOOKAHEAD (owner, 2026-11-09). From the position after our
+        pair: P(opponent banks out next turn), the pieces they keep when they
+        miss (banking as many as they can), and P(we bank out on the turn after
+        a miss) -- their move in between ignored. Twin of lookaheadStats in
+        agent.js; returns (p_opp, p_me, opp_left_on_miss)."""
+        opp = 'white' if player == 'black' else 'black'
+        opp_saved = board.white_saved if opp == 'white' else board.black_saved
+        opp_left = NUM_PIECES - len(opp_saved)
+        p_o = left = w_miss = p_m = 0.0
+        s1 = self._enter_opponent_turn_deterministic(board)
+        try:
+            dice = board.dice
+            # Ours first: when we cannot finish next turn, the self term is zero
+            # and the opponent's leftover count is never used.
+            if not self._cannot_finish(board, player):
+                s2 = self._enter_opponent_turn_deterministic(board)
+                try:
+                    for d1, d2, w in self._DICE_ROLLS_21:
+                        dice[0].number, dice[0].used = d1, False
+                        dice[1].number, dice[1].used = d2, False
+                        if self._can_finish(board, player, len(board.moves)):
+                            p_m += w
+                finally:
+                    while len(board.moves) > s2['moves_len']:
+                        board.undo_last_move()
+                    self._restore_turn_state(board, s2)
+            opp_can = opp_left <= 2 and not self._cannot_finish(board, opp)
+            for d1, d2, w in self._DICE_ROLLS_21:
+                dice[0].number, dice[0].used = d1, False
+                dice[1].number, dice[1].used = d2, False
+                if opp_can and self._can_finish(board, opp, len(board.moves)):
+                    p_o += w
+                    continue
+                if p_m > 0 or need_left:
+                    left += w * (opp_left - self._best_banks(board, opp))
+                    w_miss += w
+        finally:
+            while len(board.moves) > s1['moves_len']:
+                board.undo_last_move()
+            self._restore_turn_state(board, s1)
+        return p_o, p_m, (left / w_miss if w_miss > 0 else float(opp_left))
 
     def _can_finish(self, board, opp, base):
         for m in board.get_valid_moves():

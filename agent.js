@@ -297,6 +297,113 @@ function oppFinishProb(engine, opp) {
     return prob;
 }
 
+/* Enter the next player's turn the way switchTurn does, without rolling, and
+   undo it exactly (oppFinishProb's own steps, reusable). */
+function enterNextTurn(engine) {
+    const saved = { player: engine.currentPlayer, dice: engine.dice.map(d => [d.value, d.used]),
+                    firstMove: engine.firstMove, stages: Object.assign({}, engine.stages),
+                    base: engine.moves.length };
+    engine.firstMove = null;
+    engine.currentPlayer = engine.currentPlayer === 'white' ? 'black' : 'white';
+    const before = new Map(engine.pieces.filter(p => p.number <= 6).map(p => [p, p.number]));
+    engine.applyLastPieceRule();
+    saved.renumbered = [...before].filter(([p, n]) => p.number !== n);
+    return saved;
+}
+function leaveTurn(engine, saved) {
+    while (engine.moves.length > saved.base) engine.undoLastMove();
+    for (const [p, n] of saved.renumbered) {
+        if (engine.lookup.get(p.player + ',' + p.number) === p) engine.lookup.delete(p.player + ',' + p.number);
+        p.number = n;
+        engine.lookup.set(p.player + ',' + n, p);
+    }
+    engine.currentPlayer = saved.player;
+    engine.dice.forEach((d, i) => { d.value = saved.dice[i][0]; d.used = saved.dice[i][1]; });
+    engine.firstMove = saved.firstMove;
+    Object.assign(engine.stages, saved.stages);
+}
+
+/* Most of its own pieces `side`, to move with the dice as set, can bank this
+   turn (0-2). Board left as found. */
+function bestBanks(engine, side) {
+    const base = engine.moves.length;
+    const saved0 = engine.savedRack(side).length;
+    // Exact pruning: a bank needs the piece ON a goal, so only a bank or a step
+    // onto a goal can lead to one this turn, and only a bank can follow.
+    const onGoal = (m) => Array.isArray(m.dest)
+        && engine.graph.types[engine.graph.indexOf(m.dest[0], m.dest[1])] === 'save';
+    // ...unless a first move is forced (a rack entry or a captured piece's
+    // return: no pass offered), after which a bank may still follow.
+    const moves1 = engine.getValidMoves();
+    const forced = !moves1.some(isPass);
+    let best = 0;
+    for (const m of moves1) {
+        if (isPass(m) || isDraw(m) || !(forced || m.dest === 'save' || onGoal(m))) continue;
+        engine.applyMove(m, false);
+        best = Math.max(best, engine.savedRack(side).length - saved0);
+        if (!engine.dice.every(d => d.used) && engine.checkGameOver()[0] !== side) {
+            const mid = engine.moves.length;
+            for (const m2 of engine.getValidMoves()) {
+                if (m2.dest !== 'save' || m2.piece === null) continue;
+                engine.applyMove(m2, false);
+                best = Math.max(best, engine.savedRack(side).length - saved0);
+                while (engine.moves.length > mid) engine.undoLastMove();
+                if (best >= 2) break;
+            }
+        }
+        while (engine.moves.length > base) engine.undoLastMove();
+        if (best >= 2) break;
+    }
+    return best;
+}
+
+/* TWO-SIDED LOOKAHEAD (owner, 2026-11-09; game f4252fca t50: black stepped
+   its 3 off G3 with 2-2, from 11/36 to 0/36 to finish next turn, and the
+   opponent-only lookahead gave both moves the same P(finish)). From the position
+   after our pair: the opponent's chance to bank out (pO, exact), the pieces they
+   keep when they miss (banking as many as they can), and OUR chance to bank out
+   on the turn after a miss (pM; their move in between is ignored -- it cannot
+   touch pieces on goals). Move generation only. */
+/* Exact: a bank takes one die and needs the piece ON a goal, and a turn has
+   two dice -- so 3+ unsaved pieces can never finish in one turn, and 2 only if
+   both already stand on goals. */
+function cannotFinish(engine, side) {
+    const left = engine.pieces.filter(p => p.player === side && p.rack !== 'saved');
+    if (left.length > 2) return true;
+    return left.length === 2 && !left.every(p => p.tile >= 0 && engine.graph.types[p.tile] === 'save');
+}
+function lookaheadStats(engine, player, needSelf, needLeft = false) {
+    const opp = player === 'white' ? 'black' : 'white';
+    const oppLeft = LOOKAHEAD_PIECES - engine.savedRack(opp).length;
+    let pO = 0, left = 0, wMiss = 0, pM = 0;
+    const s1 = enterNextTurn(engine);
+    try {
+        // Ours first: when we cannot finish next turn, the self term is zero and
+        // the opponent's leftover count is never used.
+        if (needSelf && !cannotFinish(engine, player)) {
+            const s2 = enterNextTurn(engine);
+            try {
+                for (const [d1, d2, w] of ROLLS_21) {
+                    engine.dice[0].value = d1; engine.dice[0].used = false;
+                    engine.dice[1].value = d2; engine.dice[1].used = false;
+                    if (canFinish(engine, player, engine.moves.length)) pM += w;
+                }
+            } finally { leaveTurn(engine, s2); }
+        }
+        const oppCan = oppLeft <= 2 && !cannotFinish(engine, opp);
+        for (const [d1, d2, w] of ROLLS_21) {
+            engine.dice[0].value = d1; engine.dice[0].used = false;
+            engine.dice[1].value = d2; engine.dice[1].used = false;
+            if (oppCan && canFinish(engine, opp, engine.moves.length)) { pO += w; continue; }
+            if (pM > 0 || needLeft) { left += w * (oppLeft - bestBanks(engine, opp)); wMiss += w; }
+        }
+    } finally { leaveTurn(engine, s1); }
+    return { pO, pM, left: wMiss > 0 ? left / wMiss : oppLeft };
+}
+function selfNearFinish(engine, player) {
+    return LOOKAHEAD_PIECES - engine.savedRack(player).length <= 2;
+}
+
 /* Every candidate the shallow search keeps (same prefilter, same rules),
    rescored as P(finish) * exact final margin + (1 - P(finish)) * net value.
    Move generation only; no extra net evaluations. */
@@ -317,19 +424,37 @@ async function selectWithLookahead(engine, W, moves, player, o) {
     if (!scored.length) return o.returnScores ? ranked : (drawLegal ? drawPair : [PASS, PASS]);
 
     const opp = player === 'white' ? 'black' : 'white';
+    const oppNear = opponentNearFinish(engine, player);
+    const selfLook = o.lookaheadSelf !== false;
     const root = engine.moves.length;
-    const vals = [], cands = [], outcomes = [], shallow = [], memo = new Map();
+    const vals = [], cands = [], outcomes = [], shallow = [], pMs = [], memo = new Map();
     try {
         for (const r of scored) {
             for (const m of r.pair) if (!isPass(m)) engine.applyMove(m, false);
             const key = pieceLocs(engine);
             if (!memo.has(key)) {
-                memo.set(key, [oppFinishProb(engine, opp),
-                               -(LOOKAHEAD_PIECES - engine.savedRack(player).length) / LOOKAHEAD_PIECES * SCORE_SCALE]);
+                const vLose = -(LOOKAHEAD_PIECES - engine.savedRack(player).length) / LOOKAHEAD_PIECES * SCORE_SCALE;
+                if (selfLook && selfNearFinish(engine, player)) {
+                    // The opponent's leftover count also CAPS the net below; it
+                    // can only bind when the net claims more than oppLeft - 2.
+                    const oppLeft = LOOKAHEAD_PIECES - engine.savedRack(opp).length;
+                    const needLeft = r.score > (oppLeft - 2) / LOOKAHEAD_PIECES * SCORE_SCALE;
+                    const st = lookaheadStats(engine, player, true, needLeft);
+                    memo.set(key, [st.pO, vLose, st.pM, st.left / LOOKAHEAD_PIECES * SCORE_SCALE, true]);
+                } else {
+                    memo.set(key, [oppNear ? oppFinishProb(engine, opp) : 0, vLose, 0, 0, false]);
+                }
             }
             while (engine.moves.length > root) engine.undoLastMove();
-            const [p, vFin] = memo.get(key);
-            vals.push(p * vFin + (1 - p) * r.score);
+            const [p, vFin, pM, vWin, two] = memo.get(key);
+            // Two-sided: if we miss next turn the game goes on, and its final
+            // margin lies between losing by our unsaved pieces and winning by
+            // the opponent's leftover ones -- so the net is held to that range
+            // (game f4252fca-style lone-blank races: the net valued a 1-in-9
+            // miss above the most a win could score).
+            const rest = two ? Math.min(vWin, Math.max(vFin, r.score)) : r.score;
+            vals.push(p * vFin + (1 - p) * (pM * vWin + (1 - pM) * rest));
+            pMs.push(pM);
             shallow.push(r.score);
             cands.push(r.pair);
             outcomes.push(key);
@@ -353,7 +478,8 @@ async function selectWithLookahead(engine, W, moves, player, o) {
     if (tied.length > 1) {
         // Certain to be over (P(finish) = 1) ties every pair with the same saves;
         // the net's own score then decides, as without the lookahead.
-        tied.sort((a, b) => (shallow[b] - shallow[a]) || cmpPairKey(cands[a], cands[b]));
+        // Equal value: the likelier finish next turn first (two-sided), then the net.
+        tied.sort((a, b) => (pMs[b] - pMs[a]) || (shallow[b] - shallow[a]) || cmpPairKey(cands[a], cands[b]));
         best = tied[0];
     }
     const same = [];
@@ -378,11 +504,12 @@ async function selectMovePair(engine, W, moves, player, opts = {}) {
         prefilter: true, firstMovePrefilter: 12, prefilterTopK: 40, prefilterMinK: 5,
         prefilterFrac: null, prefilterScoreAlpha: null,
         difficulty: null, returnScores: false, rand: null,
-        lookahead: true, _inLookahead: false,
+        lookahead: true, lookaheadSelf: true, _inLookahead: false,
     }, opts);
     const score = o.score;
 
-    if (o.lookahead && !o._inLookahead && opponentNearFinish(engine, player))
+    if (o.lookahead && !o._inLookahead && (opponentNearFinish(engine, player)
+            || (o.lookaheadSelf && selfNearFinish(engine, player))))
         return selectWithLookahead(engine, W, moves, player, o);
 
     const drawLegal = moves.some(isDraw);
@@ -625,7 +752,7 @@ async function selectMovePair(engine, W, moves, player, opts = {}) {
 }
 
 (function () {
-    const api = { selectMovePair, selectFiltered, oppFinishProb, opponentNearFinish, pickMoveIndex, dedupeSavePair,
+    const api = { selectMovePair, selectFiltered, oppFinishProb, opponentNearFinish, lookaheadStats, selfNearFinish, pickMoveIndex, dedupeSavePair,
                   pieceLocs, positionKey, pairRelocations, cmpPairKey,
                   PASS, DRAW, isPass, isDraw, isSave, SCORE_SCALE };
     if (typeof module !== 'undefined' && module.exports) module.exports = api;
