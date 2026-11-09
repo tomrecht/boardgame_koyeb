@@ -155,18 +155,22 @@ GAMES, LOCAL TRAINING", "THE CAPACITY TEST IS READY", "ENCODE-ONCE CACHE" and
 
     cd /Users/tomrecht/quahuru-train && git pull && caffeinate -is zsh sum7_round4.sh
 
-One big distillation iteration on the sum7 layout (the game's layout since 2026-11-09),
+Big distillation iterations on the sum7 layout (the game's layout since 2026-11-09),
 from the SHIPPED sum7 net (distill_sum7/cand_13; the script resets the run's champion
-from round 3's cand_22 to it once, marker `r4` in state.json). Iteration 24: 2,000 games
-labelled on GitHub (20 shards, ~3-4 h), training here on labels_22..24 (3,200 games,
-4 epochs, lr 2e-5), then the decision match cand_24 vs cand_13 on sum7, 2,000 pairs on
-GitHub (seeds 93.24M). Writes `sum7_r4_RESULT.txt`; if the 95% CI clears 0 it exports
-`export/sum7_r4/model_sum7.onnx` + sidecar for a Claude session to ship (main's
-model_sum7.json + hashed .onnx + sw.js SHELL entry and CACHE bump); then commits and
-pushes the result. Resumable: rerun the same command. Why: the teacher gauge on the
-shipped sum7 net (+0.118, 95% CI +0.054..+0.182) says the search still has something
-to teach; round 3's 600-game iterations were too small to see it. If it comes out
-level, sum7 distillation with this teacher is done.
+from round 3's cand_22 to it once, marker `r4` in state.json), CONTINUING WHILE EACH
+CLEARLY WINS. Each iteration (24, 25, ...): 2,000 games labelled on GitHub (20 shards,
+~3-4 h), training here on the last 3 label files (4 epochs, lr 2e-5), then a 2,000-pair
+match vs its parent on GitHub (seeds 93M + 10k x iter). KEPT only if the 95% CI clears 0;
+otherwise the parent stays champion and the run STOPS. At most MAX_ITERS (default 5).
+If anything was kept: a final 2,000-pair head to head, final champion vs cand_13 (seeds
+274M; chained wins can overstate the total), and the teacher gauge on the final champion
+(ccmatch, seeds 276M). Writes `sum7_r4_RESULT.txt` (per-iteration CIs + VERDICT); if the
+final match's CI clears 0 it exports `export/sum7_r4/model_sum7.onnx` + sidecar for a
+Claude session to ship (main's model_sum7.json + hashed .onnx + sw.js SHELL entry and
+CACHE bump); then commits and pushes the result. Resumable: rerun the same command.
+Why: the teacher gauge on the shipped sum7 net (+0.118, 95% CI +0.054..+0.182) says the
+search still has something to teach; round 3's 600-game iterations were too small to
+see it. If iteration 24 comes out level, sum7 distillation with this teacher is done.
 
 ## Project background
 

@@ -1,75 +1,140 @@
 #!/bin/zsh
-# sum7 ROUND 4 (owner, 2026-11-09): ONE big distillation round on the sum7 goal
+# sum7 ROUND 4 (owner, 2026-11-09): big distillation iterations on the sum7 goal
 # layout, from the SHIPPED sum7 net (distill_sum7/cand_13.pt = sum7_r2_cand_13,
-# model-dffd8d8f.onnx). Why: the teacher gauge on that net (2026-11-09, 2,000
-# pairs) gave close-call +0.118 (95% CI +0.054..+0.182) -- the search still has
-# something to teach -- while round 3's eight 600-game iterations came out level
-# (per-iteration gains below what a 500-pair confirm can see). So: one iteration,
-# 2,000 labelled games, judged by a 2,000-pair match against the shipped net.
+# model-dffd8d8f.onnx), CONTINUING WHILE EACH ONE CLEARLY WINS.
+# Why: the teacher gauge on that net (2026-11-09, 2,000 pairs) gave close-call
+# +0.118 (95% CI +0.054..+0.182) -- the search still has something to teach --
+# while round 3's eight 600-game iterations came out level (their gains were below
+# what a 500-pair confirm can see, and BAR=0 promotions drifted).
+#
+# Each iteration: 2,000 games labelled on GitHub, training here (last 3 label
+# files, 4 epochs), then a 2,000-pair match vs its parent on GitHub. It is kept
+# only if that match's 95% CI clears 0; otherwise the parent stays champion and
+# the run STOPS. At most MAX_ITERS (default 5) iterations. If anything was kept,
+# a final 2,000-pair head to head (final champion vs the shipped cand_13, fresh
+# seeds) decides shipping, and close-call's gauge on the final champion says
+# whether another round is worth it.
 #
 #   cd <repo> && git pull && caffeinate -is zsh sum7_round4.sh
 #
-# Resumable: rerun the same command after an interruption (distill_run resumes by
-# state.json; labels and confirms resume by seed). Needs gh on PATH and logged in
-# (GitHub does the labelling and the match); any GitHub failure falls back to local.
-# Writes sum7_r4_RESULT.txt, exports the candidate if it is clearly better, and
-# commits + pushes the result (not the checkpoint) to train-features-v2.
+# Resumable: rerun the same command (distill_run resumes from state.json; labels
+# and matches resume by seed; finished iterations are not redone). Needs gh on
+# PATH and logged in; any GitHub failure falls back to local. Writes
+# sum7_r4_RESULT.txt, exports the final champion if it is clearly better than
+# the shipped net, and commits + pushes the result (not checkpoints).
 set -e
 cd "$(dirname "$0")"
 export PATH=/opt/homebrew/bin:$PATH
 export GOAL_LAYOUT=sum7 DISTILL_DIR=distill_sum7
 D=distill_sum7
+PY=.venv/bin/python
+MAX_ITERS=${MAX_ITERS:-5}
+FIRST=24                        # round 3 ended after iteration 23
 [ -f $D/state.json ] || { echo "no $D/state.json -- run this on the work iMac (the sum7 run lives there)"; exit 1; }
 [ -f $D/cand_13.pt ] || { echo "no $D/cand_13.pt (the shipped sum7 net)"; exit 1; }
 
-# Start the round from the SHIPPED net. The run's state ended round 3 on cand_22
-# (level with cand_13: -0.014, 95% CI -0.082..+0.054), but the gauge was measured on
-# cand_13 and cand_13 is what players have. Done once (marker 'r4'); iteration 24
-# keys fresh seeds (labels 91.24M, confirm 93.24M).
-.venv/bin/python - <<'PY'
+# Start from the SHIPPED net. Round 3 ended on cand_22 (level with cand_13: -0.014,
+# 95% CI -0.082..+0.054), but the gauge was measured on cand_13 and cand_13 is what
+# players have. Done once (marker 'r4').
+$PY - <<'PY'
 import json, os
 p = 'distill_sum7/state.json'
 st = json.load(open(p))
 if not st.get('r4'):
     assert st['iter'] == 24, f"expected the run at iteration 24 (after round 3), found {st['iter']}"
     assert st.get('goal_layout') == 'sum7', st.get('goal_layout')
-    st['r4'] = {'from_champion': st['champion']}
-    st['champion'] = os.path.abspath('distill_sum7/cand_13.pt')
+    st['r4'] = {'from_champion': st['champion'], 'start': os.path.abspath('distill_sum7/cand_13.pt'),
+                'stopped': False}
+    st['champion'] = st['r4']['start']
     json.dump(st, open(p, 'w'), indent=1)
     print('round 4: champion set to', st['champion'], '(was', st['r4']['from_champion'] + ')')
 else:
-    print('round 4: resuming at iteration', st['iter'])
+    print('round 4: resuming at iteration', st['iter'], '-- stopped' if st['r4'].get('stopped') else '')
 PY
 
-# One iteration. REPLAY=3 trains on labels_22 + labels_23 (round 3, 1,200 games)
-# plus the new 2,000: 3,200 games, so 4 epochs, not 8 (CLAUDE.md: big data, 3-4).
 export REMOTE=1 REMOTE_SHARDS=20 REMOTE_QUEUE_MIN=${REMOTE_QUEUE_MIN:-90}
-export ITERS=25 GAMES=2000 REPLAY=3 CONFIRM_PAIRS=2000 T=3 K=3 BAR=0.0
+export GAMES=2000 REPLAY=3 CONFIRM_PAIRS=2000 T=3 K=3 BAR=0.0
 export TRAIN_ARGS='--epochs 4 --lr 2e-5 --td-w 0.5 --rank-w 0'
 export BOARDGAME_DEVICE=cpu PYTHONHASHSEED=0 N_WORKERS=${N_WORKERS:-8}
-.venv/bin/python -u distill_run.py >> $D/run.log 2>&1
 
-# Verdict: the iteration's own confirm IS the decision match (cand_24 vs cand_13,
-# sum7, 2,000 pairs, seeds 93.24M). Ship only if the 95% CI clears 0.
-.venv/bin/python - <<'PY' > sum7_r4_RESULT.txt
-import json
+for (( k = FIRST; k < FIRST + MAX_ITERS; k++ )); do
+    STOP=$($PY -c "import json; print(int(json.load(open('$D/state.json'))['r4'].get('stopped', False)))")
+    [ "$STOP" = 1 ] && break
+    ITERS=$((k + 1)) $PY -u distill_run.py >> $D/run.log 2>&1
+    # distill_run promotes on mean > 0; round 4 keeps an iteration only if its
+    # 95% CI clears 0, else reverts to the parent and stops.
+    $PY - "$k" <<'PY'
+import json, sys
+k = int(sys.argv[1]); p = 'distill_sum7/state.json'
+st = json.load(open(p))
+h = [x for x in st['history'] if x['iter'] == k][-1]
+lo = h['mean'] - 1.96 * h['se']
+kept = lo > 0
+if not kept:
+    st['champion'] = h['champion']          # the parent
+    st['r4']['stopped'] = True
+st['r4'].setdefault('iters', {})[str(k)] = {'mean': h['mean'], 'lo': lo,
+                                            'hi': h['mean'] + 1.96 * h['se'], 'kept': kept}
+json.dump(st, open(p, 'w'), indent=1)
+print(f"round 4 iteration {k}: {h['mean']:+.3f} (95% CI {lo:+.3f}..{h['mean'] + 1.96 * h['se']:+.3f}) "
+      f"-> {'KEPT, continuing' if kept else 'not clear of 0: parent stays champion, STOP'}", flush=True)
+PY
+done
+
+# Final: if anything was kept, the final champion vs the shipped net directly
+# (chained parent-vs-child wins can overstate the total), then the teacher gauge.
+CH=$($PY -c "import json; print(json.load(open('$D/state.json'))['champion'])")
+START=$($PY -c "import json; print(json.load(open('$D/state.json'))['r4']['start'])")
+mkdir -p layout_final
+if [ "$CH" != "$START" ]; then
+    $PY -u -c "
+import sys; sys.argv=['x']; import remote_play as r, subprocess
+out='layout_final/sum7_r4_final.jsonl'
+r.remote_play('confirm',['$CH','$START'],2000,274000000,out,env={'GOAL_LAYOUT':'sum7'})
+subprocess.call([sys.executable,'confirm_match.py','analyze',out])
+" > layout_final/sum7_r4_final.log 2>&1 || true
+    $PY -u -c "
+import sys; sys.argv=['x']; import remote_play as r, subprocess
+out='layout_final/sum7_r4_gauge.jsonl'
+r.remote_play('ccmatch',['$CH'],2000,276000000,out,env={'T':'3','K':'3','MAX_REPLIES':'3','GOAL_LAYOUT':'sum7'})
+subprocess.call([sys.executable,'close_call.py','analyze',out])
+" > layout_final/sum7_r4_gauge.log 2>&1 || true
+fi
+
+$PY - "$CH" "$START" <<'PY' > sum7_r4_RESULT.txt
+import json, os, sys
+ch, start = sys.argv[1], sys.argv[2]
 st = json.load(open('distill_sum7/state.json'))
-h = [x for x in st['history'] if x['iter'] == 24][-1]
-lo, hi = h['mean'] - 1.96 * h['se'], h['mean'] + 1.96 * h['se']
-ship = lo > 0
-print(f"sum7 round 4: cand_24 vs shipped cand_13 on sum7, {h['pairs']} pairs: "
-      f"{h['mean']:+.3f} (95% CI {lo:+.3f}..{hi:+.3f})")
-print('VERDICT:', 'SHIP (CI clear of 0) -- exported to export/sum7_r4/' if ship
-      else 'DO NOT SHIP (CI includes 0) -- the shipped net stays')
-open('/tmp/sum7_r4_ship', 'w').write('1' if ship else '0')
+print('sum7 round 4 (2,000-game iterations, kept only if 95% CI vs parent clears 0):')
+for k, v in sorted(st['r4'].get('iters', {}).items(), key=lambda kv: int(kv[0])):
+    print(f"  iteration {k}: {v['mean']:+.3f} (95% CI {v['lo']:+.3f}..{v['hi']:+.3f}) {'KEPT' if v['kept'] else 'not kept'}")
+ship = False
+if ch == start:
+    print('VERDICT: nothing kept -- the shipped net (cand_13) stays; sum7 distillation with this teacher is done.')
+else:
+    fin = 'layout_final/sum7_r4_final.log'
+    last = [l for l in open(fin)] if os.path.exists(fin) else []
+    line = next((l.strip() for l in reversed(last) if 'paired' in l or 'CI' in l), 'final match: see ' + fin)
+    print('final champion', os.path.basename(ch), 'vs shipped cand_13 (2,000 pairs, seeds 274M):', line)
+    import re
+    m = re.search(r'95% CI ([+-][\d.]+)', line)
+    ship = bool(m and float(m.group(1)) > 0)
+    print('VERDICT:', 'SHIP -- exported to export/sum7_r4/' if ship
+          else 'DO NOT SHIP (final match not clear of 0) -- the shipped net stays')
+    g = 'layout_final/sum7_r4_gauge.log'
+    if os.path.exists(g):
+        gl = [l.strip() for l in open(g) if 'close-call agent' in l]
+        print('teacher gauge on the final champion:', gl[-1] if gl else 'see ' + g)
+open('/tmp/sum7_r4_ship', 'w').write(ch if ship else '')
 PY
 cat sum7_r4_RESULT.txt
-if [ "$(cat /tmp/sum7_r4_ship)" = 1 ]; then
+SHIP=$(cat /tmp/sum7_r4_ship)
+if [ -n "$SHIP" ]; then
     mkdir -p export/sum7_r4
-    GOAL_LAYOUT=sum7 BOARDGAME_DEVICE=cpu .venv/bin/python onnx_export.py $D/cand_24.pt export/sum7_r4/model_sum7.onnx \
+    GOAL_LAYOUT=sum7 BOARDGAME_DEVICE=cpu $PY onnx_export.py "$SHIP" export/sum7_r4/model_sum7.onnx \
         >> sum7_r4_RESULT.txt 2>&1
     ls export/sum7_r4 >> sum7_r4_RESULT.txt
 fi
-git add -f sum7_r4_RESULT.txt $D/run.log
-git commit -m "sum7 round 4 result: $(head -1 sum7_r4_RESULT.txt | cut -c1-120)" || true
+git add -f sum7_r4_RESULT.txt $D/run.log layout_final/sum7_r4_*.log 2>/dev/null || git add -f sum7_r4_RESULT.txt $D/run.log
+git commit -m "sum7 round 4 result: $(grep VERDICT sum7_r4_RESULT.txt | cut -c1-110)" || true
 git push origin train-features-v2 || echo "push failed -- commit is local"
