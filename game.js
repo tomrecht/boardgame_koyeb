@@ -2424,7 +2424,7 @@ function createSettingsPanel() {
     // setting, so changing it has to refresh the button (and drop any marker
     // already on the board) rather than only write localStorage.
     const hrow = mk('label', 'display:flex; align-items:center; gap:8px; cursor:pointer; margin-bottom:8px;');
-    const hintBox = mk('input'); hintBox.type = 'checkbox'; hintBox.checked = getHintsEnabled();
+    const hintBox = mk('input'); hintBox.type = 'checkbox'; hintBox.id = 'settingsHints'; hintBox.checked = getHintsEnabled();
     hintBox.onchange = () => {
         try { localStorage.setItem('hintsEnabled', hintBox.checked ? '1' : '0'); } catch (e) {}
         if (!hintBox.checked) clearHint();
@@ -4883,6 +4883,11 @@ function _tutFinish(position) {
     setDifficultySetting(position);
     try { localStorage.setItem('hintsEnabled', '1'); localStorage.setItem('ruleTips', '1'); } catch (e) {}
     _resetRuleTips();                     // a new learner gets every rule explained
+    // The Settings panel is built once at start-up, so its boxes must be told
+    // (owner, 2026-11-09: hints on after the tutorial, box still unticked).
+    ['settingsHints', 'settingsRuleTips'].forEach(id => {
+        const cb = document.getElementById(id); if (cb) cb.checked = true;
+    });
     if (typeof refreshHintButton === 'function') refreshHintButton();
     _hintNudgePending = true;
     _tutEnd(true);
