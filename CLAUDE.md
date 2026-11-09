@@ -660,6 +660,57 @@ with it in mind.** Assessment and the concrete implications:
 
 ## Current state
 
+- **TWO-SIDED ENDGAME LOOKAHEAD + AN EXACT ENDGAME SOLVER (owner, 2026-11-09; on
+  `testing`).** Owner's sum7 game f4252fca t50: black 3@G3 x@G1 vs white's last
+  piece x@G4, roll 2-2 -> black stepped the 3 off G3 to G4: staying finished next
+  turn on 11/36 rolls, the move on 0/36. The opponent-only lookahead gave both the
+  same P(finish), so the net decided, wrongly (a ~0.2-pt difference inside its
+  noise). **Lookahead now** (`lookaheadStats` / `_lookahead_stats`, on whenever the
+  MOVER has <= 2 unsaved; `lookaheadSelf` / `lookahead_self`): candidate value =
+  pO * (-our unsaved) + (1-pO) * [pM * W + (1-pM) * clip(net, -our unsaved, W)],
+  pO = opponent banks out next turn (exact), pM = we bank out on the turn after a
+  miss (their move in between ignored -- it cannot touch pieces on goals), W =
+  opponent's expected unsaved after a missed turn (banking the most they can);
+  ties -> higher pM, then the net. The CLIP matters: without it a lone-blank race
+  (G1 = certain finish vs G3 = 8/9) went to the riskier goal because the net
+  valued the miss above the most a win can score (solver: proven worse). Exact
+  shortcuts (`cannotFinish`, `bestBanks` pruning: a bank needs the piece on a goal)
+  keep it cheap: pruned bestBanks = brute force on 12,600 checks, 8x faster.
+  **Judged by the solver (`endgame_solve.js`, no net):** 1,284 self-play playouts
+  from owner's games (both sides <= 4 unsaved, today + sum7, app agent with its own
+  net), 3,304 turns where the mover had <= 2: the two versions chose differently
+  on 112; new PROVEN better 43, proven worse 0, equal 11, unresolved 58 (by
+  midpoint 40 favour new / 18 old; new's interval dominates in 33, old's in 5).
+  t50 itself: staying is proven better by 0.12..0.27 pts and is now chosen.
+  **Owner's logged games** (`eg_logged.js`, 310 turns where both sides had <= 2
+  unsaved, ~380 games, today + sum7): the computer's move PROVEN best on 71 of 157,
+  proven worse on 8 (loss >= 1.20 pts in all, one turn 0.87), unresolved 78; owner
+  4 proven worse of 153 (>= 0.15 pts). Of the 8, today's agent already plays 6
+  right (older nets / pre-fix rules played them) and the two-sided lookahead fixes
+  the other 2 (f4252fca t50, b2be38bf t68). **Decision (2026-11-09, owner
+  delegated): NO training run on solver labels** -- the proven small-ending loss is
+  ~0.003 pts/game and now fixed at play time, and the solver cannot label bigger
+  endings (bounds go wide past ~2 pieces a side). Revisit only if a deeper solver
+  shows real losses in 3-4-piece endings.
+  **Latency** (node, desktop, 150 trigger positions): extra p90 34 ms, max 91 ms.
+  In the page (sum7, both sides computer, phone viewport): a full game to 12-11,
+  58 computer moves, 0 errors.
+  **Parity:** `lookahead2_fixture.py` (120 trigger positions, stub net) JS = Python
+  120/120, the new branch changing the stub's choice in 7 (gate live);
+  agent_fixture 50/50. Python's lookahead stays OFF by default (training/arenas).
+  **The solver** (`endgame_solve.js`): interval expectiminimax over exact engine
+  moves for small endings; at the horizon the margin is BOUNDED, not estimated
+  ([-my, +op], tightened by the opponent's exact finish chance and our saves-only
+  finish from goals, which no opponent move can touch), so every value is a proven
+  [lo, hi]; depth 1 then 2 with a node budget; a per-layout cache of finish
+  probabilities keyed by (own pieces, other side's walls) -- identical values,
+  4x faster. Weak beyond ~2 pieces a side (bounds widen).
+  **Lab (main, `lab/`):** `eg_common.js` (layout static data, engine from a
+  dumped state), `eg_net.js` (the shipped net in node via onnxruntime-node,
+  `ORT_NODE`), `eg_logged.js` (judge owner's logged moves), `eg_selfplay.js`,
+  `eg_rescore.js`, `eg_judge.js`, `eg_latency.js`, `die_uses.js`; positions come
+  from train-features-v2's `endgame_dump.py` (GOAL_LAYOUT per layout).
+
 - **SUM7 IS THE GAME'S GOAL LAYOUT (owner, 2026-11-09; on `testing`).** Goals in
   ring order from sector 2 read 1-6-2-5-3-4, so 4-apart partners add to 7 (1&6,
   2&5, 3&4). Why: train-features-v2's layout comparison (most even seals, all else
