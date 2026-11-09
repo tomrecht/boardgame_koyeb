@@ -5117,6 +5117,17 @@ function _startMatchFirstGame(starter) {
     }));
 }
 
+// THE ANDROID APP ON PLAY (owner, 2026-11-09). Linked from the welcome card on
+// Android browsers and from How to Play > Credits everywhere, never inside the
+// app itself.
+const PLAY_STORE_URL = 'https://play.google.com/store/apps/details?id=com.quahuru.game';
+function _inNativeApp() {
+    return !!(window.Capacitor && window.Capacitor.isNativePlatform && window.Capacitor.isNativePlatform());
+}
+function _androidBrowser() {
+    return !_inNativeApp() && /Android/i.test(navigator.userAgent || '');
+}
+
 // First-load landing screen: a short greeting with Play / How to Play / Tutorial,
 // so the session doesn't drop the player straight into the coin flip. Choosing
 // Play runs the coin flip to reveal who starts.
@@ -5192,6 +5203,12 @@ function showWelcome(starter) {
         row.appendChild(left); row.appendChild(btns);
         card.appendChild(row);
     })();
+    if (_androidBrowser()) {
+        const app = document.createElement('div');
+        app.style.cssText = 'font-family:' + BODY_FONT + '; font-size:' + px(14) + '; color:#5a6473; margin:' + px(6) + ' 0 ' + px(18) + ';';
+        app.innerHTML = 'Also on <a href="' + PLAY_STORE_URL + '" target="_blank" rel="noopener" style="color:' + THEME.accentCss + '; font-weight:700;">Google Play</a>.';
+        card.querySelector('.wleft').appendChild(app);
+    }
     box.appendChild(card); document.body.appendChild(box);
     const holder = card.querySelector('#welBtns');
     const mkBtn = (label, primary, fn) => {
@@ -5414,6 +5431,7 @@ function showInstructions() {
         // app. Both stores expect an attributions screen too.
         ['Credits', 'Quahuru is built with <a href="licenses.html" target="_blank" rel="noopener">Phaser and ONNX Runtime Web</a>, both open source. '
             + 'The game collects no data — see the <a href="privacy.html" target="_blank" rel="noopener">privacy policy</a>.'
+            + (_inNativeApp() ? '' : '<br><br>Quahuru is also an Android app: <a href="' + PLAY_STORE_URL + '" target="_blank" rel="noopener">get it on Google Play</a>.')
             // Copyright subsists without a notice, but the stores expect one and
             // it is what tells a reader whose game this is.
             + '<br><br>Quahuru — the game, its rules, artwork and neural network — is '
