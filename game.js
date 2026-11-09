@@ -2744,6 +2744,13 @@ let _rec = null;      // the game currently being recorded
 // A record is opened for EVERY Game, including the frozen welcome-screen one,
 // and any record with no turns is dropped on close -- simpler than trying to
 // identify which Game will actually be played, and it cannot miss one.
+// The layout's own net (named by local_agent.js once its sidecar loads), else
+// the shipped one. Read again when the game closes: a game started before the
+// net finished loading would otherwise carry the wrong tag.
+function _recModelTag() {
+    const L = window.QUAHURU_GOAL_LAYOUT;
+    return (L && L.model && L.model !== 'today') ? L.model : REC_MODEL_TAG;
+}
 function _recStart(game) {
     if (!getRecordingEnabled() || !game) return;
     _recClose('abandoned');           // an unfinished previous game, if any
@@ -2753,9 +2760,7 @@ function _recStart(game) {
             id: _recUuid(),
             device: _recDeviceId(),
             at: new Date().toISOString(),
-            model: (window.QUAHURU_GOAL_LAYOUT && window.QUAHURU_GOAL_LAYOUT.model
-                    && window.QUAHURU_GOAL_LAYOUT.model !== 'today')
-                ? window.QUAHURU_GOAL_LAYOUT.model : REC_MODEL_TAG,
+            model: _recModelTag(),
             ...(GOAL_LAYOUT_NAME ? { layout: GOAL_LAYOUT_NAME } : {}),
             // BOTH, because they are different quantities and only the effective
             // one means anything analytically (see the slider remap in CLAUDE.md).
@@ -2889,6 +2894,7 @@ function _recClose(how) {
     if (!r) return;
     if (!r.turns.length) return;          // the frozen welcome game, or a no-op
     r.completed = (how === 'complete');
+    r.model = _recModelTag();
     delete r.pending; delete r.agent; delete r.agentFail;
     const line = JSON.stringify(r);
     _recPersist(line);
