@@ -151,6 +151,23 @@ Everything above is documented in the RUNBOOK (features v2) entries "CLOUD
 GAMES, LOCAL TRAINING", "THE CAPACITY TEST IS READY", "ENCODE-ONCE CACHE" and
 "Scaled-run settings".
 
+## NEXT RUN: sum7 ROUND 4 (set up 2026-11-09; work iMac)
+
+    cd /Users/tomrecht/quahuru-train && git pull && caffeinate -is zsh sum7_round4.sh
+
+One big distillation iteration on the sum7 layout (the game's layout since 2026-11-09),
+from the SHIPPED sum7 net (distill_sum7/cand_13; the script resets the run's champion
+from round 3's cand_22 to it once, marker `r4` in state.json). Iteration 24: 2,000 games
+labelled on GitHub (20 shards, ~3-4 h), training here on labels_22..24 (3,200 games,
+4 epochs, lr 2e-5), then the decision match cand_24 vs cand_13 on sum7, 2,000 pairs on
+GitHub (seeds 93.24M). Writes `sum7_r4_RESULT.txt`; if the 95% CI clears 0 it exports
+`export/sum7_r4/model_sum7.onnx` + sidecar for a Claude session to ship (main's
+model_sum7.json + hashed .onnx + sw.js SHELL entry and CACHE bump); then commits and
+pushes the result. Resumable: rerun the same command. Why: the teacher gauge on the
+shipped sum7 net (+0.118, 95% CI +0.054..+0.182) says the search still has something
+to teach; round 3's 600-game iterations were too small to see it. If it comes out
+level, sum7 distillation with this teacher is done.
+
 ## Project background
 
 Custom hub-and-spoke dice board game. Full stack built from scratch: game
@@ -364,8 +381,9 @@ ARCHIVE.md under "Current benchmark".
   it22 +0.055 P, it23 -0.145 (-0.268..-0.022) keep -> champion distill_sum7/cand_22; **FINAL vs
   distill_cand13 on sum7 (seeds 208M): +0.125 (+0.058..+0.191), 51.9%** -- below r2's +0.148
   (other seeds). **Head to head r3 (cand_22) vs r2 (cand_13) on sum7, 2,000 pairs, seeds 212M: -0.014
-  (95% CI -0.082..+0.054), 49.1% -- LEVEL, NOT SHIPPED; r2 stays.** sum7 distillation has
-  saturated too (as today's did). Don't run a round 4.
+  (95% CI -0.082..+0.054), 49.1% -- LEVEL, NOT SHIPPED; r2 stays.** sum7 distillation in 600-game
+  iterations has saturated (as today's did); see the gauge below for why ONE bigger round is
+  still worth a try (round 4).
   **TEACHER GAUGE ON THE SUM7 NET (2026-11-09, owner-approved; GitHub run 42579431044,
   `ccmatch` with GOAL_LAYOUT=sum7, asset 0ceeb450c0a3-cand_13.pt = distill_sum7/cand_13,
   2,000 pairs, seeds 270M, T=3 K=3 one roll): close-call + net vs net plain +0.118 (95% CI
