@@ -366,6 +366,17 @@ ARCHIVE.md under "Current benchmark".
   (other seeds). **Head to head r3 (cand_22) vs r2 (cand_13) on sum7, 2,000 pairs, seeds 212M: -0.014
   (95% CI -0.082..+0.054), 49.1% -- LEVEL, NOT SHIPPED; r2 stays.** sum7 distillation has
   saturated too (as today's did). Don't run a round 4.
+  **TEACHER GAUGE ON THE SUM7 NET (2026-11-09, owner-approved; GitHub run 42579431044,
+  `ccmatch` with GOAL_LAYOUT=sum7, asset 0ceeb450c0a3-cand_13.pt = distill_sum7/cand_13,
+  2,000 pairs, seeds 270M, T=3 K=3 one roll): close-call + net vs net plain +0.118 (95% CI
+  +0.054..+0.182), 51.5% wins; triggered 37.8% of moves, changed 4.8/game.** Twice
+  cand13's +0.057 on today's layout, CI clear of 0 -- so the search still has
+  something to teach the sum7 net, although round 3 (600 games, 8 iterations) came out
+  level vs round 2. Reading: per-iteration gains are below what a 500-pair confirm can
+  see, so BAR=0 rounds of 600 games drift. If owner wants more: ONE bigger round (e.g.
+  GAMES=2000 labelled on GitHub, 4 epochs, then a 2,000-pair confirm vs r2), not more
+  small ones. Pooled from the 20 shard log summaries (artifacts not reachable from the
+  cloud session); pooled SE from per-shard means and CIs.
 - **WHICH LAYOUT TO PLAY: today / sum7 / B COMPARISON (owner, 2026-11-06; running unattended,
   owner away to ~11-13).** A game-design question: each layout with its own net (today cand13,
   sum7 = distill_sum7/cand_13 (r2, shipped), B cand13 -- B's own training was level).
