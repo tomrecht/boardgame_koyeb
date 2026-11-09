@@ -660,8 +660,8 @@ with it in mind.** Assessment and the concrete implications:
 
 ## Current state
 
-- **TWO-SIDED ENDGAME LOOKAHEAD + AN EXACT ENDGAME SOLVER (owner, 2026-11-09; on
-  `testing`).** Owner's sum7 game f4252fca t50: black 3@G3 x@G1 vs white's last
+- **TWO-SIDED ENDGAME LOOKAHEAD + AN EXACT ENDGAME SOLVER (owner, 2026-11-09; LIVE on
+  main since 2026-11-09).** Owner's sum7 game f4252fca t50: black 3@G3 x@G1 vs white's last
   piece x@G4, roll 2-2 -> black stepped the 3 off G3 to G4: staying finished next
   turn on 11/36 rolls, the move on 0/36. The opponent-only lookahead gave both the
   same P(finish), so the net decided, wrongly (a ~0.2-pt difference inside its
@@ -711,7 +711,7 @@ with it in mind.** Assessment and the concrete implications:
   `eg_rescore.js`, `eg_judge.js`, `eg_latency.js`, `die_uses.js`; positions come
   from train-features-v2's `endgame_dump.py` (GOAL_LAYOUT per layout).
 
-- **SUM7 IS THE GAME'S GOAL LAYOUT (owner, 2026-11-09; on `testing`).** Goals in
+- **SUM7 IS THE GAME'S GOAL LAYOUT (owner, 2026-11-09; LIVE on main since 2026-11-09).** Goals in
   ring order from sector 2 read 1-6-2-5-3-4, so 4-apart partners add to 7 (1&6,
   2&5, 3&4). Why: train-features-v2's layout comparison (most even seals, all else
   level). `GOAL_LAYOUT_DEFAULT = 'sum7'` in game.js; the owner's Settings row
