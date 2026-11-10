@@ -121,18 +121,44 @@
 
     /* The distribution of this game's final margin (my view) given a candidate's
        expected margin v (points) and the phase (total unsaved pieces after the
-       move). model.cond = {phases: [lo...], vgrid: [...], dist: [phase][v][25]}. */
-    function marginDist(model, v, phase) {
-        const c = model.cond;
-        let pi = 0;
-        for (let i = 0; i < c.phases.length; i++) if (phase >= c.phases[i]) pi = i;
-        const g = c.vgrid;
+       move). model.cond = {phases: [lo...], vgrid: [...], dist: [phase][v][25]}:
+       the SHAPE comes from self-play near that v and phase (interpolated in both,
+       so no band edge can jump), and it is then exponentially tilted so its mean
+       is exactly v. So where match equity is a straight line in the margin, every
+       candidate's equity is a + b*v and the choice is the plain one; only real
+       curvature (match pressure) can change a move. */
+    function shapeAt(model, v, phase) {
+        const c = model.cond, g = c.vgrid;
         const x = Math.max(g[0], Math.min(g[g.length - 1], v));
         let j = 0;
         while (j < g.length - 2 && x > g[j + 1]) j++;
         const t = (x - g[j]) / (g[j + 1] - g[j]);
-        const A = c.dist[pi][j], B = c.dist[pi][j + 1];
-        return A.map((p, i) => (1 - t) * p + t * B[i]);       // index i -> margin i - 12
+        const atBand = (b) => c.dist[b][j].map((p, i) => (1 - t) * p + t * c.dist[b][j + 1][i]);
+        // Phase: band b covers [phases[b], phases[b+1]); interpolate between band middles.
+        const ph = c.phases, mid = ph.map((lo, b) => b + 1 < ph.length ? (lo + ph[b + 1]) / 2 : lo + 3);
+        if (phase <= mid[0]) return atBand(0);
+        if (phase >= mid[mid.length - 1]) return atBand(mid.length - 1);
+        let b = 0;
+        while (b < mid.length - 2 && phase > mid[b + 1]) b++;
+        const u = (phase - mid[b]) / (mid[b + 1] - mid[b]);
+        const A = atBand(b), B = atBand(b + 1);
+        return A.map((p, i) => (1 - u) * p + u * B[i]);
+    }
+    function tilt(p, v) {
+        // Mean of p * exp(l*m) is increasing in l: bisect for the l giving mean v.
+        const target = Math.max(-MAXM + 0.05, Math.min(MAXM - 0.05, v));
+        const meanAt = (l) => { let z = 0, s = 0;
+            for (let i = 0; i < p.length; i++) { const w = p[i] * Math.exp(l * (i - MAXM)); z += w; s += w * (i - MAXM); }
+            return s / z; };
+        let lo = -30, hi = 30;
+        for (let it = 0; it < 60; it++) { const mid = (lo + hi) / 2; if (meanAt(mid) < target) lo = mid; else hi = mid; }
+        const l = (lo + hi) / 2;
+        const w = p.map((q, i) => q * Math.exp(l * (i - MAXM)));
+        const z = w.reduce((a, b) => a + b, 0);
+        return w.map(q => q / z);
+    }
+    function marginDist(model, v, phase) {
+        return tilt(shapeAt(model, v, phase), v);       // index i -> margin i - 12
     }
 
     /* ranked: the agent's returnScores list ({score, pair}), scores in SCORE_SCALE

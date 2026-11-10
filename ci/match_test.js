@@ -31,5 +31,21 @@ for (const mode of ['games', 'race']) {
 }
 const d = M.marginDist(model, 1.3, 14);
 check(Math.abs(d.reduce((a, b) => a + b, 0) - 1) < 1e-5, 'margin distribution sums to 1 (table stored to 6 decimals)');
+// A straight-line equity (no match pressure) must reproduce the plain choice:
+// the candidate with the highest expected margin, whatever the phases.
+{
+    let seed = 7; const R = () => (seed = (seed * 16807) % 2147483647) / 2147483647;
+    let diffs = 0;
+    for (let t = 0; t < 2000; t++) {
+        const n = 2 + Math.floor(R() * 30);
+        const ranked = [...Array(n)].map(() => ({ score: (R() * 8 - 4) / 12 * 1000, pair: null }));
+        const phases = ranked.map(() => Math.floor(R() * 25));
+        const eq = new Map(); for (let m = -12; m <= 12; m++) eq.set(m, 0.5 + 0.01 * m);
+        const i = M.chooseByEquity(ranked, eq, model, phases, 1000);
+        const best = ranked.reduce((b, r, k) => r.score > ranked[b].score ? k : b, 0);
+        if (i !== best) diffs++;
+    }
+    check(diffs === 0, `linear equity changed the plain choice in ${diffs}/2000`);
+}
 console.log(bad ? `match.js: ${bad} failures` : 'match.js: all checks pass');
 process.exit(bad ? 1 : 0);
