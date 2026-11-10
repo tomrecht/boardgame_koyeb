@@ -75,3 +75,21 @@ jobs:
       - uses: actions/upload-artifact@v4
         if: always()
         with: { name: 'shard-${{ matrix.shard }}', path: shard.out, if-no-files-found: ignore, retention-days: 7 }
+  merge:
+    needs: play
+    if: always()
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with: { ref: '${{ inputs.ref }}' }
+      - uses: actions/download-artifact@v4
+        with: { pattern: 'shard-*', path: shards }
+      - name: summary
+        env: { SPEC: '${{ inputs.spec }}' }
+        run: |
+          find shards -name shard.out | sort | xargs -r cat > merged.out || true
+          echo "records: $(zcat -f merged.out 2>/dev/null | wc -l)"
+          MODE=$(python3 -c "import json,os; print(json.loads(os.environ['SPEC'])['mode'])")
+          if [ "$MODE" = difficulty ]; then
+            LEVELS=$(python3 -c "import json,os; print(json.loads(os.environ['SPEC'])['env'].get('LEVELS',''))") python3 difficulty_fine.py analyze merged.out
+          fi
