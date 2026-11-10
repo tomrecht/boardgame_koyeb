@@ -781,8 +781,8 @@ with it in mind.** Assessment and the concrete implications:
   **Strategy panel:** pair text ("add up to 7"), hop 6->1 5->2 4->3, four pictures
   redrawn as `*-s7.webp` (positions + checks in STRATEGY.md; `lab/die_uses.js`
   lists what each die does in a position). How to Play and the rule tips name no
-  goal numbers. **Not redone:** STRATEGY.md's measurements (original layout) and
-  the Android package (still original layout until rebuilt).
+  goal numbers. **Not redone:** STRATEGY.md's measurements (original layout).
+  The Android package was rebuilt on sum7 on 2026-11-09 (owner; versionCode not recorded here).
 
 - **DRAW ONLY WHEN SOMETHING CHANGED (owner, 2026-11-08: battery; on `testing`).**
   Phaser drew every animation frame (60-120/s, up to 3x resolution on a phone)

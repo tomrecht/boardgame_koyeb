@@ -36,7 +36,7 @@ measured. Not shipped (not in `build_web.py`'s list).
 | D | Match awareness | about a week | - (parallel) |
 | E1 | Easy levels that think shallower, not noisier | 2-3 days | A1 |
 | E2 | Five first-time players | owner | - |
-| E3 | Android package on sum7 | hours | A1, A2 |
+| E3 | Android package on sum7 | DONE 2026-11-09 (owner) | - |
 | F | Game-design experiments | owner's call | - |
 
 A and B first: they are cheap and everything later is judged with them. C and D
@@ -184,8 +184,7 @@ is an expert, and beginners' games are deliberately not collected.
 the game do the tutorial and one game: where they stop, what they tap that does
 nothing, whether they finish. No instruction during it.
 
-**E3. Android package.** Rebuild on sum7 (next versionCode) once A1 and A2 are
-done, as one batch.
+**E3. Android package.** Done 2026-11-09 (owner rebuilt it on sum7).
 
 ## F. Game design (owner's call; none started)
 
