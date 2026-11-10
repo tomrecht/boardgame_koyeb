@@ -66,6 +66,7 @@ const LocalAgent = (function () {
     let status = 'idle';            // idle | loading | ready | failed | off
     let staticData = null;
     let matchModel = null;      // match.js outcome model for the layout, or null
+    let matchPicks = 0, matchChanged = 0;   // match-aware choices made / differing from plain (for tests)
     let weights = null;
     let graph = null;
     let initPromise = null;
@@ -85,7 +86,8 @@ const LocalAgent = (function () {
     }
     function ready() { return status === 'ready'; }
     function state() { return { status, error: lastError && String(lastError), moves: moveCount,
-                                loadFailures: initFailures }; }
+                                loadFailures: initFailures, matchModel: !!matchModel,
+                                matchPicks, matchChanged }; }
 
     /* Permanent for the session. Used for a BAD ANSWER -- a port bug is not
        going to fix itself, and re-asking would just be wrong twice. */
@@ -339,6 +341,8 @@ const LocalAgent = (function () {
         const eq = window.Match.equityTable(match, player, matchModel);
         const i = window.Match.chooseByEquity(ranked, eq, matchModel, phases, window.SCORE_SCALE,
                                               (p) => window.isDraw(p[0]));
+        matchPicks++;
+        if (i !== 0) matchChanged++;          // ranked[0] = the best plain score
         return window.dedupeSavePair(ranked[i].pair);
     }
 
