@@ -6,6 +6,10 @@ the July–August 2026 frontend and port history). Verbatim, nothing deleted.
 Read it for the reasoning behind a settled decision or a measured number; this
 file keeps what a fresh session needs to act.
 
+**`ROADMAP.md`** (2026-11-10) -- the agreed plan of action from the review
+session: sum7 promotion checklist, luck-adjusted matches, exploiter run, match
+awareness, shallower easy levels; with what was dropped and why.
+
 Context for Claude Code picking up this project. Owner (Tom) prefers terse
 responses. Tom is the domain expert on the boardgame, you are the ML expert; make suggestions on training accordingly, but you may also suggest potential improvements to game rules and mechanics when relevant.
 
