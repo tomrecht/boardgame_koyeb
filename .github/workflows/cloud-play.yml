@@ -75,10 +75,21 @@ jobs:
           else:
               sys.exit('unknown mode ' + s['mode'])
           print('shard', k, 'seeds', env['SEED_BASE'], 'n', n, ' '.join(cmd), flush=True)
-          if cmd[0] == 'node':
+          if cmd[0] == 'node':              # single-threaded: one process per core, sub-ranges
               subprocess.check_call(['npm', 'i', '--prefix', '/tmp/ort', 'onnxruntime-node@1.23.2'], stdout=subprocess.DEVNULL)
               env['ORT_NODE'] = '/tmp/ort'
-              sys.exit(subprocess.call(cmd, env=env))
+              P = os.cpu_count() or 4
+              sub = -(-n // P); procs = []
+              for j in range(P):
+                  m = min(sub, n - j * sub)
+                  if m <= 0: break
+                  c2 = list(cmd); c2[3] = f'part{j}.out'; c2[4] = str(m); c2[5] = str(s['seed_base'] + k * per + j * sub)
+                  procs.append(subprocess.Popen(c2, env=env))
+              rc = max(p.wait() for p in procs)
+              with open('shard.out', 'w') as f:
+                  for j in range(len(procs)):
+                      if os.path.exists(f'part{j}.out'): f.write(open(f'part{j}.out').read())
+              sys.exit(rc)
           sys.exit(subprocess.call([sys.executable, '-u', *cmd], env=env))
           PY
       - name: print output
