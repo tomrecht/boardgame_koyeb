@@ -28,6 +28,8 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with: { ref: '${{ inputs.ref }}' }
+      - uses: actions/checkout@v4        # this workflow's own commit: lab scripts from main's side
+        with: { path: self }
       - uses: actions/setup-python@v5
         with: { python-version: '3.11', cache: 'pip' }
       - run: |
@@ -64,6 +66,8 @@ jobs:
               cmd = ['difficulty_fine.py', 'run', c[0], 'shard.out', str(n)]
           elif s['mode'] == 'quizroll':     # SEED_BASE = first task index of this shard
               cmd = ['quiz_playout.py', 'run', c[0], c[1], 'shard.out', str(n)]
+          elif s['mode'] == 'matchsp':      # match awareness: self-play values + final margins
+              cmd = ['self/lab/match/selfplay_values.py', c[0], 'shard.out', str(n), env['SEED_BASE']]
           else:
               sys.exit('unknown mode ' + s['mode'])
           print('shard', k, 'seeds', env['SEED_BASE'], 'n', n, ' '.join(cmd), flush=True)
@@ -79,6 +83,7 @@ jobs:
     needs: play
     if: always()
     runs-on: ubuntu-latest
+    permissions: { contents: write, actions: read }
     steps:
       - uses: actions/checkout@v4
         with: { ref: '${{ inputs.ref }}' }
@@ -93,3 +98,10 @@ jobs:
           if [ "$MODE" = difficulty ]; then
             LEVELS=$(python3 -c "import json,os; print(json.loads(os.environ['SPEC'])['env'].get('LEVELS',''))") python3 difficulty_fine.py analyze merged.out
           fi
+      - name: merged output as a release asset (readable where artifacts are not)
+        env: { GH_TOKEN: '${{ github.token }}' }
+        run: |
+          [ -s merged.out ] || exit 0
+          cp merged.out "run-${{ github.run_id }}.out"
+          gh release upload cloud-scratch "run-${{ github.run_id }}.out" --clobber -R "${{ github.repository }}"
+          echo "asset: https://github.com/${{ github.repository }}/releases/download/cloud-scratch/run-${{ github.run_id }}.out"
