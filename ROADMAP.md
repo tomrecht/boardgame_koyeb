@@ -44,7 +44,10 @@ are independent of each other. D is the item most likely to show up in play.
 
 ## A. Housekeeping
 
-**A1. Promotion checklist on the sum7 net** (`GOAL_LAYOUT=sum7`, net
+**A1. Promotion checklist on the sum7 net** -- DONE 2026-11-10 except the
+prefilter refit (needs sum7 self-play positions; work iMac) and the Easiest-knot
+decision; results in CLAUDE.md under the checklist.
+**(Original plan) A1. Promotion checklist on the sum7 net** (`GOAL_LAYOUT=sum7`, net
 `distill_sum7/cand_13`; steps as in CLAUDE.md "PROMOTION CHECKLIST").
 1. `offgoal_probe.py`.
 2. `filter_probe.py`: keep-rate and deep-check cost of the prefilter. If the

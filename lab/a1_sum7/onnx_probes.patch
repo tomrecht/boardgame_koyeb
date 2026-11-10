@@ -1,0 +1,110 @@
+diff --git a/filter_probe.py b/filter_probe.py
+index 0f003a6..a4a8e3a 100644
+--- a/filter_probe.py
++++ b/filter_probe.py
+@@ -17,11 +17,14 @@ _A = {}
+ 
+ def _agents(path):
+     if path not in _A:
+-        import torch
+-        from network import model_from_state
+         from agent_gnn import GNNAgent, prefilter_kwargs
+-        m = model_from_state(torch.load(path, map_location='cpu'), strict=False)
+-        _A[path] = (GNNAgent(model=m, hand_rules=True, **prefilter_kwargs(os.environ['GATE_PREFILTER'])),
++        if path.endswith('.onnx'):
++            m, kw = None, {'weights_path': path}
++        else:
++            import torch
++            from network import model_from_state
++            m = model_from_state(torch.load(path, map_location='cpu'), strict=False); kw = {'model': m}
++        _A[path] = (GNNAgent(**kw, hand_rules=True, **prefilter_kwargs(os.environ['GATE_PREFILTER'])),
+                     RG._agent(path))
+     return _A[path]
+ 
+@@ -76,7 +79,7 @@ def job(task):
+ 
+ 
+ def main(path, tag, out, maxn=300):
+-    games = [g for g in RG.load_games() if g.get('model') == tag]
++    games = [g for g in RG.load_games() if g.get('model') in tag.split(',')]
+     tasks = []
+     for g in games:
+         ai = 'white' if g.get('whiteIsAI') else 'black'
+diff --git a/review_games.py b/review_games.py
+index 241431f..8a27c0c 100644
+--- a/review_games.py
++++ b/review_games.py
+@@ -83,13 +83,17 @@ def _shard(items):
+ 
+ def _agent(path):
+     if path not in _AG:
+-        import torch
+-        from network import model_from_state
+         from agent_gnn import prefilter_kwargs
++        if not path.endswith('.onnx'):
++            import torch
++            from network import model_from_state
+         from close_call import make_agent_class
+-        m = model_from_state(torch.load(path, map_location='cpu'), strict=False)
+         C = make_agent_class()
+-        ag = C(model=m, hand_rules=True, **prefilter_kwargs(os.environ['GATE_PREFILTER']))
++        if path.endswith('.onnx'):
++            ag = C(weights_path=path, hand_rules=True, **prefilter_kwargs(os.environ['GATE_PREFILTER']))
++        else:
++          m = model_from_state(torch.load(path, map_location='cpu'), strict=False)
++          ag = C(model=m, hand_rules=True, **prefilter_kwargs(os.environ['GATE_PREFILTER']))
+         assert ag.afterstate, 'review_games expects an afterstate net'
+         _AG[path] = ag
+     return _AG[path]
+@@ -111,14 +115,17 @@ def _undo(board, root):
+ def _shallow(ag, board, side, pair):
+     """Net value (points, mover frame) of the afterstate of `pair`; a pair that
+     ends the game gets its exact margin."""
+-    import torch
++    try:
++        import torch; _ng = torch.no_grad
++    except ImportError:
++        import contextlib; _ng = contextlib.nullcontext
+     from agent_gnn import NUM_PIECES
+     root = _apply(board, pair)
+     try:
+         w, s = board.check_game_over()
+         if w:
+             return float((1 if w == side else -1) * s)
+-        with torch.no_grad():
++        with _ng():
+             raw = float(ag.model(ag._encode_after(board, side)))
+         return raw * NUM_PIECES
+     finally:
+diff --git a/rule_probe.py b/rule_probe.py
+index 23d310b..b76400e 100644
+--- a/rule_probe.py
++++ b/rule_probe.py
+@@ -25,11 +25,14 @@ ATTR = {'wastes': 'rule_no_wasted_save', 'bank': 'rule_bank_most_when_lost', 'st
+ 
+ def _agents(path):
+     if path not in _A:
+-        import torch
+-        from network import model_from_state
+         from agent_gnn import GNNAgent, prefilter_kwargs
+-        m = model_from_state(torch.load(path, map_location='cpu'), strict=False)
+-        app = GNNAgent(model=m, hand_rules=True, **prefilter_kwargs(os.environ['GATE_PREFILTER']))
++        if path.endswith('.onnx'):
++            m, kw = None, {'weights_path': path}
++        else:
++            import torch
++            from network import model_from_state
++            m = model_from_state(torch.load(path, map_location='cpu'), strict=False); kw = {'model': m}
++        app = GNNAgent(**kw, hand_rules=True, **prefilter_kwargs(os.environ['GATE_PREFILTER']))
+         app.endgame_lookahead = True
+         _A[path] = (app, RG._agent(path))
+     return _A[path]
+@@ -89,6 +92,8 @@ def job(task):
+ 
+ def main(path, out, maxn=6000):
+     games = RG.load_games()
++    lay = os.environ.get('GOAL_LAYOUT') or None
++    games = [g for g in games if g.get('layout') == lay]   # only games played on this layout
+     tasks = [(path, g, t) for g in games for t in range(len(g['turns']))]
+     random.Random(1).shuffle(tasks)
+     tasks = tasks[:maxn]

@@ -208,6 +208,27 @@ Whenever a new net ships, re-run (cheapest first; GitHub = free):
      (owner's call). Ignore analyze's 'slider' column (old 0.8-1.0 mapping).
   5. Close-call gauge (`remote_play.py ccmatch <net> 2000`) and calib_bench.
   6. Endgame lookahead and prefilter sizes (12/40): only if 2-4 moved.
+  **sum7 net (distill_sum7/cand_13 = model-dffd8d8f.onnx), run 2026-11-10 from a cloud
+  session** (probes on the ONNX net, no torch: `lab/a1_sum7/onnx_probes.patch` for
+  train-features-v2; owner's 59 sum7 games from quahuru-games):
+  * Step 1 skipped: offgoal_probe's position is laid out on the original numbering.
+  * Step 2, 300 computer turns (11 full passes excluded): keeps the all-moves favourite
+    270/289 = 93.4% (cand13 v2 scales 95.1%); 19 drops, favourite better by +0.053 per
+    drop (better > 0.05 in 10, > 0.15 in 2, pick better in 5); cost 0.0035 pts per
+    computer turn (95% CI 0.0006..0.0067), ~0.1 pts/game (cand13 v2: ~0.06). CI clears 0,
+    so a refit is due, but 59 games is too few to fit on: refit from sum7 self-play
+    positions (work iMac).
+  * Step 3, all 3,163 turns: wastes-save fired 1,053 times, changed 0; keep-last-piece
+    41, 0; bank-the-most 14, changed 6, deep value identical in all 6. Rules inert, kept.
+  * Step 4 (GitHub, 150 pairs per level, seeds 200M+150..): Easiest 0.65 8.3% (5.7-12.0)
+    -3.00; Gentle 0.74 18.7% (14.7-23.5) -2.11; Medium 0.80 29.3% (24.5-34.7) -1.41;
+    Strong 0.93 44.7% (39.1-50.3) -0.38; Max 1.0 49.7%. Close to cand13's, except Strong
+    is nearer Max (margin -0.38 vs -0.76) and Easiest stays ~8% (target ~4%).
+  * Step 5: gauge done 2026-11-09 (+0.118); calib_bench skipped (original-layout games).
+  **cloud-play.yml on branch ccr-45a54cc6-6axfpc** adds a `merge` job that collects the
+  shards and prints one summary (the difficulty table for mode `difficulty`): a cloud
+  session can read results from that job's log when it cannot download artifacts.
+  Dispatch with the workflow ref set to that branch until it reaches main.
 
 - **Deployed model: `model.onnx` = `distill_cand13.pt` (main 2026-10-26), file
   `model-9121be40.onnx`.** The weekend's continuation of the distillation
