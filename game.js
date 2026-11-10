@@ -3526,6 +3526,7 @@ function _hintGameState(game) {
     (gs.boardPieces || []).forEach(bp => { delete bp.reachableBySum; });
     // gs.firstMove comes from getGameState (_turnFirstMove).
     gs.difficulty = 1.0;
+    gs.match = _matchForAgent();          // a hint in a match plays for the match too
     gs._sig = _hintSig(game);
     return gs;
 }
@@ -11433,12 +11434,22 @@ function _askLocalForMoves(gameState) {
         });
 }
 
+// The running match, as match.js reads it (local_agent.js: the computer and the
+// hint choose for the MATCH, not this game's margin), or null outside a match.
+function _matchForAgent() {
+    const m = matchTracker;
+    if (!m || m.over) return null;
+    return { mode: m.mode, target: m.target, tieRule: m.tieRule, gamesPlayed: m.gamesPlayed,
+             whiteScore: m.whiteScore, blackScore: m.blackScore, whiteWins: m.whiteWins,
+             blackWins: m.blackWins, firstStarter: m.firstStarter };
+}
+
 function getAgentMoves(gameState) {
     // A card is up over the running board: hold the turn instead of playing
     // behind it. Resumed by _resumeHeldAgentTurn when the last card goes.
     if (_gamePausedByCard()) { _agentTurnHeld = true; return Promise.resolve(); }
     // difficulty 1 = full strength (argmax); lower = more top-p sampling (weaker)
-    gameState = Object.assign({}, gameState, { difficulty: getAIDifficulty() });
+    gameState = Object.assign({}, gameState, { difficulty: getAIDifficulty(), match: _matchForAgent() });
     // Which game asked. Starting a new game while the computer is thinking used
     // to let the reply land on the board that replaced it, applying moves for
     // pieces that no longer exist.

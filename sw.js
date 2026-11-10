@@ -14,7 +14,7 @@
 // installed worker drop its cached copy of the old net.
 // v13 (2026-11-09): sum7 is the default goal layout -- its net, sidecar and table precached. v12 (2026-10-26): distill_cand13. v11 (2026-10-23): the distilled net (distill_cand3). v10 (2026-10-19): new model.onnx (fv2C iter 55: AB2 inputs, afterstate) and
 // its endgame table.
-const CACHE = 'quahuru-v13';
+const CACHE = 'quahuru-v14';
 
 // The shell is what a cold, offline start needs to render a board.
 const SHELL = [
@@ -63,6 +63,8 @@ const SHELL = [
     './engine.js',
     './heuristic.js',
     './agent.js',
+    './match.js',
+    './match_model_sum7.json',
     './encoder_static.json',
     './heuristic_weights.json',
 ];

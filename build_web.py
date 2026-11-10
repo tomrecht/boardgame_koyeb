@@ -73,6 +73,8 @@ PORT = [
     'engine.js',
     'heuristic.js',
     'agent.js',
+    'match.js',
+    'match_model_sum7.json',     # match.js outcome model for the sum7 net (lab/match/fit_model.py)
     'encoder_static.json',
     'heuristic_weights.json',
 ]

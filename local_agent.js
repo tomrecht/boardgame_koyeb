@@ -49,7 +49,7 @@ const LocalAgent = (function () {
     // Order is not load-bearing (each file aliases the global object rather than
     // importing at parse time) but it is the dependency order, so keep it.
     const FILES = ['ort/ort.wasm.min.js', 'route.js', 'features_v2.js', 'encoder.js', 'infer.js',
-                   'engine.js', 'heuristic.js', 'agent.js'];
+                   'engine.js', 'heuristic.js', 'agent.js', 'match.js'];
 
     // A classic script that fails to PARSE still fires `load`, so the script
     // element tells us nothing -- a redeclaration against one of game.js's ~250
@@ -65,6 +65,7 @@ const LocalAgent = (function () {
 
     let status = 'idle';            // idle | loading | ready | failed | off
     let staticData = null;
+    let matchModel = null;      // match.js outcome model for the layout, or null
     let weights = null;
     let graph = null;
     let initPromise = null;
@@ -197,6 +198,14 @@ const LocalAgent = (function () {
                     ? 'endgame_table_' + window.QUAHURU_GOAL_LAYOUT.name + '.json' : 'endgame_table.json',
                 wasmPath: ortPath(),
             });
+            // Match awareness (match.js): the outcome model fitted for this
+            // layout's net from self-play. Optional -- without it a match is
+            // played for the margin, as before.
+            matchModel = null;
+            if (L && L.model !== 'today' && window.Match) {
+                try { matchModel = await getJSON('match_model_' + L.name + '.json'); }
+                catch (e) { console.log('[local-ai] no match model: ' + e.message); }
+            }
             status = 'ready';
             console.log('[local-ai] ready in ' + Math.round((window.performance || Date).now() - t0) + 'ms'
                         + ' -- the computer now moves on this device');
@@ -295,15 +304,42 @@ const LocalAgent = (function () {
         const player = engine.currentPlayer;
         const moves = engine.getValidMoves();
         if (!moves.length) return null;
-        const pair = await window.selectMovePair(engine, weights, moves, player, {
-            difficulty: gs.difficulty === undefined ? 1.0 : gs.difficulty,
+        const difficulty = gs.difficulty === undefined ? 1.0 : gs.difficulty;
+        const base = {
+            difficulty,
             snapshot: (eng) => eng.snapshot(),
             // One batched call per turn, as the search intends.
             score: async (snaps) => window.Infer.score(window.ort, snaps, player),
-        });
+        };
+        let pair;
+        if (gs.match && matchModel && difficulty >= 1.0) {
+            pair = await selectForMatch(engine, moves, player, gs.match, base);
+        } else {
+            pair = await window.selectMovePair(engine, weights, moves, player, base);
+        }
         if (!Array.isArray(pair) || pair.length !== 2) throw new Error('agent returned ' + JSON.stringify(pair));
         moveCount++;
         return pair.map(toWire);
+    }
+
+    /* In a match at full strength: the agent's ranking (every hand rule and
+       the endgame lookahead already applied), then the candidate with the best
+       chance of winning the MATCH (match.js); ties go to the plain choice. */
+    async function selectForMatch(engine, moves, player, match, base) {
+        const ranked = await window.selectMovePair(engine, weights, moves, player,
+                                                   Object.assign({}, base, { returnScores: true }));
+        if (!Array.isArray(ranked) || !ranked.length || !ranked[0].pair) return ranked;
+        const phases = ranked.map(r => {
+            const root = engine.moves.length;
+            for (const m of r.pair) if (!window.isPass(m) && !window.isDraw(m)) engine.applyMove(m, false);
+            const ph = (12 - engine.savedRack('white').length) + (12 - engine.savedRack('black').length);
+            while (engine.moves.length > root) engine.undoLastMove();
+            return ph;
+        });
+        const eq = window.Match.equityTable(match, player, matchModel);
+        const i = window.Match.chooseByEquity(ranked, eq, matchModel, phases, window.SCORE_SCALE,
+                                              (p) => window.isDraw(p[0]));
+        return window.dedupeSavePair(ranked[i].pair);
     }
 
     /* --- the developer modes, answered on the device ---------------------- */

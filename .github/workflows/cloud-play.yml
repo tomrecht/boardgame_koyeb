@@ -68,9 +68,17 @@ jobs:
               cmd = ['quiz_playout.py', 'run', c[0], c[1], 'shard.out', str(n)]
           elif s['mode'] == 'matchsp':      # match awareness: self-play values + final margins
               cmd = ['self/lab/match/selfplay_values.py', c[0], 'shard.out', str(n), env['SEED_BASE']]
+          elif s['mode'] == 'matchplay':    # whole matches in node: match-aware (A) vs plain (B)
+              cmd = ['node', 'self/lab/match/match_play.js', 'self/' + env.get('MATCH_MODEL', 'match_model_sum7.json'),
+                     'shard.out', str(n), env['SEED_BASE'], env.get('MATCH_MODE', 'games'),
+                     env.get('MATCH_TARGET', '6'), env.get('GOAL_LAYOUT', 'sum7')]
           else:
               sys.exit('unknown mode ' + s['mode'])
           print('shard', k, 'seeds', env['SEED_BASE'], 'n', n, ' '.join(cmd), flush=True)
+          if cmd[0] == 'node':
+              subprocess.check_call(['npm', 'i', '--prefix', '/tmp/ort', 'onnxruntime-node@1.23.2'], stdout=subprocess.DEVNULL)
+              env['ORT_NODE'] = '/tmp/ort'
+              sys.exit(subprocess.call(cmd, env=env))
           sys.exit(subprocess.call([sys.executable, '-u', *cmd], env=env))
           PY
       - name: print output
@@ -87,6 +95,8 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with: { ref: '${{ inputs.ref }}' }
+      - uses: actions/checkout@v4
+        with: { path: self }
       - uses: actions/download-artifact@v4
         with: { pattern: 'shard-*', path: shards }
       - name: summary
@@ -95,6 +105,7 @@ jobs:
           find shards -name shard.out | sort | xargs -r cat > merged.out || true
           echo "records: $(zcat -f merged.out 2>/dev/null | wc -l)"
           MODE=$(python3 -c "import json,os; print(json.loads(os.environ['SPEC'])['mode'])")
+          if [ "$MODE" = matchplay ]; then python3 self/lab/match/summarize.py merged.out; fi
           if [ "$MODE" = difficulty ]; then
             LEVELS=$(python3 -c "import json,os; print(json.loads(os.environ['SPEC'])['env'].get('LEVELS',''))") python3 difficulty_fine.py analyze merged.out
           fi
