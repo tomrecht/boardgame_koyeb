@@ -1,0 +1,86 @@
+# Rule and port checks on every push to main / testing (and by hand).
+# The game's rules live in three engines -- game.js (the board), engine.js +
+# agent.js (the computer's player, ported) and game.py (training) -- and they
+# have drifted apart before, each time found by accident. This checks:
+#   parity   engine.js vs game.py (move sets, apply/undo), agent.js vs
+#            agent_gnn.py (candidates + chosen pair, stub net), the two-sided
+#            endgame lookahead, and the net's inputs (features_v2.js vs the
+#            training branch's features_v2.py); plus the site build.
+#   browser  full games in the real page, computer vs computer, recorded and
+#            replayed through game.py (game.js vs game.py on whole games), on the
+#            default layout and the original one.
+# Every fixture is regenerated from the Python at this commit, so a change to
+# either side shows up. Nothing here blocks a deploy; it reports.
+name: ci
+on:
+  push:
+    branches: [main, testing]
+  workflow_dispatch:
+    inputs:
+      train_ref: { description: 'training branch (features_v2.py, layout-aware game.py)', default: 'train-features-v2' }
+permissions: { contents: read }
+env:
+  TRAIN_REF: ${{ inputs.train_ref || 'train-features-v2' }}
+  PYTHONHASHSEED: '0'
+jobs:
+  parity:
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/checkout@v4
+        with: { ref: '${{ env.TRAIN_REF }}', path: tfv2 }
+      - uses: actions/setup-python@v5
+        with: { python-version: '3.11', cache: 'pip' }
+      - uses: actions/setup-node@v4
+        with: { node-version: '20' }
+      - name: python deps
+        run: |
+          pip install torch==2.2.2 --index-url https://download.pytorch.org/whl/cpu
+          pip install "numpy<2" scipy onnxruntime
+      - name: site build
+        run: python3 build_web.py --out dist
+      - name: engine.js vs game.py
+        run: |
+          python3 dump_engine_fixture.py 60
+          node ci/engine_test.js
+      - name: agent.js vs agent_gnn.py
+        run: |
+          python3 dump_agent_fixture.py 40
+          node agent_test.js
+      - name: two-sided endgame lookahead
+        run: |
+          python3 ci/endgame_states.py endgame_states.jsonl 300
+          python3 lookahead2_fixture.py endgame_states.jsonl 300
+          node agent_test.js lookahead2_fixture.json
+      - name: net inputs (features_v2.js vs features_v2.py)
+        run: |
+          (cd tfv2 && python3 dump_v2_fixture.py 60 60 ../features_v2_fixture.json)
+          node features_v2_test.js features_v2_fixture.json
+
+  browser:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/checkout@v4
+        with: { ref: '${{ env.TRAIN_REF }}', path: tfv2 }
+      - uses: actions/setup-python@v5
+        with: { python-version: '3.11' }
+      - uses: actions/setup-node@v4
+        with: { node-version: '20' }
+      - name: playwright
+        run: |
+          mkdir -p /tmp/pw && cd /tmp/pw && npm init -y >/dev/null && npm i playwright@1.49.1 >/dev/null
+          npx playwright install --with-deps chromium
+      - name: self-play games in the page, recorder on
+        env: { PLAYWRIGHT_PATH: /tmp/pw/node_modules/playwright }
+        run: |
+          python3 -m http.server 8765 >/dev/null 2>&1 &
+          sleep 2
+          node ci/selfplay_record.mjs http://localhost:8765/ games_default.jsonl 2
+          node ci/selfplay_record.mjs http://localhost:8765/ games_original.jsonl 1 original
+      - name: replay through game.py
+        run: |
+          pip install "numpy<2"
+          python3 ci/replay_by_layout.py tfv2 games_default.jsonl games_original.jsonl
