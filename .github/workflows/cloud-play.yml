@@ -28,6 +28,8 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with: { ref: '${{ inputs.ref }}' }
+      - uses: actions/checkout@v4        # this workflow's own commit: lab scripts from main's side
+        with: { path: self }
       - uses: actions/setup-python@v5
         with: { python-version: '3.11', cache: 'pip' }
       - run: |
@@ -64,11 +66,64 @@ jobs:
               cmd = ['difficulty_fine.py', 'run', c[0], 'shard.out', str(n)]
           elif s['mode'] == 'quizroll':     # SEED_BASE = first task index of this shard
               cmd = ['quiz_playout.py', 'run', c[0], c[1], 'shard.out', str(n)]
+          elif s['mode'] == 'matchsp':      # match awareness: self-play values + final margins
+              cmd = ['self/lab/match/selfplay_values.py', c[0], 'shard.out', str(n), env['SEED_BASE']]
+          elif s['mode'] == 'matchplay':    # whole matches in node: match-aware (A) vs plain (B)
+              cmd = ['node', 'self/lab/match/match_play.js', 'self/' + env.get('MATCH_MODEL', 'match_model_sum7.json'),
+                     'shard.out', str(n), env['SEED_BASE'], env.get('MATCH_MODE', 'games'),
+                     env.get('MATCH_TARGET', '6'), env.get('GOAL_LAYOUT', 'sum7')]
           else:
               sys.exit('unknown mode ' + s['mode'])
           print('shard', k, 'seeds', env['SEED_BASE'], 'n', n, ' '.join(cmd), flush=True)
+          if cmd[0] == 'node':              # single-threaded: one process per core, sub-ranges
+              subprocess.check_call(['npm', 'i', '--prefix', '/tmp/ort', 'onnxruntime-node@1.23.2'], stdout=subprocess.DEVNULL)
+              env['ORT_NODE'] = '/tmp/ort'
+              P = os.cpu_count() or 4
+              sub = -(-n // P); procs = []
+              for j in range(P):
+                  m = min(sub, n - j * sub)
+                  if m <= 0: break
+                  c2 = list(cmd); c2[3] = f'part{j}.out'; c2[4] = str(m); c2[5] = str(s['seed_base'] + k * per + j * sub)
+                  procs.append(subprocess.Popen(c2, env=env))
+              rc = max(p.wait() for p in procs)
+              with open('shard.out', 'w') as f:
+                  for j in range(len(procs)):
+                      if os.path.exists(f'part{j}.out'): f.write(open(f'part{j}.out').read())
+              sys.exit(rc)
           sys.exit(subprocess.call([sys.executable, '-u', *cmd], env=env))
           PY
+      - name: print output
+        if: always()
+        run: if [ -f shard.out ] && [ "$(stat -c%s shard.out)" -lt 2000000 ]; then echo '=====SHARD-OUT-BEGIN====='; (zcat -f shard.out 2>/dev/null || cat shard.out); echo '=====SHARD-OUT-END====='; fi
       - uses: actions/upload-artifact@v4
         if: always()
         with: { name: 'shard-${{ matrix.shard }}', path: shard.out, if-no-files-found: ignore, retention-days: 7 }
+  merge:
+    needs: play
+    if: always()
+    runs-on: ubuntu-latest
+    permissions: { contents: write, actions: read }
+    steps:
+      - uses: actions/checkout@v4
+        with: { ref: '${{ inputs.ref }}' }
+      - uses: actions/checkout@v4
+        with: { path: self }
+      - uses: actions/download-artifact@v4
+        with: { pattern: 'shard-*', path: shards }
+      - name: summary
+        env: { SPEC: '${{ inputs.spec }}' }
+        run: |
+          find shards -name shard.out | sort | xargs -r cat > merged.out || true
+          echo "records: $(zcat -f merged.out 2>/dev/null | wc -l)"
+          MODE=$(python3 -c "import json,os; print(json.loads(os.environ['SPEC'])['mode'])")
+          if [ "$MODE" = matchplay ]; then python3 self/lab/match/summarize.py merged.out; fi
+          if [ "$MODE" = difficulty ]; then
+            LEVELS=$(python3 -c "import json,os; print(json.loads(os.environ['SPEC'])['env'].get('LEVELS',''))") python3 difficulty_fine.py analyze merged.out
+          fi
+      - name: merged output as a release asset (readable where artifacts are not)
+        env: { GH_TOKEN: '${{ github.token }}' }
+        run: |
+          [ -s merged.out ] || exit 0
+          cp merged.out "run-${{ github.run_id }}.out"
+          gh release upload cloud-scratch "run-${{ github.run_id }}.out" --clobber -R "${{ github.repository }}"
+          echo "asset: https://github.com/${{ github.repository }}/releases/download/cloud-scratch/run-${{ github.run_id }}.out"

@@ -6,6 +6,10 @@ the July–August 2026 frontend and port history). Verbatim, nothing deleted.
 Read it for the reasoning behind a settled decision or a measured number; this
 file keeps what a fresh session needs to act.
 
+**`ROADMAP.md`** (2026-11-10) -- the agreed plan of action from the review
+session: sum7 promotion checklist, luck-adjusted matches, exploiter run, match
+awareness, shallower easy levels; with what was dropped and why.
+
 Context for Claude Code picking up this project. Owner (Tom) prefers terse
 responses. Tom is the domain expert on the boardgame, you are the ML expert; make suggestions on training accordingly, but you may also suggest potential improvements to game rules and mechanics when relevant.
 
@@ -204,6 +208,27 @@ Whenever a new net ships, re-run (cheapest first; GitHub = free):
      (owner's call). Ignore analyze's 'slider' column (old 0.8-1.0 mapping).
   5. Close-call gauge (`remote_play.py ccmatch <net> 2000`) and calib_bench.
   6. Endgame lookahead and prefilter sizes (12/40): only if 2-4 moved.
+  **sum7 net (distill_sum7/cand_13 = model-dffd8d8f.onnx), run 2026-11-10 from a cloud
+  session** (probes on the ONNX net, no torch: `lab/a1_sum7/onnx_probes.patch` for
+  train-features-v2; owner's 59 sum7 games from quahuru-games):
+  * Step 1 skipped: offgoal_probe's position is laid out on the original numbering.
+  * Step 2, 300 computer turns (11 full passes excluded): keeps the all-moves favourite
+    270/289 = 93.4% (cand13 v2 scales 95.1%); 19 drops, favourite better by +0.053 per
+    drop (better > 0.05 in 10, > 0.15 in 2, pick better in 5); cost 0.0035 pts per
+    computer turn (95% CI 0.0006..0.0067), ~0.1 pts/game (cand13 v2: ~0.06). CI clears 0,
+    so a refit is due, but 59 games is too few to fit on: refit from sum7 self-play
+    positions (work iMac).
+  * Step 3, all 3,163 turns: wastes-save fired 1,053 times, changed 0; keep-last-piece
+    41, 0; bank-the-most 14, changed 6, deep value identical in all 6. Rules inert, kept.
+  * Step 4 (GitHub, 150 pairs per level, seeds 200M+150..): Easiest 0.65 8.3% (5.7-12.0)
+    -3.00; Gentle 0.74 18.7% (14.7-23.5) -2.11; Medium 0.80 29.3% (24.5-34.7) -1.41;
+    Strong 0.93 44.7% (39.1-50.3) -0.38; Max 1.0 49.7%. Close to cand13's, except Strong
+    is nearer Max (margin -0.38 vs -0.76) and Easiest stays ~8% (target ~4%).
+  * Step 5: gauge done 2026-11-09 (+0.118); calib_bench skipped (original-layout games).
+  **cloud-play.yml on branch ccr-45a54cc6-6axfpc** adds a `merge` job that collects the
+  shards and prints one summary (the difficulty table for mode `difficulty`): a cloud
+  session can read results from that job's log when it cannot download artifacts.
+  Dispatch with the workflow ref set to that branch until it reaches main.
 
 - **Deployed model: `model.onnx` = `distill_cand13.pt` (main 2026-10-26), file
   `model-9121be40.onnx`.** The weekend's continuation of the distillation
@@ -300,6 +325,28 @@ Whenever a new net ships, re-run (cheapest first; GitHub = free):
   parent-only gating), and the fix is a fixed-panel gate.
 - `?dev=1` unlocks debug / eval / setup modes and un-silences `console.log`.
   **Any harness that reads console output must pass it.**
+
+## CI: RULE AND PORT CHECKS ON EVERY PUSH (2026-11-10, `.github/workflows/ci.yml`)
+
+Runs on push to main, testing and `ccr-*` session branches (and by hand once on
+main). Reports only; blocks nothing. Every fixture is regenerated from the Python
+at that commit. **parity** job (~10 min): `build_web.py`; `dump_engine_fixture.py
+60` + `ci/engine_test.js` (engine.js move SETS, position after each move, undo;
+75 positions / 4,290 moves); `dump_agent_fixture.py 40` + `agent_test.js` (50/50);
+`ci/endgame_states.py` (300 built endgames, either side to move) +
+`lookahead2_fixture.py` + `agent_test.js` (300/300); the training branch's
+`dump_v2_fixture.py 60 60` + `features_v2_test.js`. **browser** job (~15 min):
+Playwright, 3 computer-vs-computer games in the real page with the recorder on
+(`ci/selfplay_record.mjs`; 2 on the default layout, 1 `?layout=original`), then
+`ci/replay_by_layout.py` replays each through the TRAINING branch's game.py under
+its own layout (main's game.py has no layouts). The training branch is checked out
+beside it (`train_ref`, default train-features-v2).
+**Each check was shown to fail when it should:** engine.js with the rack-entry rule
+off -> 14 positions mismatch; agent.js with the two-sided lookahead off -> lookahead
+fixture mismatches; a sum7 game replayed under the original numbering diverges.
+First green run: 42889268487 (2026-11-10). Also run by hand: all 288 of owner's
+synced games replay clean (229 original, 59 sum7). Lookahead fixture 1 of
+`lookahead_fixture.py` (owner's positions) is not in CI: it needs his game logs.
 
 ## FREE PARALLEL COMPUTE: GitHub Actions (2026-10-23)
 
@@ -734,8 +781,8 @@ with it in mind.** Assessment and the concrete implications:
   **Strategy panel:** pair text ("add up to 7"), hop 6->1 5->2 4->3, four pictures
   redrawn as `*-s7.webp` (positions + checks in STRATEGY.md; `lab/die_uses.js`
   lists what each die does in a position). How to Play and the rule tips name no
-  goal numbers. **Not redone:** STRATEGY.md's measurements (original layout) and
-  the Android package (still original layout until rebuilt).
+  goal numbers. **Not redone:** STRATEGY.md's measurements (original layout).
+  The Android package was rebuilt on sum7 on 2026-11-09 (owner; versionCode not recorded here).
 
 - **DRAW ONLY WHEN SOMETHING CHANGED (owner, 2026-11-08: battery; on `testing`).**
   Phaser drew every animation frame (60-120/s, up to 3x resolution on a phone)
