@@ -17,11 +17,14 @@ _A = {}
 
 def _agents(path):
     if path not in _A:
-        import torch
-        from network import model_from_state
         from agent_gnn import GNNAgent, prefilter_kwargs
-        m = model_from_state(torch.load(path, map_location='cpu'), strict=False)
-        _A[path] = (GNNAgent(model=m, hand_rules=True, **prefilter_kwargs(os.environ['GATE_PREFILTER'])),
+        if path.endswith('.onnx'):
+            m, kw = None, {'weights_path': path}
+        else:
+            import torch
+            from network import model_from_state
+            m = model_from_state(torch.load(path, map_location='cpu'), strict=False); kw = {'model': m}
+        _A[path] = (GNNAgent(**kw, hand_rules=True, **prefilter_kwargs(os.environ['GATE_PREFILTER'])),
                     RG._agent(path))
     return _A[path]
 
@@ -76,7 +79,7 @@ def job(task):
 
 
 def main(path, tag, out, maxn=300):
-    games = [g for g in RG.load_games() if g.get('model') == tag]
+    games = [g for g in RG.load_games() if g.get('model') in tag.split(',')]
     tasks = []
     for g in games:
         ai = 'white' if g.get('whiteIsAI') else 'black'

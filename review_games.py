@@ -83,13 +83,17 @@ def _shard(items):
 
 def _agent(path):
     if path not in _AG:
-        import torch
-        from network import model_from_state
         from agent_gnn import prefilter_kwargs
+        if not path.endswith('.onnx'):
+            import torch
+            from network import model_from_state
         from close_call import make_agent_class
-        m = model_from_state(torch.load(path, map_location='cpu'), strict=False)
         C = make_agent_class()
-        ag = C(model=m, hand_rules=True, **prefilter_kwargs(os.environ['GATE_PREFILTER']))
+        if path.endswith('.onnx'):
+            ag = C(weights_path=path, hand_rules=True, **prefilter_kwargs(os.environ['GATE_PREFILTER']))
+        else:
+          m = model_from_state(torch.load(path, map_location='cpu'), strict=False)
+          ag = C(model=m, hand_rules=True, **prefilter_kwargs(os.environ['GATE_PREFILTER']))
         assert ag.afterstate, 'review_games expects an afterstate net'
         _AG[path] = ag
     return _AG[path]
@@ -111,14 +115,17 @@ def _undo(board, root):
 def _shallow(ag, board, side, pair):
     """Net value (points, mover frame) of the afterstate of `pair`; a pair that
     ends the game gets its exact margin."""
-    import torch
+    try:
+        import torch; _ng = torch.no_grad
+    except ImportError:
+        import contextlib; _ng = contextlib.nullcontext
     from agent_gnn import NUM_PIECES
     root = _apply(board, pair)
     try:
         w, s = board.check_game_over()
         if w:
             return float((1 if w == side else -1) * s)
-        with torch.no_grad():
+        with _ng():
             raw = float(ag.model(ag._encode_after(board, side)))
         return raw * NUM_PIECES
     finally:

@@ -25,11 +25,14 @@ ATTR = {'wastes': 'rule_no_wasted_save', 'bank': 'rule_bank_most_when_lost', 'st
 
 def _agents(path):
     if path not in _A:
-        import torch
-        from network import model_from_state
         from agent_gnn import GNNAgent, prefilter_kwargs
-        m = model_from_state(torch.load(path, map_location='cpu'), strict=False)
-        app = GNNAgent(model=m, hand_rules=True, **prefilter_kwargs(os.environ['GATE_PREFILTER']))
+        if path.endswith('.onnx'):
+            m, kw = None, {'weights_path': path}
+        else:
+            import torch
+            from network import model_from_state
+            m = model_from_state(torch.load(path, map_location='cpu'), strict=False); kw = {'model': m}
+        app = GNNAgent(**kw, hand_rules=True, **prefilter_kwargs(os.environ['GATE_PREFILTER']))
         app.endgame_lookahead = True
         _A[path] = (app, RG._agent(path))
     return _A[path]
@@ -89,6 +92,8 @@ def job(task):
 
 def main(path, out, maxn=6000):
     games = RG.load_games()
+    lay = os.environ.get('GOAL_LAYOUT') or None
+    games = [g for g in games if g.get('layout') == lay]   # only games played on this layout
     tasks = [(path, g, t) for g in games for t in range(len(g['turns']))]
     random.Random(1).shuffle(tasks)
     tasks = tasks[:maxn]
