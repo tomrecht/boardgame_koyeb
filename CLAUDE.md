@@ -326,6 +326,28 @@ Whenever a new net ships, re-run (cheapest first; GitHub = free):
 - `?dev=1` unlocks debug / eval / setup modes and un-silences `console.log`.
   **Any harness that reads console output must pass it.**
 
+## CI: RULE AND PORT CHECKS ON EVERY PUSH (2026-11-10, `.github/workflows/ci.yml`)
+
+Runs on push to main, testing and `ccr-*` session branches (and by hand once on
+main). Reports only; blocks nothing. Every fixture is regenerated from the Python
+at that commit. **parity** job (~10 min): `build_web.py`; `dump_engine_fixture.py
+60` + `ci/engine_test.js` (engine.js move SETS, position after each move, undo;
+75 positions / 4,290 moves); `dump_agent_fixture.py 40` + `agent_test.js` (50/50);
+`ci/endgame_states.py` (300 built endgames, either side to move) +
+`lookahead2_fixture.py` + `agent_test.js` (300/300); the training branch's
+`dump_v2_fixture.py 60 60` + `features_v2_test.js`. **browser** job (~15 min):
+Playwright, 3 computer-vs-computer games in the real page with the recorder on
+(`ci/selfplay_record.mjs`; 2 on the default layout, 1 `?layout=original`), then
+`ci/replay_by_layout.py` replays each through the TRAINING branch's game.py under
+its own layout (main's game.py has no layouts). The training branch is checked out
+beside it (`train_ref`, default train-features-v2).
+**Each check was shown to fail when it should:** engine.js with the rack-entry rule
+off -> 14 positions mismatch; agent.js with the two-sided lookahead off -> lookahead
+fixture mismatches; a sum7 game replayed under the original numbering diverges.
+First green run: 42889268487 (2026-11-10). Also run by hand: all 288 of owner's
+synced games replay clean (229 original, 59 sum7). Lookahead fixture 1 of
+`lookahead_fixture.py` (owner's positions) is not in CI: it needs his game logs.
+
 ## FREE PARALLEL COMPUTE: GitHub Actions (2026-10-23)
 
 The repo is PUBLIC, so GitHub-hosted runners are free with no minute cap: ~20

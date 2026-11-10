@@ -72,7 +72,9 @@ the only route to more strength.
 run logs. Under roughly 100,000 in all, a from-scratch run at 10-50x scale is a
 real option (see C4); well above it, it is not.
 
-**A4. CI.** A workflow on push to `main` / `testing` running `build_web.py`,
+**A4. CI.** -- DONE 2026-11-10 (`.github/workflows/ci.yml`, on the session branch
+until merged; details in CLAUDE.md).
+(Original plan) A workflow on push to `main` / `testing` running `build_web.py`,
 `agent_test.js`, `features_v2_test.js`, the lookahead and last-piece fixtures,
 and `replay_games.py` on a small committed sample of games. The three engines
 have diverged at least three times, each found by accident.
