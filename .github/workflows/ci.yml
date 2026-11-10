@@ -53,6 +53,8 @@ jobs:
           python3 ci/endgame_states.py endgame_states.jsonl 300
           python3 lookahead2_fixture.py endgame_states.jsonl 300
           node agent_test.js lookahead2_fixture.json
+      - name: match equity (match.js)
+        run: node ci/match_test.js
       - name: net inputs (features_v2.js vs features_v2.py)
         run: |
           (cd tfv2 && python3 dump_v2_fixture.py 60 60 ../features_v2_fixture.json)
