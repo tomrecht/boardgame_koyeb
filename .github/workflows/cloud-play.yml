@@ -79,6 +79,11 @@ jobs:
           print('shard', k, 'seeds', env['SEED_BASE'], 'n', n, ' '.join(cmd), flush=True)
           if cmd[0] == 'node':              # single-threaded: one process per core, sub-ranges
               subprocess.check_call(['npm', 'i', '--prefix', '/tmp/ort', 'onnxruntime-node@1.23.2'], stdout=subprocess.DEVNULL)
+              if env.get('SPREAD_HEAD'):        # the net with its hidden layer as a second output
+                  subprocess.check_call([sys.executable, '-m', 'pip', 'install', '-q', 'onnx'])
+                  side = json.load(open('self/model_' + env.get('GOAL_LAYOUT', 'sum7') + '.json'))
+                  subprocess.check_call([sys.executable, 'self/lab/match/add_hidden_output.py', 'self/' + side['onnx'], '/tmp/hidden.onnx'])
+                  env['SPREAD_ONNX'] = '/tmp/hidden.onnx'
               env['ORT_NODE'] = '/tmp/ort'
               P = os.cpu_count() or 4
               sub = -(-n // P); procs = []

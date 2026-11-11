@@ -5,7 +5,9 @@
  *     ORT_NODE=<dir with onnxruntime-node> node lab/match/match_play.js model.json out.jsonl
  *         <matches> <seed_base> <mode games|race> <target> [layout=sum7]
  * One line per match: {seed, aWhite, winner: 'A'|'B'|'draw', games, scoreA, scoreB, decisions, changed}.
- * `changed` = turns where A's match-aware pick differed from its plain pick. */
+ * `changed` = turns where A's match-aware pick differed from its plain pick.
+ * SPREAD_HEAD=<head.json> SPREAD_ONNX=<net with hidden output>: each candidate's
+ * margin shape comes from the spread head (train_spread.py) instead of the lookup. */
 const fs = require('fs');
 const path = require('path');
 const { ROOT, staticFor } = require('../eg_common.js');
@@ -17,6 +19,7 @@ const { loadNet, W } = require('../eg_net.js');
 const [modelPath, outp, nStr, baseStr, mode = 'games', targetStr = '6', layout = 'sum7'] = process.argv.slice(2);
 const model = JSON.parse(fs.readFileSync(modelPath, 'utf8'));
 const N = +nStr, BASE = +baseStr, TARGET = +targetStr;
+const HEAD = process.env.SPREAD_HEAD ? JSON.parse(fs.readFileSync(process.env.SPREAD_HEAD, 'utf8')) : null;
 const MAX_TURNS = 300;
 
 function rng(seed) {            // mulberry32
@@ -44,8 +47,24 @@ async function choosePair(net, e, matchState, aware) {
         while (e.moves.length > root) e.undoLastMove();
         return ph;
     });
+    let shapes = null;
+    if (HEAD) {
+        const idx = [], snaps = [];
+        ranked.forEach((r, i) => {
+            if (r.score === Infinity || A.isDraw(r.pair[0])) return;
+            const root = e.moves.length;
+            for (const m of r.pair) if (!A.isPass(m)) e.applyMove(m, false);
+            snaps.push(e.snapshot()); idx.push(i);
+            while (e.moves.length > root) e.undoLastMove();
+        });
+        shapes = new Array(ranked.length).fill(null);
+        if (snaps.length) {
+            const out = await net.scoreHidden(snaps, player);
+            out.forEach((o, k) => { shapes[idx[k]] = M.headShape(HEAD, o.h, phases[idx[k]]); });
+        }
+    }
     const eq = M.equityTable(matchState, player, model);
-    const i = M.chooseByEquity(ranked, eq, model, phases, A.SCORE_SCALE, (p) => A.isDraw(p[0]));
+    const i = M.chooseByEquity(ranked, eq, model, phases, A.SCORE_SCALE, (p) => A.isDraw(p[0]), shapes);
     const pair = A.dedupeSavePair(ranked[i].pair);
     const key = (p) => JSON.stringify(p);
     return { pair, changed: key(pair) !== key(plain) };
@@ -98,7 +117,7 @@ async function playMatch(net, sd, idx, aWhite) {
 }
 
 (async () => {
-    const net = await loadNet(layout);
+    const net = await loadNet(layout, process.env.SPREAD_ONNX || undefined);
     const sd = staticFor(layout);
     const done = new Set();
     if (fs.existsSync(outp)) for (const l of fs.readFileSync(outp, 'utf8').split('\n')) if (l) { const r = JSON.parse(l); done.add(r.seed + ':' + r.aWhite); }

@@ -165,14 +165,31 @@
        raw units (score / scale * 12 = expected margin in points). phases[i]: total
        unsaved after candidate i. Returns the index of the best candidate by
        match equity; ties go to the higher score (the plain choice). */
-    function chooseByEquity(ranked, eq, model, phases, scale, isDrawPair) {
+    /* Margin-spread head (lab/match/train_spread.py) on the net's hidden layer:
+       h (64) + phase/24 -> 32 ReLU -> 25 softmax. Returns the shape (untilted). */
+    function headShape(head, h, phase) {
+        const x = Array.from(h); x.push(phase / 24);
+        const a = head.b1.slice();
+        for (let i = 0; i < x.length; i++) { const xi = x[i]; if (!xi) continue;
+            const row = head.W1[i]; for (let j = 0; j < a.length; j++) a[j] += xi * row[j]; }
+        const z = head.b2.slice();
+        for (let j = 0; j < a.length; j++) { const aj = a[j]; if (aj <= 0) continue;
+            const row = head.W2[j]; for (let k = 0; k < z.length; k++) z[k] += aj * row[k]; }
+        const mx = Math.max(...z); const e = z.map(q => Math.exp(q - mx)); const s = e.reduce((p, q) => p + q, 0);
+        return e.map(q => q / s);
+    }
+
+    /* shapes (optional): per-candidate margin shapes (e.g. headShape); a candidate
+       without one falls back to the self-play lookup. Either is tilted to its score. */
+    function chooseByEquity(ranked, eq, model, phases, scale, isDrawPair, shapes) {
         let best = -1, bestE = -1, bestS = -Infinity;
         ranked.forEach((r, i) => {
             let e;
             if (r.score === Infinity) e = Infinity;
             else if (isDrawPair && isDrawPair(r.pair)) e = eq.get(0);   // calling a draw: exactly 0
             else {
-                const d = marginDist(model, r.score / scale * MAXM, phases[i]);
+                const v = r.score / scale * MAXM;
+                const d = shapes && shapes[i] ? tilt(shapes[i], v) : marginDist(model, v, phases[i]);
                 e = 0;
                 for (let k = 0; k < d.length; k++) e += d[k] * eq.get(k - MAXM);
             }
@@ -183,7 +200,7 @@
         return best;
     }
 
-    const api = { equityTable, marginDist, chooseByEquity, raceValue, gamesValue, MATCH_MAXM: MAXM };
+    const api = { equityTable, marginDist, chooseByEquity, headShape, raceValue, gamesValue, MATCH_MAXM: MAXM };
     if (typeof module !== 'undefined' && module.exports) module.exports = api;
     else Object.assign(typeof window !== 'undefined' ? window : self, { Match: api });
 })();

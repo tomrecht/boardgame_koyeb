@@ -10,7 +10,7 @@ const enc = require(path.join(ROOT, 'encoder.js'));
 const Infer = require(path.join(ROOT, 'infer.js'));
 const A = require(path.join(ROOT, 'agent.js'));
 
-async function loadNet(layout) {
+async function loadNet(layout, onnxPath) {
     const side = layout && fs.existsSync(path.join(ROOT, 'model_' + layout + '.json'))
         ? 'model_' + layout + '.json' : 'model.json';
     const meta = JSON.parse(fs.readFileSync(path.join(ROOT, side), 'utf8'));
@@ -19,13 +19,22 @@ async function loadNet(layout) {
         layout ? 'endgame_table_' + layout + '.json' : 'endgame_table.json'), 'utf8'));
     const opts = { features: meta.features, afterstate: !!meta.afterstate, table,
                    scales: meta.input_scales || null };
-    const session = await ort.InferenceSession.create(path.join(ROOT, meta.onnx));
+    const session = await ort.InferenceSession.create(onnxPath || path.join(ROOT, meta.onnx));
     async function score(snaps, player) {
         const encoded = snaps.map(s => enc.encode(sd, s, player || s.current_player, opts));
         const out = await session.run(Infer.collate(ort, encoded));
         return Array.from(out[session.outputNames[0]].data);
     }
-    return { sd, meta, score, source: meta.source };
+    // With a net that also outputs its hidden layer (lab/match/add_hidden_output.py):
+    // [{v, h: Float32Array(64)}] per snapshot.
+    async function scoreHidden(snaps, player) {
+        const encoded = snaps.map(s => enc.encode(sd, s, player || s.current_player, opts));
+        const out = await session.run(Infer.collate(ort, encoded));
+        const v = out[session.outputNames[0]].data, H = out[session.outputNames[1]].data;
+        const d = H.length / v.length;
+        return Array.from(v, (x, i) => ({ v: x, h: H.subarray(i * d, (i + 1) * d) }));
+    }
+    return { sd, meta, score, scoreHidden, source: meta.source };
 }
 
 const W = JSON.parse(fs.readFileSync(path.join(ROOT, 'heuristic_weights.json'), 'utf8'));
