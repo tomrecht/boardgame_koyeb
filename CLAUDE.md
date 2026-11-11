@@ -370,7 +370,14 @@ dice, A = match-aware vs B = plain, same net, sum7):**
 * 6-game matches, tilted, same seeds: **A 49.0% (95% CI 47.7..50.4)**, -0.27 pts/match,
   deviated on 1.4% of turns. No gain: in a total-score match equity is nearly linear
   in the margin until the last game or two.
-* Race to 21: see below.
+* Race to 21, tilted, 500 pairs (seeds 610M, run 42941091579): **A 50.1% (95% CI 48.2..52.0)**,
+  deviated on 0.4% of turns (1,719 of 479,586), 16.3 games a match. No gain.
+**SHELVED (2026-11-11), kept off `testing`.** Why it cannot help as built: the margin spread
+for a candidate comes from self-play by (net value, phase) only, so two candidates with the
+same value get the same spread -- it cannot tell a safe move from a risky one, which is what
+match play would exploit. Worth reviving only with a per-position spread: a margin-distribution
+head on the frozen trunk (labels = final margins already in self-play), or exact spreads from
+the endgame solver / finish tables in small endings.
 Each run takes ~2.5-3 h on GitHub (single-threaded node, 4 processes per shard).
 
 ## FREE PARALLEL COMPUTE: GitHub Actions (2026-10-23)
