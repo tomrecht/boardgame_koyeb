@@ -68,6 +68,8 @@ jobs:
               cmd = ['quiz_playout.py', 'run', c[0], c[1], 'shard.out', str(n)]
           elif s['mode'] == 'matchsp':      # match awareness: self-play values + final margins
               cmd = ['self/lab/match/selfplay_values.py', c[0], 'shard.out', str(n), env['SEED_BASE']]
+          elif s['mode'] == 'spreaddata':   # margin-spread head: hidden layer + final margins
+              cmd = ['self/lab/match/spread_data.py', c[0], 'shard.out', str(n), env['SEED_BASE']]
           elif s['mode'] == 'matchplay':    # whole matches in node: match-aware (A) vs plain (B)
               cmd = ['node', 'self/lab/match/match_play.js', 'self/' + env.get('MATCH_MODEL', 'match_model_sum7.json'),
                      'shard.out', str(n), env['SEED_BASE'], env.get('MATCH_MODE', 'games'),
