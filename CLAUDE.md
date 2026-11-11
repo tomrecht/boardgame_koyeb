@@ -378,6 +378,19 @@ same value get the same spread -- it cannot tell a safe move from a risky one, w
 match play would exploit. Worth reviving only with a per-position spread: a margin-distribution
 head on the frozen trunk (labels = final margins already in self-play), or exact spreads from
 the endgame solver / finish tables in small endings.
+**Take 2, a learned per-position spread (2026-11-11): NO BETTER, not match-tested.**
+`lab/match/spread_data.py` (`cloud-play` mode `spreaddata`, run 43068588326): 3,981 sum7
+self-play games, 219,772 positions, each the net's 64-wide readout[1] hidden layer on the
+chosen afterstate + final margin; plus 56,208 turns' top-6 candidates. `train_spread.py`:
+frozen-trunk head 64+phase -> 32 -> 25 softmax (numpy). Held-out log-loss (5 folds by game,
+tilted to v as used): head 1.890 vs lookup 1.892 (no information 2.088); both calibrated
+(predicted SD 1.3..2.4 = realised RMS). Near-equal candidates (|dv| < 0.15 pts, 661,307
+pairs): predicted SD differs by 0.017 pts on average (90th pct 0.043) -- too small to move a
+match decision. The hidden layer carries almost no risk information beyond value + phase.
+Only remaining route: a spread target trained INTO the trunk (work iMac); not recommended
+on this evidence. Wiring kept for that case: `match.js` `headShape` / per-candidate
+`shapes`, `lab/eg_net.js` `scoreHidden`, `add_hidden_output.py`, `match_play.js`
+`SPREAD_HEAD`; head weights in `lab/match/spread_head_sum7.json`.
 Each run takes ~2.5-3 h on GitHub (single-threaded node, 4 processes per shard).
 
 ## FREE PARALLEL COMPUTE: GitHub Actions (2026-10-23)

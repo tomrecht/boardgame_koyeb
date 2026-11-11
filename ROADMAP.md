@@ -145,7 +145,11 @@ further until the count is known.
 **Status 2026-11-11: SHELVED.** Built and tested, no gain in either format:
 6-game matches 49.0% (95% CI 47.7..50.4), race to 21 50.1% (48.2..52.0). The
 spread model cannot tell risky from safe moves of equal value. Revive only with
-a margin-distribution head (needs training) or exact endgame spreads. Details in
+a margin-distribution head (needs training) or exact endgame spreads.
+A frozen-trunk spread head was then tried (2026-11-11): no better than the lookup
+(log-loss 1.890 vs 1.892; near-equal moves' spreads differ by 0.017 pts), so
+not match-tested. Only a spread target trained into the trunk is left; not
+recommended. Details in
 CLAUDE.md.
 
 No retraining of the value net. Match formats in `game.js`: N games by total
