@@ -142,6 +142,9 @@ further until the count is known.
 
 ## D. Match awareness
 
+**Status 2026-11-11:** built and tested; 6-game matches show no gain (49.0%,
+95% CI 47.7..50.4); race to 21 under test. Details in CLAUDE.md.
+
 No retraining of the value net. Match formats in `game.js`: N games by total
 score (default 6; ties by games won, then two more games or a draw) and race to
 a target (default 21); only the winner scores, by the margin.

@@ -348,6 +348,31 @@ First green run: 42889268487 (2026-11-10). Also run by hand: all 288 of owner's
 synced games replay clean (229 original, 59 sum7). Lookahead fixture 1 of
 `lookahead_fixture.py` (owner's positions) is not in CI: it needs his game logs.
 
+## MATCH AWARENESS (ROADMAP D, 2026-11-10/11; session branch ccr-45a54cc6-6axfpc, NOT shipped)
+
+In a match at full strength, pick the candidate with the best chance of winning
+the MATCH instead of the best expected margin. `match.js`: exact DP for both
+formats (N games by total score with the tie rules; race to T), future games
+assumed between EQUAL players using self-play's single-game outcome distribution
+(starter's view); each candidate's final-margin distribution = self-play's shape
+near its value and phase (total unsaved after the move), interpolated in both and
+exponentially TILTED to the net's own mean, so a straight-line equity reproduces
+the plain choice exactly (CI check: 0/2000; the untilted first version changed
+287/2000). `match_model_sum7.json` from `lab/match/fit_model.py` on 3,000 sum7
+self-play games (GitHub, `cloud-play` mode `matchsp`): starter wins 54.7%, mean
+margin +0.29; held-out log-loss 1.87 vs 2.08 without the value. Wired on the
+session branch only: local_agent.js `selectForMatch` (computer + hint), game.js
+`_matchForAgent`, build/sw (v14). Page check: 48/48 match moves through it, 0 errors.
+**Tested in node (`lab/match/match_play.js`, `cloud-play` mode `matchplay`, paired
+dice, A = match-aware vs B = plain, same net, sum7):**
+* 6-game matches, first version (untilted), 1,000 pairs: A 47.9% (95% CI 46.1..49.8),
+  -2.3 pts/match, deviated on 3.6% of turns -- table artefacts, fixed by the tilt.
+* 6-game matches, tilted, same seeds: **A 49.0% (95% CI 47.7..50.4)**, -0.27 pts/match,
+  deviated on 1.4% of turns. No gain: in a total-score match equity is nearly linear
+  in the margin until the last game or two.
+* Race to 21: see below.
+Each run takes ~2.5-3 h on GitHub (single-threaded node, 4 processes per shard).
+
 ## FREE PARALLEL COMPUTE: GitHub Actions (2026-10-23)
 
 The repo is PUBLIC, so GitHub-hosted runners are free with no minute cap: ~20
