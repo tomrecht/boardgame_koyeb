@@ -196,6 +196,37 @@ nothing, whether they finish. No instruction during it.
 
 **E3. Android package.** Done 2026-11-09 (owner rebuilt it on sum7).
 
+**E4. Two players on two devices (possible later addition; discussed 2026-11-12,
+nothing built).** Two humans on one device already works (both sides human).
+- *Step 1, play a friend by link or code (about a week, mostly client).* No
+  accounts. "Play a friend" makes a room and a link (`quahuru.com/?g=K7PQ4`) for
+  the share sheet; the same five characters are a code for "Join game". Room
+  locks at two players and stays open for rematches.
+  - Relay: a Worker script with one Durable Object per game, a WebSocket to each
+    player (the site is assets-only today). Every multiplayer app relays through
+    a server; phones cannot reach each other directly over the internet, and
+    peer-to-peer (WebRTC) still needs a server and fails on some networks.
+  - Dice, rack shuffle and coin flip come from the room, not local `Math.random`.
+  - Client: a "remote" player type beside `isAI`. `_inputLocked`, `applyMovePair`
+    and the recorder's move strings (`"7>5.4"`, `"7>s"`, `"o7>b"`) are most of
+    it. Reconnect by replaying the room's move log (as Resume does). Waiting
+    state, opponent-left notice, resign, rematch; hints off.
+  - Open choices: half-moves live (preferred; undo must be sent too) or whole
+    turns; server legality check with `engine.js` or only a per-turn fingerprint
+    compare (enough for friends); single games first or matches.
+  - Also: `privacy.html` and the Play data-safety form (moves pass through a
+    server, nothing kept); register quahuru.com links to the Android app so a
+    tapped link opens the app; new package; Koyeb cannot host the room, so
+    `testing` must talk to one on Cloudflare; test on two phones (latency,
+    dropped connection, backgrounded tab).
+- *Step 2, only if people play each other: friends list and invites (1-2 more
+  weeks).* Sign-in (Google Play Games on Android), stored friends, push
+  notifications; same relay underneath. We would then hold identities.
+- *Extra: same-room play with no internet* (Android nearby devices; native
+  plugin, app only).
+- *Not planned:* strangers / matchmaking (accounts, ratings, moderation, and the
+  shipped net is an expert cheating engine); correspondence play.
+
 ## F. Game design (owner's call; none started)
 
 Tested the same way: full strength vs the handicapped agent under each variant,
