@@ -1,0 +1,3 @@
+sum7 round 4 (2,000-game iterations, kept only if 95% CI vs parent clears 0):
+  iteration 24: +0.028 (95% CI -0.036..+0.091) not kept
+VERDICT: nothing kept -- the shipped net (cand_13) stays; sum7 distillation with this teacher is done.

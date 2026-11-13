@@ -1,0 +1,897 @@
+=== iteration 0: champion /Users/tomrecht/quahuru-train/distill_cand13.pt
+[remote] label x600 on 10 shards, seeds 91000000.., run https://github.com/tomrecht/boardgame_koyeb/actions/runs/41081416036
+[remote] run 41081416036 success after 118.1 min
+[remote] distill_sum7/labels_0.jsonl.gz: complete
+$ /Users/tomrecht/quahuru-train/.venv/bin/python -u distill_train.py --data distill_sum7/labels_0.jsonl.gz --load /Users/tomrecht/quahuru-train/distill_cand13.pt --save /Users/tomrecht/quahuru-train/distill_sum7/cand_0.pt --log distill_sum7/train_log.jsonl --epochs 8 --lr 2e-5 --td-w 0.5 --rank-w 0 
+[remote] confirm x500 on 10 shards, seeds 93000000.., run https://github.com/tomrecht/boardgame_koyeb/actions/runs/41100225661
+[remote] lost contact: gh run view 41100225661 failed: HTTP 502: Server Error (https://api.github.com/repos/tomrecht/boardgame_koyeb/actions/runs/41100225661/jobs?per_page=100)
+[remote] run 41100225661 unknown after 4.6 min
+[remote] distill_sum7/confirm_0.jsonl: 1000 game(s) missing
+[remote] 1000 game(s) missing; the local run plays them
+$ /Users/tomrecht/quahuru-train/.venv/bin/python -u confirm_match.py /Users/tomrecht/quahuru-train/distill_sum7/cand_0.pt /Users/tomrecht/quahuru-train/distill_cand13.pt 500 distill_sum7/confirm_0.jsonl SEED_BASE=93000000
+iteration 0: cand vs champion -0.001 (95% CI -0.120 .. +0.118, 500 pairs) -> keep champion
+=== iteration 1: champion /Users/tomrecht/quahuru-train/distill_cand13.pt
+[remote] label x600 on 10 shards, seeds 91010000.., run https://github.com/tomrecht/boardgame_koyeb/actions/runs/41105447682
+[remote] run 41105447682 success after 128.4 min
+[remote] distill_sum7/labels_1.jsonl.gz: complete
+$ /Users/tomrecht/quahuru-train/.venv/bin/python -u distill_train.py --data distill_sum7/labels_0.jsonl.gz distill_sum7/labels_1.jsonl.gz --load /Users/tomrecht/quahuru-train/distill_cand13.pt --save /Users/tomrecht/quahuru-train/distill_sum7/cand_1.pt --log distill_sum7/train_log.jsonl --epochs 8 --lr 2e-5 --td-w 0.5 --rank-w 0 
+[remote] confirm x500 on 10 shards, seeds 93010000.., run https://github.com/tomrecht/boardgame_koyeb/actions/runs/41125321194
+[remote] run 41125321194 failure after 12.0 min
+[remote] distill_sum7/confirm_1.jsonl: 100 game(s) missing
+[remote] 100 game(s) missing; the local run plays them
+$ /Users/tomrecht/quahuru-train/.venv/bin/python -u confirm_match.py /Users/tomrecht/quahuru-train/distill_sum7/cand_1.pt /Users/tomrecht/quahuru-train/distill_cand13.pt 500 distill_sum7/confirm_1.jsonl SEED_BASE=93010000
+iteration 1: cand vs champion +0.095 (95% CI -0.031 .. +0.221, 500 pairs) -> PROMOTE
+=== iteration 2: champion /Users/tomrecht/quahuru-train/distill_sum7/cand_1.pt
+[remote] label x600 on 10 shards, seeds 91020000.., run https://github.com/tomrecht/boardgame_koyeb/actions/runs/41127354394
+[remote] run 41127354394 success after 131.4 min
+[remote] distill_sum7/labels_2.jsonl.gz: complete
+$ /Users/tomrecht/quahuru-train/.venv/bin/python -u distill_train.py --data distill_sum7/labels_0.jsonl.gz distill_sum7/labels_1.jsonl.gz distill_sum7/labels_2.jsonl.gz --load /Users/tomrecht/quahuru-train/distill_sum7/cand_1.pt --save /Users/tomrecht/quahuru-train/distill_sum7/cand_2.pt --log distill_sum7/train_log.jsonl --epochs 8 --lr 2e-5 --td-w 0.5 --rank-w 0 
+[remote] confirm x500 on 10 shards, seeds 93020000.., run https://github.com/tomrecht/boardgame_koyeb/actions/runs/41145627644
+[remote] run 41145627644 success after 12.0 min
+[remote] distill_sum7/confirm_2.jsonl: complete
+iteration 2: cand vs champion -0.053 (95% CI -0.174 .. +0.068, 500 pairs) -> keep champion
+=== iteration 3: champion /Users/tomrecht/quahuru-train/distill_sum7/cand_1.pt
+[remote] label x600 on 10 shards, seeds 91030000.., run https://github.com/tomrecht/boardgame_koyeb/actions/runs/41146784359
+[remote] run 41146784359 success after 122.0 min
+[remote] distill_sum7/labels_3.jsonl.gz: complete
+$ /Users/tomrecht/quahuru-train/.venv/bin/python -u distill_train.py --data distill_sum7/labels_1.jsonl.gz distill_sum7/labels_2.jsonl.gz distill_sum7/labels_3.jsonl.gz --load /Users/tomrecht/quahuru-train/distill_sum7/cand_1.pt --save /Users/tomrecht/quahuru-train/distill_sum7/cand_3.pt --log distill_sum7/train_log.jsonl --epochs 8 --lr 2e-5 --td-w 0.5 --rank-w 0 
+[remote] confirm x500 on 10 shards, seeds 93030000.., run https://github.com/tomrecht/boardgame_koyeb/actions/runs/41158958855
+[remote] run 41158958855 success after 12.0 min
+[remote] distill_sum7/confirm_3.jsonl: complete
+iteration 3: cand vs champion +0.069 (95% CI -0.063 .. +0.201, 500 pairs) -> PROMOTE
+=== iteration 4: champion /Users/tomrecht/quahuru-train/distill_sum7/cand_3.pt
+[remote] label x600 on 10 shards, seeds 91040000.., run https://github.com/tomrecht/boardgame_koyeb/actions/runs/41159896188
+[remote] run 41159896188 success after 130.3 min
+[remote] distill_sum7/labels_4.jsonl.gz: complete
+$ /Users/tomrecht/quahuru-train/.venv/bin/python -u distill_train.py --data distill_sum7/labels_2.jsonl.gz distill_sum7/labels_3.jsonl.gz distill_sum7/labels_4.jsonl.gz --load /Users/tomrecht/quahuru-train/distill_sum7/cand_3.pt --save /Users/tomrecht/quahuru-train/distill_sum7/cand_4.pt --log distill_sum7/train_log.jsonl --epochs 8 --lr 2e-5 --td-w 0.5 --rank-w 0 
+[remote] confirm x500 on 10 shards, seeds 93040000.., run https://github.com/tomrecht/boardgame_koyeb/actions/runs/41170810970
+[remote] run 41170810970 success after 13.5 min
+[remote] distill_sum7/confirm_4.jsonl: complete
+iteration 4: cand vs champion +0.156 (95% CI +0.026 .. +0.286, 500 pairs) -> PROMOTE
+=== iteration 5: champion /Users/tomrecht/quahuru-train/distill_sum7/cand_4.pt
+[remote] label x600 on 10 shards, seeds 91050000.., run https://github.com/tomrecht/boardgame_koyeb/actions/runs/41171760929
+[remote] run 41171760929 success after 134.4 min
+[remote] distill_sum7/labels_5.jsonl.gz: complete
+$ /Users/tomrecht/quahuru-train/.venv/bin/python -u distill_train.py --data distill_sum7/labels_3.jsonl.gz distill_sum7/labels_4.jsonl.gz distill_sum7/labels_5.jsonl.gz --load /Users/tomrecht/quahuru-train/distill_sum7/cand_4.pt --save /Users/tomrecht/quahuru-train/distill_sum7/cand_5.pt --log distill_sum7/train_log.jsonl --epochs 8 --lr 2e-5 --td-w 0.5 --rank-w 0 
+[remote] confirm x500 on 10 shards, seeds 93050000.., run https://github.com/tomrecht/boardgame_koyeb/actions/runs/41182100321
+[remote] run 41182100321 success after 13.1 min
+[remote] distill_sum7/confirm_5.jsonl: complete
+iteration 5: cand vs champion -0.050 (95% CI -0.186 .. +0.086, 500 pairs) -> keep champion
+=== iteration 6: champion /Users/tomrecht/quahuru-train/distill_sum7/cand_4.pt
+[remote] label x600 on 10 shards, seeds 91060000.., run https://github.com/tomrecht/boardgame_koyeb/actions/runs/41182958137
+[remote] run 41182958137 success after 128.7 min
+[remote] distill_sum7/labels_6.jsonl.gz: complete
+$ /Users/tomrecht/quahuru-train/.venv/bin/python -u distill_train.py --data distill_sum7/labels_4.jsonl.gz distill_sum7/labels_5.jsonl.gz distill_sum7/labels_6.jsonl.gz --load /Users/tomrecht/quahuru-train/distill_sum7/cand_4.pt --save /Users/tomrecht/quahuru-train/distill_sum7/cand_6.pt --log distill_sum7/train_log.jsonl --epochs 8 --lr 2e-5 --td-w 0.5 --rank-w 0 
+[remote] confirm x500 on 10 shards, seeds 93060000.., run https://github.com/tomrecht/boardgame_koyeb/actions/runs/41193152269
+[remote] run 41193152269 success after 12.0 min
+[remote] distill_sum7/confirm_6.jsonl: complete
+iteration 6: cand vs champion +0.191 (95% CI +0.057 .. +0.325, 500 pairs) -> PROMOTE
+=== iteration 7: champion /Users/tomrecht/quahuru-train/distill_sum7/cand_6.pt
+[remote] label x600 on 10 shards, seeds 91070000.., run https://github.com/tomrecht/boardgame_koyeb/actions/runs/41193967893
+[remote] run 41193967893 success after 131.8 min
+[remote] distill_sum7/labels_7.jsonl.gz: complete
+$ /Users/tomrecht/quahuru-train/.venv/bin/python -u distill_train.py --data distill_sum7/labels_5.jsonl.gz distill_sum7/labels_6.jsonl.gz distill_sum7/labels_7.jsonl.gz --load /Users/tomrecht/quahuru-train/distill_sum7/cand_6.pt --save /Users/tomrecht/quahuru-train/distill_sum7/cand_7.pt --log distill_sum7/train_log.jsonl --epochs 8 --lr 2e-5 --td-w 0.5 --rank-w 0 
+[remote] confirm x500 on 10 shards, seeds 93070000.., run https://github.com/tomrecht/boardgame_koyeb/actions/runs/41204835629
+[remote] run 41204835629 success after 13.1 min
+[remote] distill_sum7/confirm_7.jsonl: complete
+iteration 7: cand vs champion +0.042 (95% CI -0.082 .. +0.166, 500 pairs) -> PROMOTE
+DONE [
+ {
+  "iter": 0,
+  "cand": "/Users/tomrecht/quahuru-train/distill_sum7/cand_0.pt",
+  "champion": "/Users/tomrecht/quahuru-train/distill_cand13.pt",
+  "mean": -0.001,
+  "se": 0.06048400308559706,
+  "pairs": 500,
+  "promoted": false
+ },
+ {
+  "iter": 1,
+  "cand": "/Users/tomrecht/quahuru-train/distill_sum7/cand_1.pt",
+  "champion": "/Users/tomrecht/quahuru-train/distill_cand13.pt",
+  "mean": 0.095,
+  "se": 0.06414967155583447,
+  "pairs": 500,
+  "promoted": true
+ },
+ {
+  "iter": 2,
+  "cand": "/Users/tomrecht/quahuru-train/distill_sum7/cand_2.pt",
+  "champion": "/Users/tomrecht/quahuru-train/distill_sum7/cand_1.pt",
+  "mean": -0.053,
+  "se": 0.061765783602639325,
+  "pairs": 500,
+  "promoted": false
+ },
+ {
+  "iter": 3,
+  "cand": "/Users/tomrecht/quahuru-train/distill_sum7/cand_3.pt",
+  "champion": "/Users/tomrecht/quahuru-train/distill_sum7/cand_1.pt",
+  "mean": 0.069,
+  "se": 0.06726460476437969,
+  "pairs": 500,
+  "promoted": true
+ },
+ {
+  "iter": 4,
+  "cand": "/Users/tomrecht/quahuru-train/distill_sum7/cand_4.pt",
+  "champion": "/Users/tomrecht/quahuru-train/distill_sum7/cand_3.pt",
+  "mean": 0.156,
+  "se": 0.06609133171798336,
+  "pairs": 500,
+  "promoted": true
+ },
+ {
+  "iter": 5,
+  "cand": "/Users/tomrecht/quahuru-train/distill_sum7/cand_5.pt",
+  "champion": "/Users/tomrecht/quahuru-train/distill_sum7/cand_4.pt",
+  "mean": -0.05,
+  "se": 0.06931528848989149,
+  "pairs": 500,
+  "promoted": false
+ },
+ {
+  "iter": 6,
+  "cand": "/Users/tomrecht/quahuru-train/distill_sum7/cand_6.pt",
+  "champion": "/Users/tomrecht/quahuru-train/distill_sum7/cand_4.pt",
+  "mean": 0.191,
+  "se": 0.06847931683119611,
+  "pairs": 500,
+  "promoted": true
+ },
+ {
+  "iter": 7,
+  "cand": "/Users/tomrecht/quahuru-train/distill_sum7/cand_7.pt",
+  "champion": "/Users/tomrecht/quahuru-train/distill_sum7/cand_6.pt",
+  "mean": 0.042,
+  "se": 0.06309067178063216,
+  "pairs": 500,
+  "promoted": true
+ }
+]
+=== iteration 8: champion /Users/tomrecht/quahuru-train/distill_sum7/cand_7.pt
+[remote] label x600 on 10 shards, seeds 91080000.., run https://github.com/tomrecht/boardgame_koyeb/actions/runs/41494928237
+[remote] run 41494928237 success after 158.4 min
+[remote] distill_sum7/labels_8.jsonl.gz: complete
+$ /Users/tomrecht/quahuru-train/.venv/bin/python -u distill_train.py --data distill_sum7/labels_6.jsonl.gz distill_sum7/labels_7.jsonl.gz distill_sum7/labels_8.jsonl.gz --load /Users/tomrecht/quahuru-train/distill_sum7/cand_7.pt --save /Users/tomrecht/quahuru-train/distill_sum7/cand_8.pt --log distill_sum7/train_log.jsonl --epochs 8 --lr 2e-5 --td-w 0.5 --rank-w 0 
+[remote] confirm x500 on 10 shards, seeds 93080000.., run https://github.com/tomrecht/boardgame_koyeb/actions/runs/41523211971
+[remote] run 41523211971 success after 14.2 min
+[remote] distill_sum7/confirm_8.jsonl: complete
+iteration 8: cand vs champion +0.090 (95% CI -0.035 .. +0.215, 500 pairs) -> PROMOTE
+=== iteration 9: champion /Users/tomrecht/quahuru-train/distill_sum7/cand_8.pt
+[remote] label x600 on 10 shards, seeds 91090000.., run https://github.com/tomrecht/boardgame_koyeb/actions/runs/41525368631
+[remote] run 41525368631 success after 146.4 min
+[remote] distill_sum7/labels_9.jsonl.gz: complete
+$ /Users/tomrecht/quahuru-train/.venv/bin/python -u distill_train.py --data distill_sum7/labels_7.jsonl.gz distill_sum7/labels_8.jsonl.gz distill_sum7/labels_9.jsonl.gz --load /Users/tomrecht/quahuru-train/distill_sum7/cand_8.pt --save /Users/tomrecht/quahuru-train/distill_sum7/cand_9.pt --log distill_sum7/train_log.jsonl --epochs 8 --lr 2e-5 --td-w 0.5 --rank-w 0 
+[remote] confirm x500 on 10 shards, seeds 93090000.., run https://github.com/tomrecht/boardgame_koyeb/actions/runs/41549021640
+[remote] run 41549021640 success after 12.6 min
+[remote] distill_sum7/confirm_9.jsonl: complete
+iteration 9: cand vs champion +0.087 (95% CI -0.043 .. +0.217, 500 pairs) -> PROMOTE
+=== iteration 10: champion /Users/tomrecht/quahuru-train/distill_sum7/cand_9.pt
+[remote] label x600 on 10 shards, seeds 91100000.., run https://github.com/tomrecht/boardgame_koyeb/actions/runs/41550588019
+[remote] run 41550588019 success after 137.0 min
+[remote] distill_sum7/labels_10.jsonl.gz: complete
+$ /Users/tomrecht/quahuru-train/.venv/bin/python -u distill_train.py --data distill_sum7/labels_8.jsonl.gz distill_sum7/labels_9.jsonl.gz distill_sum7/labels_10.jsonl.gz --load /Users/tomrecht/quahuru-train/distill_sum7/cand_9.pt --save /Users/tomrecht/quahuru-train/distill_sum7/cand_10.pt --log distill_sum7/train_log.jsonl --epochs 8 --lr 2e-5 --td-w 0.5 --rank-w 0 
+[remote] confirm x500 on 10 shards, seeds 93100000.., run https://github.com/tomrecht/boardgame_koyeb/actions/runs/41568079095
+[remote] run 41568079095 success after 12.6 min
+[remote] distill_sum7/confirm_10.jsonl: complete
+iteration 10: cand vs champion +0.007 (95% CI -0.107 .. +0.121, 500 pairs) -> PROMOTE
+=== iteration 11: champion /Users/tomrecht/quahuru-train/distill_sum7/cand_10.pt
+[remote] label x600 on 10 shards, seeds 91110000.., run https://github.com/tomrecht/boardgame_koyeb/actions/runs/41569342432
+[remote] run 41569342432 success after 132.6 min
+[remote] distill_sum7/labels_11.jsonl.gz: complete
+$ /Users/tomrecht/quahuru-train/.venv/bin/python -u distill_train.py --data distill_sum7/labels_9.jsonl.gz distill_sum7/labels_10.jsonl.gz distill_sum7/labels_11.jsonl.gz --load /Users/tomrecht/quahuru-train/distill_sum7/cand_10.pt --save /Users/tomrecht/quahuru-train/distill_sum7/cand_11.pt --log distill_sum7/train_log.jsonl --epochs 8 --lr 2e-5 --td-w 0.5 --rank-w 0 
+[remote] confirm x500 on 10 shards, seeds 93110000.., run https://github.com/tomrecht/boardgame_koyeb/actions/runs/41584412902
+[remote] run 41584412902 success after 12.6 min
+[remote] distill_sum7/confirm_11.jsonl: complete
+iteration 11: cand vs champion -0.070 (95% CI -0.194 .. +0.054, 500 pairs) -> keep champion
+=== iteration 12: champion /Users/tomrecht/quahuru-train/distill_sum7/cand_10.pt
+[remote] label x600 on 10 shards, seeds 91120000.., run https://github.com/tomrecht/boardgame_koyeb/actions/runs/41585639817
+[remote] run 41585639817 success after 129.5 min
+[remote] distill_sum7/labels_12.jsonl.gz: complete
+$ /Users/tomrecht/quahuru-train/.venv/bin/python -u distill_train.py --data distill_sum7/labels_10.jsonl.gz distill_sum7/labels_11.jsonl.gz distill_sum7/labels_12.jsonl.gz --load /Users/tomrecht/quahuru-train/distill_sum7/cand_10.pt --save /Users/tomrecht/quahuru-train/distill_sum7/cand_12.pt --log distill_sum7/train_log.jsonl --epochs 8 --lr 2e-5 --td-w 0.5 --rank-w 0 
+[remote] confirm x500 on 10 shards, seeds 93120000.., run https://github.com/tomrecht/boardgame_koyeb/actions/runs/41601838763
+[remote] run 41601838763 success after 12.6 min
+[remote] distill_sum7/confirm_12.jsonl: complete
+iteration 12: cand vs champion +0.006 (95% CI -0.122 .. +0.134, 500 pairs) -> PROMOTE
+=== iteration 13: champion /Users/tomrecht/quahuru-train/distill_sum7/cand_12.pt
+[remote] label x600 on 10 shards, seeds 91130000.., run https://github.com/tomrecht/boardgame_koyeb/actions/runs/41603405260
+[remote] run 41603405260 success after 130.3 min
+[remote] distill_sum7/labels_13.jsonl.gz: complete
+$ /Users/tomrecht/quahuru-train/.venv/bin/python -u distill_train.py --data distill_sum7/labels_11.jsonl.gz distill_sum7/labels_12.jsonl.gz distill_sum7/labels_13.jsonl.gz --load /Users/tomrecht/quahuru-train/distill_sum7/cand_12.pt --save /Users/tomrecht/quahuru-train/distill_sum7/cand_13.pt --log distill_sum7/train_log.jsonl --epochs 8 --lr 2e-5 --td-w 0.5 --rank-w 0 
+[remote] confirm x500 on 10 shards, seeds 93130000.., run https://github.com/tomrecht/boardgame_koyeb/actions/runs/41623684328
+[remote] run 41623684328 success after 12.1 min
+[remote] distill_sum7/confirm_13.jsonl: complete
+iteration 13: cand vs champion +0.098 (95% CI -0.028 .. +0.224, 500 pairs) -> PROMOTE
+=== iteration 14: champion /Users/tomrecht/quahuru-train/distill_sum7/cand_13.pt
+[remote] label x600 on 10 shards, seeds 91140000.., run https://github.com/tomrecht/boardgame_koyeb/actions/runs/41625373714
+[remote] run 41625373714 success after 137.0 min
+[remote] distill_sum7/labels_14.jsonl.gz: complete
+$ /Users/tomrecht/quahuru-train/.venv/bin/python -u distill_train.py --data distill_sum7/labels_12.jsonl.gz distill_sum7/labels_13.jsonl.gz distill_sum7/labels_14.jsonl.gz --load /Users/tomrecht/quahuru-train/distill_sum7/cand_13.pt --save /Users/tomrecht/quahuru-train/distill_sum7/cand_14.pt --log distill_sum7/train_log.jsonl --epochs 8 --lr 2e-5 --td-w 0.5 --rank-w 0 
+[remote] confirm x500 on 10 shards, seeds 93140000.., run https://github.com/tomrecht/boardgame_koyeb/actions/runs/41647691433
+[remote] run 41647691433 success after 12.6 min
+[remote] distill_sum7/confirm_14.jsonl: complete
+iteration 14: cand vs champion -0.147 (95% CI -0.268 .. -0.026, 500 pairs) -> keep champion
+=== iteration 15: champion /Users/tomrecht/quahuru-train/distill_sum7/cand_13.pt
+[remote] label x600 on 10 shards, seeds 91150000.., run https://github.com/tomrecht/boardgame_koyeb/actions/runs/41649643729
+[remote] run 41649643729 success after 128.6 min
+[remote] distill_sum7/labels_15.jsonl.gz: complete
+$ /Users/tomrecht/quahuru-train/.venv/bin/python -u distill_train.py --data distill_sum7/labels_13.jsonl.gz distill_sum7/labels_14.jsonl.gz distill_sum7/labels_15.jsonl.gz --load /Users/tomrecht/quahuru-train/distill_sum7/cand_13.pt --save /Users/tomrecht/quahuru-train/distill_sum7/cand_15.pt --log distill_sum7/train_log.jsonl --epochs 8 --lr 2e-5 --td-w 0.5 --rank-w 0 
+[remote] confirm x500 on 10 shards, seeds 93150000.., run https://github.com/tomrecht/boardgame_koyeb/actions/runs/41675073352
+[remote] run 41675073352 success after 15.2 min
+[remote] distill_sum7/confirm_15.jsonl: complete
+iteration 15: cand vs champion -0.020 (95% CI -0.148 .. +0.108, 500 pairs) -> keep champion
+DONE [
+ {
+  "iter": 0,
+  "cand": "/Users/tomrecht/quahuru-train/distill_sum7/cand_0.pt",
+  "champion": "/Users/tomrecht/quahuru-train/distill_cand13.pt",
+  "mean": -0.001,
+  "se": 0.06048400308559706,
+  "pairs": 500,
+  "promoted": false
+ },
+ {
+  "iter": 1,
+  "cand": "/Users/tomrecht/quahuru-train/distill_sum7/cand_1.pt",
+  "champion": "/Users/tomrecht/quahuru-train/distill_cand13.pt",
+  "mean": 0.095,
+  "se": 0.06414967155583447,
+  "pairs": 500,
+  "promoted": true
+ },
+ {
+  "iter": 2,
+  "cand": "/Users/tomrecht/quahuru-train/distill_sum7/cand_2.pt",
+  "champion": "/Users/tomrecht/quahuru-train/distill_sum7/cand_1.pt",
+  "mean": -0.053,
+  "se": 0.061765783602639325,
+  "pairs": 500,
+  "promoted": false
+ },
+ {
+  "iter": 3,
+  "cand": "/Users/tomrecht/quahuru-train/distill_sum7/cand_3.pt",
+  "champion": "/Users/tomrecht/quahuru-train/distill_sum7/cand_1.pt",
+  "mean": 0.069,
+  "se": 0.06726460476437969,
+  "pairs": 500,
+  "promoted": true
+ },
+ {
+  "iter": 4,
+  "cand": "/Users/tomrecht/quahuru-train/distill_sum7/cand_4.pt",
+  "champion": "/Users/tomrecht/quahuru-train/distill_sum7/cand_3.pt",
+  "mean": 0.156,
+  "se": 0.06609133171798336,
+  "pairs": 500,
+  "promoted": true
+ },
+ {
+  "iter": 5,
+  "cand": "/Users/tomrecht/quahuru-train/distill_sum7/cand_5.pt",
+  "champion": "/Users/tomrecht/quahuru-train/distill_sum7/cand_4.pt",
+  "mean": -0.05,
+  "se": 0.06931528848989149,
+  "pairs": 500,
+  "promoted": false
+ },
+ {
+  "iter": 6,
+  "cand": "/Users/tomrecht/quahuru-train/distill_sum7/cand_6.pt",
+  "champion": "/Users/tomrecht/quahuru-train/distill_sum7/cand_4.pt",
+  "mean": 0.191,
+  "se": 0.06847931683119611,
+  "pairs": 500,
+  "promoted": true
+ },
+ {
+  "iter": 7,
+  "cand": "/Users/tomrecht/quahuru-train/distill_sum7/cand_7.pt",
+  "champion": "/Users/tomrecht/quahuru-train/distill_sum7/cand_6.pt",
+  "mean": 0.042,
+  "se": 0.06309067178063216,
+  "pairs": 500,
+  "promoted": true
+ },
+ {
+  "iter": 8,
+  "cand": "/Users/tomrecht/quahuru-train/distill_sum7/cand_8.pt",
+  "champion": "/Users/tomrecht/quahuru-train/distill_sum7/cand_7.pt",
+  "mean": 0.09,
+  "se": 0.06374894395761718,
+  "pairs": 500,
+  "promoted": true
+ },
+ {
+  "iter": 9,
+  "cand": "/Users/tomrecht/quahuru-train/distill_sum7/cand_9.pt",
+  "champion": "/Users/tomrecht/quahuru-train/distill_sum7/cand_8.pt",
+  "mean": 0.087,
+  "se": 0.06656367963757552,
+  "pairs": 500,
+  "promoted": true
+ },
+ {
+  "iter": 10,
+  "cand": "/Users/tomrecht/quahuru-train/distill_sum7/cand_10.pt",
+  "champion": "/Users/tomrecht/quahuru-train/distill_sum7/cand_9.pt",
+  "mean": 0.007,
+  "se": 0.05815208793036864,
+  "pairs": 500,
+  "promoted": true
+ },
+ {
+  "iter": 11,
+  "cand": "/Users/tomrecht/quahuru-train/distill_sum7/cand_11.pt",
+  "champion": "/Users/tomrecht/quahuru-train/distill_sum7/cand_10.pt",
+  "mean": -0.07,
+  "se": 0.06329464767932358,
+  "pairs": 500,
+  "promoted": false
+ },
+ {
+  "iter": 12,
+  "cand": "/Users/tomrecht/quahuru-train/distill_sum7/cand_12.pt",
+  "champion": "/Users/tomrecht/quahuru-train/distill_sum7/cand_10.pt",
+  "mean": 0.006,
+  "se": 0.06511842149219595,
+  "pairs": 500,
+  "promoted": true
+ },
+ {
+  "iter": 13,
+  "cand": "/Users/tomrecht/quahuru-train/distill_sum7/cand_13.pt",
+  "champion": "/Users/tomrecht/quahuru-train/distill_sum7/cand_12.pt",
+  "mean": 0.098,
+  "se": 0.0640859267860273,
+  "pairs": 500,
+  "promoted": true
+ },
+ {
+  "iter": 14,
+  "cand": "/Users/tomrecht/quahuru-train/distill_sum7/cand_14.pt",
+  "champion": "/Users/tomrecht/quahuru-train/distill_sum7/cand_13.pt",
+  "mean": -0.147,
+  "se": 0.061769028045221,
+  "pairs": 500,
+  "promoted": false
+ },
+ {
+  "iter": 15,
+  "cand": "/Users/tomrecht/quahuru-train/distill_sum7/cand_15.pt",
+  "champion": "/Users/tomrecht/quahuru-train/distill_sum7/cand_13.pt",
+  "mean": -0.02,
+  "se": 0.0650512361654512,
+  "pairs": 500,
+  "promoted": false
+ }
+]
+=== iteration 16: champion /Users/tomrecht/quahuru-train/distill_sum7/cand_13.pt
+[remote] label x600 on 10 shards, seeds 91160000.., run https://github.com/tomrecht/boardgame_koyeb/actions/runs/41903491983
+[remote] run 41903491983 success after 131.3 min
+[remote] distill_sum7/labels_16.jsonl.gz: complete
+$ /Users/tomrecht/quahuru-train/.venv/bin/python -u distill_train.py --data distill_sum7/labels_14.jsonl.gz distill_sum7/labels_15.jsonl.gz distill_sum7/labels_16.jsonl.gz --load /Users/tomrecht/quahuru-train/distill_sum7/cand_13.pt --save /Users/tomrecht/quahuru-train/distill_sum7/cand_16.pt --log distill_sum7/train_log.jsonl --epochs 8 --lr 2e-5 --td-w 0.5 --rank-w 0 
+[remote] confirm x500 on 10 shards, seeds 93160000.., run https://github.com/tomrecht/boardgame_koyeb/actions/runs/41928201491
+[remote] run 41928201491 success after 13.6 min
+[remote] distill_sum7/confirm_16.jsonl: complete
+iteration 16: cand vs champion +0.037 (95% CI -0.088 .. +0.162, 500 pairs) -> PROMOTE
+=== iteration 17: champion /Users/tomrecht/quahuru-train/distill_sum7/cand_16.pt
+[remote] label x600 on 10 shards, seeds 91170000.., run https://github.com/tomrecht/boardgame_koyeb/actions/runs/41930125898
+[remote] run 41930125898 success after 137.2 min
+[remote] distill_sum7/labels_17.jsonl.gz: complete
+$ /Users/tomrecht/quahuru-train/.venv/bin/python -u distill_train.py --data distill_sum7/labels_15.jsonl.gz distill_sum7/labels_16.jsonl.gz distill_sum7/labels_17.jsonl.gz --load /Users/tomrecht/quahuru-train/distill_sum7/cand_16.pt --save /Users/tomrecht/quahuru-train/distill_sum7/cand_17.pt --log distill_sum7/train_log.jsonl --epochs 8 --lr 2e-5 --td-w 0.5 --rank-w 0 
+[remote] confirm x500 on 10 shards, seeds 93170000.., run https://github.com/tomrecht/boardgame_koyeb/actions/runs/41950911961
+[remote] run 41950911961 success after 12.6 min
+[remote] distill_sum7/confirm_17.jsonl: complete
+iteration 17: cand vs champion -0.014 (95% CI -0.139 .. +0.111, 500 pairs) -> keep champion
+=== iteration 18: champion /Users/tomrecht/quahuru-train/distill_sum7/cand_16.pt
+[remote] label x600 on 10 shards, seeds 91180000.., run https://github.com/tomrecht/boardgame_koyeb/actions/runs/41952283790
+[remote] run 41952283790 success after 129.9 min
+[remote] distill_sum7/labels_18.jsonl.gz: complete
+$ /Users/tomrecht/quahuru-train/.venv/bin/python -u distill_train.py --data distill_sum7/labels_16.jsonl.gz distill_sum7/labels_17.jsonl.gz distill_sum7/labels_18.jsonl.gz --load /Users/tomrecht/quahuru-train/distill_sum7/cand_16.pt --save /Users/tomrecht/quahuru-train/distill_sum7/cand_18.pt --log distill_sum7/train_log.jsonl --epochs 8 --lr 2e-5 --td-w 0.5 --rank-w 0 
+[remote] confirm x500 on 10 shards, seeds 93180000.., run https://github.com/tomrecht/boardgame_koyeb/actions/runs/41968867751
+[remote] run 41968867751 success after 13.0 min
+[remote] distill_sum7/confirm_18.jsonl: complete
+iteration 18: cand vs champion +0.002 (95% CI -0.130 .. +0.134, 500 pairs) -> PROMOTE
+=== iteration 19: champion /Users/tomrecht/quahuru-train/distill_sum7/cand_18.pt
+[remote] label x600 on 10 shards, seeds 91190000.., run https://github.com/tomrecht/boardgame_koyeb/actions/runs/41970191756
+[remote] run 41970191756 success after 132.1 min
+[remote] distill_sum7/labels_19.jsonl.gz: complete
+$ /Users/tomrecht/quahuru-train/.venv/bin/python -u distill_train.py --data distill_sum7/labels_17.jsonl.gz distill_sum7/labels_18.jsonl.gz distill_sum7/labels_19.jsonl.gz --load /Users/tomrecht/quahuru-train/distill_sum7/cand_18.pt --save /Users/tomrecht/quahuru-train/distill_sum7/cand_19.pt --log distill_sum7/train_log.jsonl --epochs 8 --lr 2e-5 --td-w 0.5 --rank-w 0 
+[remote] confirm x500 on 10 shards, seeds 93190000.., run https://github.com/tomrecht/boardgame_koyeb/actions/runs/41987316940
+[remote] run 41987316940 success after 12.6 min
+[remote] distill_sum7/confirm_19.jsonl: complete
+iteration 19: cand vs champion -0.052 (95% CI -0.176 .. +0.072, 500 pairs) -> keep champion
+=== iteration 20: champion /Users/tomrecht/quahuru-train/distill_sum7/cand_18.pt
+[remote] label x600 on 10 shards, seeds 91200000.., run https://github.com/tomrecht/boardgame_koyeb/actions/runs/41988800831
+[remote] run 41988800831 failure after 149.6 min
+[remote] distill_sum7/labels_20.jsonl.gz: 60 game(s) missing
+[remote] 60 game(s) missing; the local run plays them
+$ /Users/tomrecht/quahuru-train/.venv/bin/python -u close_call.py label /Users/tomrecht/quahuru-train/distill_sum7/cand_18.pt 3 3 600 distill_sum7/labels_20.jsonl.gz START_POOL=start_pool.jsonl START_FRAC=0.3 MAX_REPLIES=0 GOAL_LAYOUT=sum7 SEED_BASE=91200000
+$ /Users/tomrecht/quahuru-train/.venv/bin/python -u distill_train.py --data distill_sum7/labels_18.jsonl.gz distill_sum7/labels_19.jsonl.gz distill_sum7/labels_20.jsonl.gz --load /Users/tomrecht/quahuru-train/distill_sum7/cand_18.pt --save /Users/tomrecht/quahuru-train/distill_sum7/cand_20.pt --log distill_sum7/train_log.jsonl --epochs 8 --lr 2e-5 --td-w 0.5 --rank-w 0 
+[remote] confirm x500 on 10 shards, seeds 93200000.., run https://github.com/tomrecht/boardgame_koyeb/actions/runs/42018249204
+[remote] run 42018249204 success after 12.6 min
+[remote] distill_sum7/confirm_20.jsonl: complete
+iteration 20: cand vs champion -0.031 (95% CI -0.159 .. +0.097, 500 pairs) -> keep champion
+=== iteration 21: champion /Users/tomrecht/quahuru-train/distill_sum7/cand_18.pt
+[remote] label x600 on 10 shards, seeds 91210000.., run https://github.com/tomrecht/boardgame_koyeb/actions/runs/42019956626
+[remote] run 42019956626 success after 138.5 min
+[remote] distill_sum7/labels_21.jsonl.gz: complete
+$ /Users/tomrecht/quahuru-train/.venv/bin/python -u distill_train.py --data distill_sum7/labels_19.jsonl.gz distill_sum7/labels_20.jsonl.gz distill_sum7/labels_21.jsonl.gz --load /Users/tomrecht/quahuru-train/distill_sum7/cand_18.pt --save /Users/tomrecht/quahuru-train/distill_sum7/cand_21.pt --log distill_sum7/train_log.jsonl --epochs 8 --lr 2e-5 --td-w 0.5 --rank-w 0 
+[remote] confirm x500 on 10 shards, seeds 93210000.., run https://github.com/tomrecht/boardgame_koyeb/actions/runs/42042903281
+[remote] run 42042903281 success after 12.6 min
+[remote] distill_sum7/confirm_21.jsonl: complete
+iteration 21: cand vs champion +0.040 (95% CI -0.088 .. +0.168, 500 pairs) -> PROMOTE
+=== iteration 22: champion /Users/tomrecht/quahuru-train/distill_sum7/cand_21.pt
+[remote] label x600 on 10 shards, seeds 91220000.., run https://github.com/tomrecht/boardgame_koyeb/actions/runs/42044970881
+[remote] run 42044970881 success after 133.2 min
+[remote] distill_sum7/labels_22.jsonl.gz: complete
+$ /Users/tomrecht/quahuru-train/.venv/bin/python -u distill_train.py --data distill_sum7/labels_20.jsonl.gz distill_sum7/labels_21.jsonl.gz distill_sum7/labels_22.jsonl.gz --load /Users/tomrecht/quahuru-train/distill_sum7/cand_21.pt --save /Users/tomrecht/quahuru-train/distill_sum7/cand_22.pt --log distill_sum7/train_log.jsonl --epochs 8 --lr 2e-5 --td-w 0.5 --rank-w 0 
+[remote] confirm x500 on 10 shards, seeds 93220000.., run https://github.com/tomrecht/boardgame_koyeb/actions/runs/42070348249
+[remote] run 42070348249 success after 12.8 min
+[remote] distill_sum7/confirm_22.jsonl: complete
+iteration 22: cand vs champion +0.055 (95% CI -0.074 .. +0.184, 500 pairs) -> PROMOTE
+=== iteration 23: champion /Users/tomrecht/quahuru-train/distill_sum7/cand_22.pt
+[remote] label x600 on 10 shards, seeds 91230000.., run https://github.com/tomrecht/boardgame_koyeb/actions/runs/42072518869
+[remote] run 42072518869 success after 130.7 min
+[remote] distill_sum7/labels_23.jsonl.gz: complete
+$ /Users/tomrecht/quahuru-train/.venv/bin/python -u distill_train.py --data distill_sum7/labels_21.jsonl.gz distill_sum7/labels_22.jsonl.gz distill_sum7/labels_23.jsonl.gz --load /Users/tomrecht/quahuru-train/distill_sum7/cand_22.pt --save /Users/tomrecht/quahuru-train/distill_sum7/cand_23.pt --log distill_sum7/train_log.jsonl --epochs 8 --lr 2e-5 --td-w 0.5 --rank-w 0 
+[remote] confirm x500 on 10 shards, seeds 93230000.., run https://github.com/tomrecht/boardgame_koyeb/actions/runs/42096982006
+[remote] run 42096982006 success after 13.1 min
+[remote] distill_sum7/confirm_23.jsonl: complete
+iteration 23: cand vs champion -0.145 (95% CI -0.268 .. -0.022, 500 pairs) -> keep champion
+DONE [
+ {
+  "iter": 0,
+  "cand": "/Users/tomrecht/quahuru-train/distill_sum7/cand_0.pt",
+  "champion": "/Users/tomrecht/quahuru-train/distill_cand13.pt",
+  "mean": -0.001,
+  "se": 0.06048400308559706,
+  "pairs": 500,
+  "promoted": false
+ },
+ {
+  "iter": 1,
+  "cand": "/Users/tomrecht/quahuru-train/distill_sum7/cand_1.pt",
+  "champion": "/Users/tomrecht/quahuru-train/distill_cand13.pt",
+  "mean": 0.095,
+  "se": 0.06414967155583447,
+  "pairs": 500,
+  "promoted": true
+ },
+ {
+  "iter": 2,
+  "cand": "/Users/tomrecht/quahuru-train/distill_sum7/cand_2.pt",
+  "champion": "/Users/tomrecht/quahuru-train/distill_sum7/cand_1.pt",
+  "mean": -0.053,
+  "se": 0.061765783602639325,
+  "pairs": 500,
+  "promoted": false
+ },
+ {
+  "iter": 3,
+  "cand": "/Users/tomrecht/quahuru-train/distill_sum7/cand_3.pt",
+  "champion": "/Users/tomrecht/quahuru-train/distill_sum7/cand_1.pt",
+  "mean": 0.069,
+  "se": 0.06726460476437969,
+  "pairs": 500,
+  "promoted": true
+ },
+ {
+  "iter": 4,
+  "cand": "/Users/tomrecht/quahuru-train/distill_sum7/cand_4.pt",
+  "champion": "/Users/tomrecht/quahuru-train/distill_sum7/cand_3.pt",
+  "mean": 0.156,
+  "se": 0.06609133171798336,
+  "pairs": 500,
+  "promoted": true
+ },
+ {
+  "iter": 5,
+  "cand": "/Users/tomrecht/quahuru-train/distill_sum7/cand_5.pt",
+  "champion": "/Users/tomrecht/quahuru-train/distill_sum7/cand_4.pt",
+  "mean": -0.05,
+  "se": 0.06931528848989149,
+  "pairs": 500,
+  "promoted": false
+ },
+ {
+  "iter": 6,
+  "cand": "/Users/tomrecht/quahuru-train/distill_sum7/cand_6.pt",
+  "champion": "/Users/tomrecht/quahuru-train/distill_sum7/cand_4.pt",
+  "mean": 0.191,
+  "se": 0.06847931683119611,
+  "pairs": 500,
+  "promoted": true
+ },
+ {
+  "iter": 7,
+  "cand": "/Users/tomrecht/quahuru-train/distill_sum7/cand_7.pt",
+  "champion": "/Users/tomrecht/quahuru-train/distill_sum7/cand_6.pt",
+  "mean": 0.042,
+  "se": 0.06309067178063216,
+  "pairs": 500,
+  "promoted": true
+ },
+ {
+  "iter": 8,
+  "cand": "/Users/tomrecht/quahuru-train/distill_sum7/cand_8.pt",
+  "champion": "/Users/tomrecht/quahuru-train/distill_sum7/cand_7.pt",
+  "mean": 0.09,
+  "se": 0.06374894395761718,
+  "pairs": 500,
+  "promoted": true
+ },
+ {
+  "iter": 9,
+  "cand": "/Users/tomrecht/quahuru-train/distill_sum7/cand_9.pt",
+  "champion": "/Users/tomrecht/quahuru-train/distill_sum7/cand_8.pt",
+  "mean": 0.087,
+  "se": 0.06656367963757552,
+  "pairs": 500,
+  "promoted": true
+ },
+ {
+  "iter": 10,
+  "cand": "/Users/tomrecht/quahuru-train/distill_sum7/cand_10.pt",
+  "champion": "/Users/tomrecht/quahuru-train/distill_sum7/cand_9.pt",
+  "mean": 0.007,
+  "se": 0.05815208793036864,
+  "pairs": 500,
+  "promoted": true
+ },
+ {
+  "iter": 11,
+  "cand": "/Users/tomrecht/quahuru-train/distill_sum7/cand_11.pt",
+  "champion": "/Users/tomrecht/quahuru-train/distill_sum7/cand_10.pt",
+  "mean": -0.07,
+  "se": 0.06329464767932358,
+  "pairs": 500,
+  "promoted": false
+ },
+ {
+  "iter": 12,
+  "cand": "/Users/tomrecht/quahuru-train/distill_sum7/cand_12.pt",
+  "champion": "/Users/tomrecht/quahuru-train/distill_sum7/cand_10.pt",
+  "mean": 0.006,
+  "se": 0.06511842149219595,
+  "pairs": 500,
+  "promoted": true
+ },
+ {
+  "iter": 13,
+  "cand": "/Users/tomrecht/quahuru-train/distill_sum7/cand_13.pt",
+  "champion": "/Users/tomrecht/quahuru-train/distill_sum7/cand_12.pt",
+  "mean": 0.098,
+  "se": 0.0640859267860273,
+  "pairs": 500,
+  "promoted": true
+ },
+ {
+  "iter": 14,
+  "cand": "/Users/tomrecht/quahuru-train/distill_sum7/cand_14.pt",
+  "champion": "/Users/tomrecht/quahuru-train/distill_sum7/cand_13.pt",
+  "mean": -0.147,
+  "se": 0.061769028045221,
+  "pairs": 500,
+  "promoted": false
+ },
+ {
+  "iter": 15,
+  "cand": "/Users/tomrecht/quahuru-train/distill_sum7/cand_15.pt",
+  "champion": "/Users/tomrecht/quahuru-train/distill_sum7/cand_13.pt",
+  "mean": -0.02,
+  "se": 0.0650512361654512,
+  "pairs": 500,
+  "promoted": false
+ },
+ {
+  "iter": 16,
+  "cand": "/Users/tomrecht/quahuru-train/distill_sum7/cand_16.pt",
+  "champion": "/Users/tomrecht/quahuru-train/distill_sum7/cand_13.pt",
+  "mean": 0.037,
+  "se": 0.06364246008327218,
+  "pairs": 500,
+  "promoted": true
+ },
+ {
+  "iter": 17,
+  "cand": "/Users/tomrecht/quahuru-train/distill_sum7/cand_17.pt",
+  "champion": "/Users/tomrecht/quahuru-train/distill_sum7/cand_16.pt",
+  "mean": -0.014,
+  "se": 0.06382597833971713,
+  "pairs": 500,
+  "promoted": false
+ },
+ {
+  "iter": 18,
+  "cand": "/Users/tomrecht/quahuru-train/distill_sum7/cand_18.pt",
+  "champion": "/Users/tomrecht/quahuru-train/distill_sum7/cand_16.pt",
+  "mean": 0.002,
+  "se": 0.06734286988426097,
+  "pairs": 500,
+  "promoted": true
+ },
+ {
+  "iter": 19,
+  "cand": "/Users/tomrecht/quahuru-train/distill_sum7/cand_19.pt",
+  "champion": "/Users/tomrecht/quahuru-train/distill_sum7/cand_18.pt",
+  "mean": -0.052,
+  "se": 0.06351898395476181,
+  "pairs": 500,
+  "promoted": false
+ },
+ {
+  "iter": 20,
+  "cand": "/Users/tomrecht/quahuru-train/distill_sum7/cand_20.pt",
+  "champion": "/Users/tomrecht/quahuru-train/distill_sum7/cand_18.pt",
+  "mean": -0.031,
+  "se": 0.06526558966552569,
+  "pairs": 500,
+  "promoted": false
+ },
+ {
+  "iter": 21,
+  "cand": "/Users/tomrecht/quahuru-train/distill_sum7/cand_21.pt",
+  "champion": "/Users/tomrecht/quahuru-train/distill_sum7/cand_18.pt",
+  "mean": 0.04,
+  "se": 0.06520201381253823,
+  "pairs": 500,
+  "promoted": true
+ },
+ {
+  "iter": 22,
+  "cand": "/Users/tomrecht/quahuru-train/distill_sum7/cand_22.pt",
+  "champion": "/Users/tomrecht/quahuru-train/distill_sum7/cand_21.pt",
+  "mean": 0.055,
+  "se": 0.06564730869027723,
+  "pairs": 500,
+  "promoted": true
+ },
+ {
+  "iter": 23,
+  "cand": "/Users/tomrecht/quahuru-train/distill_sum7/cand_23.pt",
+  "champion": "/Users/tomrecht/quahuru-train/distill_sum7/cand_22.pt",
+  "mean": -0.145,
+  "se": 0.06288767541767529,
+  "pairs": 500,
+  "promoted": false
+ }
+]
+=== iteration 24: champion /Users/tomrecht/quahuru-train/distill_sum7/cand_13.pt
+[remote] label x2000 on 20 shards, seeds 91240000.., run https://github.com/tomrecht/boardgame_koyeb/actions/runs/43452309601
+[remote] run 43452309601 success after 205.9 min
+[remote] distill_sum7/labels_24.jsonl.gz: complete
+$ /Users/tomrecht/quahuru-train/.venv/bin/python -u distill_train.py --data distill_sum7/labels_22.jsonl.gz distill_sum7/labels_23.jsonl.gz distill_sum7/labels_24.jsonl.gz --load /Users/tomrecht/quahuru-train/distill_sum7/cand_13.pt --save /Users/tomrecht/quahuru-train/distill_sum7/cand_24.pt --log distill_sum7/train_log.jsonl --epochs 4 --lr 2e-5 --td-w 0.5 --rank-w 0 
+[remote] confirm x2000 on 20 shards, seeds 93240000.., run https://github.com/tomrecht/boardgame_koyeb/actions/runs/43489623676
+[remote] run 43489623676 success after 26.0 min
+[remote] distill_sum7/confirm_24.jsonl: complete
+iteration 24: cand vs champion +0.028 (95% CI -0.036 .. +0.091, 2000 pairs) -> PROMOTE
+DONE [
+ {
+  "iter": 0,
+  "cand": "/Users/tomrecht/quahuru-train/distill_sum7/cand_0.pt",
+  "champion": "/Users/tomrecht/quahuru-train/distill_cand13.pt",
+  "mean": -0.001,
+  "se": 0.06048400308559706,
+  "pairs": 500,
+  "promoted": false
+ },
+ {
+  "iter": 1,
+  "cand": "/Users/tomrecht/quahuru-train/distill_sum7/cand_1.pt",
+  "champion": "/Users/tomrecht/quahuru-train/distill_cand13.pt",
+  "mean": 0.095,
+  "se": 0.06414967155583447,
+  "pairs": 500,
+  "promoted": true
+ },
+ {
+  "iter": 2,
+  "cand": "/Users/tomrecht/quahuru-train/distill_sum7/cand_2.pt",
+  "champion": "/Users/tomrecht/quahuru-train/distill_sum7/cand_1.pt",
+  "mean": -0.053,
+  "se": 0.061765783602639325,
+  "pairs": 500,
+  "promoted": false
+ },
+ {
+  "iter": 3,
+  "cand": "/Users/tomrecht/quahuru-train/distill_sum7/cand_3.pt",
+  "champion": "/Users/tomrecht/quahuru-train/distill_sum7/cand_1.pt",
+  "mean": 0.069,
+  "se": 0.06726460476437969,
+  "pairs": 500,
+  "promoted": true
+ },
+ {
+  "iter": 4,
+  "cand": "/Users/tomrecht/quahuru-train/distill_sum7/cand_4.pt",
+  "champion": "/Users/tomrecht/quahuru-train/distill_sum7/cand_3.pt",
+  "mean": 0.156,
+  "se": 0.06609133171798336,
+  "pairs": 500,
+  "promoted": true
+ },
+ {
+  "iter": 5,
+  "cand": "/Users/tomrecht/quahuru-train/distill_sum7/cand_5.pt",
+  "champion": "/Users/tomrecht/quahuru-train/distill_sum7/cand_4.pt",
+  "mean": -0.05,
+  "se": 0.06931528848989149,
+  "pairs": 500,
+  "promoted": false
+ },
+ {
+  "iter": 6,
+  "cand": "/Users/tomrecht/quahuru-train/distill_sum7/cand_6.pt",
+  "champion": "/Users/tomrecht/quahuru-train/distill_sum7/cand_4.pt",
+  "mean": 0.191,
+  "se": 0.06847931683119611,
+  "pairs": 500,
+  "promoted": true
+ },
+ {
+  "iter": 7,
+  "cand": "/Users/tomrecht/quahuru-train/distill_sum7/cand_7.pt",
+  "champion": "/Users/tomrecht/quahuru-train/distill_sum7/cand_6.pt",
+  "mean": 0.042,
+  "se": 0.06309067178063216,
+  "pairs": 500,
+  "promoted": true
+ },
+ {
+  "iter": 8,
+  "cand": "/Users/tomrecht/quahuru-train/distill_sum7/cand_8.pt",
+  "champion": "/Users/tomrecht/quahuru-train/distill_sum7/cand_7.pt",
+  "mean": 0.09,
+  "se": 0.06374894395761718,
+  "pairs": 500,
+  "promoted": true
+ },
+ {
+  "iter": 9,
+  "cand": "/Users/tomrecht/quahuru-train/distill_sum7/cand_9.pt",
+  "champion": "/Users/tomrecht/quahuru-train/distill_sum7/cand_8.pt",
+  "mean": 0.087,
+  "se": 0.06656367963757552,
+  "pairs": 500,
+  "promoted": true
+ },
+ {
+  "iter": 10,
+  "cand": "/Users/tomrecht/quahuru-train/distill_sum7/cand_10.pt",
+  "champion": "/Users/tomrecht/quahuru-train/distill_sum7/cand_9.pt",
+  "mean": 0.007,
+  "se": 0.05815208793036864,
+  "pairs": 500,
+  "promoted": true
+ },
+ {
+  "iter": 11,
+  "cand": "/Users/tomrecht/quahuru-train/distill_sum7/cand_11.pt",
+  "champion": "/Users/tomrecht/quahuru-train/distill_sum7/cand_10.pt",
+  "mean": -0.07,
+  "se": 0.06329464767932358,
+  "pairs": 500,
+  "promoted": false
+ },
+ {
+  "iter": 12,
+  "cand": "/Users/tomrecht/quahuru-train/distill_sum7/cand_12.pt",
+  "champion": "/Users/tomrecht/quahuru-train/distill_sum7/cand_10.pt",
+  "mean": 0.006,
+  "se": 0.06511842149219595,
+  "pairs": 500,
+  "promoted": true
+ },
+ {
+  "iter": 13,
+  "cand": "/Users/tomrecht/quahuru-train/distill_sum7/cand_13.pt",
+  "champion": "/Users/tomrecht/quahuru-train/distill_sum7/cand_12.pt",
+  "mean": 0.098,
+  "se": 0.0640859267860273,
+  "pairs": 500,
+  "promoted": true
+ },
+ {
+  "iter": 14,
+  "cand": "/Users/tomrecht/quahuru-train/distill_sum7/cand_14.pt",
+  "champion": "/Users/tomrecht/quahuru-train/distill_sum7/cand_13.pt",
+  "mean": -0.147,
+  "se": 0.061769028045221,
+  "pairs": 500,
+  "promoted": false
+ },
+ {
+  "iter": 15,
+  "cand": "/Users/tomrecht/quahuru-train/distill_sum7/cand_15.pt",
+  "champion": "/Users/tomrecht/quahuru-train/distill_sum7/cand_13.pt",
+  "mean": -0.02,
+  "se": 0.0650512361654512,
+  "pairs": 500,
+  "promoted": false
+ },
+ {
+  "iter": 16,
+  "cand": "/Users/tomrecht/quahuru-train/distill_sum7/cand_16.pt",
+  "champion": "/Users/tomrecht/quahuru-train/distill_sum7/cand_13.pt",
+  "mean": 0.037,
+  "se": 0.06364246008327218,
+  "pairs": 500,
+  "promoted": true
+ },
+ {
+  "iter": 17,
+  "cand": "/Users/tomrecht/quahuru-train/distill_sum7/cand_17.pt",
+  "champion": "/Users/tomrecht/quahuru-train/distill_sum7/cand_16.pt",
+  "mean": -0.014,
+  "se": 0.06382597833971713,
+  "pairs": 500,
+  "promoted": false
+ },
+ {
+  "iter": 18,
+  "cand": "/Users/tomrecht/quahuru-train/distill_sum7/cand_18.pt",
+  "champion": "/Users/tomrecht/quahuru-train/distill_sum7/cand_16.pt",
+  "mean": 0.002,
+  "se": 0.06734286988426097,
+  "pairs": 500,
+  "promoted": true
+ },
+ {
+  "iter": 19,
+  "cand": "/Users/tomrecht/quahuru-train/distill_sum7/cand_19.pt",
+  "champion": "/Users/tomrecht/quahuru-train/distill_sum7/cand_18.pt",
+  "mean": -0.052,
+  "se": 0.06351898395476181,
+  "pairs": 500,
+  "promoted": false
+ },
+ {
+  "iter": 20,
+  "cand": "/Users/tomrecht/quahuru-train/distill_sum7/cand_20.pt",
+  "champion": "/Users/tomrecht/quahuru-train/distill_sum7/cand_18.pt",
+  "mean": -0.031,
+  "se": 0.06526558966552569,
+  "pairs": 500,
+  "promoted": false
+ },
+ {
+  "iter": 21,
+  "cand": "/Users/tomrecht/quahuru-train/distill_sum7/cand_21.pt",
+  "champion": "/Users/tomrecht/quahuru-train/distill_sum7/cand_18.pt",
+  "mean": 0.04,
+  "se": 0.06520201381253823,
+  "pairs": 500,
+  "promoted": true
+ },
+ {
+  "iter": 22,
+  "cand": "/Users/tomrecht/quahuru-train/distill_sum7/cand_22.pt",
+  "champion": "/Users/tomrecht/quahuru-train/distill_sum7/cand_21.pt",
+  "mean": 0.055,
+  "se": 0.06564730869027723,
+  "pairs": 500,
+  "promoted": true
+ },
+ {
+  "iter": 23,
+  "cand": "/Users/tomrecht/quahuru-train/distill_sum7/cand_23.pt",
+  "champion": "/Users/tomrecht/quahuru-train/distill_sum7/cand_22.pt",
+  "mean": -0.145,
+  "se": 0.06288767541767529,
+  "pairs": 500,
+  "promoted": false
+ },
+ {
+  "iter": 24,
+  "cand": "/Users/tomrecht/quahuru-train/distill_sum7/cand_24.pt",
+  "champion": "/Users/tomrecht/quahuru-train/distill_sum7/cand_13.pt",
+  "mean": 0.0275,
+  "se": 0.03255613346073144,
+  "pairs": 2000,
+  "promoted": true
+ }
+]
