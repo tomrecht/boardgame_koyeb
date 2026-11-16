@@ -322,8 +322,8 @@ Whenever a new net ships, re-run (cheapest first; GitHub = free):
   `headroom/cc1.jsonl`, 21 rolls; the 1-roll gauge +0.118, 2,000 pairs), and distillation
   rounds 3-4 failed to move it into the net. Restored by reverting 039ccd0 onto main (conflicts
   in agent.js resolved: the two-sided lookahead still runs first). Checked on main's code:
-  agent_test 62/62, close_call_test 90/90 (deep values 69/69), build passes. NOT driven in a
-  browser (no driver on the work iMac). The history below is October's (cand3 era).
+  agent_test 62/62, close_call_test 90/90 (deep values 69/69), build passes. Owner played it in the
+  browser before the merge (2026-11-16). The history below is October's (cand3 era).
   Original entry: on `testing` 2026-10-22; branch `close-call-ship`.
   **"PAGE UNRESPONSIVE" ON KOYEB DESKTOP (owner, 2026-10-23), FIXED.** The search
   runs on the main thread and ORT's awaits resolve as microtasks, so a whole
