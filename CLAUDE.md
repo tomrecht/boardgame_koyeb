@@ -181,6 +181,19 @@ plain, 1-ply vs plain and exact2 - 1ply seed for seed; the driver writes
 (and anything distilled from it) has little left; clearly > 0 -> a deeper teacher /
 bigger net is worth building. Rerunning run.sh resumes (finished files skipped).
 
+## DISTILLATION LOSS WEIGHTING: THE TD TERM WAS DROWNING THE LABELS (2026-11-16, `rankexp/`)
+
+In round 4's training (td-w 0.5) the TD loss (~0.0041) was ~50x the distill loss
+(~0.00008), so the sampled TD chain dominated the gradient; and the rank loss had never
+been used (rank-w 0; its default tau 0.02 raw = 0.24 pts is ~10x the candidate spreads).
+Same data/start/settings as round 4 iteration 24 (labels_22-24, warm start
+distill_sum7/cand_13, 4 epochs lr 2e-5), held-out fit (within-decision corr / top-1;
+warm start 0.219 / 55.9%): r4 td-w 0.5 -> 0.262 / 55.7%; td-w 0.05 -> 0.349 / 58.7%;
+td-w 0.5 + rank-w 3e-4 tau 0.003 -> 0.327 / 58.5%; **td-w 0.05 + rank (tdlow_rank) ->
+0.406 / 61.2%**. Match vs cand_13 on sum7 (2,000 pairs, seeds 300M, GitHub):
+`rankexp/match.sh` -> `rankexp/MATCH.txt`. If it gains, rerun distillation with
+`--td-w 0.05 --rank-w 3e-4 --rank-tau 0.003`.
+
 ## TODO ON THE HOME iMac: PACKAGE versionCode 10 (written 2026-11-16, work iMac)
 
 A tester installed the app via **Aurora Store** on a phone without Google Play
