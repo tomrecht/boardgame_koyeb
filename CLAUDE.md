@@ -91,7 +91,13 @@ it doesn't). Cause: Play Console's **App integrity > Automatic protection**,
 which Google injects at signing time; it checks the installer is Play, and on a
 de-Googled phone that check can only fail. **Owner turned it OFF 2026-11-16.**
 It only affects NEW uploads -- versionCode 9 (live) stays protected.
-**To do:** build versionCode **10**, versionName 1.0.9, from current `main`
+**BUILT 2026-11-16 (home iMac), from main a83e6e2 (incl. close-call): 11.3 MB,
+`jar verified`, versionCode 10 / 1.0.9 / com.quahuru.game, game/sw/agent/
+local_agent/index hash-identical to the tree; no gms/pairip/vending code in the
+dex (only AndroidX's photo-picker intent constants). Remaining: owner uploads,
+tester reinstalls.** The bundle never contained the check -- the fix is the
+Console setting, applied when Google signs this upload.
+**Original to do:** build versionCode **10**, versionName 1.0.9, from current `main`
 (recipe under "Rebuilding the package" in Current state; needs `./.jdk` and
 `android/keystore.properties`, which only the home iMac has), verify the bundle
 as usual, upload, then ask the tester to reinstall via Aurora. Update the
@@ -267,7 +273,7 @@ Whenever a new net ships, re-run (cheapest first; GitHub = free):
   worker handover from the live v10 build: first reload, second reload and
   offline all play. The close-call search on top of it (+0.103, 95% CI
   +0.013..+0.194) is on `testing` for owner's phone check.
-  **CLOSE-CALL STAYS OFF MAIN (owner, 2026-10-23): "I prefer the instantaneous
+  **[SUPERSEDED 2026-11-16: close-call is back on main, see below.] CLOSE-CALL STAYS OFF MAIN (owner, 2026-10-23): "I prefer the instantaneous
   feel."** On his phone it felt slightly slower (it ~2-4x the thinking time on
   the ~40% of moves it triggers on, capped at 2 s extra). Revisit only if it
   can be made near-free; the preferred route to its strength is DISTILLATION
@@ -311,7 +317,7 @@ Whenever a new net ships, re-run (cheapest first; GitHub = free):
   them (CLAUDE.md "Re-check main's `_strands_last_piece` rule on the first
   afterstate net").
 - **CLOSE-CALL SEARCH, ON BY DEFAULT -- BACK, ON THE SUM7 NET (owner, 2026-11-16: "you can
-  ship the close call"; staged on `testing`, main after owner's phone check).** Why now: on the
+  ship the close call"; LIVE on main 2026-11-16, a83e6e2, and in package versionCode 10).** Why now: on the
   shipped sum7 net it is worth **+0.113 (95% CI +0.020..+0.205), 1,000 pairs** (train-features-v2
   `headroom/cc1.jsonl`, 21 rolls; the 1-roll gauge +0.118, 2,000 pairs), and distillation
   rounds 3-4 failed to move it into the net. Restored by reverting 039ccd0 onto main (conflicts
