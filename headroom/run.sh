@@ -4,10 +4,11 @@
 # the same net plain, GOAL_LAYOUT=sum7, seeds 290M.. (1,000 pairs):
 #   cc1      candidates rescored by 1 opponent turn, all 21 rolls  (~20-40 min)
 #   e2_0..4  rescored by TWO turns, all 21 x 21 rolls (CC_DEEP=exact2), 200 pairs
-#            per dispatch so each shard (10 pairs) fits GitHub's 6 h job limit
+#            per dispatch on 40 shards (5 pairs, ~3 h on GitHub's 2x-slower cores;
+#            20 shards x 10 pairs overran the 6 h job limit), two waves of 20
 # Then headroom/RESULT.txt, committed. Resumable: finished files are skipped.
 cd /Users/tomrecht/quahuru-train
-export PATH=/opt/homebrew/bin:/usr/local/bin:$PATH REMOTE_TIMEOUT_MIN=400 REMOTE_QUEUE_MIN=120
+export PATH=/opt/homebrew/bin:/usr/local/bin:$PATH REMOTE_TIMEOUT_MIN=900 REMOTE_QUEUE_MIN=120
 PY=.venv/bin/python NET=distill_sum7/cand_13.pt
 rp() {  # mode-out pairs seed env-json
   $PY - "$@" <<'PYEOF'
@@ -22,7 +23,7 @@ PYEOF
 $PY close_call.py analyze headroom/cc1.jsonl
 for i in 0 1 2 3 4; do
   [ -s headroom/e2_$i.jsonl ] && continue
-  rp headroom/e2_$i.jsonl 200 $((290000000 + 200 * i)) '{"T":"3","K":"3","GOAL_LAYOUT":"sum7","CC_DEEP":"exact2"}'
+  REMOTE_SHARDS=40 rp headroom/e2_$i.jsonl 200 $((290000000 + 200 * i)) '{"T":"3","K":"3","GOAL_LAYOUT":"sum7","CC_DEEP":"exact2"}'
   $PY close_call.py analyze headroom/e2_$i.jsonl
   $PY headroom/analyze.py
 done
