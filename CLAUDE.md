@@ -164,6 +164,23 @@ in PLAY (close-call on the phone) but not transferable by this training. Next le
 a different teacher (deeper / rollout search, which did not help on today's layout) or a
 bigger net (capacity test: width helps a little on ranking).
 
+## TODO ON THE HOME iMac: PACKAGE versionCode 10 (written 2026-11-16, work iMac)
+
+A tester installed the app via **Aurora Store** on a phone without Google Play
+and it closed with an error about Google Play being missing. Our code has no
+Play-services dependency (AndroidX + Capacitor + @capacitor/app only; the gms
+plugin line in build.gradle applies only if google-services.json exists, and
+it doesn't). Cause: Play Console's **App integrity > Automatic protection**,
+which Google injects at signing time; it checks the installer is Play, and on a
+de-Googled phone that check can only fail. **Owner turned it OFF 2026-11-16.**
+It only affects NEW uploads -- versionCode 9 (live) stays protected.
+**To do:** build versionCode **10**, versionName 1.0.9, from current `main`
+(recipe under "Rebuilding the package" in Current state; needs `./.jdk` and
+`android/keystore.properties`, which only the home iMac has), verify the bundle
+as usual, upload, then ask the tester to reinstall via Aurora. Update the
+CURRENT PACKAGE entry and delete this section once done. Leave automatic
+protection off (the web build at quahuru.com serves the whole app anyway).
+
 ## Project background
 
 Custom hub-and-spoke dice board game. Full stack built from scratch: game
