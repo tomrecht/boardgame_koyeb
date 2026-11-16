@@ -64,6 +64,12 @@ MAX_REPLIES = int(os.environ.get('MAX_REPLIES', '0'))
 # reseeded per game, so the game's dice are untouched.
 CC_ROLL = os.environ.get('CC_ROLL', 'fixed')
 assert CC_ROLL in ('fixed', 'random'), CC_ROLL
+# CC_DEEP=exact2 (2026-11-16, headroom oracle): rescore the close-call candidates
+# by rollout_label.exact2 -- two full turns, every roll of both enumerated, ~460
+# searches a candidate. Not for the phone; measures how much a deeper noise-free
+# search gains over the plain net. Stats 'chg_1ply' = picks it changed vs 1 ply.
+CC_DEEP = os.environ.get('CC_DEEP', '1ply')
+assert CC_DEEP in ('1ply', 'exact2'), CC_DEEP
 
 
 def make_agent_class():
@@ -77,7 +83,8 @@ def make_agent_class():
             # the opponent-reply search: this agent's own shallow search, or a
             # cheaper agent (e.g. a narrower prefilter) on the same net
             self.inner = inner
-            self.stats = {'moves': 0, 'triggered': 0, 'changed': 0, 'deep_s': 0.0}
+            self.stats = {'moves': 0, 'triggered': 0, 'changed': 0, 'deep_s': 0.0, 'chg_1ply': 0}
+            self.path = None             # checkpoint path (CC_DEEP=exact2 loads its own agent)
             self.gap_log = None          # list -> record every top-2 gap
             self.label_log = None        # list -> record searched candidates (label)
             self.max_replies = MAX_REPLIES
@@ -117,7 +124,14 @@ def make_agent_class():
             top = [p for v, p in cands[:self.K] if cands[0][0] - v < self.T]
             self.stats['triggered'] += 1
             t0 = time.time()
-            if self.max_replies > 0:
+            if CC_DEEP == 'exact2':
+                import rollout_label
+                ev = [rollout_label.exact2(self.path, self._afterstate_of(board, p), player)
+                      for p in top]
+                deep = [e2 for _, e2 in ev]
+                if int(np.argmax(deep)) != int(np.argmax([e1 for e1, _ in ev])):
+                    self.stats['chg_1ply'] += 1
+            elif self.max_replies > 0:
                 deep = self._deep_values_capped(board, player, top, self.max_replies)
             else:
                 deep = [self._deep_value(board, player, p) for p in top]
@@ -286,6 +300,7 @@ def _agents(path, T, K):
         inner = GNNAgent(model=m, hand_rules=True, **prefilter_kwargs(ipf)) if ipf else None
         _CACHE[key] = (C(model=m, hand_rules=True, T=T, K=K, inner=inner, **pf),
                        GNNAgent(model=m, hand_rules=True, **pf))
+        _CACHE[key][0].path = path
     return _CACHE[key]
 
 
@@ -340,7 +355,9 @@ def analyze(path):
           f'(95% CI {mean - 1.96 * se:+.3f} .. {mean + 1.96 * se:+.3f}); '
           f'triggered {tr}/{mv} moves ({100 * tr / max(mv, 1):.1f}%), changed {ch} '
           f'({100 * ch / max(tr, 1):.1f}% of triggers, {ch / max(len(rows), 1):.2f}/game); '
-          f'deep search {sum(r.get("deep_s", 0) for r in rows) / max(tr, 1):.2f} s per trigger')
+          f'deep search {sum(r.get("deep_s", 0) for r in rows) / max(tr, 1):.2f} s per trigger'
+          + (f'; exact2 pick differs from 1 ply on {sum(r.get("chg_1ply", 0) for r in rows)} triggers'
+             if any(r.get('chg_1ply') for r in rows) else ''))
 
 
 def match(path, T, K=3, pairs=300, out=None):

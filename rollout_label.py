@@ -156,6 +156,37 @@ def _cand(path, raw_state, mover, dec_key):
     return per.mean(0).tolist(), per[:, -1].tolist()
 
 
+def exact2(path, raw_state, mover):
+    """(est_1, est_2) of a candidate's afterstate, EXACT: est_2 enumerates all
+    21 opponent rolls x all 21 of the mover's next rolls (greedy app search for
+    both sides, as in _cand) instead of sampling them -- no playout noise.
+    ~21 + 21 x 21 searches. Headroom oracle (close_call.py CC_DEEP=exact2)."""
+    from game import Board
+    ag, scale = _agent(path)
+
+    def fresh():
+        b = Board()
+        b.update_state(raw_state)
+        return b
+
+    p1, vals1 = _ply(ag, scale, fresh())
+    s1 = 1.0 if p1 == mover else -1.0
+    e1, e2 = s1 * _expect(vals1), 0.0
+    for d1, d2, pr in ROLLS:
+        v, pair, term = vals1[(d1, d2)]
+        if term:
+            e2 += pr * s1 * v
+            continue
+        b = fresh()
+        b.switch_turn()
+        _set_dice(b, d1, d2)
+        b.get_valid_moves()
+        _apply(b, pair)
+        p2, vals2 = _ply(ag, scale, b)
+        e2 += pr * (1.0 if p2 == mover else -1.0) * _expect(vals2)
+    return e1, e2
+
+
 def _decision(task):
     path, rec = task
     t0 = time.time()
