@@ -1,0 +1,1 @@
+rankexp/match_tdlow_rank.jsonl: 4000 games, 2000 pairs: A wins 2062/4000 (51.5%), mean paired margin +0.115 (95% CI +0.052 .. +0.178)
