@@ -164,6 +164,23 @@ in PLAY (close-call on the phone) but not transferable by this training. Next le
 a different teacher (deeper / rollout search, which did not help on today's layout) or a
 bigger net (capacity test: width helps a little on ranking).
 
+## HEADROOM ORACLE: RUNNING (launched 2026-11-16, work iMac; `headroom/run.sh`, log `headroom/run.log`)
+
+Outside-expert review (owner, 2026-11-16): before more training, measure how much a
+much stronger search gains over the shipped sum7 net (owner wins a bit under 50%; goal
+= maximal strength; sum7 is now the played layout). Sampled rollouts were ruled out as
+the oracle: close candidates differ by ~0.02 pts, rollouts carry ~0.03 even at N=16
+(rollout round 2), so they would pick at random. Instead `CC_DEEP=exact2`
+(`rollout_label.exact2`): close-call T=3 K=3, candidates rescored by TWO full turns with
+every roll of both enumerated (~460 searches, ~35-55 s a candidate on the M4; est_1
+reproduces the stored labels exactly). All on GitHub, distill_sum7/cand_13 vs itself
+plain, GOAL_LAYOUT=sum7, seeds 290M: `cc1` = 1-ply (21 rolls) comparator, 1,000 pairs;
+`e2_0..4` = exact2, 5 x 200 pairs (~20 h total). `headroom/analyze.py` gives exact2 vs
+plain, 1-ply vs plain and exact2 - 1ply seed for seed; the driver writes
+`headroom/RESULT.txt` and commits it. Reading: exact2 - 1ply near 0 -> deeper search
+(and anything distilled from it) has little left; clearly > 0 -> a deeper teacher /
+bigger net is worth building. Rerunning run.sh resumes (finished files skipped).
+
 ## TODO ON THE HOME iMac: PACKAGE versionCode 10 (written 2026-11-16, work iMac)
 
 A tester installed the app via **Aurora Store** on a phone without Google Play
