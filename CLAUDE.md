@@ -191,8 +191,12 @@ distill_sum7/cand_13, 4 epochs lr 2e-5), held-out fit (within-decision corr / to
 warm start 0.219 / 55.9%): r4 td-w 0.5 -> 0.262 / 55.7%; td-w 0.05 -> 0.349 / 58.7%;
 td-w 0.5 + rank-w 3e-4 tau 0.003 -> 0.327 / 58.5%; **td-w 0.05 + rank (tdlow_rank) ->
 0.406 / 61.2%**. Match vs cand_13 on sum7 (2,000 pairs, seeds 300M, GitHub):
-`rankexp/match.sh` -> `rankexp/MATCH.txt`. If it gains, rerun distillation with
-`--td-w 0.05 --rank-w 3e-4 --rank-tau 0.003`.
+`rankexp/match.sh` -> `rankexp/MATCH.txt`. **RESULT (2026-11-16, run locally on the M4, seeds
+300M): tdlow_rank vs cand_13 +0.115 (95% CI +0.052..+0.178), 51.5%, 2,000 pairs** -- one
+retrain on round 4's data, where round 4's own loss gave +0.028. So the loss weighting was
+what held distillation back, not the teacher. `rankexp/tdlow_rank.pt` is a sum7 shipping
+candidate (export as in the sum7 ship recipe). Next: distillation with
+`--td-w 0.05 --rank-w 3e-4 --rank-tau 0.003` from it.
 
 ## TODO ON THE HOME iMac: PACKAGE versionCode 10 (written 2026-11-16, work iMac)
 
