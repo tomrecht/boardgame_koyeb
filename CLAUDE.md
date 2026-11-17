@@ -249,6 +249,11 @@ Whenever a new net ships, re-run (cheapest first; GitHub = free):
     Strong 0.93 44.7% (39.1-50.3) -0.38; Max 1.0 49.7%. Close to cand13's, except Strong
     is nearer Max (margin -0.38 vs -0.76) and Easiest stays ~8% (target ~4%).
   * Step 5: gauge done 2026-11-09 (+0.118); calib_bench skipped (original-layout games).
+  **EASIEST KNOT 0.65 -> 0.60 (owner, 2026-11-17).** Measured on tdlow_rank (sum7 rank-loss
+  candidate), 150 pairs per level vs full strength, seeds 320M/340M: 0.58 4.3% -3.61; 0.60 3.7%
+  (2.1-6.4) -3.55; 0.62 4.0% -3.36; 0.65 5.0% -3.42; 0.74 13.0% -2.37; 0.80 24.3% -1.47; 0.93
+  50.0% -0.10; 1.0 49.0%. Win rate floors at ~4% below 0.65 (only the margin keeps falling).
+  On tdlow_rank Strong 0.93 = Max: re-space the top knot if it ships.
   **cloud-play.yml on branch ccr-45a54cc6-6axfpc** adds a `merge` job that collects the
   shards and prints one summary (the difficulty table for mode `difficulty`): a cloud
   session can read results from that job's log when it cannot download artifacts.

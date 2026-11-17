@@ -283,9 +283,11 @@ function _mixColor(a, b, t) {
 // i.e. the old floor 0.8 still won 26%, and 1.0-0.95 was indistinguishable from
 // Max. The slider is now PIECEWISE-LINEAR through knots spaced by that measured
 // strength (roughly equal steps in win rate from ~50% to ~4%), not linear in d.
-const DIFFICULTY_FLOOR = 0.65;  // what slider-0 means to the agent
+// Easiest 0.65 -> 0.60 (2026-11-17): on the sum7 nets 0.65 won 5-8%; 0.58-0.62
+// all ~4% (tdlow_rank, 150 pairs each), so the win rate floors there.
+const DIFFICULTY_FLOOR = 0.60;  // what slider-0 means to the agent
 const DIFFICULTY_KNOTS = [      // [slider position, effective d]
-    [0.00, 0.65], [0.25, 0.74], [0.50, 0.80], [0.75, 0.93], [1.00, 1.00]];
+    [0.00, 0.60], [0.25, 0.74], [0.50, 0.80], [0.75, 0.93], [1.00, 1.00]];
 // `aiDifficulty` in localStorage is the SLIDER POSITION. It used to be the
 // effective value, so a player who had saved 0.5 is now read as position 0.5 ->
 // effective 0.9, i.e. their opponent gets stronger. That is deliberate and is the
