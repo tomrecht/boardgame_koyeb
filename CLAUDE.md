@@ -81,29 +81,27 @@ So, for any "work through the night / while I sleep" task:
   4. Checkpoint durably every step (commit, update CLAUDE.md/memory) so progress
      survives an interruption and is visible on waking.
 
-## TODO ON THE HOME iMac: PACKAGE versionCode 10 (written 2026-11-16, work iMac)
+## TODO ON THE WORK iMac: FINISH THE tdlow_rank SHIP CHECKLIST (written 2026-11-17, cloud session)
 
-A tester installed the app via **Aurora Store** on a phone without Google Play
-and it closed with an error about Google Play being missing. Our code has no
-Play-services dependency (AndroidX + Capacitor + @capacitor/app only; the gms
-plugin line in build.gradle applies only if google-services.json exists, and
-it doesn't). Cause: Play Console's **App integrity > Automatic protection**,
-which Google injects at signing time; it checks the installer is Play, and on a
-de-Googled phone that check can only fail. **Owner turned it OFF 2026-11-16.**
-It only affects NEW uploads -- versionCode 9 (live) stays protected.
-**BUILT 2026-11-16 (home iMac), from main a83e6e2 (incl. close-call): 11.3 MB,
-`jar verified`, versionCode **11 / 1.0.10** (Play refused 10: already used by the
-Nov 9 upload) / com.quahuru.game, game/sw/agent/
-local_agent/index hash-identical to the tree; no gms/pairip/vending code in the
-dex (only AndroidX's photo-picker intent constants). Remaining: owner uploads,
-tester reinstalls.** The bundle never contained the check -- the fix is the
-Console setting, applied when Google signs this upload.
-**Original to do:** build versionCode **10**, versionName 1.0.9, from current `main`
-(recipe under "Rebuilding the package" in Current state; needs `./.jdk` and
-`android/keystore.properties`, which only the home iMac has), verify the bundle
-as usual, upload, then ask the tester to reinstall via Aurora. Update the
-CURRENT PACKAGE entry and delete this section once done. Leave automatic
-protection off (the web build at quahuru.com serves the whole app anyway).
+`tdlow_rank` (sum7 rank-loss candidate) = release asset
+`cloud-scratch/2ff210dd3fa4-tdlow_rank.pt`. Exported (train-features-v2 `onnx_export.py`,
+`GOAL_LAYOUT=sum7`) to `model-50f666ac.onnx` + `model_sum7.json` (source
+`sum7_2ff210dd3fa4-tdlow_rank.pt`) -- in a cloud scratchpad only, so RE-EXPORT here.
+**Done (GitHub, seeds 320M/330M/340M):** difficulty sweep (below, under the promotion
+checklist; Easiest already moved to 0.60 on main); close-call gauge (`ccmatch`, T=3 K=3,
+2,000 pairs): **+0.018 (95% CI -0.047..+0.083)** -- vs +0.118 on the live sum7 cand_13,
+so close-call buys nothing on this net.
+**Still to do:**
+  1. Step 2 `filter_probe.py` (GOAL_LAYOUT=sum7, tags `sum7_r2_cand_13.pt,sum7_cand_7.pt`,
+     300 turns) -- too slow on a 4-core cloud box (9 positions in 2 h); refit the
+     prefilter scales if the cost's CI clears 0 (the live net was already due one).
+  2. Step 3 `rule_probe.py` (expect inert, as on every net so far).
+  3. Owner decides on shipping (head-to-head vs live cand_13, if not already measured).
+  4. If it ships: hashed onnx + sidecar to main, replace `model-dffd8d8f.onnx` in sw.js
+     SHELL, bump the sw.js cache, `REC_MODEL_TAG`, playout-requests workflow
+     `MODEL_sum7` asset; re-space the Strong knot (0.93 = Max on this net: 50.0%; try
+     ~0.88, re-measure 0.80-0.93); propose turning close-call OFF (gauge above).
+Package versionCode 11 / 1.0.10 (automatic protection off) is UPLOADED (owner, 2026-11-17).
 
 ## Project background
 
