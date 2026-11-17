@@ -92,7 +92,8 @@ which Google injects at signing time; it checks the installer is Play, and on a
 de-Googled phone that check can only fail. **Owner turned it OFF 2026-11-16.**
 It only affects NEW uploads -- versionCode 9 (live) stays protected.
 **BUILT 2026-11-16 (home iMac), from main a83e6e2 (incl. close-call): 11.3 MB,
-`jar verified`, versionCode 10 / 1.0.9 / com.quahuru.game, game/sw/agent/
+`jar verified`, versionCode **11 / 1.0.10** (Play refused 10: already used by the
+Nov 9 upload) / com.quahuru.game, game/sw/agent/
 local_agent/index hash-identical to the tree; no gms/pairip/vending code in the
 dex (only AndroidX's photo-picker intent constants). Remaining: owner uploads,
 tester reinstalls.** The bundle never contained the check -- the fix is the
