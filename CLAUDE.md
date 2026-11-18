@@ -179,7 +179,13 @@ sits on the shallow value's scale (+0.033 vs +0.034). If iteration 0's candidate
 tdlow_rank with CI clear of 0, the deeper teacher transfers; then scale it (more games,
 or the M4 labelling alongside).
 
-## HEADROOM ORACLE: RESULT AT 760 OF 1,000 PAIRS (launched 2026-11-16, work iMac; `headroom/run.sh`, log `headroom/run.log`)
+## HEADROOM ORACLE: FINAL, 950 PAIRS (launched 2026-11-16, work iMac; `headroom/run.sh`, `headroom/RESULT.txt`)
+
+**FINAL (2026-11-18, distill_sum7/cand_13 on sum7; 50 pairs lost to 2 failed shards and 2 short batches):
+exact2 + net vs plain +0.256 (95% CI +0.146..+0.365), 950 pairs; 1-ply vs plain +0.113 (+0.020..+0.205), 1,000;
+exact2 - 1ply on the same seeds +0.152 (+0.010..+0.295).** A two-turn search clearly beats the 1-ply teacher, so
+a deeper teacher has real headroom -- the exact2 distillation below tests whether it transfers.
+(Measured on cand_13, not the shipped tdlow_rank; the per-batch figures below are superseded.)
 
 **Interim (2026-11-18, batches 1-4 of exact2; batch 0's rerun finishing on GitHub, run.sh then
 rewrites RESULT.txt and commits): exact2 + net vs net plain +0.253 (95% CI +0.130..+0.377);
