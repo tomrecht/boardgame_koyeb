@@ -164,6 +164,21 @@ in PLAY (close-call on the phone) but not transferable by this training. Next le
 a different teacher (deeper / rollout search, which did not help on today's layout) or a
 bigger net (capacity test: width helps a little on ranking).
 
+## TWO-TURN (exact2) TEACHER DISTILLATION: RUNNING (launched 2026-11-18, owner; work iMac)
+
+`distill_sum7_e2/run.sh` -> `distill_sum7_e2/run.log`, results committed to
+`distill_sum7_e2/RESULT.txt` when done. From the SHIPPED sum7 net `rankexp/tdlow_rank.pt`
+(the 1-ply teacher is spent on it: close-call gauge +0.018). Labels by `CC_DEEP=exact2`
+(close-call T=3 K=3, candidates scored by two full turns, all 21x21 rolls), all on GitHub:
+2 iterations x 500 games on 125 shards (~2.8 core-h a game there, ~4 games a 4-core job,
+~18 h an iteration), train here with the fixed loss (`--epochs 6 --lr 2e-5 --td-w 0.05
+--rank-w 3e-4 --rank-tau 0.003`, REPLAY 2), confirm vs champion 2,000 pairs plain (BAR 0).
+**Bug fixed first:** close_call's exact2 branch stored labels divided by SCORE_SCALE twice
+(83x too small; picks and the headroom matches unaffected). Smoke: an exact2 label now
+sits on the shallow value's scale (+0.033 vs +0.034). If iteration 0's candidate beats
+tdlow_rank with CI clear of 0, the deeper teacher transfers; then scale it (more games,
+or the M4 labelling alongside).
+
 ## HEADROOM ORACLE: RESULT AT 760 OF 1,000 PAIRS (launched 2026-11-16, work iMac; `headroom/run.sh`, log `headroom/run.log`)
 
 **Interim (2026-11-18, batches 1-4 of exact2; batch 0's rerun finishing on GitHub, run.sh then
