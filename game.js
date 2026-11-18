@@ -5543,7 +5543,7 @@ function showStrategy() {
          '<p><b>Walls of blanks are best.</b> If you have to build one with a numbered piece, swap a blank in later.</p>'],
         ['Endgame',
          '<p><b>Spread your blanks over different goals, favouring the low ones.</b> In the endgame a blank on your highest occupied goal banks on that number or anything higher; every other piece needs its exact number. So the lower your blanks sit, the more rolls bank them, and on different goals they use different numbers.</p>' +
-         '<p><b>Use a 4 to drop a blank to a lower goal.</b> A 4 moves a blank from a high goal to its partner, the goal that adds up to 7 with it: 6→1, 5→2, 4→3.</p>' +
+         '<p><b>Use a 4 to drop a blank to a lower goal.</b> Each high goal is 4 steps from its partner, the goal that adds up to 7 with it (6→1, 5→2, 4→3). A 4 does it, or a 1-3 or 2-2 on the one piece, unless an enemy wall blocks the way.</p>' +
          fig('hop-s7.webp', 'A 4 takes the blank on goal 5 to goal 2, where any roll of 2 or more banks it.')],
         ['Captures',
          '<p><b>Bringing a piece to goal usually beats a capture.</b> Capture when it’s cheap, or to prevent the opponent from breaking your wall.</p>'],

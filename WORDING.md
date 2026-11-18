@@ -267,7 +267,7 @@ Button in How to Play, under the tutorial button: **Strategy tips**. Panel title
 ### Endgame
 **Spread your blanks over different goals, favouring the low ones.** In the endgame a blank on your highest occupied goal banks on that number or anything higher; every other piece needs its exact number. So the lower your blanks sit, the more rolls bank them, and on different goals they use different numbers.
 
-**Use a 4 to drop a blank to a lower goal.** A 4 moves a blank from a high goal to its partner, the goal that adds up to 7 with it: 6→1, 5→2, 4→3.
+**Use a 4 to drop a blank to a lower goal.** Each high goal is 4 steps from its partner, the goal that adds up to 7 with it (6→1, 5→2, 4→3). A 4 does it, or a 1-3 or 2-2 on the one piece, unless an enemy wall blocks the way.
 *[hop-s7.webp]* A 4 takes the blank on goal 5 to goal 2, where any roll of 2 or more banks it.
 
 ### Captures
