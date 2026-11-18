@@ -27,6 +27,8 @@ Knobs (env; defaults are a first guess):
     START_POOL / START_FRAC (labelling games from owner's positions; default
     start_pool.jsonl at 0.3 if present)
     DISTILL_DIR (default distill)  run directory: state.json, labels, cands
+    CC_DEEP=exact2  label with the exact two-turn search (close_call.py; ~20x the
+              1-ply cost: use REMOTE_SHARDS ~ GAMES/4 to stay under the 6 h job limit)
     GOAL_LAYOUT (goal_layout.py)   train on another goal numbering; passed on
               to every step, local and GitHub. Start pool relabelled.
 """
@@ -111,6 +113,9 @@ def main():
     pool = E.get('START_POOL', 'start_pool.jsonl' if os.path.exists('start_pool.jsonl') else '')
     lab_env = {'START_POOL': pool, 'START_FRAC': E.get('START_FRAC', '0.3'),
                'MAX_REPLIES': E.get('MAX_REPLIES', '0')}
+    # CC_DEEP=exact2: the two-turn teacher (close_call.py); must reach the shards too
+    if E.get('CC_DEEP'):
+        lab_env['CC_DEEP'] = E['CC_DEEP']
     # GOAL_LAYOUT (goal_layout.py) must reach the GitHub shards too; local
     # steps inherit it from this process's environment.
     lay_env = {'GOAL_LAYOUT': E['GOAL_LAYOUT']} if E.get('GOAL_LAYOUT') else {}

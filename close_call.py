@@ -128,7 +128,7 @@ def make_agent_class():
                 import rollout_label
                 ev = [rollout_label.exact2(self.path, self._afterstate_of(board, p), player)
                       for p in top]
-                deep = [e2 for _, e2 in ev]
+                deep = [e2 * SCORE_SCALE for _, e2 in ev]   # exact2 is in points/12; deep is raw
                 if int(np.argmax(deep)) != int(np.argmax([e1 for e1, _ in ev])):
                     self.stats['chg_1ply'] += 1
             elif self.max_replies > 0:
