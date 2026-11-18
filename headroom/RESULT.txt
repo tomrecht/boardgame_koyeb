@@ -1,8 +1,9 @@
-Wed Nov 18 01:31:58 MST 2026
-exact2 (2 turns) + net vs net plain: +0.253 (95% CI +0.130..+0.377), 760 pairs
+Wed Nov 18 10:46:44 MST 2026
+exact2 (2 turns) + net vs net plain: +0.256 (95% CI +0.146..+0.365), 950 pairs
 1-ply (21 rolls) + net vs net plain: +0.113 (95% CI +0.020..+0.205), 1000 pairs
-exact2 - 1ply, same seeds:           +0.126 (95% CI -0.034..+0.285), 760 pairs
+exact2 - 1ply, same seeds:           +0.152 (95% CI +0.010..+0.295), 950 pairs
 headroom/cc1.jsonl: 2000 games, 1000 pairs: close-call agent wins 1026/2000 (51.3%), mean paired margin +0.113 (95% CI +0.020 .. +0.205); triggered 21107/55815 moves (37.8%), changed 8846 (41.9% of triggers, 4.42/game); deep search 19.34 s per trigger
+headroom/e2_0.jsonl: 380 games, 190 pairs: close-call agent wins 200/380 (52.6%), mean paired margin +0.266 (95% CI +0.031 .. +0.501); triggered 3891/10569 moves (36.8%), changed 1721 (44.2% of triggers, 4.53/game); deep search 375.51 s per trigger; exact2 pick differs from 1 ply on 1182 triggers
 headroom/e2_1.jsonl: 400 games, 200 pairs: close-call agent wins 207/400 (51.8%), mean paired margin +0.133 (95% CI -0.112 .. +0.377); triggered 4143/11215 moves (36.9%), changed 1824 (44.0% of triggers, 4.56/game); deep search 400.32 s per trigger; exact2 pick differs from 1 ply on 1287 triggers
 headroom/e2_2.jsonl: 400 games, 200 pairs: close-call agent wins 223/400 (55.8%), mean paired margin +0.347 (95% CI +0.118 .. +0.577); triggered 4285/11205 moves (38.2%), changed 1892 (44.2% of triggers, 4.73/game); deep search 396.15 s per trigger; exact2 pick differs from 1 ply on 1402 triggers
 headroom/e2_3.jsonl: 360 games, 180 pairs: close-call agent wins 204/360 (56.7%), mean paired margin +0.425 (95% CI +0.164 .. +0.686); triggered 3685/10012 moves (36.8%), changed 1595 (43.3% of triggers, 4.43/game); deep search 406.99 s per trigger; exact2 pick differs from 1 ply on 1123 triggers
