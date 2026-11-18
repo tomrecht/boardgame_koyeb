@@ -289,11 +289,11 @@ const LocalAgent = (function () {
     }
 
     /* The close-call deeper search (agent.js selectWithCloseCall): ON at full
-       strength, capped at ONE round of rolls (3 reply searches) -- the setting
+       strength (now OFF by default -- ?cc=1 turns it on), capped at ONE round of rolls (3 reply searches) -- the setting
        measured at +0.189 pts/game over 1,000 pairs vs the plain search
        (close_call.py, MAX_REPLIES=3, 2026-10-22). One round is always played,
        so the cap, not the device, decides how deep it looks.
-       ?cc=0 turns it off; ?ccr=<reply cap> (3; 0 = no cap, then the time
+       ?cc=1 turns it on; ?ccr=<reply cap> (3; 0 = no cap, then the time
        budget ?ccms=<ms> (1500) decides), ?cct=<T score units> (3),
        ?cck=<K> (3). Stats in window._closeCallStats. */
     // A macrotask via MessageChannel: unlike setTimeout it is not throttled in a
@@ -319,7 +319,9 @@ const LocalAgent = (function () {
     const ccStats = {};
     if (typeof window !== 'undefined') window._closeCallStats = ccStats;
     function closeCallOpts() {
-        if (param('cc') === '0') return {};
+        // OFF by default since 2026-11-18: on the tdlow_rank sum7 net it gains
+        // +0.018 (95% CI -0.047..+0.083, 2,000 pairs) -- distillation absorbed it.
+        if (param('cc') !== '1') return {};
         const num = (k, d) => { const v = parseFloat(param(k)); return isFinite(v) ? v : d; };
         const cap = num('ccr', 3);
         return { closeCall: true, closeCallBudgetMs: num('ccms', 1500),

@@ -81,29 +81,25 @@ So, for any "work through the night / while I sleep" task:
   4. Checkpoint durably every step (commit, update CLAUDE.md/memory) so progress
      survives an interruption and is visible on waking.
 
-## TODO ON THE WORK iMac: FINISH THE tdlow_rank SHIP CHECKLIST (written 2026-11-17, cloud session)
+## sum7 NET = tdlow_rank, SHIPPED 2026-11-18 (owner: "yep"; work iMac)
 
-`tdlow_rank` (sum7 rank-loss candidate) = release asset
-`cloud-scratch/2ff210dd3fa4-tdlow_rank.pt`. Exported (train-features-v2 `onnx_export.py`,
-`GOAL_LAYOUT=sum7`) to `model-50f666ac.onnx` + `model_sum7.json` (source
-`sum7_2ff210dd3fa4-tdlow_rank.pt`) -- in a cloud scratchpad only, so RE-EXPORT here.
-**Done (GitHub, seeds 320M/330M/340M):** difficulty sweep (below, under the promotion
-checklist; Easiest already moved to 0.60 on main); close-call gauge (`ccmatch`, T=3 K=3,
-2,000 pairs): **+0.018 (95% CI -0.047..+0.083)** -- vs +0.118 on the live sum7 cand_13,
-so close-call buys nothing on this net.
-**Done on the work iMac (2026-11-18, `review_tdlow/` on train-features-v2, 86 sum7 games):**
-  1. Step 2 `filter_probe.py`, 300 computer turns: keep-rate 92.7% (22 turns end elsewhere),
-     deep-check cost -0.0004 pts/turn (95% CI -0.0062..+0.0047) -> NO refit needed. (Took
-     ~10 min on the M4 with 4 workers; the cloud box's slowness was the box.)
-  2. Step 3 `rule_probe.py`, 4,533 turns: wastes tried 1,542 / changed 0; strand 59 / 0;
-     bank 18 / 10 changed, deep value identical (the quiet-pair filter only). Inert, as before.
-  Head to head vs live cand_13 already measured: +0.115 (95% CI +0.052..+0.178), 2,000 pairs.
-**Still to do:**
-  3. Owner decides on shipping (head-to-head vs live cand_13, if not already measured).
-  4. If it ships: hashed onnx + sidecar to main, replace `model-dffd8d8f.onnx` in sw.js
-     SHELL, bump the sw.js cache, `REC_MODEL_TAG`, playout-requests workflow
-     `MODEL_sum7` asset; re-space the Strong knot (0.93 = Max on this net: 50.0%; try
-     ~0.88, re-measure 0.80-0.93); propose turning close-call OFF (gauge above).
+`tdlow_rank` = distill_sum7/cand_13 retrained once on round 4's labels (labels_22-24) with the
+fixed distillation loss (`--td-w 0.05 --rank-w 3e-4 --rank-tau 0.003`, 4 epochs lr 2e-5;
+train-features-v2 `rankexp/`). Release asset `cloud-scratch/2ff210dd3fa4-tdlow_rank.pt`.
+**vs the previous sum7 net cand_13, plain search, app config, seeds 300M, 2,000 pairs: +0.115
+(95% CI +0.052..+0.178), 51.5%.** Shipped as `model_sum7.json` -> `model-dcfdc21e.onnx`
+(source `sum7_tdlow_rank.pt`; replaces model-dffd8d8f), sw.js cache v14, playout-requests
+`MODEL_sum7` = the asset above. The sidecar is identical to the old one but for source/onnx
+(same features, afterstate, layout, input_scales), export matched torch to 1.2e-7, build
+passes; NOT driven in a browser (no patchright on the work iMac) -- same code path as the
+previous sum7 net. `REC_MODEL_TAG` untouched: it names today's-layout net; sum7 games are
+tagged from the sidecar's source.
+**Checklist:** close-call gauge on it +0.018 (95% CI -0.047..+0.083), 2,000 pairs (vs +0.118
+on cand_13) -> **close-call now OFF by default** (`?cc=1` turns it on); filter_probe (300
+turns of owner's sum7 games): keep-rate 92.7%, cost -0.0004 pts/turn (CI -0.0062..+0.0047),
+no refit; rule_probe (4,533 turns): inert (wastes 1,542 tried / 0 changed, strand 59 / 0,
+bank 18 / 10 changed at identical deep value); difficulty sweep: Easiest moved to 0.60;
+**Strong 0.93 = Max on this net (50.0%) -- re-space it (try ~0.88, re-measure 0.80-0.93).**
 Package versionCode 11 / 1.0.10 (automatic protection off) is UPLOADED (owner, 2026-11-17).
 
 ## Project background
@@ -323,7 +319,9 @@ Whenever a new net ships, re-run (cheapest first; GitHub = free):
   save-die rule were written for turn-start nets; an afterstate net may not need
   them (CLAUDE.md "Re-check main's `_strands_last_piece` rule on the first
   afterstate net").
-- **CLOSE-CALL SEARCH, ON BY DEFAULT -- BACK, ON THE SUM7 NET (owner, 2026-11-16: "you can
+- **[SUPERSEDED 2026-11-18: OFF by default again -- on the tdlow_rank sum7 net it gains
+  +0.018 (CI -0.047..+0.083); `?cc=1` turns it on. See the tdlow_rank entry at the top.]
+  CLOSE-CALL SEARCH, ON BY DEFAULT -- BACK, ON THE SUM7 NET (owner, 2026-11-16: "you can
   ship the close call"; LIVE on main 2026-11-16, a83e6e2, and in package versionCode 10).** Why now: on the
   shipped sum7 net it is worth **+0.113 (95% CI +0.020..+0.205), 1,000 pairs** (train-features-v2
   `headroom/cc1.jsonl`, 21 rolls; the 1-roll gauge +0.118, 2,000 pairs), and distillation
