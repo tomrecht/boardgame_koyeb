@@ -164,7 +164,15 @@ in PLAY (close-call on the phone) but not transferable by this training. Next le
 a different teacher (deeper / rollout search, which did not help on today's layout) or a
 bigger net (capacity test: width helps a little on ranking).
 
-## HEADROOM ORACLE: RUNNING (launched 2026-11-16, work iMac; `headroom/run.sh`, log `headroom/run.log`)
+## HEADROOM ORACLE: RESULT AT 760 OF 1,000 PAIRS (launched 2026-11-16, work iMac; `headroom/run.sh`, log `headroom/run.log`)
+
+**Interim (2026-11-18, batches 1-4 of exact2; batch 0's rerun finishing on GitHub, run.sh then
+rewrites RESULT.txt and commits): exact2 + net vs net plain +0.253 (95% CI +0.130..+0.377);
+1-ply vs plain +0.113 (+0.020..+0.205, 1,000 pairs); exact2 - 1ply on the same seeds +0.126
+(-0.034..+0.285).** So a deeper search's edge over the plain net is roughly twice the 1-ply
+teacher's, but the extra over 1-ply is not yet clear of 0. exact2 costs ~400 s a trigger on a
+GitHub core (vs 19 s for 1-ply), so it is a labelling teacher only, never a play-time search;
+it picks differently from 1-ply on ~30% of triggers.
 
 Outside-expert review (owner, 2026-11-16): before more training, measure how much a
 much stronger search gains over the shipped sum7 net (owner wins a bit under 50%; goal
