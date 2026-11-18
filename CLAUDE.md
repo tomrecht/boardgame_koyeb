@@ -99,7 +99,7 @@ on cand_13) -> **close-call now OFF by default** (`?cc=1` turns it on); filter_p
 turns of owner's sum7 games): keep-rate 92.7%, cost -0.0004 pts/turn (CI -0.0062..+0.0047),
 no refit; rule_probe (4,533 turns): inert (wastes 1,542 tried / 0 changed, strand 59 / 0,
 bank 18 / 10 changed at identical deep value); difficulty sweep: Easiest moved to 0.60;
-**Strong 0.93 = Max on this net (50.0%) -- re-space it (try ~0.88, re-measure 0.80-0.93).**
+**Strong knot moved 0.93 -> 0.87 (2026-11-18)**: on tdlow_rank 0.93 = Max (50.0%); GitHub sweep, 300 games each vs full strength, sum7: 0.84 31.7%, 0.86 32.7%, 0.88 43.7%, 0.90 41.0% (CIs +-5.5) -> ~37% at 0.87 (`review_tdlow/STRONG.txt` on train-features-v2).
 Package versionCode 11 / 1.0.10 (automatic protection off) is UPLOADED (owner, 2026-11-17).
 
 ## Project background
