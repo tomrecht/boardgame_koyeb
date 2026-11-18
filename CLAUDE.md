@@ -91,11 +91,14 @@ So, for any "work through the night / while I sleep" task:
 checklist; Easiest already moved to 0.60 on main); close-call gauge (`ccmatch`, T=3 K=3,
 2,000 pairs): **+0.018 (95% CI -0.047..+0.083)** -- vs +0.118 on the live sum7 cand_13,
 so close-call buys nothing on this net.
+**Done on the work iMac (2026-11-18, `review_tdlow/` on train-features-v2, 86 sum7 games):**
+  1. Step 2 `filter_probe.py`, 300 computer turns: keep-rate 92.7% (22 turns end elsewhere),
+     deep-check cost -0.0004 pts/turn (95% CI -0.0062..+0.0047) -> NO refit needed. (Took
+     ~10 min on the M4 with 4 workers; the cloud box's slowness was the box.)
+  2. Step 3 `rule_probe.py`, 4,533 turns: wastes tried 1,542 / changed 0; strand 59 / 0;
+     bank 18 / 10 changed, deep value identical (the quiet-pair filter only). Inert, as before.
+  Head to head vs live cand_13 already measured: +0.115 (95% CI +0.052..+0.178), 2,000 pairs.
 **Still to do:**
-  1. Step 2 `filter_probe.py` (GOAL_LAYOUT=sum7, tags `sum7_r2_cand_13.pt,sum7_cand_7.pt`,
-     300 turns) -- too slow on a 4-core cloud box (9 positions in 2 h); refit the
-     prefilter scales if the cost's CI clears 0 (the live net was already due one).
-  2. Step 3 `rule_probe.py` (expect inert, as on every net so far).
   3. Owner decides on shipping (head-to-head vs live cand_13, if not already measured).
   4. If it ships: hashed onnx + sidecar to main, replace `model-dffd8d8f.onnx` in sw.js
      SHELL, bump the sw.js cache, `REC_MODEL_TAG`, playout-requests workflow
