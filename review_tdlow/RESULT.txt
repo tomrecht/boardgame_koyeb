@@ -1,0 +1,4 @@
+FILTER review_tdlow/filter.jsonl: 300 computer turns; keep-rate 92.7% (22 turns the filtered pick ends elsewhere); deep-check cost per turn -0.0004 pts (95% CI -0.0062..+0.0047); x ~28 turns/game = -0.011 pts/game
+RULE wastes: tried 1542, changed the move 0 
+RULE bank: tried 18, changed the move 10 mean on-off +0.0000, min +0.0000, max +0.0000
+RULE strand: tried 59, changed the move 0 
