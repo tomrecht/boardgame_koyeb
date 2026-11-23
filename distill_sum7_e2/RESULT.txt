@@ -1,0 +1,6 @@
+distill_sum7_e2/run.log:iteration 0: cand vs champion +0.044 (95% CI -0.013 .. +0.102, 2000 pairs) -> PROMOTE
+distill_sum7_e2/run.log:iteration 1: cand vs champion +0.039 (95% CI -0.018 .. +0.097, 2000 pairs) -> PROMOTE
+distill_sum7_e2/train_0.log:  BASELINE (warm start) on val candidates: {'mse': 7.391595585922188e-05, 'within_corr': 0.2143743949263627, 'top_agree': 0.550817341862118, 'decisions': 1407}
+distill_sum7_e2/train_0.log:  AFTER (best epoch) on val candidates: {'mse': 7.541200013055909e-05, 'within_corr': 0.24641855868703158, 'top_agree': 0.5593461265103056, 'decisions': 1407}
+distill_sum7_e2/train_1.log:  BASELINE (warm start) on val candidates: {'mse': 6.494856629910355e-05, 'within_corr': 0.2639360452565818, 'top_agree': 0.565359477124183, 'decisions': 2754}
+distill_sum7_e2/train_1.log:  AFTER (best epoch) on val candidates: {'mse': 6.544096036565175e-05, 'within_corr': 0.2972716958307972, 'top_agree': 0.5729847494553377, 'decisions': 2754}

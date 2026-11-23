@@ -1,0 +1,39 @@
+{
+ "champion": "/Users/tomrecht/quahuru-train/distill_sum7_e2/cand_1.pt",
+ "iter": 2,
+ "done": {
+  "0": {
+   "label": true,
+   "train": true,
+   "confirm": true
+  },
+  "1": {
+   "label": true,
+   "train": true,
+   "confirm": true
+  }
+ },
+ "history": [
+  {
+   "iter": 0,
+   "cand": "/Users/tomrecht/quahuru-train/distill_sum7_e2/cand_0.pt",
+   "champion": "/Users/tomrecht/quahuru-train/rankexp/tdlow_rank.pt",
+   "mean": 0.0445,
+   "se": 0.029573166233607038,
+   "pairs": 2000,
+   "promoted": true
+  },
+  {
+   "iter": 1,
+   "cand": "/Users/tomrecht/quahuru-train/distill_sum7_e2/cand_1.pt",
+   "champion": "/Users/tomrecht/quahuru-train/distill_sum7_e2/cand_0.pt",
+   "mean": 0.03925,
+   "se": 0.029274061967927364,
+   "pairs": 2000,
+   "promoted": true
+  }
+ ],
+ "goal_layout": "sum7",
+ "remote_fails": 2,
+ "remote_off": true
+}
