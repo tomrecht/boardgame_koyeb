@@ -2060,7 +2060,19 @@ const SFX = (() => {
         amp.gain.exponentialRampToValueAtTime(0.0001, t0 + dur);
         osc.connect(amp).connect(c.destination);
         osc.start(t0); osc.stop(t0 + dur + 0.02);
+        sleepLater(delay + dur + SFX_IDLE_S);
     }
+    // Battery (2026-11-23): a running AudioContext keeps the phone's audio
+    // output awake even when silent, so suspend it SFX_IDLE_S after the last
+    // sound and at once when the page is hidden; tone() resumes it.
+    const SFX_IDLE_S = 30;
+    let sleepTimer = null;
+    function sleepNow() {
+        clearTimeout(sleepTimer); sleepTimer = null;
+        if (ctx && ctx.state === 'running') ctx.suspend().catch(() => {});
+    }
+    function sleepLater(s) { clearTimeout(sleepTimer); sleepTimer = setTimeout(sleepNow, s * 1000); }
+    document.addEventListener('visibilitychange', () => { if (document.hidden) sleepNow(); });
     const play = (fn) => { if (getSoundEnabled()) { try { fn(); } catch (e) {} } };
     return {
         // The save and capture effects carry far more perceived loudness than
