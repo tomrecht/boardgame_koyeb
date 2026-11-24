@@ -12,9 +12,9 @@
  */
 // v9 (2026-10-06): new model.onnx (4-way blend) -- the bump makes every
 // installed worker drop its cached copy of the old net.
-// v13 (2026-11-09): sum7 is the default goal layout -- its net, sidecar and table precached. v12 (2026-10-26): distill_cand13. v11 (2026-10-23): the distilled net (distill_cand3). v10 (2026-10-19): new model.onnx (fv2C iter 55: AB2 inputs, afterstate) and
+// v15 (2026-11-24): sum7 net = exact2 cand_1 (model-e448e0a1). v14 (2026-11-18): tdlow_rank. v13 (2026-11-09): sum7 is the default goal layout -- its net, sidecar and table precached. v12 (2026-10-26): distill_cand13. v11 (2026-10-23): the distilled net (distill_cand3). v10 (2026-10-19): new model.onnx (fv2C iter 55: AB2 inputs, afterstate) and
 // its endgame table.
-const CACHE = 'quahuru-v14';
+const CACHE = 'quahuru-v15';
 
 // The shell is what a cold, offline start needs to render a board.
 const SHELL = [
@@ -49,7 +49,7 @@ const SHELL = [
     // sum7, the DEFAULT goal layout since 2026-11-09 (game.js GOAL_LAYOUT_DEFAULT):
     // its own net, sidecar and table, or offline the computer could not move.
     './model_sum7.json',
-    './model-dcfdc21e.onnx',
+    './model-e448e0a1.onnx',
     './endgame_table_sum7.json',
     // The ported agent itself. local_agent.js injects these lazily, so without
     // precaching they would only ever be cached AFTER a first online move --

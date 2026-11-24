@@ -81,7 +81,26 @@ So, for any "work through the night / while I sleep" task:
   4. Checkpoint durably every step (commit, update CLAUDE.md/memory) so progress
      survives an interruption and is visible on waking.
 
-## sum7 NET = tdlow_rank, SHIPPED 2026-11-18 (owner: "yep"; work iMac)
+## sum7 NET = exact2 cand_1, SHIPPED 2026-11-24 (owner: "yes"; cloud session)
+
+`cand_1` = iteration 1 of train-features-v2's `distill_sum7_e2/` (two-turn `CC_DEEP=exact2`
+teacher, 2 x 500 games, from tdlow_rank; gate steps +0.044 / +0.039, neither clear of 0).
+Release asset `cloud-scratch/378b5935dc2a-cand_1.pt`. **Direct match vs tdlow_rank, plain
+search, app config, sum7, seeds 360M, 3,000 pairs (cloud-play run 45251987133): +0.056
+(95% CI +0.005..+0.107), 50.1% wins.** Shipped as `model_sum7.json` -> `model-e448e0a1.onnx`
+(source `sum7_e2_cand_1.pt`; replaces model-dcfdc21e), sw.js v15, playout-requests
+`MODEL_sum7` = the asset above. Exported in a cloud container with torch 2.15 (legacy
+exporter, opset 17): matches torch to 9.7e-8; same opset/ir, op counts and inputs as the
+previous file; sidecar differs only in source/onnx. Driven in the page (served dist/,
+`ci/selfplay_record.mjs`, 1 game): loads model-e448e0a1, 53 turns, 0 page errors, game
+tagged `sum7_e2_cand_1.pt`, replays clean through game.py under sum7.
+**Checklist on cand_1:** difficulty sweep and close-call gauge dispatched on GitHub
+2026-11-24 (results below when in); filter_probe / rule_probe need owner's sum7 games
+(quahuru-games, not reachable from a cloud session) -- run on a Mac.
+**Next (owner, 2026-11-24): scale the exact2 teacher** -- more games per iteration from
+cand_1; see train-features-v2's CLAUDE.md.
+
+### Previous sum7 net: tdlow_rank, shipped 2026-11-18
 
 `tdlow_rank` = distill_sum7/cand_13 retrained once on round 4's labels (labels_22-24) with the
 fixed distillation loss (`--td-w 0.05 --rank-w 3e-4 --rank-tau 0.003`, 4 epochs lr 2e-5;

@@ -47,11 +47,11 @@ jobs:
           pip install torch==2.2.2 --index-url https://download.pytorch.org/whl/cpu
           pip install "numpy<2" scipy pillow
           gh release download cloud-scratch -p 11f363793239-distill_cand13.pt -R "${{ github.repository }}"
-          gh release download cloud-scratch -p 2ff210dd3fa4-tdlow_rank.pt -R "${{ github.repository }}"
+          gh release download cloud-scratch -p 378b5935dc2a-cand_1.pt -R "${{ github.repository }}"
       # One net per goal layout (a request carries `layout`; absent = today):
       # MODEL plays today and any layout without its own net (B); MODEL_sum7 =
-      # sum7 tdlow_rank (rank-loss distillation), shipped as model-dcfdc21e.onnx.
+      # sum7 exact2-teacher distillation cand_1 (distill_sum7_e2), shipped as model-e448e0a1.onnx.
       - if: steps.check.outputs.pending != '0'
         env: { GAMES_TOKEN: '${{ secrets.GAMES_TOKEN }}', MODEL: 11f363793239-distill_cand13.pt,
-               MODEL_sum7: 2ff210dd3fa4-tdlow_rank.pt, PYTHONHASHSEED: '0' }
+               MODEL_sum7: 378b5935dc2a-cand_1.pt, PYTHONHASHSEED: '0' }
         run: python3 -u playout_requests.py 6
