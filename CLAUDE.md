@@ -164,7 +164,28 @@ in PLAY (close-call on the phone) but not transferable by this training. Next le
 a different teacher (deeper / rollout search, which did not help on today's layout) or a
 bigger net (capacity test: width helps a little on ranking).
 
-## TWO-TURN (exact2) TEACHER DISTILLATION: RUNNING (launched 2026-11-18, owner; work iMac)
+## NEXT ON THE WORK iMac: SCALED exact2 TEACHER, `distill_sum7_e3` (owner, 2026-11-24)
+
+The e2 run's cand_1 SHIPPED as the sum7 net (main ce5c0f2): **vs tdlow_rank, plain, sum7,
+seeds 360M, 3,000 pairs (cloud-play run 45251987133): +0.056 (95% CI +0.005..+0.107), 50.1%
+wins** -- the two-turn teacher transfers, ~+0.04 an iteration at 500 games. Scale it:
+**launch `zsh distill_sum7_e3/run.sh`** (copy `distill_sum7_e2/cand_1.pt` stays where it is;
+START points at it). 2 iterations x 1,000 games, 250 shards, confirm 3,000 pairs, seeds
+`SEED_OFF=300000000` (labels 391M, confirm 393M + 10,000 x iter; fresh). Cost: ~2,800 core-h
+of labels an iteration, ~35 h on GitHub's ~80 concurrent cores, so ~3 days in all -- a long
+burst, mind GitHub's terms. **distill_run.py changes (2026-11-24, cloud session):**
+`SEED_OFF` env (the label/confirm seed bases were hard-coded, so every run replayed the
+same seeds); and a remote step short by <= 5% of its games (a lost runner -- e.g. shard 55
+of run 45237893402, no log kept) no longer counts as a cloud failure: the few games are
+played locally and the cloud STAYS ON. In e2 two such shortfalls turned the cloud off
+(`remote_off`), which is probably why it took 5 days. Before shipping, match the FINAL
+candidate directly against cand_1 (3,000 pairs, fresh seeds): in e2 the chained gates
+summed to +0.083 but the direct match gave +0.056.
+
+## TWO-TURN (exact2) TEACHER DISTILLATION: DONE (2026-11-18 .. 11-23; work iMac)
+
+Result: gate +0.044 (CI -0.013..+0.102) then +0.039 (-0.018..+0.097), 2,000 pairs each;
+direct cand_1 vs tdlow_rank +0.056 (+0.005..+0.107), 3,000 pairs -> shipped (see above).
 
 `distill_sum7_e2/run.sh` -> `distill_sum7_e2/run.log`, results committed to
 `distill_sum7_e2/RESULT.txt` when done. From the SHIPPED sum7 net `rankexp/tdlow_rank.pt`
@@ -226,23 +247,6 @@ retrain on round 4's data, where round 4's own loss gave +0.028. So the loss wei
 what held distillation back, not the teacher. `rankexp/tdlow_rank.pt` is a sum7 shipping
 candidate (export as in the sum7 ship recipe). Next: distillation with
 `--td-w 0.05 --rank-w 3e-4 --rank-tau 0.003` from it.
-
-## TODO ON THE HOME iMac: PACKAGE versionCode 10 (written 2026-11-16, work iMac)
-
-A tester installed the app via **Aurora Store** on a phone without Google Play
-and it closed with an error about Google Play being missing. Our code has no
-Play-services dependency (AndroidX + Capacitor + @capacitor/app only; the gms
-plugin line in build.gradle applies only if google-services.json exists, and
-it doesn't). Cause: Play Console's **App integrity > Automatic protection**,
-which Google injects at signing time; it checks the installer is Play, and on a
-de-Googled phone that check can only fail. **Owner turned it OFF 2026-11-16.**
-It only affects NEW uploads -- versionCode 9 (live) stays protected.
-**To do:** build versionCode **10**, versionName 1.0.9, from current `main`
-(recipe under "Rebuilding the package" in Current state; needs `./.jdk` and
-`android/keystore.properties`, which only the home iMac has), verify the bundle
-as usual, upload, then ask the tester to reinstall via Aurora. Update the
-CURRENT PACKAGE entry and delete this section once done. Leave automatic
-protection off (the web build at quahuru.com serves the whole app anyway).
 
 ## Project background
 

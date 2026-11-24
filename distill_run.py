@@ -45,6 +45,9 @@ REPLAY = int(E.get('REPLAY', '2'))
 CONFIRM_PAIRS = E.get('CONFIRM_PAIRS', '300')
 BAR = float(E.get('BAR', '0.0'))
 REMOTE = E.get('REMOTE', '0') == '1'
+# Added to every label/confirm seed base, so a new run does not replay an earlier
+# run's seeds (both used 91M/93M + 10,000 x iteration until 2026-11-24).
+SEED_OFF = int(E.get('SEED_OFF', '0'))
 TRAIN_ARGS = shlex.split(E.get('TRAIN_ARGS', '--epochs 8 --lr 2e-5 --td-w 0.5 --rank-w 0'))
 
 
@@ -90,6 +93,13 @@ def try_remote(st, save, mode, ckpts, n, seed_base, out, env=None):
         st['remote_fails'] = 0
         save()
         return True
+    # A few lost shards (a runner dies now and then, GitHub keeps no log) are not
+    # a cloud failure: the local run plays the missing games, and the cloud stays
+    # on. Only an exception or a large shortfall counts towards switching it off.
+    units = int(n) * (2 if mode == 'confirm' else 1)
+    if miss is not None and miss <= max(8, 0.05 * units):
+        print(f'[remote] {miss} game(s) missing (lost shard?); local plays them, cloud stays on', flush=True)
+        return False
     st['remote_fails'] = st.get('remote_fails', 0) + 1
     if st['remote_fails'] >= 2:
         st['remote_off'] = True
@@ -127,10 +137,10 @@ def main():
         print(f'=== iteration {k}: champion {champ}', flush=True)
         lab = os.path.join(D, f'labels_{k}.jsonl.gz')
         if not done.get('label'):
-          if not try_remote(st, save, 'label', [champ], GAMES, 91_000_000 + 10_000 * k, lab,
+          if not try_remote(st, save, 'label', [champ], GAMES, SEED_OFF + 91_000_000 + 10_000 * k, lab,
                             env=dict(lab_env, T=T, K=K)):
             run([PY, '-u', 'close_call.py', 'label', champ, T, K, GAMES, lab],
-                dict(lab_env, SEED_BASE=str(91_000_000 + 10_000 * k)), os.path.join(D, f'label_{k}.log'))
+                dict(lab_env, SEED_BASE=str(SEED_OFF + 91_000_000 + 10_000 * k)), os.path.join(D, f'label_{k}.log'))
           done['label'] = True; save()
         cand = os.path.abspath(os.path.join(D, f'cand_{k}.pt'))
         if not done.get('train'):
@@ -142,9 +152,9 @@ def main():
         conf = os.path.join(D, f'confirm_{k}.jsonl')
         if not done.get('confirm'):
           if not try_remote(st, save, 'confirm', [cand, champ], CONFIRM_PAIRS,
-                            93_000_000 + 10_000 * k, conf, env=lay_env or None):
+                            SEED_OFF + 93_000_000 + 10_000 * k, conf, env=lay_env or None):
             run([PY, '-u', 'confirm_match.py', cand, champ, CONFIRM_PAIRS, conf],
-                {'SEED_BASE': str(93_000_000 + 10_000 * k)}, os.path.join(D, f'confirm_{k}.log'))
+                {'SEED_BASE': str(SEED_OFF + 93_000_000 + 10_000 * k)}, os.path.join(D, f'confirm_{k}.log'))
           done['confirm'] = True; save()
         m, se, n = paired(conf)
         promote = m > BAR
