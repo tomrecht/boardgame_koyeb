@@ -94,9 +94,14 @@ exporter, opset 17): matches torch to 9.7e-8; same opset/ir, op counts and input
 previous file; sidecar differs only in source/onnx. Driven in the page (served dist/,
 `ci/selfplay_record.mjs`, 1 game): loads model-e448e0a1, 53 turns, 0 page errors, game
 tagged `sum7_e2_cand_1.pt`, replays clean through game.py under sum7.
-**Checklist on cand_1:** difficulty sweep and close-call gauge dispatched on GitHub
-2026-11-24 (results below when in); filter_probe / rule_probe need owner's sum7 games
-(quahuru-games, not reachable from a cloud session) -- run on a Mac.
+**Checklist on cand_1 (2026-11-24, GitHub):** close-call gauge (run 45310139474, 2,000
+pairs, seeds 370M, T=3 K=3 one roll): **+0.025 (95% CI -0.040..+0.091), 49.7%** -> stays OFF
+by default. Difficulty (run 45310135202, 150 pairs per level vs full strength, seeds
+200.01M+, sum7): 0.60 5.0% (3.1-8.1) -3.44; 0.74 15.0% (11.4-19.5) -2.20; 0.80 31.3%
+(26.3-36.8) -1.23; 0.87 38.7% (33.3-44.3) -0.68; 1.0 49.0% (control). Knots hold (targets
+~4/15/26/37/50); Medium is a touch strong (31% vs ~26%; cand13 24.7%, tdlow ~24%) --
+owner's call, unchanged. filter_probe / rule_probe need owner's sum7 games (quahuru-games,
+not reachable from a cloud session) -- run on a Mac.
 **Next (owner, 2026-11-24): scale the exact2 teacher** -- more games per iteration from
 cand_1; see train-features-v2's CLAUDE.md.
 
